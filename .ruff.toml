@@ -1,0 +1,80 @@
+# Allow unused variables when underscore-prefixed.
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+target-version = "py312"
+line-length = 120
+extend-exclude=[
+    "__pycache__",
+    "build",
+    "tools/**",
+]
+lint.extend-select = [
+    "ALL",
+]
+lint.extend-ignore = [
+    "I", # Ignore isort
+    "ANN001", # Missing type annotation for function argument
+    "ANN002", # Missing type annotation for variable
+    "ANN003", # Missing type annotation for keyword
+    "ANN201", # Missing return type annotation for public function
+    "ANN202", # Missing return type annotation for private function
+    "ANN204", # Missing return type annotation for special method `__getitem__
+    "ANN205", # Missing return type annotation for staticmethod
+    "ANN206", # Missing return type annotation for classmethod
+    "C901", # Function is too complex
+    "COM812", # May cause conflicts when used with the formatter
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D200", # One-line docstring should fit on one line
+    "D205", # 1 blank line required between summary line and description
+    "D400", # First line should end with a period
+    "D401", # First line should be in imperative mood
+    "D404", # First word of the docstring should not be "This"
+    "E501", # Line too long
+    "F403", # unable to detect undefined names,
+    "FIX001", # Line contains FIXME, consider resolving the issue
+    "FIX002", # Line contains TODO, consider resolving the issue
+    "ISC001", # May cause conflicts when used with the formatter
+    "PLR0912", # Too many branches (31 > 12)
+    "PLR0913", # Too many arguments in function definition
+    "PLR0915", # Too many statements (91 > 50)
+    "PLR2004", # Magic value used in comparison
+    "SLF001", # Private member accessed
+    "TD001", # Invalid TODO tag: `FIXME`
+    "TD002", # Missing author in TODO
+    "TD003", # Missing issue link on the line following this TODO
+]
+
+[lint.per-file-ignores]
+"examples/*.py" = [
+    "B018", # Not print but display
+    "D400", # First line should end with a period, question mark, or exclamation point
+    "ERA001", # Commented out code
+    "INP001", # Implicit namespace package
+    "T201", # Use print
+    "N816", # Variable `times_SG` in global scope should not be mixedCase"
+]
+"docs/conf.py" = [
+    "INP001", # conf.py is part of an implicit namespace package
+    "E402", # Module level import not at top of file
+    "ERA001", # Found commented-out code
+]
+"test_*.py" = [
+    "N806", # in function should be lowercase
+    "S101", # Use of `assert` detected
+]
+"**/io/**" = [
+    "A005", # Module `io` shadows a Python standard-library module
+]
+
+[lint.pydocstyle]
+convention = "numpy"
+
+[format]
+docstring-code-format = true
+docstring-code-line-length = 80
+indent-style = "space"
+quote-style = "double"
