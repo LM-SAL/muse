@@ -1,0 +1,39 @@
+{
+  "template": "https://github.com/sunpy/package-template",
+  "commit": "557d3736ee03667e7ba5feb8a50f41cbf0ab3268",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "package_name": "muse",
+      "module_name": "muse",
+      "short_description": "muse",
+      "author_name": "muse",
+      "author_email": "muse@muse.com",
+      "project_url": "muse.lmsal.com",
+      "github_repo": "LM-SAL/muse",
+      "sourcecode_url": "https://github.com/LM-SAL/muse",
+      "download_url": "https://pypi.org/project/muse",
+      "documentation_url": "rtd.muse.org",
+      "changelog_url": "",
+      "issue_tracker_url": "https://github.com/LM-SAL/muse/issues/",
+      "license": "BSD 3-Clause",
+      "minimum_python_version": "3.12",
+      "use_compiled_extensions": "y",
+      "enable_dynamic_dev_versions": "y",
+      "include_example_code": "y",
+      "include_cruft_update_github_workflow": "y",
+      "use_extended_ruff_linting": "y",
+      "_sphinx_theme": "sunpy",
+      "_parent_project": "",
+      "_install_requires": "",
+      "_copy_without_render": [
+        "docs/_templates",
+        "docs/_static",
+        ".github/workflows/sub_package_update.yml"
+      ],
+      "_template": "https://github.com/sunpy/package-template",
+      "_commit": "557d3736ee03667e7ba5feb8a50f41cbf0ab3268"
+    }
+  },
+  "directory": null
+}

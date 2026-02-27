@@ -1,0 +1,115 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+  "cython",
+  "extension-helpers",
+  "numpy>=2",
+  "setuptools>=62.1",
+  "setuptools-scm[toml]>=8",
+  "wheel",
+]
+
+[project]
+name = "muse"
+description = "A library to analyze and reduce data from the MUSE Mission."
+readme = { file = "README.rst", content-type = "text/x-rst" }
+license-files = [ "licenses/LICENSE.rst" ]
+authors = [
+  { name = "MUSE Instrument Team", email = "nfreij@seti.org" },
+]
+requires-python = ">=3.12"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dynamic = [ "version" ]
+dependencies = [
+  "astropy>=7.2",
+  "dask[array]>=2026.1.2",
+  # These should be removed in the future
+  "gputil-fix",
+  "loguru>=0.7.3",
+  "matplotlib>=3.10",
+  "numpy>2",
+  "psutil",
+  "py-cpuinfo",
+  "scikit-learn>=1.8",
+  "scipy>=1.17.1",
+  "skglm>=0.5",
+  "torch>=2.10",
+  "tqdm>=4.67.3",
+  "xarray[io,parallel]>=2026.2",
+]
+optional-dependencies.all = [ "muse" ]
+optional-dependencies.dev = [ "muse[all,docs,tests]" ]
+optional-dependencies.docs = [
+  "default-values",
+  "joblib",                   # for sphinx-gallery parallel
+  "packaging",
+  "pydata-sphinx-theme",
+  "sphinx",
+  "sphinx-autodoc-typehints",
+  "sphinx-automodapi",
+  "sphinx-changelog",
+  "sphinx-copybutton",
+  "sphinx-design",
+  "sphinx-gallery",
+  "sphinxext-opengraph",
+]
+optional-dependencies.tests = [
+  "pytest-astropy",
+  "pytest-loguru",
+  "pytest-mpl",
+]
+urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
+urls."Source Code" = "https://github.com/LM-SAL/muse"
+urls.Documentation = "https://docs.muse.org"
+urls.Download = "https://pypi.org/project/muse"
+urls.Homepage = "https://muse.lmsal.com"
+scripts.open_astronomy_package_template_example = "muse.example_mod:main"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+exclude-package-data."*" = [ "*.c", "*.h" ]
+packages.find.include = [ "muse*" ]
+packages.find.exclude = [ "muse._dev*" ]
+
+[tool.setuptools_scm]
+version_file = "muse/_version.py"
+
+# TODO: This should be in towncrier.toml but Giles currently only works looks in
+# pyproject.toml we should move this back when it's fixed.
+[tool.towncrier]
+package = "muse"
+filename = "CHANGELOG.rst"
+directory = "changelog/"
+issue_format = "`#{issue} <https://github.com/LM-SAL/muse/pull/{issue}>`__"
+title_format = "{version} ({project_date})"
+type = [
+  { directory = "breaking", name = "Breaking Changes", showcontent = true },
+  { directory = "deprecation", name = "Deprecations", showcontent = true },
+  { directory = "removal", name = "Removals", showcontent = true },
+  { directory = "feature", name = "New Features", showcontent = true },
+  { directory = "bugfix", name = "Bug Fixes", showcontent = true },
+  { directory = "doc", name = "Documentation", showcontent = true },
+  { directory = "trivial", name = "Internal Changes", showcontent = true },
+]
+
+[tool.gilesbot]
+pull_requests.enabled = true
+towncrier_changelog.enabled = true
+towncrier_changelog.verify_pr_number = true
+towncrier_changelog.changelog_skip_label = "No Changelog Entry Needed"
+towncrier_changelog.help_url = "https://github.com/LM-SAL/muse/blob/main/changelog/README.rst"
+towncrier_changelog.changelog_missing_long = """\
+  There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory \
+  following the instructions in the changelog [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst).\
+  """
+towncrier_changelog.type_incorrect_long = """\
+  The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog \
+  [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst)\
+  """
+towncrier_changelog.number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
