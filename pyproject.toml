@@ -1,9 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
 requires = [
-  "cython",
-  "extension-helpers",
-  "numpy>=2",
   "setuptools>=62.1",
   "setuptools-scm[toml]>=8",
   "wheel",
@@ -19,28 +16,22 @@ authors = [
 ]
 requires-python = ">=3.12"
 classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Physics",
 ]
 dynamic = [ "version" ]
 dependencies = [
-  "astropy>=7.2",
-  "dask[array]>=2026.1.2",
-  # These should be removed in the future
-  "gputil-fix",
-  "loguru>=0.7.3",
-  "matplotlib>=3.10",
-  "numpy>2",
-  "psutil",
-  "py-cpuinfo",
-  "scikit-learn>=1.8",
-  "scipy>=1.17.1",
-  "skglm>=0.5",
-  "torch>=2.10",
-  "tqdm>=4.67.3",
-  "xarray[io,parallel]>=2026.2",
+  "numpy>=2.4.0",
+  "torch>=2.12.0",
+  "xarray[io,parallel]>=2026.4.0",
 ]
 optional-dependencies.all = [ "muse" ]
 optional-dependencies.dev = [ "muse[all,docs,tests]" ]
@@ -59,7 +50,7 @@ optional-dependencies.docs = [
   "sphinxext-opengraph",
 ]
 optional-dependencies.tests = [
-  "pytest-astropy",
+  "pytest",
   "pytest-loguru",
   "pytest-mpl",
 ]
@@ -68,7 +59,6 @@ urls."Source Code" = "https://github.com/LM-SAL/muse"
 urls.Documentation = "https://docs.muse.org"
 urls.Download = "https://pypi.org/project/muse"
 urls.Homepage = "https://muse.lmsal.com"
-scripts.open_astronomy_package_template_example = "muse.example_mod:main"
 
 [tool.setuptools]
 zip-safe = false
