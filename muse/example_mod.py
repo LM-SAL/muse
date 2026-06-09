@@ -39,7 +39,7 @@ def primes(imax):
     return result
 
 
-def do_primes(n, usecython=False):
+def do_primes(n, *, usecython=False):
     if usecython:
         from .example_c import primes as cprimes  # noqa: PLC0415
 

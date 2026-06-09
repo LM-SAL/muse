@@ -1,12 +1,11 @@
 """
-=================
-<Verbing> a thing.
-=================
+===============
+Verbing a thing
+===============
 
 How to <verb> <active tense> <does something>.
 
-The example uses <packages> to <do something> and <other package> to <do
-other thing>.
+The example uses <packages> to <do something> and <other package> to <do other thing>.
 """
 
 import matplotlib.pyplot as plt

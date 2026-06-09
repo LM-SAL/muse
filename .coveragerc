@@ -4,6 +4,8 @@ omit =
   muse/*setup_package*
   muse/extern/*
   muse/version*
+  muse/_dev/*
+  */muse/_dev/*
   */muse/conftest.py
   */muse/*setup_package*
   */muse/extern/*

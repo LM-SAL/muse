@@ -6,7 +6,7 @@ try:
         from ._dev.scm_version import version
     except ImportError:
         from ._version import version
-except Exception:
+except Exception:  # NOQA: BLE001
     import warnings
 
     warnings.warn(
@@ -16,3 +16,6 @@ except Exception:
     del warnings
 
     version = "0.0.0"
+
+
+__all__ = ["version"]
