@@ -26,7 +26,11 @@ def format_docstring(defaults_name, /, **param_to_field):
     the live value can always be looked up.
     """
     defaults = getattr(variables, defaults_name)
-    fields = attrs.fields_dict(type(defaults))
+    try:
+        fields = attrs.fields_dict(type(defaults))
+    except attrs.exceptions.NotAnAttrsClassError as exc:
+        msg = f"{defaults_name} is not an attrs-based defaults object: {type(defaults)!r}"
+        raise TypeError(msg) from exc
     substitutions = {}
     for param, target in param_to_field.items():
         if isinstance(target, str):

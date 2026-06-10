@@ -25,6 +25,8 @@ _FWHM_TO_SIGMA = 2.355  # This was 2.35482 in guasslobes.py
 Conversion factor between FWHM and Gaussian sigma, 2 * sqrt(2 * ln 2), truncated.
 """
 
+_DATA_DRIVEN_MASK_KEYWORD = {"fill_value": 1.0, "threshold": 2.24}
+
 
 def _quantity(unit):
     """
@@ -110,6 +112,10 @@ def _quantity_mapping(unit):
         return MappingProxyType({key: _readonly_quantity(value, unit) for key, value in mapping.items()})
 
     return converters.optional(to_unit)
+
+
+def _data_driven_mask_keyword():
+    return dict(_DATA_DRIVEN_MASK_KEYWORD)
 
 
 @define(frozen=True, kw_only=True, eq=False)
@@ -375,6 +381,9 @@ class InstrumentDefaults:
         B. Value has spectral plate scale baked in and should be calculated using a
         future property.
         """
+        if self.channel_spectral_order is None:
+            msg = "instrumental_width_sg requires channel_spectral_order"
+            raise ValueError(msg)
         return 0.0815 / _FWHM_TO_SIGMA / self.channel_spectral_order
 
 
@@ -996,7 +1005,7 @@ class SDCDefaults:
     CUDA GPU device ID (0, 1, 2, ...) for GPU-accelerated response masking.
     """
 
-    data_driven_mask_keyword: dict = field(factory=lambda: {"fill_value": 1.0, "threshold": 2.24})
+    data_driven_mask_keyword: dict = field(factory=_data_driven_mask_keyword)
     """
     Keyword for data-driven mask generation applied to response functions.
     """
@@ -1394,7 +1403,7 @@ class SDCBenchmarkDefaults:
     Second scikit-learn estimator for refining the inversion (optional).
     """
 
-    data_driven_mask_keyword: dict = field(factory=lambda: {"fill_value": 1.0, "threshold": 2.24})
+    data_driven_mask_keyword: dict = field(factory=_data_driven_mask_keyword)
     """
     Keyword argument to use for data-driven mask generation.
     """

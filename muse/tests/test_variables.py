@@ -5,12 +5,12 @@ from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
 
-from muse.variables import DEFAULTS_INSTRUMENT
-from muse.variables_schema import InstrumentDefaults
+from muse.variables import DEFAULTS_AIA, DEFAULTS_INSTRUMENT
+from muse.variables_schema import InstrumentDefaults, SDCBenchmarkDefaults, SDCDefaults
 
 
 def test_instrument_defaults_are_frozen():
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(FrozenInstanceError, match="can't set attribute"):
         DEFAULTS_INSTRUMENT.ccd_gain = 20 * u.electron / u.DN
 
 
@@ -21,7 +21,7 @@ def test_instrument_mapping_fields_are_immutable_and_copied():
     mesh_transmission[284] = 0.5
 
     assert defaults.mesh_transmission[284] == 0.81
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match=r"mappingproxy.*does not support item assignment"):
         defaults.mesh_transmission[284] = 0.5
 
 
@@ -64,3 +64,21 @@ def test_instrument_defaults_use_evolve_for_overrides():
     assert updated.dx_pixel_CI == 60 * u.arcsec
     assert DEFAULTS_INSTRUMENT.dx_pixel_CI == 0.143 * u.arcsec
     assert updated != DEFAULTS_INSTRUMENT
+
+
+def test_instrumental_width_sg_requires_channel_spectral_order():
+    with pytest.raises(ValueError, match="requires channel_spectral_order"):
+        _ = DEFAULTS_AIA.instrumental_width_sg
+
+
+def test_data_driven_mask_keyword_defaults_are_copied():
+    sdc_defaults = SDCDefaults()
+    benchmark_defaults = SDCBenchmarkDefaults()
+
+    assert sdc_defaults.data_driven_mask_keyword == {"fill_value": 1.0, "threshold": 2.24}
+    assert benchmark_defaults.data_driven_mask_keyword == sdc_defaults.data_driven_mask_keyword
+    assert benchmark_defaults.data_driven_mask_keyword is not sdc_defaults.data_driven_mask_keyword
+
+    sdc_defaults.data_driven_mask_keyword["threshold"] = 99
+
+    assert benchmark_defaults.data_driven_mask_keyword["threshold"] == 2.24
