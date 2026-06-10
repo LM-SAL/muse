@@ -6,7 +6,7 @@ from attrs.exceptions import FrozenInstanceError
 import astropy.units as u
 
 from muse.variables import DEFAULTS_AIA, DEFAULTS_INSTRUMENT
-from muse.variables_schema import InstrumentDefaults, SDCBenchmarkDefaults, SDCDefaults
+from muse.variables_schema import GFATDefaults, InstrumentDefaults, SDCBenchmarkDefaults, SDCDefaults
 
 
 def test_instrument_defaults_are_frozen():
@@ -58,12 +58,38 @@ def test_instrument_quantity_mappings_are_read_only_and_copied():
         defaults.exposure_times_SG["QS"][0] = 99 * u.s
 
 
+def test_instrument_nested_sequences_are_converted_to_tuples():
+    main_lines = [["Fe XIX 108.355", "Fe XXI 108.117"]]
+    target_vdop = [1, 2, 3]
+    defaults = InstrumentDefaults(main_lines_SG=main_lines, target_vdop={"QS": target_vdop})
+
+    main_lines[0][0] = "changed"
+    target_vdop[0] = 99
+
+    assert defaults.main_lines_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
+    assert defaults.target_vdop["QS"] == (1, 2, 3)
+    with pytest.raises(TypeError, match=r"tuple.*does not support item assignment"):
+        defaults.main_lines_SG[0][0] = "changed"
+
+
 def test_instrument_defaults_use_evolve_for_overrides():
     updated = attrs.evolve(DEFAULTS_INSTRUMENT, dx_pixel_CI=1 * u.arcmin)
 
     assert updated.dx_pixel_CI == 60 * u.arcsec
     assert DEFAULTS_INSTRUMENT.dx_pixel_CI == 0.143 * u.arcsec
     assert updated != DEFAULTS_INSTRUMENT
+
+
+def test_array_defaults_are_read_only():
+    gfat_defaults = GFATDefaults()
+    benchmark_defaults = SDCBenchmarkDefaults(order=[2, 2, 1])
+
+    with pytest.raises(ValueError, match="read-only"):
+        gfat_defaults.sg_channels[0] = 999
+    with pytest.raises(ValueError, match="read-only"):
+        gfat_defaults.sg_main_lines[0] = "changed"
+    with pytest.raises(ValueError, match="read-only"):
+        benchmark_defaults.order[0] = 999
 
 
 def test_instrumental_width_sg_requires_channel_spectral_order():

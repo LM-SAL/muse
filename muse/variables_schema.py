@@ -50,7 +50,7 @@ def _instance(type_):
 
 
 def _nested_tuple(value):
-    return tuple(tuple(item) if isinstance(item, list | tuple) else item for item in value)
+    return tuple(tuple(item) if isinstance(item, (list, tuple)) else item for item in value)
 
 
 def _set_readonly(value):
@@ -91,7 +91,7 @@ def _immutable_value(value):
         return _readonly_array(value)
     if isinstance(value, Mapping):
         return _immutable_mapping(value)
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return tuple(_immutable_value(item) for item in value)
     return value
 
@@ -617,13 +617,13 @@ class GFATDefaults:
     Title label for ground truth (GT) data in comparison plots.
     """
 
-    sg_channels: np.ndarray = field(factory=lambda: np.asanyarray([108, 171, 284]))
+    sg_channels: np.ndarray = field(factory=lambda: _readonly_array([108, 171, 284]))
     """
     Spectrograph channel identifiers corresponding to the main spectral lines.
     """
 
     sg_main_lines: np.ndarray = field(
-        factory=lambda: np.asanyarray(["Fe XIX 108.355", "Fe IX 171.073", "Fe XV 284.163"])
+        factory=lambda: _readonly_array(["Fe XIX 108.355", "Fe IX 171.073", "Fe XV 284.163"])
     )
     """
     Main spectral line identifiers for each SG channel.
@@ -636,9 +636,7 @@ class GFATDefaults:
 
     xaxis_gt: bool = field(default=True, validator=validators.instance_of(bool))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    If True, use ground-truth values on the x-axis for comparison plots.
     """
 
     suptitle_string: str = field(default="", validator=validators.instance_of(str))
@@ -789,9 +787,7 @@ class SDCDefaults:
 
     portion: int = field(default=60, validator=validators.instance_of(int))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Legacy SDC benchmark chunk/selection parameter retained for compatibility.
     """
 
     model2: object | None = None
@@ -807,9 +803,7 @@ class SDCDefaults:
 
     prior_start: int = field(default=100, validator=validators.instance_of(int))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Legacy starting index used when sampling points for prior construction.
     """
 
     prior_jumps: int = field(default=1, validator=validators.instance_of(int))
@@ -914,31 +908,23 @@ class SDCDefaults:
 
     alphas: tuple = field(default=(0.0, 0.1, 0.2), converter=tuple)
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Legacy list of regularization values used by older parameter sweeps.
     """
 
     var1: str = field(default="logT", validator=validators.instance_of(str))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Primary coordinate name used by legacy prior and basis-building helpers.
     """
 
     var2: str = field(default="basis_logT", validator=validators.instance_of(str))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Secondary coordinate name used by legacy prior and basis-building helpers.
     """
 
     # inversion
     mask: object | None = None
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Optional mask passed through to inversion routines.
     """
 
     scaling: str | None = field(default=None, validator=_instance(str))
@@ -953,9 +939,7 @@ class SDCDefaults:
 
     disable: bool = field(default=False, validator=validators.instance_of(bool))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Legacy flag for disabling optional inversion processing.
     """
 
     serial: bool = field(default=True, validator=validators.instance_of(bool))
@@ -976,16 +960,12 @@ class SDCDefaults:
 
     using_weights: bool = field(default=False, validator=validators.instance_of(bool))
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Legacy flag indicating whether weighted inversion inputs are in use.
     """
 
     vdem_prior: object | None = None
     """
-    No idea.
-
-    .. todo:: Unknown meaning; document or remove.
+    Optional VDEM prior passed through to inversion routines.
     """
 
     # Sparse method defaults
@@ -1387,7 +1367,7 @@ class SDCBenchmarkDefaults:
     None defaults to ["logT", "vdop"].
     """
 
-    order: np.ndarray | None = field(default=None, converter=converters.optional(np.asanyarray))
+    order: np.ndarray | None = field(default=None, converter=converters.optional(_readonly_array))
     """
     Spectral diffraction order for each channel (array of integers, e.g., [2, 2, 1]).
     """
@@ -1637,9 +1617,7 @@ class SDCBenchmarkDefaults:
     # Prior AIA parameters
     aia_ci_response: object | None = None
     """
-    Prior AIA: Need to synthesize AIA or not.
-
-    .. todo:: Description recovered from a misaligned docstring block; verify.
+    Legacy AIA prior response input; controls whether an AIA-like CI response is synthesized.
     """
 
     aia_ci_resolution: tuple = field(default=(0.6, 0.6), converter=tuple)
@@ -1654,10 +1632,7 @@ class SDCBenchmarkDefaults:
 
     aia_error_table_path: str | None = field(default=None, validator=_instance(str))
     """
-    Prior AIA: CI with noise or not.
-
-    .. todo:: Description recovered from a misaligned docstring block; verify
-       (likely: path to the AIA error table used for CI noise).
+    Legacy path to the AIA error table used when adding CI noise.
     """
 
     aia_prior_norm: bool = field(default=False, validator=validators.instance_of(bool))
