@@ -8,6 +8,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse import variables_schema as _schema
+from muse.utils.documentation import format_docstring
 
 __all__ = [
     "CENTROID_UNCERT_PROMISED",
@@ -122,7 +123,9 @@ def _conversion_ph2dn(wvl, gain):
     return 12398.0 / wvl / 3.65 / gain
 
 
-def centroid_uncert_promised(gain=None):
+@format_docstring("DEFAULTS_MUSE", default_gain="ccd_gain")
+@u.quantity_input
+def centroid_uncert_promised(gain: u.Quantity[u.electron / u.DN] | None = None):
     """
     Promised centroid (velocity and linewidth) uncertainty requirements for each
     emission line.
@@ -131,8 +134,8 @@ def centroid_uncert_promised(gain=None):
 
     Parameters
     ----------
-    gain : `float`, optional
-        e->DN gain, by default ``DEFAULTS_MUSE.ccd_gain`` in electron / DN.
+    gain : `astropy.units.Quantity`, optional
+        e->DN gain in electron / DN, by default {default_gain}.
 
     Returns
     -------
@@ -142,7 +145,8 @@ def centroid_uncert_promised(gain=None):
         levels 1-3.
     """
     if gain is None:
-        gain = DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)
+        gain = DEFAULTS_MUSE.ccd_gain
+    gain = gain.to_value(u.electron / u.DN)
     promised = xr.Dataset(
         {
             "net_flux": xr.DataArray(

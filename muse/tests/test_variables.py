@@ -7,7 +7,7 @@ from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
 
-from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
+from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT, centroid_uncert_promised
 from muse.variables_schema import InstrumentDefaults
 
 
@@ -119,6 +119,20 @@ def test_instrument_int_fields_reject_floats():
 
 def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
     assert DEFAULTS_MUSE.pixels_SG.dtype.kind == "i"
+
+
+def test_centroid_uncert_promised_requires_united_gain():
+    with pytest.raises(TypeError, match="gain"):
+        centroid_uncert_promised(gain=10.0)
+    with pytest.raises(u.UnitsError):
+        centroid_uncert_promised(gain=10.0 * u.s)
+
+
+def test_centroid_uncert_promised_gain_scales_ndn_threshold():
+    doubled = centroid_uncert_promised(gain=2 * DEFAULTS_MUSE.ccd_gain)
+    default = centroid_uncert_promised()
+
+    np.testing.assert_allclose(doubled["NDN_THRESHOLD"], default["NDN_THRESHOLD"] / 2)
 
 
 def test_instrument_quantity_converter_normalizes_units():

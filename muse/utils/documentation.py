@@ -37,7 +37,7 @@ def format_docstring(defaults_name, /, **param_to_field):
             if target not in fields:
                 msg = f"{target!r} is not a field of {defaults_name} ({type(defaults).__name__})"
                 raise AttributeError(msg)
-            substitutions[param] = f"``{defaults_name}.{target}`` (={getattr(defaults, target)})"
+            substitutions[param] = f"``{defaults_name}.{target}={getattr(defaults, target)}``"
         else:
             substitutions[param] = f"{target}"
 

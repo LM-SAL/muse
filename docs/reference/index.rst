@@ -8,3 +8,5 @@ API Reference
    :maxdepth: 2
 
    muse
+   instr
+   utils
