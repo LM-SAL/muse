@@ -12,15 +12,9 @@ from muse import variables_schema as _schema
 __all__ = [
     "CENTROID_UNCERT_PROMISED",
     "DEFAULTS_AIA",
-    "DEFAULTS_GFAT",
-    "DEFAULTS_INSTRUMENT",
-    "DEFAULTS_SDC",
-    "DEFAULTS_SDC_BENCHMARK",
-    "DEFAULTS_SVD",
-    "FWHM_TO_SIGMA",
+    "DEFAULTS_MUSE",
 ]
 
-FWHM_TO_SIGMA = _schema._FWHM_TO_SIGMA
 
 MUSE_DEFAULTS_DICT = {
     # CI
@@ -106,7 +100,7 @@ AIA_DEFAULTS_DICT = {
 }
 
 
-DEFAULTS_INSTRUMENT = _schema.InstrumentDefaults(**MUSE_DEFAULTS_DICT)
+DEFAULTS_MUSE = _schema.InstrumentDefaults(**MUSE_DEFAULTS_DICT)
 DEFAULTS_AIA = _schema.InstrumentDefaults(**AIA_DEFAULTS_DICT)
 
 
@@ -138,7 +132,7 @@ def centroid_uncert_promised(gain=None):
     Parameters
     ----------
     gain : `float`, optional
-        e->DN gain, by default ``DEFAULTS_INSTRUMENT.ccd_gain`` in electron / DN.
+        e->DN gain, by default ``DEFAULTS_MUSE.ccd_gain`` in electron / DN.
 
     Returns
     -------
@@ -148,7 +142,7 @@ def centroid_uncert_promised(gain=None):
         levels 1-3.
     """
     if gain is None:
-        gain = DEFAULTS_INSTRUMENT.ccd_gain.to_value(u.electron / u.DN)
+        gain = DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)
     promised = xr.Dataset(
         {
             "net_flux": xr.DataArray(
@@ -195,9 +189,3 @@ def centroid_uncert_promised(gain=None):
 
 
 CENTROID_UNCERT_PROMISED = centroid_uncert_promised()
-
-
-DEFAULTS_GFAT = _schema.GFATDefaults()
-DEFAULTS_SDC = _schema.SDCDefaults()
-DEFAULTS_SDC_BENCHMARK = _schema.SDCBenchmarkDefaults()
-DEFAULTS_SVD = _schema.SVDDefaults()

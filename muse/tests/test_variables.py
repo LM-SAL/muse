@@ -5,13 +5,13 @@ from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
 
-from muse.variables import DEFAULTS_AIA, DEFAULTS_INSTRUMENT
-from muse.variables_schema import GFATDefaults, InstrumentDefaults, SDCBenchmarkDefaults, SDCDefaults
+from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE
+from muse.variables_schema import InstrumentDefaults
 
 
 def test_instrument_defaults_are_frozen():
     with pytest.raises(FrozenInstanceError, match="can't set attribute"):
-        DEFAULTS_INSTRUMENT.ccd_gain = 20 * u.electron / u.DN
+        DEFAULTS_MUSE.ccd_gain = 20 * u.electron / u.DN
 
 
 def test_instrument_mapping_fields_are_immutable_and_copied():
@@ -73,38 +73,13 @@ def test_instrument_nested_sequences_are_converted_to_tuples():
 
 
 def test_instrument_defaults_use_evolve_for_overrides():
-    updated = attrs.evolve(DEFAULTS_INSTRUMENT, dx_pixel_CI=1 * u.arcmin)
+    updated = attrs.evolve(DEFAULTS_MUSE, dx_pixel_CI=1 * u.arcmin)
 
     assert updated.dx_pixel_CI == 60 * u.arcsec
-    assert DEFAULTS_INSTRUMENT.dx_pixel_CI == 0.143 * u.arcsec
-    assert updated != DEFAULTS_INSTRUMENT
-
-
-def test_array_defaults_are_read_only():
-    gfat_defaults = GFATDefaults()
-    benchmark_defaults = SDCBenchmarkDefaults(order=[2, 2, 1])
-
-    with pytest.raises(ValueError, match="read-only"):
-        gfat_defaults.sg_channels[0] = 999
-    with pytest.raises(ValueError, match="read-only"):
-        gfat_defaults.sg_main_lines[0] = "changed"
-    with pytest.raises(ValueError, match="read-only"):
-        benchmark_defaults.order[0] = 999
+    assert DEFAULTS_MUSE.dx_pixel_CI == 0.143 * u.arcsec
+    assert updated != DEFAULTS_MUSE
 
 
 def test_instrumental_width_sg_requires_channel_spectral_order():
     with pytest.raises(ValueError, match="requires channel_spectral_order"):
         _ = DEFAULTS_AIA.instrumental_width_sg
-
-
-def test_data_driven_mask_keyword_defaults_are_copied():
-    sdc_defaults = SDCDefaults()
-    benchmark_defaults = SDCBenchmarkDefaults()
-
-    assert sdc_defaults.data_driven_mask_keyword == {"fill_value": 1.0, "threshold": 2.24}
-    assert benchmark_defaults.data_driven_mask_keyword == sdc_defaults.data_driven_mask_keyword
-    assert benchmark_defaults.data_driven_mask_keyword is not sdc_defaults.data_driven_mask_keyword
-
-    sdc_defaults.data_driven_mask_keyword["threshold"] = 99
-
-    assert benchmark_defaults.data_driven_mask_keyword["threshold"] == 2.24

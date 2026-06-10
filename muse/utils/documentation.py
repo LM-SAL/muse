@@ -14,7 +14,7 @@ def format_docstring(defaults_name, /, **param_to_field):
     Parameters
     ----------
     defaults_name : `str`
-        Name of a defaults object in `muse.variables`, e.g. ``"DEFAULTS_INSTRUMENT"``.
+        Name of a defaults object in `muse.variables`, e.g. ``"DEFAULTS_MUSE"``.
     **param_to_field
         Maps each docstring placeholder to a field name (`str`) on the defaults
         object. Field names are validated against the attrs field definitions, so a
