@@ -42,6 +42,3 @@ def log_gpu_status() -> None:
     with contextlib.suppress(RuntimeError, AssertionError):
         logger.debug(f"GPU CUDA - pytorch: {torch.cuda.device(torch.cuda.current_device())}")
     logger.debug(f"GPU FOUND STATUS: {found_gpu}")
-
-
-change_logging_level("INFO")

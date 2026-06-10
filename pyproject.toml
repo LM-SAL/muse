@@ -35,6 +35,7 @@ dependencies = [
   "numpy>=2.4.0",
   "torch>=2.12.0",
   "xarray[io,parallel]>=2026.4.0",
+  "matplotlib>=3.10.0",
 ]
 optional-dependencies.all = [ "muse" ]
 optional-dependencies.dev = [ "muse[all,docs,tests]" ]

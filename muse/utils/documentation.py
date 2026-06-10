@@ -1,7 +1,5 @@
 import attrs
 
-from muse import variables
-
 __all__ = ["format_docstring"]
 
 
@@ -25,6 +23,8 @@ def format_docstring(defaults_name, /, **param_to_field):
     The rendered value is the one at import time; the attribute path is included so
     the live value can always be looked up.
     """
+    from muse import variables  # NOQA: PLC0415 - Circular import
+
     defaults = getattr(variables, defaults_name)
     try:
         fields = attrs.fields_dict(type(defaults))

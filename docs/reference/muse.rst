@@ -11,3 +11,4 @@ The ``muse`` library provides tools to read and work with MUSE data.
 .. automodapi:: muse.variables_schema
 
 .. automodapi:: muse.variables
+    :include-all-objects:
