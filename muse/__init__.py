@@ -12,8 +12,9 @@ NASA's Medium-Class Explorers (MIDEX) Multi-slit Solar Explorer (MUSE).
 
 import xarray as xr
 from .version import version as __version__
+from .log import logger
 
 # This should set all this library wide.
 xr.set_options(keep_attrs=True, use_new_combine_kwarg_defaults=True)
 
-__all__ = ["__version__", "xr"]
+__all__ = ["__version__", "logger", "xr"]
