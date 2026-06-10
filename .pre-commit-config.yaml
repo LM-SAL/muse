@@ -47,15 +47,6 @@ repos:
         types_or: [python, rst]
       - id: mixed-line-ending
         types_or: [python, rst]
-  - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.8
-    hooks:
-    -   id: docformatter
-        args:
-        - --in-place
-        - --pre-summary-newline
-        - --make-summary-multi
-        - --black
   # See https://github.com/python-trio/trio/pull/3255
   - repo: https://github.com/adhtruong/mirrors-typos
     rev: v1.47.2

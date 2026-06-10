@@ -29,6 +29,7 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
+  "attrs>=26.1.0",
   "numpy>=2.4.0",
   "torch>=2.12.0",
   "xarray[io,parallel]>=2026.4.0",
