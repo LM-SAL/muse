@@ -4,4 +4,4 @@
 
 .. automodapi:: muse.utils
 
-.. automodapi:: muse.documentation.utils
+.. automodapi:: muse.utils.documentation

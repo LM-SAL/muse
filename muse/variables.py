@@ -6,6 +6,7 @@ import numpy as np
 import xarray as xr
 
 import astropy.units as u
+from astropy.units import imperial
 
 from muse import variables_schema as _schema
 from muse.utils.documentation import format_docstring
@@ -37,10 +38,10 @@ MUSE_DEFAULTS_DICT = {
     "oversample_x_SG": 7,
     "oversample_y_SG": 3,
     "center_diffraction": False,
-    "lpi": {284: 70},
-    "psf_fwhm_x": 0.25,  # 0.25 in x and 0.5 in y.
-    "psf_fwhm_y": 0.5,
-    "psf_fwhm": 0.5,
+    "lpi": {284: 70 / imperial.inch},
+    "psf_fwhm_x": 0.25 * u.arcsec,  # 0.25 in x and 0.5 in y.
+    "psf_fwhm_y": 0.5 * u.arcsec,
+    "psf_fwhm": 0.5 * u.arcsec,
     # Other
     "data_compression": 1,
     "ccd_gain": 10 * u.electron / u.DN,
@@ -48,12 +49,12 @@ MUSE_DEFAULTS_DICT = {
     "sum_over_dims_synthesis": ("logT", "vdop", "slit"),
     "main_lines_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
     "main_lines_SG_wavelength": {
-        "Fe XIX 108.355": 108.355,
-        "Fe XXI 108.117": 108.117,
-        "Fe IX 171.073": 171.073,
-        "Fe XV 284.163": 284.163,
+        "Fe XIX 108.355": 108.355 * u.AA,
+        "Fe XXI 108.117": 108.117 * u.AA,
+        "Fe IX 171.073": 171.073 * u.AA,
+        "Fe XV 284.163": 284.163 * u.AA,
     },
-    "bands_SG": np.asanyarray([108, 108, 171, 284]),
+    "bands_SG": np.asanyarray([108, 108, 171, 284]) * u.AA,
     "fov_mode": "wrap",
     "fov_restype": "match_res_tile",
     "fov_sub_interpolation": 2,
@@ -63,16 +64,18 @@ MUSE_DEFAULTS_DICT = {
         "FL": np.arange(4.8, 7.6, 0.1),
     },
     "target_vdop": {
-        "QS": np.arange(-200, 210, 20),
-        "AR": np.arange(-300, 310, 20),
-        "FL": np.arange(-500, 510, 20),
+        "QS": np.arange(-200, 210, 20) * u.km / u.s,
+        "AR": np.arange(-300, 310, 20) * u.km / u.s,
+        "FL": np.arange(-500, 510, 20) * u.km / u.s,
     },
     # Response
     "minimum_abundance": 1e-21,
     "num_lines_keep": 2,  # nervous about this since there are 3 mainlines in 108 due to repeat wavelength.  Not used in pipeline
     "sum_lines": False,
     "initial_wavelength_SG": xr.DataArray(
-        np.array([107.68034, 170.62314, 283.01608]), coords={"channel": [108, 171, 284]}, dims="channel"
+        np.array([107.68034, 170.62314, 283.01608]) * u.AA,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
     ),
     "channel_spectral_order": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
     # Exposures

@@ -3,9 +3,11 @@ import pickle
 import attrs
 import numpy as np
 import pytest
+import xarray as xr
 from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
+from astropy.units import imperial
 
 from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT, centroid_uncert_promised
 from muse.variables_schema import InstrumentDefaults
@@ -28,14 +30,14 @@ def test_instrument_mapping_fields_are_immutable_and_copied():
 
 
 def test_instrument_array_fields_are_read_only_and_copied():
-    bands = np.array([108, 171, 284])
+    bands = np.array([108, 171, 284]) * u.AA
     defaults = InstrumentDefaults(bands_SG=bands)
 
-    bands[0] = 999
+    bands[0] = 999 * u.AA
 
-    np.testing.assert_array_equal(defaults.bands_SG, [108, 171, 284])
+    np.testing.assert_array_equal(defaults.bands_SG.value, [108, 171, 284])
     with pytest.raises(ValueError, match="read-only"):
-        defaults.bands_SG[0] = 999
+        defaults.bands_SG[0] = 999 * u.AA
 
 
 def test_instrument_nested_array_mappings_are_read_only_and_copied():
@@ -62,14 +64,14 @@ def test_instrument_quantity_mappings_are_read_only_and_copied():
 
 def test_instrument_nested_sequences_are_converted_to_tuples():
     main_lines = [["Fe XIX 108.355", "Fe XXI 108.117"]]
-    target_vdop = [1, 2, 3]
-    defaults = InstrumentDefaults(main_lines_SG=main_lines, target_vdop={"QS": target_vdop})
+    target_logt = [1, 2, 3]
+    defaults = InstrumentDefaults(main_lines_SG=main_lines, target_logT={"QS": target_logt})
 
     main_lines[0][0] = "changed"
-    target_vdop[0] = 99
+    target_logt[0] = 99
 
     assert defaults.main_lines_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
-    assert defaults.target_vdop["QS"] == (1, 2, 3)
+    assert defaults.target_logT["QS"] == (1, 2, 3)
     with pytest.raises(TypeError, match=r"tuple.*does not support item assignment"):
         defaults.main_lines_SG[0][0] = "changed"
 
@@ -90,8 +92,8 @@ def test_instrumental_width_sg_requires_channel_spectral_order():
 def test_instrumental_width_sg():
     width = DEFAULTS_MUSE.instrumental_width_sg
 
-    np.testing.assert_allclose(width.sel(channel=284), 0.0815 / 2.355)
-    np.testing.assert_allclose(width.sel(channel=108), 0.0815 / 2.355 / 2)
+    np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), 0.0815 / 2.355)
+    np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), 0.0815 / 2.355 / 2)
 
 
 def test_instrument_defaults_pickle_round_trip():
@@ -136,7 +138,61 @@ def test_centroid_uncert_promised_gain_scales_ndn_threshold():
 
 
 def test_instrument_quantity_converter_normalizes_units():
-    defaults = InstrumentDefaults(spectral_slit_separation_SG=390.0 * u.mAA)
+    defaults = InstrumentDefaults(
+        spectral_slit_separation_SG=390.0 * u.mAA,
+        main_lines_SG_wavelength={"Fe IX 171.073": 171073 * u.mAA},
+        target_vdop={"QS": np.array([1000, 2000]) * u.m / u.s},
+        initial_wavelength_SG=xr.DataArray(
+            [107680.34, 170623.14, 283016.08] * u.mAA,
+            coords={"channel": [108, 171, 284]},
+            dims="channel",
+        ),
+        lpi={284: 70 / imperial.inch},
+    )
 
     assert defaults.spectral_slit_separation_SG.unit == u.AA
     np.testing.assert_allclose(defaults.spectral_slit_separation_SG.value, 0.39)
+    assert defaults.main_lines_SG_wavelength["Fe IX 171.073"].unit == u.AA
+    assert defaults.target_vdop["QS"].unit == u.km / u.s
+    assert defaults.initial_wavelength_SG.data.unit == u.AA
+    assert defaults.lpi[284].unit == 1 / imperial.inch
+
+
+def test_instrument_quantity_fields_reject_unitless_physical_values():
+    with pytest.raises(u.UnitsError, match="arcsec"):
+        InstrumentDefaults(psf_fwhm=0.5)
+
+    unitless_wavelength = xr.DataArray([107.68034, 170.62314], coords={"channel": [108, 171]}, dims="channel")
+    with pytest.raises(u.UnitsError, match="DataArray values must have units convertible to Angstrom"):
+        InstrumentDefaults(initial_wavelength_SG=unitless_wavelength)
+
+
+def test_instrument_defaults_validate_spectral_channels():
+    initial = xr.DataArray([107.68034, 170.62314] * u.AA, coords={"channel": [108, 171]}, dims="channel")
+    mismatched_order = xr.DataArray([2, 1], coords={"channel": [108, 284]}, dims="channel")
+
+    with pytest.raises(ValueError, match="matching channel coordinates"):
+        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order=mismatched_order)
+
+    order = xr.DataArray([2, 1], coords={"channel": [108, 171]}, dims="channel")
+    with pytest.raises(ValueError, match="bands_SG unique channels"):
+        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order=order, bands_SG=[108, 284] * u.AA)
+
+
+def test_instrument_defaults_validate_spectral_lines():
+    with pytest.raises(ValueError, match="one entry for each line"):
+        InstrumentDefaults(main_lines_SG=[["Fe IX 171.073"], ["Fe XV 284.163"]], bands_SG=[171] * u.AA)
+
+    with pytest.raises(ValueError, match="main_lines_SG_wavelength is missing entries"):
+        InstrumentDefaults(
+            main_lines_SG=[["Fe IX 171.073"]],
+            main_lines_SG_wavelength={"Fe XV 284.163": 284.163 * u.AA},
+        )
+
+
+def test_instrument_defaults_validate_related_mapping_keys():
+    with pytest.raises(ValueError, match="target_logT and target_vdop must use matching keys"):
+        InstrumentDefaults(target_logT={"QS": [4.8, 4.9]}, target_vdop={"AR": [-200, -100] * u.km / u.s})
+
+    with pytest.raises(ValueError, match="lpi and mesh_transmission must use matching keys"):
+        InstrumentDefaults(lpi={171: 70 / imperial.inch}, mesh_transmission={284: 0.81})
