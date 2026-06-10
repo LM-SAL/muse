@@ -1,3 +1,5 @@
+import pickle
+
 import attrs
 import numpy as np
 import pytest
@@ -5,7 +7,7 @@ from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
 
-from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE
+from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
 from muse.variables_schema import InstrumentDefaults
 
 
@@ -21,7 +23,7 @@ def test_instrument_mapping_fields_are_immutable_and_copied():
     mesh_transmission[284] = 0.5
 
     assert defaults.mesh_transmission[284] == 0.81
-    with pytest.raises(TypeError, match=r"mappingproxy.*does not support item assignment"):
+    with pytest.raises(TypeError, match="FrozenDict is read-only"):
         defaults.mesh_transmission[284] = 0.5
 
 
@@ -83,3 +85,44 @@ def test_instrument_defaults_use_evolve_for_overrides():
 def test_instrumental_width_sg_requires_channel_spectral_order():
     with pytest.raises(ValueError, match="requires channel_spectral_order"):
         _ = DEFAULTS_AIA.instrumental_width_sg
+
+
+def test_instrumental_width_sg():
+    width = DEFAULTS_MUSE.instrumental_width_sg
+
+    np.testing.assert_allclose(width.sel(channel=284), 0.0815 / 2.355)
+    np.testing.assert_allclose(width.sel(channel=108), 0.0815 / 2.355 / 2)
+
+
+def test_instrument_defaults_pickle_round_trip():
+    loaded = pickle.loads(pickle.dumps(DEFAULTS_MUSE))  # noqa: S301
+
+    assert loaded == DEFAULTS_MUSE
+
+
+def test_instrument_defaults_compare_by_value():
+    assert InstrumentDefaults(**MUSE_DEFAULTS_DICT) == DEFAULTS_MUSE
+    assert DEFAULTS_MUSE != DEFAULTS_AIA
+
+
+def test_instrument_int_and_bool_fields_accept_numpy_scalars():
+    defaults = InstrumentDefaults(number_of_slits_SG=np.int64(35), sum_lines=np.True_)
+
+    assert defaults.number_of_slits_SG == 35
+    assert defaults.sum_lines
+
+
+def test_instrument_int_fields_reject_floats():
+    with pytest.raises(TypeError, match="number_of_slits_SG"):
+        InstrumentDefaults(number_of_slits_SG=35.0)
+
+
+def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
+    assert DEFAULTS_MUSE.pixels_SG.dtype.kind == "i"
+
+
+def test_instrument_quantity_converter_normalizes_units():
+    defaults = InstrumentDefaults(spectral_slit_separation_SG=390.0 * u.mAA)
+
+    assert defaults.spectral_slit_separation_SG.unit == u.AA
+    np.testing.assert_allclose(defaults.spectral_slit_separation_SG.value, 0.39)
