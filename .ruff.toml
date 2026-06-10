@@ -11,7 +11,6 @@ lint.extend-select = [
     "ALL",
 ]
 lint.extend-ignore = [
-    "I", # Ignore isort
     "ANN001", # Missing type annotation for function argument
     "ANN002", # Missing type annotation for variable
     "ANN003", # Missing type annotation for keyword
@@ -37,6 +36,7 @@ lint.extend-ignore = [
     "F403", # unable to detect undefined names,
     "FIX001", # Line contains FIXME, consider resolving the issue
     "FIX002", # Line contains TODO, consider resolving the issue
+    "I", # Ignore isort
     "ISC001", # May cause conflicts when used with the formatter
     "PLR0912", # Too many branches (31 > 12)
     "PLR0913", # Too many arguments in function definition
