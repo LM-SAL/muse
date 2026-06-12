@@ -55,6 +55,7 @@ optional-dependencies.docs = [
 ]
 optional-dependencies.tests = [
   "pytest",
+  "pytest-doctestplus",
   "pytest-loguru",
   "pytest-mpl",
 ]

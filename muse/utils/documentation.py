@@ -1,5 +1,3 @@
-import attrs
-
 __all__ = ["format_docstring"]
 
 
@@ -15,8 +13,7 @@ def format_docstring(defaults_name, /, **param_to_field):
         Name of a defaults object in `muse.variables`, e.g. ``"DEFAULTS_MUSE"``.
     **param_to_field
         Maps each docstring placeholder to a field name (`str`) on the defaults
-        object. Field names are validated against the attrs field definitions, so a
-        typo raises at import time. Non-string values are rendered literally.
+        object. A typo in either name raises `AttributeError` at import time.
 
     Notes
     -----
@@ -26,20 +23,10 @@ def format_docstring(defaults_name, /, **param_to_field):
     from muse import variables  # NOQA: PLC0415 - Circular import
 
     defaults = getattr(variables, defaults_name)
-    try:
-        fields = attrs.fields_dict(type(defaults))
-    except attrs.exceptions.NotAnAttrsClassError as exc:
-        msg = f"{defaults_name} is not an attrs-based defaults object: {type(defaults)!r}"
-        raise TypeError(msg) from exc
-    substitutions = {}
-    for param, target in param_to_field.items():
-        if isinstance(target, str):
-            if target not in fields:
-                msg = f"{target!r} is not a field of {defaults_name} ({type(defaults).__name__})"
-                raise AttributeError(msg)
-            substitutions[param] = f"``{defaults_name}.{target}={getattr(defaults, target)}``"
-        else:
-            substitutions[param] = f"{target}"
+    substitutions = {
+        param: f"``{defaults_name}.{field}={getattr(defaults, field)}``"
+        for param, field in param_to_field.items()
+    }
 
     def format_doc(f):
         if f.__doc__:

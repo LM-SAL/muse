@@ -44,20 +44,6 @@ class FrozenDict(dict):
         return (type(self), (dict(self),))
 
 
-def _quantity(unit):
-    """
-    Converter factory: coerce the value to `astropy.units.Quantity` and normalize it to
-    ``unit``.
-
-    `None` passes through.
-    """
-
-    def to_unit(value):
-        return _readonly_quantity(value, unit)
-
-    return converters.optional(to_unit)
-
-
 def _required_quantity(unit):
     """
     Converter factory: coerce the value to `astropy.units.Quantity` and normalize it to
@@ -68,6 +54,13 @@ def _required_quantity(unit):
         return _readonly_quantity(value, unit)
 
     return to_unit
+
+
+def _quantity(unit):
+    """
+    Like `_required_quantity`, but `None` passes through.
+    """
+    return converters.optional(_required_quantity(unit))
 
 
 def _data_array(unit=None):
@@ -98,8 +91,6 @@ def _nested_tuple(value):
 def _set_readonly(value):
     with suppress(AttributeError, ValueError):
         value.setflags(write=False)
-    with suppress(AttributeError, ValueError):
-        np.asarray(value).setflags(write=False)
 
 
 def _readonly_quantity(value, unit):

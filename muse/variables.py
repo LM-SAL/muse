@@ -150,36 +150,31 @@ def centroid_uncert_promised(gain: u.Quantity[u.electron / u.DN] | None = None):
     if gain is None:
         gain = DEFAULTS_MUSE.ccd_gain
     gain = gain.to_value(u.electron / u.DN)
+    line_bound_coords = {
+        "line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"],
+        "bound": ["min", "max"],
+    }
     promised = xr.Dataset(
         {
             "net_flux": xr.DataArray(
                 [[1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0]],
                 dims=["line", "bound"],
-                coords={
-                    "line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"],
-                    "bound": ["min", "max"],
-                },
+                coords=line_bound_coords,
             ),
             "velocity": xr.DataArray(
                 [[-5.0, 5.0], [-5.0, 5.0], [-30.0, 30.0], [-30.0, 30.0]],
                 dims=["line", "bound"],
-                coords={
-                    "line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"],
-                    "bound": ["min", "max"],
-                },
+                coords=line_bound_coords,
             ),
             "linewidth": xr.DataArray(
                 [[-10.0, 10.0], [-10.0, 10.0], [-30.0, 30.0], [-30.0, 30.0]],
                 dims=["line", "bound"],
-                coords={
-                    "line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"],
-                    "bound": ["min", "max"],
-                },
+                coords=line_bound_coords,
             ),
             "NPHOT_THRESHOLD": xr.DataArray(  # Minimum photon count threshold for each spectral channel/line to identify
                 [100.0, 150.0, 20.0, 20.0],  # new possible values [100, 160, 20, 20]
                 dims=["line"],
-                coords={"line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"]},
+                coords={"line": line_bound_coords["line"]},
             ),
         }
     )
@@ -187,12 +182,8 @@ def centroid_uncert_promised(gain: u.Quantity[u.electron / u.DN] | None = None):
     # Minimum data number (DN) thresholds converted from NPHOT_THRESHOLD using
     # photon-to-DN conversion.
     promised["NDN_THRESHOLD"] = promised["NPHOT_THRESHOLD"] * _conversion_ph2dn(promised["channel"], gain=gain)
-    promised = promised.expand_dims({"sigma": 3})
-    promised.update({"sigma": ("sigma", [1, 2, 3])})
-    result = promised.copy(deep=True)
-    for isigma in range(2, 4):
-        result.loc[{"sigma": isigma}] = promised.sel(sigma=isigma) * isigma
-    return result
+    # Broadcasting scales every variable by its sigma level.
+    return promised * xr.DataArray([1, 2, 3], coords={"sigma": [1, 2, 3]}, dims="sigma")
 
 
 CENTROID_UNCERT_PROMISED = centroid_uncert_promised()
