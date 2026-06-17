@@ -41,7 +41,6 @@ The principles in the SunPy guides for contributing code and utilizing GitHub an
 If you are a more seasoned developer and would like to get further information, you can check out the `sunpy Developers Guide`_.
 
 Before you can contribute code to muse, you first need to install the development version of ``muse``.
-To find out how, see :ref:`dev_install`.
 
 .. _issue tracker: https://github.com/LM-SAL/muse/issues
 .. _SunPy Newcomers Guide: http://docs.sunpy.org/en/latest/dev_guide/newcomers.html

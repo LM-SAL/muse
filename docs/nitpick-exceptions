@@ -120,3 +120,14 @@ py:class NDDataRef
 py:class NDDataArray
 py:obj NDDataRef
 py:obj NDDataArray
+
+# Xarray
+py:obj open_dataset
+py:obj data_vars
+py:obj variables
+py:obj 'manufac1'
+py:obj 'manufac2'
+py:obj 'manufac3'
+py:obj "loc"
+py:obj "instrument"
+py:obj "time"

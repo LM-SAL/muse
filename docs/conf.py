@@ -70,22 +70,9 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinxext.opengraph",
-    "sunpy.util.sphinx.doctest",
-    "sunpy.util.sphinx.generate",
     # Has to be after any doc style extensions
     "sphinxcontrib.default_values",
     "sphinx_autodoc_typehints",
-]
-
-# Add any paths that contain templates here, relative to this directory.
-# templates_path = ["_templates"]
-
-# Add any paths that contain static files for the docs, relative to this directory.
-html_static_path = ["_static"]
-
-# These paths are either relative to html_static_path or fully qualified paths
-html_css_files = [
-    "css/style.css",
 ]
 
 # Register the template for the robots.txt
@@ -150,6 +137,8 @@ intersphinx_mapping = {
     "zeep": ("https://docs.python-zeep.org/en/stable/", None),
     "asdf": ("https://asdf.readthedocs.io/en/stable/", None),
     "sunpy": ("https://docs.sunpy.org/en/stable/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None),
+    "attrs": ("https://www.attrs.org/en/stable/", None),
 }
 
 # -- Options for sphinxext-opengraph ------------------------------------------
@@ -209,7 +198,7 @@ sphinx_gallery_conf = {
     "abort_on_example_error": False,
     "plot_gallery": "True",
     "remove_config_comments": True,
-    "doc_module": ("sunpy"),
+    "doc_module": ("muse"),
     "only_warn_on_example_error": True,
     "matplotlib_animations": True,
 }
