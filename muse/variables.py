@@ -11,7 +11,6 @@ from astropy.units import imperial
 from muse import variables_schema as _schema
 
 __all__ = [
-    "DEFAULTS_AIA",
     "DEFAULTS_MUSE",
 ]
 
@@ -93,32 +92,4 @@ MUSE_DEFAULTS_DICT = {
     },
 }
 
-AIA_DEFAULTS_DICT = {
-    "dx_pixel_CI": 0.6 * u.arcsec,
-    "dy_pixel_CI": 0.6 * u.arcsec,
-    "full_well_depth_CI": 290000 * u.DN,
-    "ccd_gain": 18 * u.electron / u.DN,
-    "sum_over_dims_synthesis": ("logT", "vdop"),
-}
-
-
 DEFAULTS_MUSE = _schema.InstrumentDefaults(**MUSE_DEFAULTS_DICT)
-DEFAULTS_AIA = _schema.InstrumentDefaults(**AIA_DEFAULTS_DICT)
-
-
-def _conversion_ph2dn(wvl, gain):
-    """
-    Convert photons to DN or electrons.
-
-    Parameters
-    ----------
-    wvl : `float` or array-like
-        Wavelength in Angstroms.
-    gain : `float`
-        e->DN gain.
-
-    Returns
-    -------
-    conversion factor : `float`
-    """
-    return 12398.0 / wvl / 3.65 / gain

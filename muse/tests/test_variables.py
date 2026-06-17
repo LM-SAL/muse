@@ -9,7 +9,7 @@ from attrs.exceptions import FrozenInstanceError
 import astropy.units as u
 from astropy.units import imperial
 
-from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
+from muse.variables import DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
 from muse.variables_schema import InstrumentDefaults
 
 
@@ -84,11 +84,6 @@ def test_instrument_defaults_use_evolve_for_overrides():
     assert updated != DEFAULTS_MUSE
 
 
-def test_instrumental_width_sg_requires_channel_spectral_order():
-    with pytest.raises(ValueError, match="requires channel_spectral_order"):
-        _ = DEFAULTS_AIA.instrumental_width_sg
-
-
 def test_instrumental_width_sg():
     width = DEFAULTS_MUSE.instrumental_width_sg
 
@@ -104,7 +99,6 @@ def test_instrument_defaults_pickle_round_trip():
 
 def test_instrument_defaults_compare_by_value():
     assert InstrumentDefaults(**MUSE_DEFAULTS_DICT) == DEFAULTS_MUSE
-    assert DEFAULTS_MUSE != DEFAULTS_AIA
 
 
 def test_instrument_int_and_bool_fields_accept_numpy_scalars():
