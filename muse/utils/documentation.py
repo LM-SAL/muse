@@ -24,8 +24,7 @@ def format_docstring(defaults_name, /, **param_to_field):
 
     defaults = getattr(variables, defaults_name)
     substitutions = {
-        param: f"``{defaults_name}.{field}={getattr(defaults, field)}``"
-        for param, field in param_to_field.items()
+        param: f"``{defaults_name}.{field}={getattr(defaults, field)}``" for param, field in param_to_field.items()
     }
 
     def format_doc(f):

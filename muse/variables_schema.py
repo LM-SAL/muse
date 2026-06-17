@@ -8,7 +8,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
-from attrs import cmp_using, converters, define, field, validators
+from attrs import Converter, cmp_using, converters, define, field, validators
 
 import astropy.units as u
 from astropy.units import imperial
@@ -24,7 +24,9 @@ class FrozenDict(dict):
     A read-only `dict` subclass.
 
     Unlike `types.MappingProxyType`, instances are picklable, which keeps frozen
-    defaults usable with multiprocessing.
+    defaults usable with multiprocessing. The mapping itself stays read-only across a
+    pickle round-trip, but numpy/`Quantity` values it holds regain their writable flag
+    on unpickle; this is harmless because each process operates on its own copy.
     """
 
     def _readonly(self, *_args, **_kwargs):
@@ -33,6 +35,8 @@ class FrozenDict(dict):
 
     __setitem__ = _readonly
     __delitem__ = _readonly
+    __or__ = _readonly
+    __ror__ = _readonly
     __ior__ = _readonly
     clear = _readonly
     pop = _readonly
@@ -82,6 +86,21 @@ def _instance(type_):
     Validator: value is `None` or an instance of ``type_``.
     """
     return validators.optional(validators.instance_of(type_))
+
+
+def _optional_int(value, attribute):
+    """
+    Converter: accept integer values, including numpy integer scalars, but reject bools.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Integral):
+        msg = f"{attribute.name} must be an integer, not {type(value).__name__}"
+        raise TypeError(msg)
+    return int(value)
+
+
+_int_converter = Converter(_optional_int, takes_field=True)
 
 
 def _nested_tuple(value):
@@ -218,17 +237,30 @@ _data_array_eq = cmp_using(eq=_eq_optional(lambda a, b: a.equals(b)), class_name
 _mapping_eq = cmp_using(eq=_eq_optional(_mapping_values_equal), class_name="_MappingEq")
 
 
-@define(frozen=True, kw_only=True)
+@define(frozen=True, kw_only=True, hash=False)
 class InstrumentDefaults:
     """
-    Base class which lists the required parameters and documentation for each parameter.
-    These parameters should be set in subclasses.
+    Container of instrument properties used by functions and methods within the muse
+    library; not a general-purpose instrument defaults class.
 
-    Furthermore, these parameters are used for functions and methods within the muse
-    library, this is not a general instrument defaults class.
+    Every parameter is optional and defaults to `None`; populate the ones a given
+    instrument needs (see `muse.variables` for the MUSE and AIA instances). Each field
+    documents its meaning and the unit it is normalized to.
 
-    All fields are validated and normalized on construction. Instances are immutable;
-    create modified copies with `attrs.evolve`.
+    Fields are validated and normalized on construction. Instances prevent top-level
+    attribute reassignment; create modified copies with `attrs.evolve`.
+
+    This is not a deeply immutable container. The converters copy input values and make
+    common array buffers read-only, but some nested objects still expose mutable APIs:
+
+    * `xarray.DataArray` fields can still have `.data`, coordinates, `.attrs`, and
+      `.encoding` reassigned or mutated through xarray APIs.
+    * Object-dtype arrays or custom objects stored inside mappings can still mutate their
+      contained Python objects even when the outer array or mapping is read-only.
+    * `FrozenDict` prevents normal mapping mutation, but it is still a `dict` subclass
+      for pickle compatibility.
+
+    Because nested state can change, instances are intentionally unhashable.
     """
 
     FWHM_TO_SIGMA = 2.355  # This was 2.35482 in guasslobes.py
@@ -286,7 +318,7 @@ class InstrumentDefaults:
     Number of pixels along the spectral dimension for the SG.
     """
 
-    number_of_slits_SG: int | None = field(default=None, validator=_instance(numbers.Integral))
+    number_of_slits_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of slits in the SG.
     """
@@ -303,7 +335,7 @@ class InstrumentDefaults:
     Normalized to Angstroms.
     """
 
-    steps_per_raster_SG: int | None = field(default=None, validator=_instance(numbers.Integral))
+    steps_per_raster_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of steps per raster for the SG.
     """
@@ -314,12 +346,12 @@ class InstrumentDefaults:
     Mesh transmission coefficient, keyed by diffraction channel.
     """
 
-    oversample_x_SG: int | None = field(default=None, validator=_instance(numbers.Integral))
+    oversample_x_SG: int | None = field(default=None, converter=_int_converter)
     """
     Oversampling factor along x-axis for the SG.
     """
 
-    oversample_y_SG: int | None = field(default=None, validator=_instance(numbers.Integral))
+    oversample_y_SG: int | None = field(default=None, converter=_int_converter)
     """
     Oversampling factor along y-axis for the SG.
     """
@@ -358,7 +390,7 @@ class InstrumentDefaults:
     """
 
     # Other Properties
-    data_compression: int | None = field(default=None, validator=_instance(numbers.Integral))
+    data_compression: int | None = field(default=None, converter=_int_converter)
     """
     Data compression level.
     """
@@ -403,7 +435,7 @@ class InstrumentDefaults:
     Type of tiling and resolution matching.
     """
 
-    fov_sub_interpolation: int | None = field(default=None, validator=_instance(numbers.Integral))
+    fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
     """
     Does a subgrid interpolation.
     """
@@ -469,7 +501,7 @@ class InstrumentDefaults:
     Normalization in the response function.
     """
 
-    num_lines_keep: int | None = field(default=None, validator=_instance(numbers.Integral))
+    num_lines_keep: int | None = field(default=None, converter=_int_converter)
     """
     Number of lines conserved independently for the response creation.
     """

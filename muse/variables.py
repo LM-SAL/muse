@@ -9,10 +9,8 @@ import astropy.units as u
 from astropy.units import imperial
 
 from muse import variables_schema as _schema
-from muse.utils.documentation import format_docstring
 
 __all__ = [
-    "CENTROID_UNCERT_PROMISED",
     "DEFAULTS_AIA",
     "DEFAULTS_MUSE",
 ]
@@ -124,66 +122,3 @@ def _conversion_ph2dn(wvl, gain):
     conversion factor : `float`
     """
     return 12398.0 / wvl / 3.65 / gain
-
-
-@format_docstring("DEFAULTS_MUSE", default_gain="ccd_gain")
-@u.quantity_input
-def centroid_uncert_promised(gain: u.Quantity[u.electron / u.DN] | None = None):
-    """
-    Promised centroid (velocity and linewidth) uncertainty requirements for each
-    emission line.
-
-    Defines acceptable measurement accuracy bounds drawn on comparison plots.
-
-    Parameters
-    ----------
-    gain : `astropy.units.Quantity`, optional
-        e->DN gain in electron / DN, by default {default_gain}.
-
-    Returns
-    -------
-    `xarray.Dataset`
-        Requirements per emission line, with ``NDN_THRESHOLD`` derived from
-        ``NPHOT_THRESHOLD`` using the photon-to-DN conversion and expanded over sigma
-        levels 1-3.
-    """
-    if gain is None:
-        gain = DEFAULTS_MUSE.ccd_gain
-    gain = gain.to_value(u.electron / u.DN)
-    line_bound_coords = {
-        "line": ["Fe IX 171.073", "Fe XV 284.163", "Fe XIX 108.355", "Fe XXI 108.117"],
-        "bound": ["min", "max"],
-    }
-    promised = xr.Dataset(
-        {
-            "net_flux": xr.DataArray(
-                [[1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0], [1.0 / 4.0, 4.0]],
-                dims=["line", "bound"],
-                coords=line_bound_coords,
-            ),
-            "velocity": xr.DataArray(
-                [[-5.0, 5.0], [-5.0, 5.0], [-30.0, 30.0], [-30.0, 30.0]],
-                dims=["line", "bound"],
-                coords=line_bound_coords,
-            ),
-            "linewidth": xr.DataArray(
-                [[-10.0, 10.0], [-10.0, 10.0], [-30.0, 30.0], [-30.0, 30.0]],
-                dims=["line", "bound"],
-                coords=line_bound_coords,
-            ),
-            "NPHOT_THRESHOLD": xr.DataArray(  # Minimum photon count threshold for each spectral channel/line to identify
-                [100.0, 150.0, 20.0, 20.0],  # new possible values [100, 160, 20, 20]
-                dims=["line"],
-                coords={"line": line_bound_coords["line"]},
-            ),
-        }
-    )
-    promised = promised.assign_coords(channel=("line", [171, 284, 108, 108]))
-    # Minimum data number (DN) thresholds converted from NPHOT_THRESHOLD using
-    # photon-to-DN conversion.
-    promised["NDN_THRESHOLD"] = promised["NPHOT_THRESHOLD"] * _conversion_ph2dn(promised["channel"], gain=gain)
-    # Broadcasting scales every variable by its sigma level.
-    return promised * xr.DataArray([1, 2, 3], coords={"sigma": [1, 2, 3]}, dims="sigma")
-
-
-CENTROID_UNCERT_PROMISED = centroid_uncert_promised()

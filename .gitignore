@@ -282,3 +282,4 @@ benchmark/test*py
 
 # TODO: remove in the future
 muse/_compiler.c
+uv.lock

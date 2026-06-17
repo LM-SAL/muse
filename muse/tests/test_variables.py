@@ -9,16 +9,16 @@ from attrs.exceptions import FrozenInstanceError
 import astropy.units as u
 from astropy.units import imperial
 
-from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT, centroid_uncert_promised
+from muse.variables import DEFAULTS_AIA, DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
 from muse.variables_schema import InstrumentDefaults
 
 
-def test_instrument_defaults_are_frozen():
+def test_instrument_defaults_reject_top_level_reassignment():
     with pytest.raises(FrozenInstanceError, match="can't set attribute"):
         DEFAULTS_MUSE.ccd_gain = 20 * u.electron / u.DN
 
 
-def test_instrument_mapping_fields_are_immutable_and_copied():
+def test_instrument_mapping_fields_are_read_only_and_copied():
     mesh_transmission = {284: 0.81}
     defaults = InstrumentDefaults(mesh_transmission=mesh_transmission)
 
@@ -111,6 +111,7 @@ def test_instrument_int_and_bool_fields_accept_numpy_scalars():
     defaults = InstrumentDefaults(number_of_slits_SG=np.int64(35), sum_lines=np.True_)
 
     assert defaults.number_of_slits_SG == 35
+    assert isinstance(defaults.number_of_slits_SG, int)
     assert defaults.sum_lines
 
 
@@ -119,22 +120,20 @@ def test_instrument_int_fields_reject_floats():
         InstrumentDefaults(number_of_slits_SG=35.0)
 
 
+def test_instrument_int_fields_reject_bools():
+    with pytest.raises(TypeError, match="integer"):
+        InstrumentDefaults(number_of_slits_SG=True)
+    with pytest.raises(TypeError, match="integer"):
+        InstrumentDefaults(oversample_x_SG=np.False_)
+
+
+def test_instrument_defaults_are_unhashable():
+    with pytest.raises(TypeError, match="unhashable"):
+        hash(DEFAULTS_MUSE)
+
+
 def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
     assert DEFAULTS_MUSE.pixels_SG.dtype.kind == "i"
-
-
-def test_centroid_uncert_promised_requires_united_gain():
-    with pytest.raises(TypeError, match="gain"):
-        centroid_uncert_promised(gain=10.0)
-    with pytest.raises(u.UnitsError):
-        centroid_uncert_promised(gain=10.0 * u.s)
-
-
-def test_centroid_uncert_promised_gain_scales_ndn_threshold():
-    doubled = centroid_uncert_promised(gain=2 * DEFAULTS_MUSE.ccd_gain)
-    default = centroid_uncert_promised()
-
-    np.testing.assert_allclose(doubled["NDN_THRESHOLD"], default["NDN_THRESHOLD"] / 2)
 
 
 def test_instrument_quantity_converter_normalizes_units():
