@@ -32,7 +32,7 @@ def _lines_per_inch(value):
 
 
 @format_docstring("DEFAULTS_MUSE", transmission="mesh_transmission")
-def gausslobes_peak(*, nspike=100, transmission=None):
+def gausslobes_peak(*, nspike=100, transmission=DEFAULTS_MUSE.mesh_transmission):
     """
     Generate the relative peak values of the side lobes to the core.
 
@@ -50,8 +50,6 @@ def gausslobes_peak(*, nspike=100, transmission=None):
     spike_value : numpy.array
         Relative peak values of the side lobes to the core.
     """
-    if transmission is None:
-        transmission = DEFAULTS_MUSE.mesh_transmission
     transmission = _first_value(transmission)
     with np.errstate(divide="ignore", invalid="ignore"):
         sin_arg = np.arange(nspike) * np.pi * np.sqrt(transmission)
@@ -62,7 +60,7 @@ def gausslobes_peak(*, nspike=100, transmission=None):
 
 @format_docstring("DEFAULTS_MUSE", lpi="lpi")
 @u.quantity_input(wave0=u.AA)
-def gausslobes_distance(wave0, *, lpi=None, arcsec=False):
+def gausslobes_distance(wave0, *, lpi=DEFAULTS_MUSE.lpi, arcsec=False):
     """
     Generate the distance between core and 1st side lobes in both x and y directions in
     pixel unit.
@@ -87,8 +85,6 @@ def gausslobes_distance(wave0, *, lpi=None, arcsec=False):
         Distance between core and 1st side lobes in x and y direction in pixel
         units. Returned when ``arcsec`` is False.
     """
-    if lpi is None:
-        lpi = DEFAULTS_MUSE.lpi
     lpi = _lines_per_inch(lpi)
     asec = np.pi / 180 / 3600
     wave0 = wave0.to_value(u.AA)
@@ -120,22 +116,22 @@ def gausslobes_distance(wave0, *, lpi=None, arcsec=False):
 @u.quantity_input(wavelength=u.AA, fwhm_x=u.arcsec, fwhm_y=u.arcsec, xpix_scale=u.arcsec, ypix_scale=u.arcsec)
 def gausslobes_single_wavelength(
     *,
-    wavelength=None,
+    wavelength=DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"],
     center=True,
     no_core=False,
     only_core=False,
-    fwhm_x=None,
-    fwhm_y=None,
-    lpi=None,
-    nslits=None,
-    nsteps=None,
-    oversample_x=None,
-    oversample_y=None,
-    slit_dim=None,
+    fwhm_x=DEFAULTS_MUSE.psf_fwhm_x,
+    fwhm_y=DEFAULTS_MUSE.psf_fwhm_y,
+    lpi=DEFAULTS_MUSE.lpi,
+    nslits=DEFAULTS_MUSE.number_of_slits_SG,
+    nsteps=DEFAULTS_MUSE.steps_per_raster_SG,
+    oversample_x=DEFAULTS_MUSE.oversample_x_SG,
+    oversample_y=DEFAULTS_MUSE.oversample_y_SG,
+    slit_dim=DEFAULTS_MUSE.pixels_SG,
     spike_values=None,
-    transmission=None,
-    xpix_scale=None,
-    ypix_scale=None,
+    transmission=DEFAULTS_MUSE.mesh_transmission,
+    xpix_scale=DEFAULTS_MUSE.dx_pixel_SG,
+    ypix_scale=DEFAULTS_MUSE.dy_pixel_SG,
     cut_in_half=False,
     axis=None,
     angle=None,
@@ -205,41 +201,16 @@ def gausslobes_single_wavelength(
     IDL code version dated - 24 Oct 2022.
     New definition of core PSF. Correct the rotation. - 25 Feb 2026. K. Cho.
     """
-    if wavelength is None:
-        wavelength = DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"]
-    if fwhm_x is None:
-        fwhm_x = DEFAULTS_MUSE.psf_fwhm_x
     if isinstance(fwhm_x, u.Quantity):
         fwhm_x = fwhm_x.to_value(u.arcsec)
-    if fwhm_y is None:
-        fwhm_y = DEFAULTS_MUSE.psf_fwhm_y
     if isinstance(fwhm_y, u.Quantity):
         fwhm_y = fwhm_y.to_value(u.arcsec)
-    if lpi is None:
-        lpi = DEFAULTS_MUSE.lpi
     lpi = _lines_per_inch(lpi)
-    if nslits is None:
-        nslits = DEFAULTS_MUSE.number_of_slits_SG
-    if nsteps is None:
-        nsteps = DEFAULTS_MUSE.steps_per_raster_SG
-    if oversample_x is None:
-        oversample_x = DEFAULTS_MUSE.oversample_x_SG
-    if oversample_y is None:
-        oversample_y = DEFAULTS_MUSE.oversample_y_SG
-    if slit_dim is None:
-        if isinstance(DEFAULTS_MUSE.pixels_SG, u.Quantity):
-            slit_dim = DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
-        else:
-            slit_dim = DEFAULTS_MUSE.pixels_SG
-    if transmission is None:
-        transmission = DEFAULTS_MUSE.mesh_transmission
+    if isinstance(slit_dim, u.Quantity):
+        slit_dim = slit_dim.to_value(u.pix)
     transmission = _first_value(transmission)
-    if xpix_scale is None:
-        xpix_scale = DEFAULTS_MUSE.dx_pixel_SG
     if isinstance(xpix_scale, u.Quantity):
         xpix_scale = xpix_scale.to_value(u.arcsec)
-    if ypix_scale is None:
-        ypix_scale = DEFAULTS_MUSE.dy_pixel_SG
     if isinstance(ypix_scale, u.Quantity):
         ypix_scale = ypix_scale.to_value(u.arcsec)
     tilt = angle not in (0, None)
@@ -349,9 +320,7 @@ def gausslobes(**kwargs):
     psf_stack : xarray.DataArray
         Stacked PSFs with the wavelength dimension(s) plus (x, y).
     """
-    wavelength = kwargs.get("wavelength")
-    if wavelength is None:
-        return gausslobes_single_wavelength(**kwargs)
+    wavelength = kwargs.get("wavelength", DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"])
     if not isinstance(wavelength, xr.DataArray):
         if np.size(wavelength) == 1:
             return gausslobes_single_wavelength(**kwargs)
