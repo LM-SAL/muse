@@ -78,6 +78,47 @@ def _calc_einsum(
     return torch_to_numpy(result)
 
 
+def _build_einsum_indices(raster_dims, response_dims, sum_over):
+    """
+    Build the torch.einsum spec for contracting the VDEM raster with the response.
+
+    Each unique dimension name gets one index letter; dimensions shared by both
+    operands reuse the same letter (so einsum contracts over them). The output
+    keeps every dimension not in ``sum_over``, in raster-then-response order.
+
+    Parameters
+    ----------
+    raster_dims, response_dims : `tuple` of `str`
+        Dimension names of ``raster.vdem`` and ``response.SG_resp``.
+    sum_over : `tuple` of `str`
+        Dimension names to contract over.
+
+    Returns
+    -------
+    einsum_str : `str`
+        Input spec, e.g. ``"abcde,fbcdg"``.
+    out_str : `str`
+        Output spec for the non-summed dimensions.
+    out_dims : `list` of `str`
+        Output dimension names, aligned with ``out_str``.
+    """
+    letters = iter(string.ascii_lowercase)
+    dim_to_letter = {}
+    for dim in (*raster_dims, *response_dims):
+        if dim not in dim_to_letter:
+            dim_to_letter[dim] = next(letters)
+
+    out_dims = []
+    for dim in (*raster_dims, *response_dims):
+        if dim not in sum_over and dim not in out_dims:
+            out_dims.append(dim)
+
+    raster_spec = "".join(dim_to_letter[dim] for dim in raster_dims)
+    response_spec = "".join(dim_to_letter[dim] for dim in response_dims)
+    out_str = "".join(dim_to_letter[dim] for dim in out_dims)
+    return f"{raster_spec},{response_spec}", out_str, out_dims
+
+
 @format_docstring("DEFAULTS_MUSE", sum_over="sum_over_dims_synthesis")
 def vdem_synthesis(
     raster: xr.Dataset,
@@ -117,40 +158,10 @@ def vdem_synthesis(
     _array_unit(response, "line_wvl", "response.line_wvl", convertible_to=u.AA)
     _array_unit(response, "SG_wvl", "response.SG_wvl", convertible_to=u.AA)
 
-    index_list = list(string.ascii_lowercase)
-    index_dim_dict = {}
-    einsum_str = ""
-    out_str = ""
-    for ik, k in enumerate(raster.vdem.dims):
-        einsum_str += index_list[ik]
-        index_dim_dict[k] = index_list[ik]
-        if k not in sum_over and index_list[ik] not in out_str:
-            out_str += index_list[ik]
-    einsum_str += ","
-    for ij, j in enumerate(response.SG_resp.dims):
-        if j in raster.vdem.dims:
-            einsum_str += index_dim_dict[j]
-            index = index_dim_dict[j]
-        else:
-            index_dim_dict[j] = index_list[ik + ij + 1]
-            einsum_str += index_list[ik + ij + 1]
-            index = index_list[ik + ij + 1]
-        if j not in sum_over and out_str.find(index) == -1:
-            out_str += index_list[ik + ij + 1]
+    einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.SG_resp.dims, sum_over)
 
-    index_coord_dict = {}
-    for ik, k in enumerate(raster.vdem.dims):
-        index_coord_dict[k] = index_list[ik]
-
-    for ij, j in enumerate(response.SG_resp.dims):
-        if j not in raster.vdem.dims:
-            index_coord_dict[j] = index_list[ik + ij + 1]
-
-    logger.debug(f"raster dims {raster.dims}")
-    logger.debug(f"response.SG_resp dims {response.SG_resp.dims}")
-    logger.debug(f"einsum in {einsum_str}, einsum out {out_str}")
     logger.debug(
-        f"shape of: raster.vdem {np.shape(raster.vdem.data)} of response.SG_resp{np.shape(response.SG_resp.data)}",
+        f"einsum {einsum_str}->{out_str}: vdem{np.shape(raster.vdem.data)} x SG_resp{np.shape(response.SG_resp.data)}"
     )
 
     einsum_result = _calc_einsum(
@@ -163,11 +174,8 @@ def vdem_synthesis(
     ds = xr.Dataset()
     ds.attrs.update(raster.attrs)
     ds.attrs.update(response.attrs)
-    dims = []
-    for key, value in index_dim_dict.items():
-        if value in out_str:
-            ds[key] = raster[key] if key in raster.vdem.dims else response[key]
-            dims.append(key)
+    for key in dims:
+        ds[key] = raster[key] if key in raster.vdem.dims else response[key]
 
     coords_depending_on_summed_dim = []
     for dim in sum_over:
@@ -188,24 +196,17 @@ def vdem_synthesis(
     for key in raster_coords - response_coords:
         coords[key] = raster.coords[key]
 
-    logger.debug(f"Shape of result: {np.shape(einsum_result)}")
-    logger.debug(f"dims: {dims}")
-    logger.debug(f"index_dim_dict: {index_dim_dict.keys()}")
-    logger.debug(f"coords: {coords}")
+    logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
     da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
     ds["flux"] = da
 
     ds.flux.attrs.update({"units": str(raster_vdem_unit * response_sg_resp_unit)})
 
-    if "slit" not in response.SG_resp.dims or ("slit" in ds.flux.dims):
-        if ("SG_wvl" in response.coords) and ("SG_wvl" not in ds.coords):
-            ds = ds.assign_coords(SG_wvl=response.coords["SG_wvl"])
-
-        try:
-            ds["SG_wvl"] = response.SG_wvl
-            ds = ds.set_coords("SG_wvl")
-        except Exception:  # NOQA: BLE001
-            logger.debug("No SG_wvl found.")
+    # SG_wvl carries a slit dimension, so only attach it when slit survives in the
+    # output (or the response never had one); otherwise it would re-introduce slit.
+    slit_preserved = "slit" not in response.SG_resp.dims or "slit" in ds.flux.dims
+    if slit_preserved and "SG_wvl" in response:
+        ds = ds.assign_coords(SG_wvl=response.SG_wvl)
 
     add_history(ds, locals(), vdem_synthesis)
     return ds

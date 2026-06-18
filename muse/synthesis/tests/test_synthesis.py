@@ -2,11 +2,43 @@ import numpy as np
 import pytest
 import torch
 
-from muse.synthesis.synthesis import vdem_synthesis
+from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
 from muse.transforms.transforms import reshape_x_to_slit_step
 
 SPEED_OF_LIGHT_KMS = 299792.458
+
+# Dimension names for the science contraction used across the einsum-index tests.
+RASTER_DIMS = ("logT", "vdop", "y", "slit", "step")
+RESPONSE_DIMS = ("line", "vdop", "logT", "slit", "SG_xpixel")
+
+
+def test_build_einsum_indices_contracts_shared_dims() -> None:
+    # Shared dims (logT, vdop, slit) reuse the raster letters; the default sum_over
+    # contracts them, leaving y/step from the raster and line/SG_xpixel from the response.
+    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "vdop", "slit"))
+    assert einsum_str == "abcde,fbadg"
+    assert out_str == "cefg"
+    assert out_dims == ["y", "step", "line", "SG_xpixel"]
+
+
+def test_build_einsum_indices_keeps_unsummed_slit() -> None:
+    # Dropping slit from sum_over keeps it as an output dimension.
+    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "vdop"))
+    assert einsum_str == "abcde,fbadg"
+    assert out_str == "cdefg"
+    assert out_dims == ["y", "slit", "step", "line", "SG_xpixel"]
+
+
+def test_build_einsum_indices_general_shapes() -> None:
+    # Letter assignment and shared-dim reuse are independent of the science names,
+    # and the produced spec is a well-formed einsum.
+    einsum_str, out_str, out_dims = _build_einsum_indices(("a_dim", "shared"), ("shared", "b_dim"), ("shared",))
+    assert einsum_str == "ab,bc"
+    assert out_str == "ac"
+    assert out_dims == ["a_dim", "b_dim"]
+    result = np.einsum(f"{einsum_str}->{out_str}", np.ones((2, 3)), np.ones((3, 4)))
+    assert result.shape == (2, 4)
 
 
 def test_vdem_synthesis(response, vdem) -> None:
