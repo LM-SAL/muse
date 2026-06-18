@@ -32,7 +32,7 @@ def test_gausslobes_no_core() -> None:
 
 
 def test_gausslobes_full_transmission() -> None:
-    lobes = gausslobes(transmission=1.0)
+    lobes = gausslobes(mesh_transmission=1.0)
     assert lobes.shape == (771, 2049)
     assert_allclose(lobes.max(), 0.2893962973982065)
     assert_allclose(lobes.min(), 0)
@@ -40,11 +40,11 @@ def test_gausslobes_full_transmission() -> None:
 
 
 def test_gausslobes_peak() -> None:
-    transmission = 0.81
-    spikes = gausslobes_peak(nspike=10, transmission=transmission)
+    mesh_transmission = 0.81
+    spikes = gausslobes_peak(nspike=10, mesh_transmission=mesh_transmission)
     assert spikes.shape == (10,)
     assert spikes[0] == 1
-    sin_arg = np.pi * np.sqrt(transmission)
+    sin_arg = np.pi * np.sqrt(mesh_transmission)
     assert_allclose(spikes[1], (np.sin(sin_arg) / sin_arg) ** 2)
     # Defaults resolve from DEFAULTS_MUSE (channel-keyed dict)
     default_spikes = gausslobes_peak(nspike=10)
@@ -78,9 +78,9 @@ def test_axis_cuts() -> None:
     assert cut_y.shape == (2049,)
     full = gausslobes_single_wavelength()
     # Cuts are normalized by one less power of transmission than the 2D pattern.
-    transmission = next(iter(DEFAULTS_MUSE.mesh_transmission.values()))
-    assert_allclose(cut_x.values * transmission, full.isel(y=1024).values)
-    assert_allclose(cut_y.values * transmission, full.isel(x=385).values)
+    mesh_transmission = next(iter(DEFAULTS_MUSE.mesh_transmission.values()))
+    assert_allclose(cut_x.values * mesh_transmission, full.isel(y=1024).values)
+    assert_allclose(cut_y.values * mesh_transmission, full.isel(x=385).values)
 
 
 def test_cut_in_half() -> None:
@@ -98,9 +98,9 @@ def test_only_core_matches_core_psf_wrapper() -> None:
 
 
 def test_only_core_total_is_transmission_squared() -> None:
-    transmission = next(iter(DEFAULTS_MUSE.mesh_transmission.values()))
+    mesh_transmission = next(iter(DEFAULTS_MUSE.mesh_transmission.values()))
     only_core = gausslobes_single_wavelength(only_core=True)
-    assert_allclose(only_core.sum(), transmission**2)
+    assert_allclose(only_core.sum(), mesh_transmission**2)
 
 
 def test_full_is_no_core_plus_core() -> None:
@@ -113,7 +113,7 @@ def test_full_is_no_core_plus_core() -> None:
 def test_explicit_quantity_pixel_scales() -> None:
     # Regression: explicitly passed Quantity pixel scales must convert to arcsec
     default = gausslobes_single_wavelength()
-    explicit = gausslobes_single_wavelength(xpix_scale=0.4 * u.arcsec, ypix_scale=0.167 * u.arcsec)
+    explicit = gausslobes_single_wavelength(dx_pixel_SG=0.4 * u.arcsec, dy_pixel_SG=0.167 * u.arcsec)
     assert_allclose(explicit.values, default.values)
 
 

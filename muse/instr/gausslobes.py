@@ -31,8 +31,8 @@ def _lines_per_inch(value):
     return float(np.ravel(value)[0]) if np.ndim(value) else float(value)
 
 
-@format_docstring("DEFAULTS_MUSE", transmission="mesh_transmission")
-def gausslobes_peak(*, nspike=100, transmission=DEFAULTS_MUSE.mesh_transmission):
+@format_docstring("DEFAULTS_MUSE", mesh_transmission="mesh_transmission")
+def gausslobes_peak(*, nspike=100, mesh_transmission=DEFAULTS_MUSE.mesh_transmission):
     """
     Generate the relative peak values of the side lobes to the core.
 
@@ -41,18 +41,18 @@ def gausslobes_peak(*, nspike=100, transmission=DEFAULTS_MUSE.mesh_transmission)
     nspike : int, optional
         Number of side lobes.
         Default is 100.
-    transmission : float, optional
+    mesh_transmission : float, optional
         Transmission of the grating.
-        Default is {transmission}.
+        Default is {mesh_transmission}.
 
     Returns
     -------
     spike_value : numpy.array
         Relative peak values of the side lobes to the core.
     """
-    transmission = _first_value(transmission)
+    mesh_transmission = _first_value(mesh_transmission)
     with np.errstate(divide="ignore", invalid="ignore"):
-        sin_arg = np.arange(nspike) * np.pi * np.sqrt(transmission)
+        sin_arg = np.arange(nspike) * np.pi * np.sqrt(mesh_transmission)
         spike_value = (np.sin(sin_arg) / sin_arg) ** 2
     spike_value[0] = 1
     return spike_value
@@ -91,47 +91,54 @@ def gausslobes_distance(wave0, *, lpi=DEFAULTS_MUSE.lpi, arcsec=False):
     spacing = wave0 * 1e-10 / (0.0254 / lpi) / asec
     if arcsec:
         return spacing
-    xpix_scale = DEFAULTS_MUSE.dx_pixel_SG.to_value(u.arcsec)
-    ypix_scale = DEFAULTS_MUSE.dy_pixel_SG.to_value(u.arcsec)
-    shift_x = spacing / xpix_scale  # in pixel scale
-    shift_y = spacing / ypix_scale  # in pixel scale
+    dx_pixel_SG = DEFAULTS_MUSE.dx_pixel_SG.to_value(u.arcsec)
+    dy_pixel_SG = DEFAULTS_MUSE.dy_pixel_SG.to_value(u.arcsec)
+    shift_x = spacing / dx_pixel_SG  # in pixel scale
+    shift_y = spacing / dy_pixel_SG  # in pixel scale
     return shift_x, shift_y
 
 
 @format_docstring(
     "DEFAULTS_MUSE",
     wavelength="main_lines_SG_wavelength",
-    fwhm_x="psf_fwhm_x",
-    fwhm_y="psf_fwhm_y",
+    psf_fwhm_x="psf_fwhm_x",
+    psf_fwhm_y="psf_fwhm_y",
     lpi="lpi",
-    nslits="number_of_slits_SG",
-    nsteps="steps_per_raster_SG",
-    oversample_x="oversample_x_SG",
-    oversample_y="oversample_y_SG",
-    slit_dim="pixels_SG",
-    transmission="mesh_transmission",
-    xpix_scale="dx_pixel_SG",
-    ypix_scale="dy_pixel_SG",
+    number_of_slits_SG="number_of_slits_SG",
+    steps_per_raster_SG="steps_per_raster_SG",
+    oversample_x_SG="oversample_x_SG",
+    oversample_y_SG="oversample_y_SG",
+    pixels_SG="pixels_SG",
+    mesh_transmission="mesh_transmission",
+    dx_pixel_SG="dx_pixel_SG",
+    dy_pixel_SG="dy_pixel_SG",
 )
-@u.quantity_input(wavelength=u.AA, fwhm_x=u.arcsec, fwhm_y=u.arcsec, xpix_scale=u.arcsec, ypix_scale=u.arcsec)
+@u.quantity_input(
+    wavelength=u.AA,
+    psf_fwhm_x=u.arcsec,
+    psf_fwhm_y=u.arcsec,
+    pixels_SG=u.pix,
+    dx_pixel_SG=u.arcsec,
+    dy_pixel_SG=u.arcsec,
+)
 def gausslobes_single_wavelength(
     *,
     wavelength=DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"],
     center=True,
     no_core=False,
     only_core=False,
-    fwhm_x=DEFAULTS_MUSE.psf_fwhm_x,
-    fwhm_y=DEFAULTS_MUSE.psf_fwhm_y,
+    psf_fwhm_x=DEFAULTS_MUSE.psf_fwhm_x,
+    psf_fwhm_y=DEFAULTS_MUSE.psf_fwhm_y,
     lpi=DEFAULTS_MUSE.lpi,
-    nslits=DEFAULTS_MUSE.number_of_slits_SG,
-    nsteps=DEFAULTS_MUSE.steps_per_raster_SG,
-    oversample_x=DEFAULTS_MUSE.oversample_x_SG,
-    oversample_y=DEFAULTS_MUSE.oversample_y_SG,
-    slit_dim=DEFAULTS_MUSE.pixels_SG,
+    number_of_slits_SG=DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster_SG=DEFAULTS_MUSE.steps_per_raster_SG,
+    oversample_x_SG=DEFAULTS_MUSE.oversample_x_SG,
+    oversample_y_SG=DEFAULTS_MUSE.oversample_y_SG,
+    pixels_SG=DEFAULTS_MUSE.pixels_SG,
     spike_values=None,
-    transmission=DEFAULTS_MUSE.mesh_transmission,
-    xpix_scale=DEFAULTS_MUSE.dx_pixel_SG,
-    ypix_scale=DEFAULTS_MUSE.dy_pixel_SG,
+    mesh_transmission=DEFAULTS_MUSE.mesh_transmission,
+    dx_pixel_SG=DEFAULTS_MUSE.dx_pixel_SG,
+    dy_pixel_SG=DEFAULTS_MUSE.dy_pixel_SG,
     cut_in_half=False,
     axis=None,
     angle=None,
@@ -153,33 +160,33 @@ def gausslobes_single_wavelength(
         Option to subtract out core lobe, by default `False`.
     only_core : `bool`
         Return only the core lobe (no side lobes), by default `False`.
-    fwhm_x : `float`
-        FWHM in arcsec, by default {fwhm_x}.
-    fwhm_y : `float`
-        FWHM in arcsec, by default {fwhm_y}.
+    psf_fwhm_x : `float`
+        FWHM in arcsec, by default {psf_fwhm_x}.
+    psf_fwhm_y : `float`
+        FWHM in arcsec, by default {psf_fwhm_y}.
     lpi : `int`
         Lines per inch of the mesh grid, by default {lpi}.
-    nslits : `int`
-        Number of slits, by default {nslits}.
-    nsteps : `int`
-        Number of steps in one raster, by default {nsteps}.
-    oversample_x : `int`
-        Over sample factor for x pixels, by default {oversample_x}.
-    oversample_y : `int`
-        Over sample factor for y pixels, by default {oversample_y}.
-    slit_dim :  `int`
-        Number of along-slit pixels, i.e., y-axis size, by default {slit_dim}.
+    number_of_slits_SG : `int`
+        Number of slits, by default {number_of_slits_SG}.
+    steps_per_raster_SG : `int`
+        Number of steps in one raster, by default {steps_per_raster_SG}.
+    oversample_x_SG : `int`
+        Over sample factor for x pixels, by default {oversample_x_SG}.
+    oversample_y_SG : `int`
+        Over sample factor for y pixels, by default {oversample_y_SG}.
+    pixels_SG :  `int`
+        Number of along-slit pixels, i.e., y-axis size, by default {pixels_SG}.
     spike_values : `numpy.array`
         Lobe intensities below taken from FFT of quarter circle aperture with given LPI mesh.
         Note variation of lobe-to-core intensities with wavelength could be added,
         though not a big effect within  current bandpass.
         By default `None`.
-    transmission : `float`
-        Mesh transmission, by default {transmission}.
-    xpix_scale : `float`
-        Pixel size in x-axis in arcsec, by default {xpix_scale}.
-    ypix_scale : `float`
-        Pixel size in y-axis in arcsec, by default {ypix_scale}.
+    mesh_transmission : `float`
+        Mesh transmission, by default {mesh_transmission}.
+    dx_pixel_SG : `float`
+        Pixel size in x-axis in arcsec, by default {dx_pixel_SG}.
+    dy_pixel_SG : `float`
+        Pixel size in y-axis in arcsec, by default {dy_pixel_SG}.
     cut_in_half : `bool`
         Return only the first half of the pattern along the x-axis, by default
         `False`.
@@ -201,47 +208,42 @@ def gausslobes_single_wavelength(
     IDL code version dated - 24 Oct 2022.
     New definition of core PSF. Correct the rotation. - 25 Feb 2026. K. Cho.
     """
-    if isinstance(fwhm_x, u.Quantity):
-        fwhm_x = fwhm_x.to_value(u.arcsec)
-    if isinstance(fwhm_y, u.Quantity):
-        fwhm_y = fwhm_y.to_value(u.arcsec)
+    psf_fwhm_x = psf_fwhm_x.to_value(u.arcsec)
+    psf_fwhm_y = psf_fwhm_y.to_value(u.arcsec)
     lpi = _lines_per_inch(lpi)
-    if isinstance(slit_dim, u.Quantity):
-        slit_dim = slit_dim.to_value(u.pix)
-    transmission = _first_value(transmission)
-    if isinstance(xpix_scale, u.Quantity):
-        xpix_scale = xpix_scale.to_value(u.arcsec)
-    if isinstance(ypix_scale, u.Quantity):
-        ypix_scale = ypix_scale.to_value(u.arcsec)
+    pixels_SG = pixels_SG.to_value(u.pix)
+    mesh_transmission = _first_value(mesh_transmission)
+    dx_pixel_SG = dx_pixel_SG.to_value(u.arcsec)
+    dy_pixel_SG = dy_pixel_SG.to_value(u.arcsec)
     tilt = angle not in (0, None)
 
-    coverage = nslits * nsteps
-    ny = int(2 * slit_dim + 1)
-    noy = int(ny * oversample_y)
+    coverage = number_of_slits_SG * steps_per_raster_SG
+    ny = int(2 * pixels_SG + 1)
+    noy = int(ny * oversample_y_SG)
     nx = int(2 * coverage + 1)
-    nox = int(nx * oversample_x)
+    nox = int(nx * oversample_x_SG)
 
     midy = int(noy / 2)
     midx = int(nox / 2)
-    sigma_x = fwhm_x / DEFAULTS_MUSE.FWHM_TO_SIGMA
-    sigma_y = fwhm_y / DEFAULTS_MUSE.FWHM_TO_SIGMA
+    sigma_x = psf_fwhm_x / DEFAULTS_MUSE.FWHM_TO_SIGMA
+    sigma_y = psf_fwhm_y / DEFAULTS_MUSE.FWHM_TO_SIGMA
 
-    y = ypix_scale / oversample_y * (np.arange(noy) - midy)
-    x = xpix_scale / oversample_x * (np.arange(nox) - midx)
+    y = dy_pixel_SG / oversample_y_SG * (np.arange(noy) - midy)
+    x = dx_pixel_SG / oversample_x_SG * (np.arange(nox) - midx)
 
     midy_sub = int(ny / 2)
     midx_sub = int(nx / 2)
-    y_sub = ypix_scale * (np.arange(ny) - midy_sub)
-    x_sub = xpix_scale * (np.arange(nx) - midx_sub)
+    y_sub = dy_pixel_SG * (np.arange(ny) - midy_sub)
+    x_sub = dx_pixel_SG * (np.arange(nx) - midx_sub)
 
     spacing = gausslobes_distance(wavelength, lpi=lpi, arcsec=True)
 
     if spike_values is None:
         if tilt:
-            nspike = int(np.sqrt((slit_dim * ypix_scale) ** 2 + (coverage * xpix_scale) ** 2) / spacing)
+            nspike = int(np.sqrt((pixels_SG * dy_pixel_SG) ** 2 + (coverage * dx_pixel_SG) ** 2) / spacing)
         else:
-            nspike = int(np.max([slit_dim * ypix_scale, coverage * xpix_scale]) / spacing)
-        spike_values = gausslobes_peak(nspike=nspike + 1, transmission=transmission)
+            nspike = int(np.max([pixels_SG * dy_pixel_SG, coverage * dx_pixel_SG]) / spacing)
+        spike_values = gausslobes_peak(nspike=nspike + 1, mesh_transmission=mesh_transmission)
     else:
         nspike = len(spike_values) - 1
 
@@ -280,10 +282,10 @@ def gausslobes_single_wavelength(
             mesh_psf = gx[:, None] * gy[None, :]
         if no_core:
             mesh_psf -= core_psf
-    mesh_psf = mesh_psf.reshape(nx, oversample_x, ny, oversample_y).sum(axis=(1, 3))
-    mesh_psf = transmission**2 * mesh_psf / core_total
+    mesh_psf = mesh_psf.reshape(nx, oversample_x_SG, ny, oversample_y_SG).sum(axis=(1, 3))
+    mesh_psf = mesh_transmission**2 * mesh_psf / core_total
     if axis is not None and np.size(axis) < 2:
-        mesh_psf /= transmission
+        mesh_psf /= mesh_transmission
     if not center:
         mesh_psf = np.roll(
             np.roll(mesh_psf, mesh_psf.shape[1] // 2, axis=1),
