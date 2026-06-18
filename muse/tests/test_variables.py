@@ -92,7 +92,7 @@ def test_instrumental_width_sg():
 
 
 def test_instrument_defaults_pickle_round_trip():
-    loaded = pickle.loads(pickle.dumps(DEFAULTS_MUSE))  # noqa: S301
+    loaded = pickle.loads(pickle.dumps(DEFAULTS_MUSE))  # NOQA: S301
 
     assert loaded == DEFAULTS_MUSE
 
