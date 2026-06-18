@@ -13,7 +13,14 @@ import astropy.units as u
 
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["assert_dataset_structure", "fake_response", "fake_vdem", "fake_vdem_offgrid", "warnings_as_errors"]
+__all__ = [
+    "assert_dataset_structure",
+    "fake_response",
+    "fake_vdem",
+    "fake_vdem_offgrid",
+    "fake_vdem_single_vdop",
+    "warnings_as_errors",
+]
 
 nslit = 35
 steps = 11
@@ -163,6 +170,20 @@ def fake_vdem_offgrid():
     ds = ds.assign_coords(x=ds.x.values * 2.0, y=ds.y.values * 2.0)
     ds.x.attrs["units"] = "arcsec"
     ds.y.attrs["units"] = "arcsec"
+    return ds
+
+
+def fake_vdem_single_vdop(vdop_kms=0.0):
+    """
+    `fake_vdem` with all emission collapsed into the single vdop bin nearest
+    ``vdop_kms``. Isolates one Doppler velocity so synthesized line centroids
+    shift by the classical ``lambda * v / c``, used to verify spectral synthesis.
+    """
+    ds = fake_vdem()
+    vdop_index = int(np.argmin(np.abs(ds.vdop.values - vdop_kms)))
+    collapsed = np.zeros_like(ds.vdem.values)
+    collapsed[:, vdop_index] = ds.vdem.values.sum(axis=1)  # all vdop emission -> one bin
+    ds["vdem"] = (ds.vdem.dims, collapsed, dict(ds.vdem.attrs))
     return ds
 
 

@@ -3,8 +3,10 @@ import pytest
 import torch
 
 from muse.synthesis.synthesis import vdem_synthesis
-from muse.tests.helpers import assert_dataset_structure
+from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
 from muse.transforms.transforms import reshape_x_to_slit_step
+
+SPEED_OF_LIGHT_KMS = 299792.458
 
 
 def test_vdem_synthesis(response, vdem) -> None:
@@ -40,6 +42,50 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     expected = float(contribution.sum().values)  # sums over logT, vdop, slit
     got = float(result.flux.isel(y=it, step=istep, line=iline, SG_xpixel=ipixel).values)
     np.testing.assert_allclose(got, expected, rtol=1e-5)
+
+
+def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:
+    # Synthesis is a tensor contraction, so scaling the VDEM scales the flux. An
+    # identity/passthrough that ignored the response could not preserve this.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    base = vdem_synthesis(reshaped_vdem, response).flux
+    scaled_raster = reshaped_vdem.copy(deep=True)
+    scaled_raster["vdem"] = scaled_raster.vdem * 3.0
+    scaled = vdem_synthesis(scaled_raster, response).flux
+    np.testing.assert_allclose(scaled.values, 3.0 * base.values, rtol=1e-5)
+
+
+def test_vdem_synthesis_zeroing_response_removes_only_that_line(response, vdem) -> None:
+    # Zeroing one line's response must null exactly that line's flux and leave the
+    # rest untouched: proof the output is driven by the response, not echoing VDEM.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    base = vdem_synthesis(reshaped_vdem, response).flux
+    muted_response = response.copy(deep=True)
+    muted_response.SG_resp[3] = 0.0
+    out = vdem_synthesis(reshaped_vdem, muted_response).flux
+    assert float(base.isel(line=3).sum()) > 0.0
+    assert float(out.isel(line=3).sum()) == 0.0
+    np.testing.assert_array_equal(out.isel(line=0).values, base.isel(line=0).values)
+
+
+def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
+    # Emission at a single vdop must place the line at lambda * (1 + v/c): synthesis
+    # encodes velocity as a wavelength shift, the core spectral behaviour.
+    def centroid(vdop_kms):
+        reshaped = reshape_x_to_slit_step(fake_vdem_single_vdop(vdop_kms), nslits=35, nraster=11)
+        flux = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop")).flux
+        spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"]).values
+        wavelength = flux.SG_wvl.isel(line=0, slit=17).values
+        return float((spectrum * wavelength).sum() / spectrum.sum())
+
+    rest_wavelength = 108.355
+    expected_shift = rest_wavelength * 300.0 / SPEED_OF_LIGHT_KMS
+    blue, zero, red = centroid(-300.0), centroid(0.0), centroid(300.0)
+    assert blue < zero < red
+    # The fixture samples 32 detector pixels, so the centroid resolves the shift to
+    # ~10%; assert direction and magnitude, not an exact match.
+    np.testing.assert_allclose(red - zero, expected_shift, rtol=0.15)
+    np.testing.assert_allclose(zero - blue, expected_shift, rtol=0.15)
 
 
 def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, vdem) -> None:
