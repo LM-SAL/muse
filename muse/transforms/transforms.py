@@ -5,7 +5,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history
+from muse.utils.utils import add_history, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["match_fov", "reshape_x_to_slit_step"]
@@ -252,7 +252,8 @@ def match_fov(
         for atrs in vdem[varss].attrs:
             vdem_xr[varss].attrs[atrs] = vdem[varss].attrs[atrs]
 
-    add_history(vdem_xr, locals(), match_fov)
+    update_attrs(vdem_xr, vdem)
+    add_history(vdem_xr, match_fov)
 
     return vdem_xr
 
@@ -292,6 +293,7 @@ def reshape_x_to_slit_step(
         msg = "x coordinate is missing"
         raise ValueError(msg)
     x_unit = _coordinate_unit(ds, "x")
+    attrs = {}
     if "slit" in ds.coords:
         reshaped = ds.unstack("x")
     else:
@@ -299,6 +301,7 @@ def reshape_x_to_slit_step(
         step, slit = (arr.flatten() for arr in np.meshgrid(range(nraster), range(nslits)))
         reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
         reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
-        reshaped.attrs.update({"step_size": step_size.values, "step_size units": str(x_unit)})
+        attrs = {"step_size": step_size.values, "step_size units": str(x_unit)}
+    update_attrs(reshaped, ds, **attrs)
     add_history(reshaped, locals(), reshape_x_to_slit_step)
     return reshaped

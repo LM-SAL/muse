@@ -9,7 +9,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy
+from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -172,8 +172,8 @@ def vdem_synthesis(
         cuda_device=cuda_device,
     )
     ds = xr.Dataset()
-    ds.attrs.update(raster.attrs)
-    ds.attrs.update(response.attrs)
+    update_attrs(ds, raster)
+    update_attrs(ds, response)
     for key in dims:
         ds[key] = raster[key] if key in raster.vdem.dims else response[key]
 
@@ -208,5 +208,5 @@ def vdem_synthesis(
     if slit_preserved and "SG_wvl" in response:
         ds = ds.assign_coords(SG_wvl=response.SG_wvl)
 
-    add_history(ds, locals(), vdem_synthesis)
+    add_history(ds, vdem_synthesis)
     return ds
