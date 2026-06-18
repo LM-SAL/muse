@@ -292,14 +292,13 @@ def reshape_x_to_slit_step(
         msg = "x coordinate is missing"
         raise ValueError(msg)
     x_unit = _coordinate_unit(ds, "x")
-    ds_temp = ds.copy(deep=True)
     if "slit" in ds.coords:
-        ds_temp = ds_temp.unstack("x")
+        reshaped = ds.unstack("x")
     else:
-        step_size = ds_temp.x[1] - ds_temp.x[0]
+        step_size = ds.x[1] - ds.x[0]
         step, slit = (arr.flatten() for arr in np.meshgrid(range(nraster), range(nslits)))
-        ds_temp = ds_temp.assign_coords(slit=("x", slit), step=("x", step))
-        ds_temp = ds_temp.set_index(x=("slit", "step")).unstack("x")
-        ds_temp.attrs.update({"step_size": step_size.values, "step_size units": str(x_unit)})
-    add_history(ds_temp, locals(), reshape_x_to_slit_step)
-    return ds_temp
+        reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
+        reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
+        reshaped.attrs.update({"step_size": step_size.values, "step_size units": str(x_unit)})
+    add_history(reshaped, locals(), reshape_x_to_slit_step)
+    return reshaped
