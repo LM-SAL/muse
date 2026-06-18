@@ -11,6 +11,7 @@ import xarray as xr
 from attrs import Converter, cmp_using, converters, define, field, validators
 
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.units import imperial
 
 __all__ = [
@@ -261,11 +262,6 @@ class InstrumentDefaults:
       for pickle compatibility.
 
     Because nested state can change, instances are intentionally unhashable.
-    """
-
-    FWHM_TO_SIGMA = 2.355  # This was 2.35482 in guasslobes.py
-    """
-    Conversion factor between FWHM and Gaussian sigma, 2 * sqrt(2 * ln 2), truncated.
     """
 
     # Context Imager (CI) parameters
@@ -580,4 +576,4 @@ class InstrumentDefaults:
         if self.channel_spectral_order is None:
             msg = "instrumental_width_sg requires channel_spectral_order"
             raise ValueError(msg)
-        return 0.0815 * u.AA / self.FWHM_TO_SIGMA / self.channel_spectral_order
+        return 0.0815 * u.AA / gaussian_sigma_to_fwhm / self.channel_spectral_order

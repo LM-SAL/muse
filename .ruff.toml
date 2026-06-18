@@ -38,7 +38,6 @@ lint.extend-ignore = [
     "FIX002", # Line contains TODO, consider resolving the issue
     "I", # Ignore isort
     "ISC001", # May cause conflicts when used with the formatter
-    "N815", # Variable `logT_inv` in class scope should not be mixedCase
     "PLR0912", # Too many branches (31 > 12)
     "PLR0913", # Too many arguments in function definition
     "PLR0915", # Too many statements (91 > 50)
@@ -66,6 +65,13 @@ lint.extend-ignore = [
 "test_*.py" = [
     "N806", # in function should be lowercase
     "S101", # Use of `assert` detected
+]
+"muse/instr/gausslobes.py" = [
+    "N803", # science names such as dx_pixel_SG are public arguments
+    "N806", # science names such as dx_pixel_SG are local variables
+]
+"muse/variables_schema.py" = [
+    "N815", # science/default field names such as dx_pixel_SG are public attrs
 ]
 "**/io/**" = [
     "A005", # Module `io` shadows a Python standard-library module
