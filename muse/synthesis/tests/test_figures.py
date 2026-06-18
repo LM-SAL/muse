@@ -5,8 +5,6 @@ from muse.synthesis.synthesis import vdem_synthesis
 from muse.tests.helpers import fake_vdem_single_vdop, figure_test
 from muse.transforms.transforms import reshape_x_to_slit_step
 
-__all__ = []
-
 
 @figure_test
 def test_vdem_synthesis_detector_spectrum(response, vdem):

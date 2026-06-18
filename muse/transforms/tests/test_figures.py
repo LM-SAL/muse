@@ -3,8 +3,6 @@ import matplotlib.pyplot as plt
 from muse.tests.helpers import figure_test
 from muse.transforms.transforms import muse_fov
 
-__all__ = []
-
 
 @figure_test
 def test_muse_fov_resampled_intensity_map(vdem_offgrid):
