@@ -4,11 +4,209 @@ from functools import wraps
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
+import xarray as xr
 
 import astropy
+import astropy.units as u
 
-__all__ = ["warnings_as_errors"]
+from muse.variables import DEFAULTS_MUSE
+
+__all__ = ["assert_dataset_structure", "fake_response", "fake_vdem", "fake_vdem_offgrid", "warnings_as_errors"]
+
+nslit = 35
+steps = 11
+nx = steps * nslit
+ny = 32
+npixel = 32
+lgtaxis = np.asarray([4.4, 4.9, 5.4, 5.9, 6.4, 6.9, 7.4])
+dopaxis = np.arange(-400.0, 401.0, 100.0)
+nlgtaxis = np.size(lgtaxis)
+ndopaxis = np.size(dopaxis)
+x_axis = np.linspace(0.0, 154.0, nx)
+y_axis = np.arange(ny) * (67.468 / 403)
+line = np.asarray(
+    [
+        DEFAULTS_MUSE.main_lines_SG[0][0],
+        DEFAULTS_MUSE.main_lines_SG[0][1],
+        "108 remaining 10000 lines",
+        DEFAULTS_MUSE.main_lines_SG[1][0],
+        "171 remaining 10000 lines",
+        DEFAULTS_MUSE.main_lines_SG[2][0],
+        "284 remaining 10000 lines",
+    ]
+)
+
+nline = np.size(line)
+channel = np.asarray([108, 108, 108, 171, 171, 284, 284])
+line_wvl = np.asarray(
+    [
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XIX 108.355"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XXI 108.117"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XIX 108.355"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe IX 171.073"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe IX 171.073"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"].to_value(u.AA),
+        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"].to_value(u.AA),
+    ]
+)
+slit = np.arange(0, nslit, 1)
+# The real response functions have 1024 detector pixels. The fixture samples 32
+# of them for speed, so line peaks land on the nearest sampled pixel. At slit=17
+# and vdop=0 km/s, sampled peak offsets are about -0.021 A (Fe XIX/108 rem.),
+# +0.217 A (Fe XXI), +0.204 A (Fe IX/171 rem.), and +0.161 A (Fe XV/284 rem.).
+SG_XPIXEL = np.linspace(0, 1023, npixel, dtype=int)
+initial_wavelength_sg = {108: 107.68034, 171: 170.62314, 284: 283.01608}
+spectral_dispersion_sg = {108: 0.014714709071675623, 171: 0.014714709071675623, 284: 0.029429418143351246}
+spectral_slit_offset_sg = {108: 0.39, 171: 0.39, 284: 0.78}
+response_logt_center = np.asarray([6.9, 7.1, 6.2, 5.9, 6.0, 6.4, 6.1])
+response_logt_width = np.asarray([0.22, 0.22, 0.45, 0.25, 0.45, 0.28, 0.45])
+response_amplitude = np.asarray([1.0, 0.85, 0.08, 0.65, 0.06, 0.75, 0.07])
+response_spectral_width = np.asarray([0.35, 0.35, 0.8, 0.35, 0.8, 0.55, 1.1])
+
+
+def assert_dataset_structure(
+    ds: xr.Dataset,
+    *,
+    data_vars: tuple[str, ...],
+    coords: tuple[str, ...],
+    sizes: dict[str, int] | None = None,
+    finite_vars: tuple[str, ...] = (),
+) -> None:
+    actual_data_vars = set(ds.data_vars)
+    expected_data_vars = set(data_vars)
+    if actual_data_vars != expected_data_vars:
+        msg = f"data vars differ: expected {expected_data_vars}, got {actual_data_vars}"
+        raise AssertionError(msg)
+
+    expected_coords = set(coords)
+    actual_coords = set(ds.coords)
+    if not expected_coords <= actual_coords:
+        msg = f"coords missing: expected at least {expected_coords}, got {actual_coords}"
+        raise AssertionError(msg)
+
+    if sizes is not None and dict(ds.sizes) != sizes:
+        msg = f"sizes differ: expected {sizes}, got {dict(ds.sizes)}"
+        raise AssertionError(msg)
+
+    for name in finite_vars:
+        if name not in ds.data_vars:
+            msg = f"{name!r} is not a data variable"
+            raise AssertionError(msg)
+        if not bool(np.isfinite(ds[name]).all()):
+            msg = f"{name!r} contains non-finite values"
+            raise AssertionError(msg)
+
+
+def calculate_sgwvl(line_index):
+    line_channel = int(channel[line_index])
+    return (
+        initial_wavelength_sg[line_channel]
+        + spectral_dispersion_sg[line_channel] * SG_XPIXEL[np.newaxis, :]
+        - spectral_slit_offset_sg[line_channel] * slit[:, np.newaxis]
+    )
+
+
+def fake_vdem():
+    logt_grid = lgtaxis[:, np.newaxis, np.newaxis, np.newaxis]
+    vdop_grid = dopaxis[np.newaxis, :, np.newaxis, np.newaxis]
+    y_grid = y_axis[np.newaxis, np.newaxis, :, np.newaxis]
+    x_grid = x_axis[np.newaxis, np.newaxis, np.newaxis, :]
+
+    x_window = 1 / (1 + np.exp(-(x_grid - 12.0) / 5.0)) * 1 / (1 + np.exp((x_grid - 145.0) / 5.0))
+    y_ridge = 3.0 + 0.7 * np.sin(2 * np.pi * x_grid / x_axis[-1])
+    flare_core = (
+        480.0
+        * np.exp(
+            -(((logt_grid - 6.8) / 0.22) ** 2) - ((vdop_grid + 90.0) / 85.0) ** 2 - ((y_grid - y_ridge) / 0.48) ** 2
+        )
+        * x_window
+    )
+    warm_arcade = 18.0 * np.exp(
+        -(((logt_grid - 6.1) / 0.35) ** 2)
+        - (vdop_grid / 220.0) ** 2
+        - ((x_grid - 78.0) / 48.0) ** 2
+        - ((y_grid - 2.2) / 2.6) ** 2
+    )
+    transition_region = (
+        0.05 * np.exp(-(((logt_grid - 5.4) / 0.35) ** 2)) * (1.0 + 0.2 * np.sin(2 * np.pi * x_grid / x_axis[-1]))
+    )
+    table = flare_core + warm_arcade + transition_region
+    table = np.where(table < 1e-6, 0.0, table)
+    ds = xr.Dataset(
+        data_vars={"vdem": (["logT", "vdop", "y", "x"], table)},
+        coords={"logT": lgtaxis, "vdop": dopaxis, "y": y_axis, "x": x_axis},
+        attrs={
+            "description": "DEM(T,vel,x,y)",
+        },
+    )
+    ds.vdem.attrs["description"] = "DEM(T,vel,x,y)"
+    ds.vdem.attrs["time"] = 555291
+    ds.vdem.attrs["units"] = "1e27 / cm5"
+    ds.logT.attrs["long_name"] = "log$_{10}$(T)"
+    ds.logT.attrs["units"] = "log$_{10}$ (K)"
+    ds.vdop.attrs["long_name"] = "v$_{Doppler}$"
+    ds.vdop.attrs["units"] = "km/s"
+    ds.x.attrs["units"] = "arcsec"
+    ds.y.attrs["units"] = "arcsec"
+    return ds
+
+
+def fake_vdem_offgrid():
+    """
+    `fake_vdem` with the spatial grid stretched so the x/y spacing no longer
+    matches the MUSE pixel size. Forces `muse_fov` down its resample/tile path
+    instead of the "already MUSE pixel size" early return.
+    """
+    ds = fake_vdem()
+    ds = ds.assign_coords(x=ds.x.values * 2.0, y=ds.y.values * 2.0)
+    ds.x.attrs["units"] = "arcsec"
+    ds.y.attrs["units"] = "arcsec"
+    return ds
+
+
+def fake_response():
+    table_resp = np.zeros((nline, ndopaxis, nlgtaxis, nslit, npixel))
+    table_sgwvl = np.asarray([calculate_sgwvl(line_index) for line_index in range(nline)])
+    speed_of_light_kms = 299792.458
+    slit_throughput = 1.0 + 0.08 * np.cos(np.pi * slit / nslit)
+
+    for line_index in range(nline):
+        shifted_line_wvl = line_wvl[line_index] * (1.0 + dopaxis[:, np.newaxis, np.newaxis] / speed_of_light_kms)
+        spectral_profile = np.exp(
+            -(
+                ((table_sgwvl[line_index][np.newaxis, :, :] - shifted_line_wvl) / response_spectral_width[line_index])
+                ** 2
+            )
+        )
+        temperature_profile = np.exp(
+            -(((lgtaxis - response_logt_center[line_index]) / response_logt_width[line_index]) ** 2)
+        )
+        table_resp[line_index] = (
+            response_amplitude[line_index]
+            * spectral_profile[:, np.newaxis, :, :]
+            * temperature_profile[np.newaxis, :, np.newaxis, np.newaxis]
+            * slit_throughput[np.newaxis, np.newaxis, :, np.newaxis]
+        )
+
+    response = xr.Dataset(
+        data_vars={
+            "SG_resp": (["line", "vdop", "logT", "slit", "SG_xpixel"], table_resp),
+            "SG_wvl": (["line", "slit", "SG_xpixel"], table_sgwvl),
+        },
+        coords={"logT": lgtaxis, "vdop": dopaxis, "line": line, "slit": slit, "SG_xpixel": SG_XPIXEL},
+        attrs={"description": "No attributes"},
+    )
+    response = response.assign_coords(line_wvl=("line", line_wvl))
+    response.line_wvl.attrs["units"] = "Angstrom"
+    response.logT.attrs["long_name"] = "log$_{10}$(T)"
+    response.logT.attrs["units"] = "log$_{10}$ (K)"
+    response.vdop.attrs["long_name"] = "v$_{Doppler}$"
+    response.vdop.attrs["units"] = "km/s"
+    response.SG_resp.attrs["units"] = "1e-27 ph cm5 / s"
+    response.SG_wvl.attrs["units"] = "Angstrom"
+    return response.assign_coords(channel=("line", channel))
 
 
 @pytest.fixture
