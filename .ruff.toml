@@ -38,6 +38,8 @@ lint.extend-ignore = [
     "FIX002", # Line contains TODO, consider resolving the issue
     "I", # Ignore isort
     "ISC001", # May cause conflicts when used with the formatter
+    "N803", # Argument name `dy_pixel_SG` should be lowercase
+    "N806", # Variable `dy_pixel_SG` in function should be lowercase
     "N815", # Variable `logT_inv` in class scope should not be mixedCase
     "PLR0912", # Too many branches (31 > 12)
     "PLR0913", # Too many arguments in function definition

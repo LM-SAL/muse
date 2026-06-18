@@ -6,7 +6,6 @@ from numpy.testing import assert_allclose
 import astropy.units as u
 
 from muse.instr.gausslobes import (
-    core_psf_gausslobes,
     gausslobes,
     gausslobes_distance,
     gausslobes_peak,
@@ -18,15 +17,15 @@ from muse.variables import DEFAULTS_MUSE
 def test_gausslobes_basic() -> None:
     lobes = gausslobes()
     assert lobes.shape == (771, 2049)
-    assert_allclose(lobes.max(), 0.1898729107229633)
+    assert_allclose(lobes.max(), 0.18985516913220707)
     assert_allclose(lobes.min(), 0)
-    assert_allclose(lobes.sum(), 0.792603230279015)
+    assert_allclose(lobes.sum(), 0.7926032302790151)
 
 
 def test_gausslobes_no_core() -> None:
     lobes = gausslobes(no_core=True)
     assert lobes.shape == (771, 2049)
-    assert_allclose(lobes.max(), 0.0022180481987020277)
+    assert_allclose(lobes.max(), 0.002217848140504724)
     assert_allclose(lobes.min(), 0)
     assert_allclose(lobes.sum(), 0.13650323027901506)
 
@@ -34,7 +33,7 @@ def test_gausslobes_no_core() -> None:
 def test_gausslobes_full_transmission() -> None:
     lobes = gausslobes(mesh_transmission=1.0)
     assert lobes.shape == (771, 2049)
-    assert_allclose(lobes.max(), 0.2893962973982065)
+    assert_allclose(lobes.max(), 0.2893692564124479)
     assert_allclose(lobes.min(), 0)
     assert_allclose(lobes.sum(), 1.0)
 
@@ -64,13 +63,6 @@ def test_gausslobes_distance_pixels() -> None:
     assert_allclose(shift_y, spacing / DEFAULTS_MUSE.dy_pixel_SG.to_value(u.arcsec))
 
 
-def test_gausslobes_distance_lpi_types() -> None:
-    base = gausslobes_distance(284.163 * u.AA, lpi=70, arcsec=True)
-    assert_allclose(gausslobes_distance(284.163 * u.AA, lpi=np.int64(70), arcsec=True), base)
-    assert_allclose(gausslobes_distance(284.163 * u.AA, lpi=[70], arcsec=True), base)
-    assert_allclose(gausslobes_distance(284.163 * u.AA, lpi={284: 70}, arcsec=True), base)
-
-
 def test_axis_cuts() -> None:
     cut_x = gausslobes_single_wavelength(axis="x")
     cut_y = gausslobes_single_wavelength(axis="y")
@@ -87,14 +79,6 @@ def test_cut_in_half() -> None:
     half = gausslobes_single_wavelength(cut_in_half=True)
     assert half.shape == (385, 2049)
     assert half.x.size == 385
-
-
-def test_only_core_matches_core_psf_wrapper() -> None:
-    only_core = gausslobes_single_wavelength(only_core=True)
-    core = core_psf_gausslobes()
-    assert_allclose(core.values, only_core.values)
-    assert_allclose(core.x.values, only_core.x.values)
-    assert_allclose(core.y.values, only_core.y.values)
 
 
 def test_only_core_total_is_transmission_squared() -> None:
@@ -163,10 +147,3 @@ def test_wrapper_custom_dim_name() -> None:
     stack = gausslobes(wavelength=wavelengths)
     assert "line" in stack.dims
     assert stack.sizes["line"] == 2
-
-
-def test_instrumental_width_sg_uses_shared_constant() -> None:
-    width = DEFAULTS_MUSE.instrumental_width_sg
-    expected = 0.0815 * u.AA / DEFAULTS_MUSE.FWHM_TO_SIGMA / DEFAULTS_MUSE.channel_spectral_order
-    assert_allclose(width.values, expected.values)
-    assert width.sel(channel=284).item() == 0.0815 * u.AA / DEFAULTS_MUSE.FWHM_TO_SIGMA

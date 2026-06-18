@@ -7,6 +7,7 @@ import xarray as xr
 from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.units import imperial
 
 from muse.variables import DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
@@ -87,8 +88,8 @@ def test_instrument_defaults_use_evolve_for_overrides():
 def test_instrumental_width_sg():
     width = DEFAULTS_MUSE.instrumental_width_sg
 
-    np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), 0.0815 / 2.355)
-    np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), 0.0815 / 2.355 / 2)
+    np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm)
+    np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm / 2)
 
 
 def test_instrument_defaults_pickle_round_trip():

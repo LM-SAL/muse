@@ -2,13 +2,13 @@ import numpy as np
 import xarray as xr
 
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
-    "core_psf_gausslobes",
     "gausslobes",
     "gausslobes_distance",
     "gausslobes_peak",
@@ -17,18 +17,15 @@ __all__ = [
 
 
 def _first_value(value):
+    # Defaults are channel-keyed dicts; one value per call (call per wavelength).
     if isinstance(value, dict):
         return next(iter(value.values()))
-    if isinstance(value, list | tuple):
-        return value[0]
     return value
 
 
 def _lines_per_inch(value):
     value = _first_value(value)
-    if isinstance(value, u.Quantity):
-        return value.to_value(1 / u.imperial.inch)
-    return float(np.ravel(value)[0]) if np.ndim(value) else float(value)
+    return value.to_value(1 / u.imperial.inch) if isinstance(value, u.Quantity) else float(value)
 
 
 @format_docstring("DEFAULTS_MUSE", mesh_transmission="mesh_transmission")
@@ -225,8 +222,8 @@ def gausslobes_single_wavelength(
 
     midy = int(noy / 2)
     midx = int(nox / 2)
-    sigma_x = psf_fwhm_x / DEFAULTS_MUSE.FWHM_TO_SIGMA
-    sigma_y = psf_fwhm_y / DEFAULTS_MUSE.FWHM_TO_SIGMA
+    sigma_x = psf_fwhm_x / gaussian_sigma_to_fwhm
+    sigma_y = psf_fwhm_y / gaussian_sigma_to_fwhm
 
     y = dy_pixel_SG / oversample_y_SG * (np.arange(noy) - midy)
     x = dx_pixel_SG / oversample_x_SG * (np.arange(nox) - midx)
@@ -284,7 +281,7 @@ def gausslobes_single_wavelength(
             mesh_psf -= core_psf
     mesh_psf = mesh_psf.reshape(nx, oversample_x_SG, ny, oversample_y_SG).sum(axis=(1, 3))
     mesh_psf = mesh_transmission**2 * mesh_psf / core_total
-    if axis is not None and np.size(axis) < 2:
+    if axis is not None:
         mesh_psf /= mesh_transmission
     if not center:
         mesh_psf = np.roll(
@@ -299,9 +296,9 @@ def gausslobes_single_wavelength(
         psf = psf.isel(x=slice(None, nx // 2))
     add_history(psf, locals(), gausslobes_single_wavelength)
 
-    if np.all(np.squeeze(axis) == "x"):
+    if axis == "x":
         return psf.isel(y=midy_sub)
-    if np.all(np.squeeze(axis) == "y"):
+    if axis == "y":
         return psf.isel(x=midx_sub)
     return psf
 
@@ -323,50 +320,20 @@ def gausslobes(**kwargs):
         Stacked PSFs with the wavelength dimension(s) plus (x, y).
     """
     wavelength = kwargs.get("wavelength", DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"])
-    if not isinstance(wavelength, xr.DataArray):
-        if np.size(wavelength) == 1:
-            return gausslobes_single_wavelength(**kwargs)
+    if np.size(wavelength) == 1 and not isinstance(wavelength, xr.DataArray):
+        return gausslobes_single_wavelength(**kwargs)
+
+    call_kwargs = {k: v for k, v in kwargs.items() if k != "wavelength"}
+    if isinstance(wavelength, xr.DataArray):
+        dim, attrs = wavelength.dims[0], wavelength.attrs
+    else:
+        dim, attrs = "wavelength", {}
         if isinstance(wavelength, u.Quantity):
             wavelength = wavelength.to_value(u.AA)
-        wavelength = xr.DataArray(wavelength, dims=["wavelength"], coords={"wavelength": wavelength})
+    values = np.asarray(wavelength)  # xarray/Quantity -> AA magnitudes
+    coord = xr.DataArray(values, dims=[dim], coords={dim: values}, name=dim, attrs=attrs)
 
-    psf_list = []
-    call_kwargs = dict(kwargs)
-    call_kwargs.pop("wavelength", None)
-
-    # Flatten wavelength while preserving original dims structure
-    flat_wvl = wavelength.stack(flat_dim=wavelength.dims)
-    for wvl_val in flat_wvl.values:
-        if not isinstance(wvl_val, u.Quantity):
-            wvl_val = wvl_val * u.AA
-        psf = gausslobes_single_wavelength(wavelength=wvl_val, **call_kwargs)
-        psf_list.append(psf)
-
-    # Stack along flattened dimension
-    psf_stack = xr.concat(psf_list, dim="flat_dim")
-    # Restore original multi-index coordinates
-    psf_stack = psf_stack.assign_coords(flat_dim=flat_wvl.coords["flat_dim"])
-    # Unstack to restore original wavelength dimensions
-    psf_stack = psf_stack.unstack("flat_dim")
-
-    if "wavelength" in psf_stack.coords:
-        psf_stack.wavelength.attrs.update(wavelength.attrs)
-
+    psf_list = [gausslobes_single_wavelength(wavelength=v * u.AA, **call_kwargs) for v in values]
+    psf_stack = xr.concat(psf_list, dim=coord)
     add_history(psf_stack, locals(), gausslobes)
-
     return psf_stack
-
-
-def core_psf_gausslobes(**kwargs):
-    """
-    Creates the core (no side lobes) Gausslobe pattern.
-
-    Thin wrapper around `gausslobes_single_wavelength` with ``only_core=True``;
-    see that function for the accepted parameters.
-
-    Returns
-    -------
-    `xarray.DataArray`
-        The core Gausslobe pattern.
-    """
-    return gausslobes_single_wavelength(only_core=True, **kwargs)
