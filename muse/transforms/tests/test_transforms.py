@@ -4,35 +4,35 @@ import pytest
 import astropy.units as u
 
 from muse.tests.helpers import assert_dataset_structure
-from muse.transforms.transforms import muse_fov, reshape_x_to_slit_step
+from muse.transforms.transforms import match_fov, reshape_x_to_slit_step
 
 
-def test_muse_fov_returns_input_when_already_muse_resolution(vdem) -> None:
-    # The default fixture already sits at the MUSE pixel size, so muse_fov takes
+def test_match_fov_returns_input_when_already_muse_resolution(vdem) -> None:
+    # The default fixture already sits at the MUSE pixel size, so match_fov takes
     # the early-return path and hands back the same object untouched.
-    assert muse_fov(vdem) is vdem
+    assert match_fov(vdem) is vdem
 
 
-def test_muse_fov_returns_input_for_single_y_row(vdem) -> None:
+def test_match_fov_returns_input_for_single_y_row(vdem) -> None:
     # x matches the MUSE pixel size and there is only one y row, so dy cannot be
-    # measured: muse_fov accepts on the x match alone and returns the input.
+    # measured: match_fov accepts on the x match alone and returns the input.
     single_row = vdem.isel(y=[0])
-    assert muse_fov(single_row) is single_row
+    assert match_fov(single_row) is single_row
 
 
-def test_muse_fov_returns_input_for_single_x_column(vdem) -> None:
-    # Only one x column, so dx cannot be measured: muse_fov checks dy alone and,
+def test_match_fov_returns_input_for_single_x_column(vdem) -> None:
+    # Only one x column, so dx cannot be measured: match_fov checks dy alone and,
     # since it matches the MUSE pixel size, returns the input.
     single_column = vdem.isel(x=[0])
-    assert muse_fov(single_column) is single_column
+    assert match_fov(single_column) is single_column
 
 
-def test_muse_fov_relabels_single_pixel_input(vdem) -> None:
-    # Both axes are size 1: nothing to resample or tile, so muse_fov falls through
+def test_match_fov_relabels_single_pixel_input(vdem) -> None:
+    # Both axes are size 1: nothing to resample or tile, so match_fov falls through
     # to the tail and returns a copy with the coords relabeled onto the MUSE grid.
     # NOTE: this degenerate relabel-only path may be removed in the future.
     single_pixel = vdem.isel(x=[0], y=[0])
-    out = muse_fov(single_pixel)
+    out = match_fov(single_pixel)
     assert out is not single_pixel
     assert out.sizes["x"] == 1
     assert out.sizes["y"] == 1
@@ -43,8 +43,8 @@ def test_muse_fov_relabels_single_pixel_input(vdem) -> None:
     assert "HISTORY" in out.attrs
 
 
-def test_muse_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
-    out = muse_fov(vdem_offgrid)
+def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid)
     assert out is not vdem_offgrid
     assert_dataset_structure(
         out,
@@ -61,37 +61,37 @@ def test_muse_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     assert float(out.y[1] - out.y[0]) == pytest.approx(0.167)
 
 
-def test_muse_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
+def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
     # Coarse pixels under-fill the FOV, so the x axis is padded out to nslits*nraster.
-    out = muse_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec)
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec)
     assert out.x.size == 35 * 11
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_muse_fov_notile_keeps_resampled_width(vdem_offgrid) -> None:
-    out = muse_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile")
+def test_match_fov_notile_keeps_resampled_width(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile")
     # "notile" suffix skips the pad, so the resampled width is kept as-is (< full FOV).
     assert out.x.size == 308
     assert out.x.size < 35 * 11
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_muse_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
+def test_match_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
     # Very coarse target pixels exercise the integer-factor averaging branch.
-    out = muse_fov(vdem_offgrid, dx_pix=4.0 * u.arcsec)
+    out = match_fov(vdem_offgrid, dx_pix=4.0 * u.arcsec)
     assert out.x.size == 35 * 11
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_muse_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
+def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
     # Coarse y pixels exercise the integer-factor averaging branch on the y axis.
-    out = muse_fov(vdem_offgrid, dy_pix=2.0 * u.arcsec)
+    out = match_fov(vdem_offgrid, dy_pix=2.0 * u.arcsec)
     assert out.y.size == 5
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_muse_fov_rotate(vdem_offgrid) -> None:
-    out = muse_fov(vdem_offgrid, rotate=True)
+def test_match_fov_rotate(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid, rotate=True)
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
@@ -136,26 +136,26 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
     assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
 
 
-def test_muse_fov_rejects_unknown_restype(vdem) -> None:
+def test_match_fov_rejects_unknown_restype(vdem) -> None:
     with pytest.raises(ValueError, match="Unsupported restype"):
-        muse_fov(vdem, restype="match_fov")
+        match_fov(vdem, restype="match_fov")
 
 
-def test_muse_fov_requires_quantity_pixel_sizes(vdem) -> None:
+def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
     with pytest.raises(TypeError, match=r"dx_pix must be an astropy\.units\.Quantity"):
-        muse_fov(vdem, dx_pix=0.4)
+        match_fov(vdem, dx_pix=0.4)
 
 
-def test_muse_fov_requires_coordinate_units(vdem) -> None:
+def test_match_fov_requires_coordinate_units(vdem) -> None:
     bad_vdem = vdem.copy(deep=True)
     del bad_vdem.x.attrs["units"]
     with pytest.raises(ValueError, match="x coordinate must define units"):
-        muse_fov(bad_vdem)
+        match_fov(bad_vdem)
 
 
-def test_muse_fov_requires_x_coordinate(vdem) -> None:
+def test_match_fov_requires_x_coordinate(vdem) -> None:
     with pytest.raises(ValueError, match="x coordinate is missing"):
-        muse_fov(vdem.drop_vars("x"))
+        match_fov(vdem.drop_vars("x"))
 
 
 def test_reshape_x_to_slit_step_requires_x_units(vdem) -> None:

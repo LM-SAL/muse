@@ -8,7 +8,7 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["muse_fov", "reshape_x_to_slit_step"]
+__all__ = ["match_fov", "reshape_x_to_slit_step"]
 
 _CM_PER_ARCSEC_AT_1_AU = (u.arcsec.to(u.rad) * u.AU).to_value("cm")
 _SPATIAL_EQUIVALENCY = [
@@ -51,7 +51,7 @@ def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
 )
-def muse_fov(
+def match_fov(
     vdem: xr.Dataset,
     dx_pix=DEFAULTS_MUSE.dx_pixel_SG,
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
@@ -252,7 +252,7 @@ def muse_fov(
         for atrs in vdem[varss].attrs:
             vdem_xr[varss].attrs[atrs] = vdem[varss].attrs[atrs]
 
-    add_history(vdem_xr, locals(), muse_fov)
+    add_history(vdem_xr, locals(), match_fov)
 
     return vdem_xr
 

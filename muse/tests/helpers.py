@@ -163,7 +163,7 @@ def fake_vdem():
 def fake_vdem_offgrid():
     """
     `fake_vdem` with the spatial grid stretched so the x/y spacing no longer
-    matches the MUSE pixel size. Forces `muse_fov` down its resample/tile path
+    matches the MUSE pixel size. Forces `match_fov` down its resample/tile path
     instead of the "already MUSE pixel size" early return.
     """
     ds = fake_vdem()
