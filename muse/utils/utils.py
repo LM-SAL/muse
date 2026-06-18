@@ -99,7 +99,7 @@ def add_history(ds: xr.Dataset, local_vars: dict, func: Callable) -> None:
     history_entry = f"{func.__name__}({', '.join(string_vals)})"
     if "HISTORY" in ds.attrs:
         if isinstance(ds.attrs["HISTORY"], list):
-            ds.attrs["HISTORY"].append(history_entry)
+            ds.attrs["HISTORY"] = [*ds.attrs["HISTORY"], history_entry]
         else:
             ds.attrs["HISTORY"] = [ds.attrs["HISTORY"], history_entry]
     else:

@@ -118,6 +118,19 @@ def test_reshape_x_to_slit_step(vdem) -> None:
     np.testing.assert_array_equal(out.vdem.sel(slit=34, step=10), vdem.vdem.isel(x=384))
 
 
+def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
+    source = vdem.copy(deep=True)
+    source.attrs["HISTORY"] = ["match_fov(ds=ds)"]
+
+    out = reshape_x_to_slit_step(source, nslits=35, nraster=11)
+
+    assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
+    assert out.attrs["HISTORY"] == [
+        "match_fov(ds=ds)",
+        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
+    ]
+
+
 def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
     # When x already carries a (slit, step) MultiIndex, the function unstacks it
     # instead of building a fresh index.
