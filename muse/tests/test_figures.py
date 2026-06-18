@@ -3,8 +3,6 @@ import numpy as np
 
 from muse.tests.helpers import figure_test
 
-__all__ = []
-
 
 @figure_test
 def test_vdem_intensity_map(vdem):
