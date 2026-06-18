@@ -268,7 +268,6 @@ package.json
 *.log
 *.nc
 *.zarr
-*.json
 benchmark/*/*.ipynb
 benchmark/*/*test*.py
 benchmark/*/*no_mask*.py
