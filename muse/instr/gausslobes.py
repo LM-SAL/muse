@@ -9,10 +9,9 @@ from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
-    "gausslobes",
-    "gausslobes_distance",
-    "gausslobes_peak",
-    "gausslobes_single_wavelength",
+    "gausslobe_psf",
+    "gausslobe_psf_stack",
+    "gausslobe_spacing",
 ]
 
 _AXES = {None, "x", "y"}
@@ -76,7 +75,7 @@ def _tilted_mesh_psf(x, y, xind, yind, spacing, angle, sigma_x, sigma_y, spike_v
 
 
 @format_docstring("DEFAULTS_MUSE", mesh_transmission="mesh_transmission")
-def gausslobes_peak(*, nspike=100, mesh_transmission=DEFAULTS_MUSE.mesh_transmission):
+def _gausslobe_peak_values(*, nspike=100, mesh_transmission=DEFAULTS_MUSE.mesh_transmission):
     """
     Generate the relative peak values of the side lobes to the core.
 
@@ -103,43 +102,28 @@ def gausslobes_peak(*, nspike=100, mesh_transmission=DEFAULTS_MUSE.mesh_transmis
 
 
 @format_docstring("DEFAULTS_MUSE", lpi="lpi")
-@u.quantity_input(wave0=u.AA)
-def gausslobes_distance(wave0, *, lpi=DEFAULTS_MUSE.lpi, arcsec=False):
+@u.quantity_input(wavelength=u.AA)
+def gausslobe_spacing(wavelength, *, lpi=DEFAULTS_MUSE.lpi):
     """
-    Generate the distance between core and 1st side lobes in both x and y directions in
-    pixel unit.
+    Generate the angular spacing between the core and first side lobes.
 
     Parameters
     ----------
-    wave0 : `astropy.units.Quantity`
+    wavelength : `astropy.units.Quantity`
         Wavelength.
     lpi : int, optional
         Lines per inch of the grating.
         Default is {lpi}.
-    arcsec : bool
-        Return the spacing in arcseconds instead of per-axis pixel shifts.
-        Default is False
 
     Returns
     -------
     spacing : float
         Distance between core and 1st side lobes in arcseconds.
-        Only returned when ``arcsec`` is True.
-    shift_x, shift_y : float
-        Distance between core and 1st side lobes in x and y direction in pixel
-        units. Returned when ``arcsec`` is False.
     """
     lpi = _lines_per_inch(lpi)
     asec = np.pi / 180 / 3600
-    wave0 = wave0.to_value(u.AA)
-    spacing = wave0 * 1e-10 / (0.0254 / lpi) / asec
-    if arcsec:
-        return spacing
-    dx_pixel_SG = DEFAULTS_MUSE.dx_pixel_SG.to_value(u.arcsec)
-    dy_pixel_SG = DEFAULTS_MUSE.dy_pixel_SG.to_value(u.arcsec)
-    shift_x = spacing / dx_pixel_SG  # in pixel scale
-    shift_y = spacing / dy_pixel_SG  # in pixel scale
-    return shift_x, shift_y
+    wavelength = wavelength.to_value(u.AA)
+    return wavelength * 1e-10 / (0.0254 / lpi) / asec
 
 
 @format_docstring(
@@ -165,7 +149,7 @@ def gausslobes_distance(wave0, *, lpi=DEFAULTS_MUSE.lpi, arcsec=False):
     dx_pixel_SG=u.arcsec,
     dy_pixel_SG=u.arcsec,
 )
-def gausslobes_single_wavelength(
+def gausslobe_psf(
     *,
     wavelength=DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"],
     center=True,
@@ -281,14 +265,14 @@ def gausslobes_single_wavelength(
     y_sub = dy_pixel_SG * (np.arange(ny) - midy_sub)
     x_sub = dx_pixel_SG * (np.arange(nx) - midx_sub)
 
-    spacing = gausslobes_distance(wavelength, lpi=lpi, arcsec=True)
+    spacing = gausslobe_spacing(wavelength, lpi=lpi)
 
     if spike_values is None:
         if tilt:
             nspike = int(np.sqrt((pixels_SG * dy_pixel_SG) ** 2 + (coverage * dx_pixel_SG) ** 2) / spacing)
         else:
             nspike = int(np.max([pixels_SG * dy_pixel_SG, coverage * dx_pixel_SG]) / spacing)
-        spike_values = gausslobes_peak(nspike=nspike + 1, mesh_transmission=mesh_transmission)
+        spike_values = _gausslobe_peak_values(nspike=nspike + 1, mesh_transmission=mesh_transmission)
     else:
         nspike = len(spike_values) - 1
 
@@ -324,7 +308,7 @@ def gausslobes_single_wavelength(
     psf.y.attrs["units"] = "arcsec"
     if cut_in_half:
         psf = psf.isel(x=slice(None, nx // 2))
-    add_history(psf, locals(), gausslobes_single_wavelength)
+    add_history(psf, locals(), gausslobe_psf)
 
     if axis == "x":
         return psf.isel(y=midy_sub)
@@ -333,37 +317,32 @@ def gausslobes_single_wavelength(
     return psf
 
 
-def gausslobes(**kwargs):
+def gausslobe_psf_stack(wavelengths, **kwargs):
     """
-    Generate Gausslobe PSFs for each wavelength in an xarray.DataArray.
+    Generate Gausslobe PSFs for multiple wavelengths.
 
     Parameters
     ----------
-    wavelength : xarray.DataArray, array-like, or scalar
-        Wavelengths (Angstroms or equivalent). Scalars produce a single PSF.
+    wavelengths : xarray.DataArray or array-like
+        Wavelengths in Angstroms or equivalent.
     kwargs : dict
-        Additional keyword arguments for `gausslobes_single_wavelength`.
+        Additional keyword arguments for `gausslobe_psf`.
 
     Returns
     -------
     psf_stack : xarray.DataArray
         Stacked PSFs with the wavelength dimension(s) plus (x, y).
     """
-    wavelength = kwargs.get("wavelength", DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"])
-    if np.size(wavelength) == 1 and not isinstance(wavelength, xr.DataArray):
-        return gausslobes_single_wavelength(**kwargs)
-
-    call_kwargs = {k: v for k, v in kwargs.items() if k != "wavelength"}
-    if isinstance(wavelength, xr.DataArray):
-        dim, attrs = wavelength.dims[0], wavelength.attrs
+    if isinstance(wavelengths, xr.DataArray):
+        dim, attrs = wavelengths.dims[0], wavelengths.attrs
     else:
         dim, attrs = "wavelength", {}
-        if isinstance(wavelength, u.Quantity):
-            wavelength = wavelength.to_value(u.AA)
-    values = np.asarray(wavelength)  # xarray/Quantity -> AA magnitudes
+        if isinstance(wavelengths, u.Quantity):
+            wavelengths = wavelengths.to_value(u.AA)
+    values = np.asarray(wavelengths)  # xarray/Quantity -> AA magnitudes
     coord = xr.DataArray(values, dims=[dim], coords={dim: values}, name=dim, attrs=attrs)
 
-    psf_list = [gausslobes_single_wavelength(wavelength=v * u.AA, **call_kwargs) for v in values]
+    psf_list = [gausslobe_psf(wavelength=v * u.AA, **kwargs) for v in values]
     psf_stack = xr.concat(psf_list, dim=coord)
-    add_history(psf_stack, locals(), gausslobes)
+    add_history(psf_stack, locals(), gausslobe_psf_stack)
     return psf_stack

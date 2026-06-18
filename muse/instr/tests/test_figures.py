@@ -1,12 +1,12 @@
 import matplotlib.pyplot as plt
 
-from muse.instr.gausslobes import gausslobes
+from muse.instr import gausslobe_psf
 from muse.tests.helpers import figure_test
 
 
 @figure_test
-def test_gausslobes_psf():
+def test_gausslobe_psf():
     """Default Gausslobe PSF (x, y); vmax saturates the core so the side lobes show."""
     fig, ax = plt.subplots()
-    gausslobes().plot(ax=ax, vmin=0, vmax=0.002)
+    gausslobe_psf().plot(ax=ax, vmin=0, vmax=0.002)
     return fig
