@@ -75,6 +75,11 @@ def test_axis_cuts() -> None:
     assert_allclose(cut_y.values * mesh_transmission, full.isel(x=385).values)
 
 
+def test_invalid_axis_raises() -> None:
+    with pytest.raises(ValueError, match="axis must be"):
+        gausslobes_single_wavelength(axis="z")
+
+
 def test_cut_in_half() -> None:
     half = gausslobes_single_wavelength(cut_in_half=True)
     assert half.shape == (385, 2049)

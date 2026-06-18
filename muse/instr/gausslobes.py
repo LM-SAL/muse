@@ -15,6 +15,8 @@ __all__ = [
     "gausslobes_single_wavelength",
 ]
 
+_AXES = {None, "x", "y"}
+
 
 def _first_value(value):
     # Defaults are channel-keyed dicts; one value per call (call per wavelength).
@@ -26,6 +28,51 @@ def _first_value(value):
 def _lines_per_inch(value):
     value = _first_value(value)
     return value.to_value(1 / u.imperial.inch) if isinstance(value, u.Quantity) else float(value)
+
+
+def _validate_axis(axis):
+    if axis in _AXES:
+        return
+    msg = "axis must be None, 'x', or 'y'"
+    raise ValueError(msg)
+
+
+def _gaussian(axis_values, center, sigma):
+    return np.exp(-((axis_values - center) ** 2) / (2 * sigma**2))
+
+
+def _axis_indices(axis, nspike):
+    xind = np.array([0]) if axis == "y" else np.arange(-nspike, nspike + 1)
+    yind = np.array([0]) if axis == "x" else np.arange(-nspike, nspike + 1)
+    return xind, yind
+
+
+def _axis_lobes(axis_values, indices, spacing, sigma, spike_values):
+    lobes = np.zeros_like(axis_values)
+    for index in indices:
+        lobes += spike_values[abs(index)] * _gaussian(axis_values, spacing * index, sigma)
+    return lobes
+
+
+def _aligned_mesh_psf(x, y, xind, yind, spacing, sigma_x, sigma_y, spike_values):
+    gx = _axis_lobes(x, xind, spacing, sigma_x, spike_values)
+    gy = _axis_lobes(y, yind, spacing, sigma_y, spike_values)
+    return gx[:, None] * gy[None, :]
+
+
+def _tilted_mesh_psf(x, y, xind, yind, spacing, angle, sigma_x, sigma_y, spike_values):
+    xxind, yyind = np.meshgrid(xind, yind)
+    xxind_flat = xxind.ravel()
+    yyind_flat = yyind.ravel()
+    weights = spike_values[np.abs(xxind_flat)] * spike_values[np.abs(yyind_flat)]
+    xxpos = xxind_flat * spacing
+    yypos = yyind_flat * spacing
+    angle_rad = np.deg2rad(angle)
+    rxxpos = xxpos * np.cos(angle_rad) - yypos * np.sin(angle_rad)
+    ryypos = xxpos * np.sin(angle_rad) + yypos * np.cos(angle_rad)
+    gx_all = _gaussian(x[None, :], rxxpos[:, None], sigma_x)
+    gy_all = _gaussian(y[None, :], ryypos[:, None], sigma_y)
+    return np.matmul((gx_all * weights[:, None]).T, gy_all)
 
 
 @format_docstring("DEFAULTS_MUSE", mesh_transmission="mesh_transmission")
@@ -205,6 +252,7 @@ def gausslobes_single_wavelength(
     IDL code version dated - 24 Oct 2022.
     New definition of core PSF. Correct the rotation. - 25 Feb 2026. K. Cho.
     """
+    _validate_axis(axis)
     psf_fwhm_x = psf_fwhm_x.to_value(u.arcsec)
     psf_fwhm_y = psf_fwhm_y.to_value(u.arcsec)
     lpi = _lines_per_inch(lpi)
@@ -244,8 +292,9 @@ def gausslobes_single_wavelength(
     else:
         nspike = len(spike_values) - 1
 
-    gx = spike_values[0] * np.exp(-(x**2 / (2 * sigma_x**2)))
-    gy = spike_values[0] * np.exp(-(y**2 / (2 * sigma_y**2)))
+    spike_values = np.asarray(spike_values)
+    gx = spike_values[0] * _gaussian(x, 0, sigma_x)
+    gy = spike_values[0] * _gaussian(y, 0, sigma_y)
     core_psf = gx[:, None] * gy[None, :]
 
     core_total = np.sum(core_psf)
@@ -253,30 +302,11 @@ def gausslobes_single_wavelength(
     if only_core:
         mesh_psf = core_psf
     else:
-        xind = np.array([0]) if axis == "y" else np.arange(-nspike, nspike + 1)
-        yind = np.array([0]) if axis == "x" else np.arange(-nspike, nspike + 1)
+        xind, yind = _axis_indices(axis, nspike)
         if tilt:  # mesh is not aligned with slit and scan direction
-            xxind, yyind = np.meshgrid(xind, yind)
-            xxind_flat = xxind.ravel()
-            yyind_flat = yyind.ravel()
-            weights = spike_values[np.abs(xxind_flat)] * spike_values[np.abs(yyind_flat)]
-            xxpos = xxind_flat * spacing
-            yypos = yyind_flat * spacing
-            angle_rad = np.deg2rad(angle)
-            rxxpos = xxpos * np.cos(angle_rad) - yypos * np.sin(angle_rad)
-            ryypos = xxpos * np.sin(angle_rad) + yypos * np.cos(angle_rad)
-            gx_all = np.exp(-((x[None, :] - rxxpos[:, None]) ** 2) / (2 * sigma_x**2))
-            gy_all = np.exp(-((y[None, :] - ryypos[:, None]) ** 2) / (2 * sigma_y**2))
-            gx_weighted = gx_all * weights[:, None]
-            mesh_psf = np.matmul(gx_weighted.T, gy_all)
+            mesh_psf = _tilted_mesh_psf(x, y, xind, yind, spacing, angle, sigma_x, sigma_y, spike_values)
         else:  # mesh is aligned with slit and scan direction
-            gx = np.zeros(int(nox))
-            gy = np.zeros(int(noy))
-            for i in xind:
-                gx += spike_values[abs(i)] * np.exp(-((x - spacing * i) ** 2 / (2 * sigma_x**2)))
-            for j in yind:
-                gy += spike_values[abs(j)] * np.exp(-((y - spacing * j) ** 2 / (2 * sigma_y**2)))
-            mesh_psf = gx[:, None] * gy[None, :]
+            mesh_psf = _aligned_mesh_psf(x, y, xind, yind, spacing, sigma_x, sigma_y, spike_values)
         if no_core:
             mesh_psf -= core_psf
     mesh_psf = mesh_psf.reshape(nx, oversample_x_SG, ny, oversample_y_SG).sum(axis=(1, 3))
