@@ -72,8 +72,8 @@ def _calc_einsum(
         logger.debug(f"Using torch on cuda:{cuda_device}" if cuda_device is not None else "Using CPU with torch")
         result = torch.einsum(
             f"{einsum_str}->{out_str}",
-            numpy_to_torch(raster.vdem.data, cuda_device=cuda_device).float(),
-            numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device).float(),
+            numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
+            numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
         )
     return torch_to_numpy(result)
 

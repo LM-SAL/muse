@@ -17,37 +17,36 @@ from muse.log import logger
 __all__ = ["add_history", "numpy_to_torch", "torch_to_numpy", "update_attrs"]
 
 
-def torch_to_numpy(torch_tensor, cuda_device: int | None = None):
+def torch_to_numpy(torch_tensor):
     """
     Convert a `torch.Tensor` to a `numpy.ndarray`.
+
+    The tensor is detached from the autograd graph and moved to the CPU first
+    (both no-ops when already so) so that tensors on a CUDA device convert cleanly.
 
     Parameters
     ----------
     torch_tensor : `torch.Tensor`
         Torch tensor to convert.
-    cuda_device : `int`, optional
-        If provided, transfer the tensor from the GPU to the CPU before conversion.
-
 
     Returns
     -------
     `numpy.ndarray`
         The converted NumPy array.
     """
-    import torch  # NOQA: PLC0415 - Avoid a heavy import unless we need it
-
-    if cuda_device is not None:
-        with torch.cuda.device(f"cuda:{cuda_device}"):
-            return torch_tensor.cpu().numpy()
+    tensor = torch_tensor.detach().cpu()
     try:
-        return torch_tensor.numpy()
-    except RuntimeError:
-        return np.array(torch_tensor.tolist())
+        return tensor.numpy()
+    except TypeError:  # dtypes numpy lacks, e.g. bfloat16 / float8
+        return np.array(tensor.tolist())
 
 
 def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
     """
     Convert a `numpy.ndarray` to a `torch.Tensor`.
+
+    Floating-point precision is capped at float32: ``float64`` input is downcast
+    to ``float32``, while narrower dtypes (``float16``, integers) are left as-is.
 
     Parameters
     ----------
@@ -63,10 +62,14 @@ def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
     """
     import torch  # NOQA: PLC0415 - Avoid a heavy import unless we need it
 
+    tensor = torch.tensor(numpy_array)
+    # Enforce at most float32 precision
+    if tensor.dtype == torch.float64:
+        tensor = tensor.float()
     if cuda_device is not None:
         with torch.cuda.device(f"cuda:{cuda_device}"):
-            return torch.tensor(numpy_array).cuda()
-    return torch.tensor(numpy_array)
+            return tensor.cuda()
+    return tensor
 
 
 def _history_entries(history) -> list:
