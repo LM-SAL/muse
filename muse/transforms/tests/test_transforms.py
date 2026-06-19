@@ -4,7 +4,7 @@ import pytest
 import astropy.units as u
 
 from muse.tests.helpers import assert_dataset_structure
-from muse.transforms.transforms import match_fov, reshape_x_to_slit_step
+from muse.transforms.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
 
 def test_match_fov_returns_input_when_already_muse_resolution(vdem) -> None:
@@ -147,6 +147,43 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
         finite_vars=("vdem",),
     )
     assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
+
+
+def test_reshape_slit_step_to_x_round_trips(vdem) -> None:
+    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    assert_dataset_structure(
+        out,
+        data_vars=("vdem",),
+        coords=("x", "logT", "vdop", "y"),
+        sizes={"x": 385, "logT": 7, "vdop": 9, "y": 32},
+        finite_vars=("vdem",),
+    )
+    assert out.x.attrs["units"] == "arcsec"
+    np.testing.assert_allclose(out.x.values, vdem.x.values)
+    np.testing.assert_array_equal(out.vdem.transpose(*vdem.vdem.dims).values, vdem.vdem.values)
+
+
+def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
+    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    del reshaped.attrs["step_size"]
+    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    # Falls back to the MUSE pixel size (0.4 arcsec) for the x spacing.
+    np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
+
+
+def test_reshape_slit_step_to_x_records_history(vdem) -> None:
+    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    assert out.attrs["HISTORY"] == [
+        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
+        "reshape_slit_step_to_x(ds=ds, nslits=35, nraster=11)",
+    ]
+
+
+def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
+    with pytest.raises(ValueError, match="slit coordinate is missing"):
+        reshape_slit_step_to_x(vdem)
 
 
 def test_match_fov_rejects_unknown_restype(vdem) -> None:
