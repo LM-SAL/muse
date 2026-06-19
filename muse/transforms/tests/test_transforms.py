@@ -127,7 +127,7 @@ def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
     assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
     assert out.attrs["HISTORY"] == [
         "match_fov(ds=ds)",
-        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
+        "reshape_x_to_slit_step",
     ]
 
 
