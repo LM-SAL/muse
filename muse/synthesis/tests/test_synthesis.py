@@ -53,8 +53,8 @@ def test_vdem_synthesis(response, vdem) -> None:
     )
     assert detector_response.flux.attrs["units"] == "ph / s"
     assert detector_response.attrs["HISTORY"] == [
-        "reshape_x_to_slit_step",
-        "vdem_synthesis",
+        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
+        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), cuda_device=None)",
     ]
     np.testing.assert_array_equal(
         detector_response.line_wvl.values,

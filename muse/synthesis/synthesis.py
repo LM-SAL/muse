@@ -208,5 +208,5 @@ def vdem_synthesis(
     if slit_preserved and "SG_wvl" in response:
         ds = ds.assign_coords(SG_wvl=response.SG_wvl)
 
-    add_history(ds, vdem_synthesis)
+    add_history(ds, locals(), vdem_synthesis)
     return ds

@@ -127,7 +127,7 @@ def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
     assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
     assert out.attrs["HISTORY"] == [
         "match_fov(ds=ds)",
-        "reshape_x_to_slit_step",
+        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
     ]
 
 
@@ -146,7 +146,7 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
         sizes={"slit": 35, "step": 11, "logT": 7, "vdop": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step"]
+    assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
 
 
 def test_match_fov_rejects_unknown_restype(vdem) -> None:
