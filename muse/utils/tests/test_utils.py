@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import torch
 import xarray as xr
 
 import astropy.units as u
@@ -116,3 +117,18 @@ def test_update_attrs_merges_history_from_multiple_sources() -> None:
 def test_torch_numpy_round_trip() -> None:
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
+
+
+def test_numpy_to_torch_caps_precision_at_float32() -> None:
+    assert numpy_to_torch(np.ones(3, dtype=np.float64)).dtype == torch.float32  # Downcast
+    assert numpy_to_torch(np.ones(3, dtype=np.float32)).dtype == torch.float32  # Unchanged
+    assert numpy_to_torch(np.ones(3, dtype=np.float16)).dtype == torch.float16  # Narrower kept
+
+
+@pytest.mark.cuda
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
+def test_torch_numpy_round_trip_cuda() -> None:
+    array = np.arange(6.0).reshape(2, 3)
+    tensor = numpy_to_torch(array, cuda_device=0)
+    assert tensor.is_cuda  # numpy_to_torch places it on the GPU
+    np.testing.assert_array_equal(torch_to_numpy(tensor), array)  # torch_to_numpy pulls it back
