@@ -37,7 +37,7 @@ is_development = _version.is_devrelease
 is_release = not (_version.is_prerelease or _version.is_devrelease)
 
 project = "muse"
-author = "IRIS Instrument Team @ LMSAL"
+author = "MUSE Instrument Team @ LMSAL"
 copyright = f"{datetime.datetime.now(datetime.UTC).year}, {author}"  # NOQA: A001
 
 # -- General configuration ---------------------------------------------------

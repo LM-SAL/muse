@@ -136,4 +136,4 @@ This checks if ``muse`` was installed correctly.
 
 If you want to install another package later, you can run ``conda install <package_name>``.
 
-Now we've got a working installation of ``muse``, in the next few chapters we'll look at some of the basic data structures ``muse`` uses for representing IRIS SJI and SG data.
+Now we've got a working installation of ``muse``, in the next few chapters we'll look at some of the basic data structures ``muse`` uses for representing SG and context imager data.

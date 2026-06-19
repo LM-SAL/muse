@@ -66,10 +66,6 @@ lint.extend-ignore = [
     "N806", # in function should be lowercase
     "S101", # Use of `assert` detected
 ]
-"muse/instr/gausslobes.py" = [
-    "N803", # science names such as dx_pixel_SG are public arguments
-    "N806", # science names such as dx_pixel_SG are local variables
-]
 "muse/variables_schema.py" = [
     "N815", # science/default field names such as dx_pixel_SG are public attrs
 ]

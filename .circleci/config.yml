@@ -72,16 +72,16 @@ jobs:
           fingerprints: "SHA256:jVnptuBNlSZXcnweypnpX7Owzt6M8+jJCTDpmtJ9a30"
       - run: ssh-keyscan github.com >> ~/.ssh/known_hosts
       - run: git config --global user.email "lmsal@circleci" && git config --global user.name "Circle CI"
-      - run: git clone git@github.com:LM-SAL/figure-test-images.git --depth 1 -b irispy-${CIRCLE_BRANCH} ~/irispy-figure-tests/
+      - run: git clone git@github.com:LM-SAL/figure-test-images.git --depth 1 -b muse-${CIRCLE_BRANCH} ~/muse-figure-tests/
       # Generate Reference images
       - run: pip install --user -U tox tox-pypi-filter
-      - run: rm -rf /home/circleci/irispy-figure-tests/figures/$TOXENV/*
-      - run: tox -v -- --mpl-generate-path=/home/circleci/irispy-figure-tests/figures/$TOXENV | tee toxlog
+      - run: rm -rf /home/circleci/muse-figure-tests/figures/$TOXENV/*
+      - run: tox -v -- --mpl-generate-path=/home/circleci/muse-figure-tests/figures/$TOXENV | tee toxlog
       - run: |
           hashlib=$(grep "^figure_hashes.*\.json$" toxlog)
-          cp ./irispy/tests/$hashlib /home/circleci/irispy-figure-tests/figures/$TOXENV/
+          cp ./muse/tests/$hashlib /home/circleci/muse-figure-tests/figures/$TOXENV/
       - run: |
-          cd ~/irispy-figure-tests/
+          cd ~/muse-figure-tests/
           git pull
           git status
           git add .
