@@ -105,6 +105,7 @@ with Path("nitpick-exceptions").open() as nitpick_exceptions:
         nitpick_ignore.append((dtype, target))
 
 # -- Options for intersphinx extension ---------------------------------------
+
 intersphinx_mapping = {
     "python": (
         "https://docs.python.org/3/",
@@ -119,24 +120,11 @@ intersphinx_mapping = {
         (None, "https://www.astropy.org/astropy-data/intersphinx/scipy.inv"),
     ),
     "matplotlib": ("https://matplotlib.org/stable", None),
-    "aiapy": ("https://aiapy.readthedocs.io/en/stable/", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
-    "astroquery": ("https://astroquery.readthedocs.io/en/latest/", None),
-    "drms": ("https://docs.sunpy.org/projects/drms/en/stable/", None),
-    "mpl_animators": ("https://docs.sunpy.org/projects/mpl-animators/en/stable/", None),
-    "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
-    "parfive": ("https://parfive.readthedocs.io/en/stable/", None),
-    "reproject": ("https://reproject.readthedocs.io/en/stable/", None),
-    "skimage": ("https://scikit-image.org/docs/stable/", None),
-    "sqlalchemy": ("https://docs.sqlalchemy.org/en/latest/", None),
-    "sunkit_image": ("https://docs.sunpy.org/projects/sunkit-image/en/stable/", None),
     "sunkit_instruments": (
         "https://docs.sunpy.org/projects/sunkit-instruments/en/stable/",
         None,
     ),
-    "zeep": ("https://docs.python-zeep.org/en/stable/", None),
-    "asdf": ("https://asdf.readthedocs.io/en/stable/", None),
-    "sunpy": ("https://docs.sunpy.org/en/stable/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
 }
