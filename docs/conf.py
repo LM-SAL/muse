@@ -121,6 +121,7 @@ intersphinx_mapping = {
     ),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
+    "sunpy": ("https://docs.sunpy.org/en/stable/", None),
     "sunkit_instruments": (
         "https://docs.sunpy.org/projects/sunkit-instruments/en/stable/",
         None,

@@ -134,11 +134,11 @@ def vdem_synthesis(
     Parameters
     ----------
     raster : `xarray.Dataset`
-        VDEM raster (e.g., from raster_simulation_vdem). ``vdem`` must define units.
+        VDEM raster. ``vdem`` must define units in the attrs.
     response : `xarray.Dataset`
-        Response functions (e.g., from `read_response`). ``SG_resp``, ``line_wvl``,
-        and ``SG_wvl`` must define units.
-    sum_over : `tuple(str)`
+        Response functions. ``SG_resp``, ``line_wvl``,
+        and ``SG_wvl`` must define units in the attrs.
+    sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
         CUDA device index for GPU use, defaults to None (CPU).
