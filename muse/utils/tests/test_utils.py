@@ -1,4 +1,5 @@
-import jax
+import importlib.util
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -16,36 +17,35 @@ from muse.utils.utils import (
 )
 
 
-def _jax_gpu_devices():
-    try:
-        return jax.devices("gpu")
-    except RuntimeError:
-        return []
+@pytest.mark.parametrize(
+    ("cuda_device", "backend", "expected"),
+    [
+        (None, None, False),  # None and the "numpy" default behave the same: JAX is opt-in
+        (None, "numpy", False),
+        (None, "jax", True),
+    ],
+)
+def test_use_jax_decision(cuda_device, backend, expected) -> None:
+    assert _use_jax(cuda_device, backend) is expected
 
 
-def test_use_jax_defaults_to_numpy() -> None:
-    # JAX is opt-in: the default never picks it up, even though it is installed.
-    assert _use_jax() is False
+@pytest.mark.parametrize(
+    ("cuda_device", "backend", "match"),
+    [
+        (None, "cupy", "Unknown backend"),
+        (0, "numpy", "numpy backend does not support cuda_device"),
+        (-1, "jax", "is not valid"),
+    ],
+)
+def test_use_jax_rejects(cuda_device, backend, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _use_jax(cuda_device, backend)
 
 
-def test_use_jax_forced() -> None:
-    assert _use_jax(backend="jax") is True
-    assert _use_jax(backend="numpy") is False
-
-
-def test_use_jax_rejects_unknown() -> None:
-    with pytest.raises(ValueError, match="Unknown backend"):
-        _use_jax(backend="cupy")
-
-
-def test_use_jax_numpy_rejects_cuda_device() -> None:
-    with pytest.raises(ValueError, match="numpy backend does not support cuda_device"):
-        _use_jax(cuda_device=0, backend="numpy")
-
-
-def test_use_jax_rejects_negative_device() -> None:
-    with pytest.raises(ValueError, match="is not valid"):
-        _use_jax(cuda_device=-1, backend="jax")
+def test_use_jax_jax_not_installed_raises(monkeypatch) -> None:
+    monkeypatch.setattr(importlib.util, "find_spec", lambda *_: None)
+    with pytest.raises(ValueError, match="JAX is not installed"):
+        _use_jax(backend="jax")
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):
@@ -167,8 +167,10 @@ def test_numpy_to_jax_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_jax_numpy_round_trip_cuda() -> None:
-    gpu_devices = _jax_gpu_devices()
-    if not gpu_devices:
+    jax = pytest.importorskip("jax")
+    try:
+        gpu_devices = jax.devices("gpu")
+    except RuntimeError:
         pytest.skip("requires a CUDA GPU")
 
     array = np.arange(6.0).reshape(2, 3)

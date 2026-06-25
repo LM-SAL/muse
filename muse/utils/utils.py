@@ -50,17 +50,6 @@ def _jax_device(cuda_device: int | None):
         raise ValueError(msg) from exc
 
 
-def _jax_gpu_devices():
-    if importlib.util.find_spec("jax") is None:
-        return []
-    import jax  # NOQA: PLC0415
-
-    try:
-        return jax.devices("gpu")
-    except RuntimeError:
-        return []
-
-
 def _use_jax(cuda_device: int | None = None, backend: str | None = "numpy") -> bool:
     """
     Decide whether to run on JAX (`True`) or NumPy (`False`).
