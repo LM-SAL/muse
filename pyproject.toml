@@ -58,10 +58,11 @@ optional-dependencies.docs = [
 ]
 optional-dependencies.tests = [
   "muse[all]",
-  "pytest",
   "pytest-doctestplus",
   "pytest-loguru",
   "pytest-mpl",
+  "pytest-remotedata",
+  "pytest",
 ]
 urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
 urls."Source Code" = "https://github.com/LM-SAL/muse"
