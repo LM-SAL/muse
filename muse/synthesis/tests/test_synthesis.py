@@ -2,11 +2,10 @@ import jax
 import numpy as np
 import pytest
 
-import muse.synthesis.synthesis as synthesis_module
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
 from muse.transforms.transforms import reshape_x_to_slit_step
-from muse.utils.utils import _use_jax_backend
+from muse.utils.utils import _use_jax
 
 SPEED_OF_LIGHT_KMS = 299792.458
 
@@ -17,7 +16,7 @@ RESPONSE_DIMS = ("line", "vdop", "logT", "slit", "SG_xpixel")
 
 def _gpu_devices():
     try:
-        return _use_jax_backend(0)
+        return _use_jax(0)
     except ValueError:
         return False
 
@@ -64,7 +63,7 @@ def test_vdem_synthesis(response, vdem) -> None:
     assert detector_response.flux.attrs["units"] == "ph / s"
     assert detector_response.attrs["HISTORY"] == [
         "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), cuda_device=None)",
+        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), cuda_device=None, backend=None)",
     ]
     np.testing.assert_array_equal(
         detector_response.line_wvl.values,
@@ -86,11 +85,10 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     np.testing.assert_allclose(got, expected, rtol=1e-5)
 
 
-def test_vdem_synthesis_numpy_backend(monkeypatch, response, vdem) -> None:
-    monkeypatch.setattr(synthesis_module, "_use_jax_backend", lambda *_args, **_kwargs: False)
+def test_vdem_synthesis_numpy_backend(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
 
-    result = vdem_synthesis(reshaped_vdem, response)
+    result = vdem_synthesis(reshaped_vdem, response, backend="numpy")
 
     assert isinstance(result.flux.data, np.ndarray)
     assert_dataset_structure(

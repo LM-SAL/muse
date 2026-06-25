@@ -7,6 +7,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.utils.utils import (
+    _use_jax,
     add_history,
     jax_to_numpy,
     numpy_to_jax,
@@ -21,6 +22,31 @@ def _jax_gpu_devices():
         return jax.devices("gpu")
     except RuntimeError:
         return []
+
+
+def test_use_jax_auto_prefers_jax_when_installed() -> None:
+    # JAX is a test dependency, so auto-detect picks it on CPU.
+    assert _use_jax() is True
+
+
+def test_use_jax_forced() -> None:
+    assert _use_jax(backend="jax") is True
+    assert _use_jax(backend="numpy") is False
+
+
+def test_use_jax_rejects_unknown() -> None:
+    with pytest.raises(ValueError, match="Unknown backend"):
+        _use_jax(backend="cupy")
+
+
+def test_use_jax_numpy_rejects_cuda_device() -> None:
+    with pytest.raises(ValueError, match="numpy backend does not support cuda_device"):
+        _use_jax(cuda_device=0, backend="numpy")
+
+
+def test_use_jax_rejects_negative_device() -> None:
+    with pytest.raises(ValueError, match="is not valid"):
+        _use_jax(cuda_device=-1)
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):

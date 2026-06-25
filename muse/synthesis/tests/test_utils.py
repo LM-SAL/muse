@@ -6,12 +6,12 @@ import astropy.units as u
 
 import muse.synthesis.utils as synthesis_utils
 from muse.tests.helpers import assert_dataset_structure
-from muse.utils.utils import _use_jax_backend
+from muse.utils.utils import _use_jax
 
 
 def _gpu_devices():
     try:
-        return _use_jax_backend(0)
+        return _use_jax(0)
     except ValueError:
         return False
 
@@ -86,13 +86,16 @@ def test_create_simple_vdem_defaults_to_cpu(monkeypatch) -> None:
     assert set(calls) == {None}
 
 
-def test_create_simple_vdem_numpy_backend(monkeypatch) -> None:
-    monkeypatch.setattr(synthesis_utils, "_use_jax_backend", lambda *_args, **_kwargs: False)
-
-    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
+def test_create_simple_vdem_numpy_backend() -> None:
+    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), backend="numpy")
 
     assert isinstance(result.vdem.data, np.ndarray)
     np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=5e-6)
+
+
+def test_create_simple_vdem_numpy_backend_rejects_cuda_device() -> None:
+    with pytest.raises(ValueError, match="numpy backend does not support cuda_device"):
+        synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), backend="numpy", cuda_device=0)
 
 
 @pytest.mark.parametrize(

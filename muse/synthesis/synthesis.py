@@ -7,7 +7,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import _use_jax_backend, add_history, numpy_to_jax, update_attrs
+from muse.utils.utils import _use_jax, add_history, numpy_to_jax, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -43,9 +43,10 @@ def _calc_einsum(
     einsum_str: str,
     out_str: str,
     cuda_device: int | None = None,
+    backend: str | None = None,
 ):
     """
-    Compute the tensor product using the best available array backend.
+    Compute the tensor product using the selected array backend.
 
     Parameters
     ----------
@@ -59,13 +60,15 @@ def _calc_einsum(
         Einsum output string.
     cuda_device : `int` or `None`, optional
         CUDA device index for GPU use, or None for CPU.
+    backend : `str` or `None`, optional
+        Force ``"jax"`` or ``"numpy"``. If `None`, use JAX when installed.
 
     Returns
     -------
     array-like
         Result of the einsum operation.
     """
-    use_jax = _use_jax_backend(cuda_device)
+    use_jax = _use_jax(cuda_device, backend)
     logger.debug(f"Using {'jax' if use_jax else 'numpy'} for synthesis")
     if use_jax:
         import jax  # NOQA: PLC0415 - optional backend
@@ -132,6 +135,7 @@ def vdem_synthesis(
     *,
     sum_over=DEFAULTS_MUSE.sum_over_dims_synthesis,
     cuda_device: int | None = None,
+    backend: str | None = None,
 ) -> xr.Dataset:
     """
     Given a VDEM raster, and response function(s) synthesize observables by
@@ -148,6 +152,9 @@ def vdem_synthesis(
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
         CUDA device index for GPU use, defaults to None (CPU).
+    backend : `str` or `None`, optional
+        Force ``"jax"`` or ``"numpy"``. If `None` (default), use JAX when it is
+        installed and fall back to NumPy otherwise.
 
     Returns
     -------
@@ -176,6 +183,7 @@ def vdem_synthesis(
         einsum_str=einsum_str,
         out_str=out_str,
         cuda_device=cuda_device,
+        backend=backend,
     )
     ds = xr.Dataset()
     update_attrs(ds, raster)

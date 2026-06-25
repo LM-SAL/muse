@@ -3,7 +3,7 @@ from functools import cache
 import numpy as np
 import xarray as xr
 
-from muse.utils.utils import _use_jax_backend, add_history, jax_to_numpy, numpy_to_jax
+from muse.utils.utils import _use_jax, add_history, jax_to_numpy, numpy_to_jax
 
 __all__ = ["create_simple_vdem"]
 
@@ -47,35 +47,42 @@ def _create_vdem_array_jax_kernel():
 
     @jax.jit
     def kernel(temperature, velocity, ne_nh, cell_length, velocity_axis, log_temperature_axis):
+        # Rolled lax loops, not Python for-loops: under jit a Python loop unrolls into
+        # n_temperature_bins * n_velocity_bins graph copies (slow compile, big memory).
+        # The temperature loop must stay a loop anyway -- each voxel spreads across
+        # several T bins, so vectorising T would materialise (n_T, x, y, z).
         n_velocity_bins = velocity_axis.shape[0]
         n_temperature_bins = log_temperature_axis.shape[0]
 
         log_temperature_bin_width = log_temperature_axis[1] - log_temperature_axis[0]
         velocity_bin_width = velocity_axis[1] - velocity_axis[0]
+        cell_length = cell_length.reshape(1, 1, -1)
 
         temperature_prev = jnp.roll(temperature, 1, axis=2)
         temperature_prev = temperature_prev.at[:, :, 0].set(100.0)
         max_temperature = jnp.maximum(temperature, temperature_prev)
         min_temperature = jnp.minimum(temperature, temperature_prev)
 
-        vdem = jnp.zeros((n_temperature_bins, n_velocity_bins, *velocity.shape[:2]), dtype=ne_nh.dtype)
-        for i_temperature in range(n_temperature_bins):
+        def temperature_step(i_temperature, vdem):
             bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
             bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
             log_temperature_clipped = jnp.log10(jnp.clip(temperature, bin_lo, bin_hi))
             log_temperature_prev_clipped = jnp.log10(jnp.clip(temperature_prev, bin_lo, bin_hi))
             bin_fraction = jnp.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
             temperature_mask = (max_temperature >= bin_lo) & (min_temperature < bin_hi)
+            weight = ne_nh * bin_fraction * temperature_mask * cell_length
 
-            for i_velocity in range(n_velocity_bins):
-                voxel_mask = (
-                    (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0)
-                    & temperature_mask
-                    & (velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0)
+            def velocity_step(i_velocity, vdem):
+                voxel_mask = (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0) & (
+                    velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0
                 )
-                los_integrand = ne_nh * bin_fraction * voxel_mask * cell_length.reshape(1, 1, -1)
-                vdem = vdem.at[i_temperature, i_velocity, ...].set(los_integrand.sum(axis=2))
-        return vdem
+                contribution = (weight * voxel_mask).sum(axis=2)
+                return vdem.at[i_temperature, i_velocity].set(contribution)
+
+            return jax.lax.fori_loop(0, n_velocity_bins, velocity_step, vdem)
+
+        vdem = jnp.zeros((n_temperature_bins, n_velocity_bins, *velocity.shape[:2]), dtype=ne_nh.dtype)
+        return jax.lax.fori_loop(0, n_temperature_bins, temperature_step, vdem)
 
     return kernel
 
@@ -91,6 +98,7 @@ def create_simple_vdem(
     log_temperature_axis,
     *,
     cuda_device: int | None = None,
+    backend: str | None = None,
 ):
     r"""
     Calculates DEM as a function of temperature and velocity,
@@ -118,6 +126,9 @@ def create_simple_vdem(
         1D temperature bin centers in log10(K).
     cuda_device : int or None, optional
         CUDA device index, or None for CPU. Default is None.
+    backend : str or None, optional
+        Force ``"jax"`` or ``"numpy"``. If None (default), use JAX when it is
+        installed and fall back to NumPy otherwise.
 
     Returns
     -------
@@ -209,7 +220,7 @@ def create_simple_vdem(
         )
         raise ValueError(msg)
 
-    if _use_jax_backend(cuda_device):
+    if _use_jax(cuda_device, backend):
         cell_length = numpy_to_jax(cell_length.astype(np.float32, copy=False), cuda_device=cuda_device)
         velocity, temperature, ne_nh, velocity_axis, log_temperature_axis = [
             numpy_to_jax(q.astype(np.float32, copy=False), cuda_device=cuda_device)

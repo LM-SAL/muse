@@ -61,19 +61,42 @@ def _jax_gpu_devices():
         return []
 
 
-def _use_jax_backend(cuda_device: int | None = None) -> bool:
+def _use_jax(cuda_device: int | None = None, backend: str | None = None) -> bool:
     """
-    Return `True` to run on JAX, `False` to fall back to NumPy.
+    Decide whether to run on JAX (`True`) or NumPy (`False`).
 
-    Raises if a CUDA device is requested but JAX cannot serve it, so a GPU request
-    never degrades silently to the CPU.
+    Parameters
+    ----------
+    cuda_device : `int` or `None`, optional
+        CUDA device index for GPU use (JAX only), or `None` for CPU.
+    backend : `str` or `None`, optional
+        Force ``"jax"`` or ``"numpy"``. If `None`, use JAX when it is installed
+        and fall back to NumPy otherwise.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``backend``, a forced backend that cannot run (JAX not
+        installed, or NumPy asked for a CUDA device), or a CUDA device JAX cannot serve.
     """
+    if backend not in (None, "jax", "numpy"):
+        msg = f"Unknown backend {backend!r}; choose 'jax' or 'numpy'"
+        raise ValueError(msg)
+    if backend == "numpy":
+        if cuda_device is not None:
+            msg = "The numpy backend does not support cuda_device; use backend='jax'"
+            raise ValueError(msg)
+        return False
+    jax_available = importlib.util.find_spec("jax") is not None
+    if backend == "jax" and not jax_available:
+        msg = "backend='jax' requested but JAX is not installed"
+        raise ValueError(msg)
     if cuda_device is None:
-        return importlib.util.find_spec("jax") is not None
+        return backend == "jax" or jax_available
     if cuda_device < 0:
         msg = f"CUDA device {cuda_device} is not valid"
         raise ValueError(msg)
-    if len(_jax_gpu_devices()) > cuda_device:
+    if jax_available and len(_jax_gpu_devices()) > cuda_device:
         return True
     msg = f"CUDA device {cuda_device} is not available to JAX"
     raise ValueError(msg)
