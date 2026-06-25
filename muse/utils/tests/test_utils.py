@@ -170,15 +170,11 @@ def test_numpy_to_jax_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_jax_numpy_round_trip_cuda() -> None:
-    jax = pytest.importorskip("jax")
-    try:
-        gpu_devices = jax.devices("gpu")
-    except RuntimeError:
-        pytest.skip("requires a CUDA GPU")
+    import jax  # NOQA: PLC0415
 
     array = np.arange(6.0).reshape(2, 3)
     jax_array = numpy_to_jax(array, cuda_device=0)
-    assert jax_array.device == gpu_devices[0]
+    assert jax_array.device == jax.devices("gpu")[0]
     np.testing.assert_array_equal(jax_to_numpy(jax_array), array)
 
 
@@ -195,10 +191,6 @@ def test_numpy_to_torch_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_torch_numpy_round_trip_cuda() -> None:
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("requires a CUDA GPU")
-
     array = np.arange(6.0).reshape(2, 3)
     tensor = numpy_to_torch(array, cuda_device=0)
     assert tensor.is_cuda

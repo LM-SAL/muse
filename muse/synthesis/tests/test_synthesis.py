@@ -201,14 +201,6 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
 
 @pytest.mark.cuda
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
-    jax = pytest.importorskip("jax")
-    try:
-        gpu_available = bool(jax.devices("gpu"))
-    except RuntimeError:
-        gpu_available = False
-    if not gpu_available:
-        pytest.skip("requires a CUDA GPU")
-
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     cpu = vdem_synthesis(reshaped_vdem, response)
     gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0, backend="jax")
