@@ -70,8 +70,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinxext.opengraph",
-    # Has to be after any doc style extensions
-    "sphinxcontrib.default_values",
     "sphinx_autodoc_typehints",
 ]
 
