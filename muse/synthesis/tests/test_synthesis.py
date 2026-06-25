@@ -62,7 +62,8 @@ def test_vdem_synthesis(response, vdem) -> None:
     assert detector_response.flux.attrs["units"] == "ph / s"
     assert detector_response.attrs["HISTORY"] == [
         "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), cuda_device=None, backend=numpy)",
+        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), "
+        "cuda_device=None, backend=numpy)",
     ]
     np.testing.assert_array_equal(
         detector_response.line_wvl.values,
@@ -100,13 +101,22 @@ def test_vdem_synthesis_numpy_backend(response, vdem) -> None:
 
 
 def test_vdem_synthesis_jax_backend_matches_numpy(response, vdem) -> None:
-    # JAX is opt-in; on CPU its float32 einsum must still match the NumPy default.
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
     jax_flux = vdem_synthesis(reshaped_vdem, response, backend="jax").flux
 
     assert isinstance(jax_flux.data, np.ndarray)
     np.testing.assert_allclose(jax_flux.values, numpy_flux.values, rtol=1e-4)
+
+
+def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
+    pytest.importorskip("torch")
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
+    torch_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
+
+    assert isinstance(torch_flux.data, np.ndarray)
+    np.testing.assert_allclose(torch_flux.values, numpy_flux.values, rtol=1e-4)
 
 
 def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:

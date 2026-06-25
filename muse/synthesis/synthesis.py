@@ -7,7 +7,15 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import _use_jax, add_history, jax_to_numpy, numpy_to_jax, update_attrs
+from muse.utils.utils import (
+    _use_jax,
+    add_history,
+    jax_to_numpy,
+    numpy_to_jax,
+    numpy_to_torch,
+    torch_to_numpy,
+    update_attrs,
+)
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -59,15 +67,33 @@ def _calc_einsum(
     out_str : `str`
         Einsum output string.
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use (requires ``backend="jax"``), or None for CPU.
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or None for CPU.
     backend : `str` or `None`, optional
-        ``"numpy"`` (default) or ``"jax"``. JAX is opt-in.
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are opt-in.
 
     Returns
     -------
     array-like
         Result of the einsum operation.
     """
+    if backend not in (None, "numpy", "jax", "torch"):
+        msg = f"Unknown backend {backend!r}; choose 'numpy', 'jax', or 'torch'"
+        raise ValueError(msg)
+    if backend == "torch":
+        try:
+            import torch  # NOQA: PLC0415
+        except ImportError as exc:
+            msg = "backend='torch' requested but Torch is not installed"
+            raise ValueError(msg) from exc
+        logger.debug("Using torch for synthesis")
+        return torch_to_numpy(
+            torch.einsum(
+                f"{einsum_str}->{out_str}",
+                numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
+                numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
+            )
+        )
+
     use_jax = _use_jax(cuda_device, backend)
     logger.debug(f"Using {'jax' if use_jax else 'numpy'} for synthesis")
     if use_jax:
@@ -153,11 +179,12 @@ def vdem_synthesis(
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
-        CUDA device index for GPU use (requires ``backend="jax"``), defaults to None (CPU).
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), defaults to None (CPU).
     backend : `str` or `None`, optional
-        ``"numpy"`` (default) or ``"jax"``. JAX is opt-in: it is never selected
-        implicitly, so results do not change with what is installed. The JAX path
-        runs in float32; the NumPy path keeps the input dtype.
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are
+        opt-in: neither is selected implicitly, so results do not change with
+        what is installed. The JAX and Torch paths downcast float64 inputs to
+        float32; the NumPy path keeps the input dtype.
 
     Returns
     -------
