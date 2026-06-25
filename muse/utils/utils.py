@@ -50,43 +50,47 @@ def _jax_device(cuda_device: int | None):
         raise ValueError(msg) from exc
 
 
-def _use_jax(cuda_device: int | None = None, backend: str | None = "numpy") -> bool:
+def _resolve_backend(cuda_device: int | None = None, backend: str | None = "numpy") -> str:
     """
-    Decide whether to run on JAX (`True`) or NumPy (`False`).
+    Validate and resolve the array backend, returning ``"numpy"``, ``"jax"``, or ``"torch"``.
 
-    JAX is opt-in: it runs only when ``backend="jax"`` is passed explicitly, so the
-    default numerics never change with what happens to be installed in the
-    environment (the JAX path is float32, the NumPy path keeps the input dtype).
+    JAX and Torch are opt-in: ``backend`` defaults to ``"numpy"`` (also for `None`), so
+    the array library never changes with what happens to be installed in the environment
+    (the accelerator paths are float32, the NumPy path keeps the input dtype). This is the
+    single source of truth for which backends are valid.
 
     Parameters
     ----------
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use (requires ``backend="jax"``), or `None` for CPU.
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or
+        `None` for CPU.
     backend : `str` or `None`, optional
-        ``"numpy"`` (default, also for `None`) or ``"jax"``.
+        ``"numpy"`` (default, also for `None`), ``"jax"``, or ``"torch"``.
 
     Raises
     ------
     ValueError
-        For an unknown ``backend``, ``backend="jax"`` when JAX is not installed,
-        NumPy asked for a CUDA device, or a negative CUDA device. A device index
-        JAX cannot serve is reported later, when the array is placed.
+        For an unknown ``backend``, an accelerator backend that is not installed,
+        NumPy asked for a CUDA device, or a negative CUDA device. A device index the
+        backend cannot serve is reported later, when the array is placed.
     """
-    if backend not in (None, "jax", "numpy"):
-        msg = f"Unknown backend {backend!r}; choose 'jax' or 'numpy'"
+    backend = backend or "numpy"
+    if backend not in ("numpy", "jax", "torch"):
+        msg = f"Unknown backend {backend!r}; choose 'numpy', 'jax', or 'torch'"
         raise ValueError(msg)
-    if backend != "jax":
+    if backend == "numpy":
         if cuda_device is not None:
-            msg = "The numpy backend does not support cuda_device; use backend='jax'"
+            msg = "The numpy backend does not support cuda_device; use backend='jax' or 'torch'"
             raise ValueError(msg)
-        return False
-    if importlib.util.find_spec("jax") is None:
-        msg = "backend='jax' requested but JAX is not installed"
-        raise ValueError(msg)
+        return "numpy"
     if cuda_device is not None and cuda_device < 0:
         msg = f"CUDA device {cuda_device} is not valid"
         raise ValueError(msg)
-    return True
+    if importlib.util.find_spec(backend) is None:
+        name = "JAX" if backend == "jax" else "Torch"
+        msg = f"backend={backend!r} requested but {name} is not installed"
+        raise ValueError(msg)
+    return backend
 
 
 def numpy_to_jax(numpy_array: np.ndarray, cuda_device: int | None = None):

@@ -7,7 +7,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.utils.utils import (
-    _use_jax,
+    _resolve_backend,
     add_history,
     jax_to_numpy,
     numpy_to_jax,
@@ -20,13 +20,13 @@ from muse.utils.utils import (
 @pytest.mark.parametrize(
     ("cuda_device", "backend", "expected"),
     [
-        (None, None, False),  # None and the "numpy" default behave the same: JAX is opt-in
-        (None, "numpy", False),
-        (None, "jax", True),
+        (None, None, "numpy"),  # None and the "numpy" default behave the same: accelerators are opt-in
+        (None, "numpy", "numpy"),
+        (None, "jax", "jax"),
     ],
 )
-def test_use_jax_decision(cuda_device, backend, expected) -> None:
-    assert _use_jax(cuda_device, backend) is expected
+def test_resolve_backend_decision(cuda_device, backend, expected) -> None:
+    assert _resolve_backend(cuda_device, backend) == expected
 
 
 @pytest.mark.parametrize(
@@ -37,15 +37,17 @@ def test_use_jax_decision(cuda_device, backend, expected) -> None:
         (-1, "jax", "is not valid"),
     ],
 )
-def test_use_jax_rejects(cuda_device, backend, match) -> None:
+def test_resolve_backend_rejects(cuda_device, backend, match) -> None:
     with pytest.raises(ValueError, match=match):
-        _use_jax(cuda_device, backend)
+        _resolve_backend(cuda_device, backend)
 
 
-def test_use_jax_jax_not_installed_raises(monkeypatch) -> None:
+def test_resolve_backend_accelerator_not_installed_raises(monkeypatch) -> None:
     monkeypatch.setattr(importlib.util, "find_spec", lambda *_: None)
     with pytest.raises(ValueError, match="JAX is not installed"):
-        _use_jax(backend="jax")
+        _resolve_backend(backend="jax")
+    with pytest.raises(ValueError, match="Torch is not installed"):
+        _resolve_backend(backend="torch")
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):

@@ -8,7 +8,7 @@ import astropy.units as u
 from muse.log import logger
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import (
-    _use_jax,
+    _resolve_backend,
     add_history,
     jax_to_numpy,
     numpy_to_jax,
@@ -76,16 +76,11 @@ def _calc_einsum(
     array-like
         Result of the einsum operation.
     """
-    if backend not in (None, "numpy", "jax", "torch"):
-        msg = f"Unknown backend {backend!r}; choose 'numpy', 'jax', or 'torch'"
-        raise ValueError(msg)
+    backend = _resolve_backend(cuda_device, backend)
+    logger.debug(f"Using {backend} for synthesis")
     if backend == "torch":
-        try:
-            import torch  # NOQA: PLC0415
-        except ImportError as exc:
-            msg = "backend='torch' requested but Torch is not installed"
-            raise ValueError(msg) from exc
-        logger.debug("Using torch for synthesis")
+        import torch  # NOQA: PLC0415
+
         return torch_to_numpy(
             torch.einsum(
                 f"{einsum_str}->{out_str}",
@@ -93,10 +88,7 @@ def _calc_einsum(
                 numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
             )
         )
-
-    use_jax = _use_jax(cuda_device, backend)
-    logger.debug(f"Using {'jax' if use_jax else 'numpy'} for synthesis")
-    if use_jax:
+    if backend == "jax":
         import jax  # NOQA: PLC0415
         import jax.numpy as jnp  # NOQA: PLC0415
 

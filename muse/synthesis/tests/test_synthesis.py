@@ -4,20 +4,12 @@ import pytest
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
 from muse.transforms.transforms import reshape_x_to_slit_step
-from muse.utils.utils import _use_jax
 
 SPEED_OF_LIGHT_KMS = 299792.458
 
 # Dimension names for the science contraction used across the einsum-index tests.
 RASTER_DIMS = ("logT", "vdop", "y", "slit", "step")
 RESPONSE_DIMS = ("line", "vdop", "logT", "slit", "SG_xpixel")
-
-
-def _gpu_devices():
-    try:
-        return _use_jax(0, backend="jax")
-    except ValueError:
-        return False
 
 
 def test_build_einsum_indices_contracts_shared_dims() -> None:
@@ -210,7 +202,12 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
 
 @pytest.mark.cuda
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
-    if not _gpu_devices():
+    jax = pytest.importorskip("jax")
+    try:
+        gpu_available = bool(jax.devices("gpu"))
+    except RuntimeError:
+        gpu_available = False
+    if not gpu_available:
         pytest.skip("requires a CUDA GPU")
 
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
