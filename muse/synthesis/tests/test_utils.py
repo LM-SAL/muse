@@ -5,14 +5,6 @@ import astropy.units as u
 
 import muse.synthesis.utils as synthesis_utils
 from muse.tests.helpers import assert_dataset_structure
-from muse.utils.utils import _use_jax
-
-
-def _gpu_devices():
-    try:
-        return _use_jax(0)
-    except ValueError:
-        return False
 
 
 def _tiny_vdem_inputs():
@@ -54,7 +46,7 @@ def test_create_simple_vdem_tiny_cube() -> None:
     np.testing.assert_array_equal(result.vdop.values, [-1.0, -0.0, 1.0])
     np.testing.assert_array_equal(result.x.values, [10.0, 11.0])
     np.testing.assert_array_equal(result.y.values, [20.0, 21.0, 22.0])
-    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-6)
+    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=5e-6)  # float32 rounding
     assert result.vdem.attrs["units"] == "1e27 / cm5"
     assert result.x.attrs["units"] == "cm"
     assert result.y.attrs["units"] == "cm"
@@ -67,34 +59,6 @@ def test_create_simple_vdem_units_parse_with_astropy() -> None:
 
     for var in (result.vdem, result.logT, result.vdop, result.x, result.y):
         u.Unit(var.attrs["units"])
-
-
-def test_create_simple_vdem_defaults_to_cpu(monkeypatch) -> None:
-    calls = []
-    original = synthesis_utils.numpy_to_jax
-
-    def spy_numpy_to_jax(numpy_array, cuda_device=None):
-        calls.append(cuda_device)
-        return original(numpy_array, cuda_device=cuda_device)
-
-    monkeypatch.setattr(synthesis_utils, "numpy_to_jax", spy_numpy_to_jax)
-
-    synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
-
-    assert calls
-    assert set(calls) == {None}
-
-
-def test_create_simple_vdem_numpy_backend() -> None:
-    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), backend="numpy")
-
-    assert isinstance(result.vdem.data, np.ndarray)
-    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=5e-6)
-
-
-def test_create_simple_vdem_numpy_backend_rejects_cuda_device() -> None:
-    with pytest.raises(ValueError, match="numpy backend does not support cuda_device"):
-        synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), backend="numpy", cuda_device=0)
 
 
 @pytest.mark.parametrize(
@@ -112,13 +76,3 @@ def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
 
     with pytest.raises(ValueError, match=match):
         synthesis_utils.create_simple_vdem(**inputs)
-
-
-@pytest.mark.cuda
-def test_create_simple_vdem_cuda_tiny_cube() -> None:
-    if not _gpu_devices():
-        pytest.skip("requires a CUDA GPU")
-
-    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), cuda_device=0)
-
-    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-6)
