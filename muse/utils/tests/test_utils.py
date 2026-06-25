@@ -23,9 +23,9 @@ def _jax_gpu_devices():
         return []
 
 
-def test_use_jax_auto_prefers_jax_when_installed() -> None:
-    # JAX is a test dependency, so auto-detect picks it on CPU.
-    assert _use_jax() is True
+def test_use_jax_defaults_to_numpy() -> None:
+    # JAX is opt-in: the default never picks it up, even though it is installed.
+    assert _use_jax() is False
 
 
 def test_use_jax_forced() -> None:
@@ -45,7 +45,7 @@ def test_use_jax_numpy_rejects_cuda_device() -> None:
 
 def test_use_jax_rejects_negative_device() -> None:
     with pytest.raises(ValueError, match="is not valid"):
-        _use_jax(cuda_device=-1)
+        _use_jax(cuda_device=-1, backend="jax")
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):

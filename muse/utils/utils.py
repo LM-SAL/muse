@@ -61,35 +61,37 @@ def _jax_gpu_devices():
         return []
 
 
-def _use_jax(cuda_device: int | None = None, backend: str | None = None) -> bool:
+def _use_jax(cuda_device: int | None = None, backend: str | None = "numpy") -> bool:
     """
     Decide whether to run on JAX (`True`) or NumPy (`False`).
+
+    JAX is opt-in: it runs only when ``backend="jax"`` is passed explicitly, so the
+    default numerics never change with what happens to be installed in the
+    environment (the JAX path is float32, the NumPy path keeps the input dtype).
 
     Parameters
     ----------
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use (JAX only), or `None` for CPU.
+        CUDA device index for GPU use (requires ``backend="jax"``), or `None` for CPU.
     backend : `str` or `None`, optional
-        Force ``"jax"`` or ``"numpy"``. If `None`, use JAX when it is installed
-        and fall back to NumPy otherwise.
+        ``"numpy"`` (default, also for `None`) or ``"jax"``.
 
     Raises
     ------
     ValueError
-        For an unknown ``backend``, a forced backend that cannot run (JAX not
-        installed, or NumPy asked for a CUDA device), or a negative CUDA device.
-        A device index JAX cannot serve is reported later, when the array is placed.
+        For an unknown ``backend``, ``backend="jax"`` when JAX is not installed,
+        NumPy asked for a CUDA device, or a negative CUDA device. A device index
+        JAX cannot serve is reported later, when the array is placed.
     """
     if backend not in (None, "jax", "numpy"):
         msg = f"Unknown backend {backend!r}; choose 'jax' or 'numpy'"
         raise ValueError(msg)
-    jax_available = importlib.util.find_spec("jax") is not None
-    if backend == "numpy" or (backend is None and not jax_available):
+    if backend != "jax":
         if cuda_device is not None:
             msg = "The numpy backend does not support cuda_device; use backend='jax'"
             raise ValueError(msg)
         return False
-    if not jax_available:  # backend == "jax"
+    if importlib.util.find_spec("jax") is None:
         msg = "backend='jax' requested but JAX is not installed"
         raise ValueError(msg)
     if cuda_device is not None and cuda_device < 0:

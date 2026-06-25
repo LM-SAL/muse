@@ -43,7 +43,7 @@ def _calc_einsum(
     einsum_str: str,
     out_str: str,
     cuda_device: int | None = None,
-    backend: str | None = None,
+    backend: str | None = "numpy",
 ):
     """
     Compute the tensor product using the selected array backend.
@@ -59,9 +59,9 @@ def _calc_einsum(
     out_str : `str`
         Einsum output string.
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use, or None for CPU.
+        CUDA device index for GPU use (requires ``backend="jax"``), or None for CPU.
     backend : `str` or `None`, optional
-        Force ``"jax"`` or ``"numpy"``. If `None`, use JAX when installed.
+        ``"numpy"`` (default) or ``"jax"``. JAX is opt-in.
 
     Returns
     -------
@@ -137,7 +137,7 @@ def vdem_synthesis(
     *,
     sum_over=DEFAULTS_MUSE.sum_over_dims_synthesis,
     cuda_device: int | None = None,
-    backend: str | None = None,
+    backend: str | None = "numpy",
 ) -> xr.Dataset:
     """
     Given a VDEM raster, and response function(s) synthesize observables by
@@ -153,10 +153,11 @@ def vdem_synthesis(
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
-        CUDA device index for GPU use, defaults to None (CPU).
+        CUDA device index for GPU use (requires ``backend="jax"``), defaults to None (CPU).
     backend : `str` or `None`, optional
-        Force ``"jax"`` or ``"numpy"``. If `None` (default), use JAX when it is
-        installed and fall back to NumPy otherwise.
+        ``"numpy"`` (default) or ``"jax"``. JAX is opt-in: it is never selected
+        implicitly, so results do not change with what is installed. The JAX path
+        runs in float32; the NumPy path keeps the input dtype.
 
     Returns
     -------
