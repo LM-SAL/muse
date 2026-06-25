@@ -39,7 +39,7 @@ def jax_to_numpy(jax_array):
 
 
 def _jax_device(cuda_device: int | None):
-    import jax  # NOQA: PLC0415 - Avoid a heavy import unless we need it
+    import jax  # NOQA: PLC0415
 
     if cuda_device is None:
         return jax.devices("cpu")[0]
@@ -53,7 +53,7 @@ def _jax_device(cuda_device: int | None):
 def _jax_gpu_devices():
     if importlib.util.find_spec("jax") is None:
         return []
-    import jax  # NOQA: PLC0415 - optional backend
+    import jax  # NOQA: PLC0415
 
     try:
         return jax.devices("gpu")
@@ -120,10 +120,8 @@ def numpy_to_jax(numpy_array: np.ndarray, cuda_device: int | None = None):
     `jax.Array`
         The converted JAX array.
     """
-    import jax  # NOQA: PLC0415 - Avoid a heavy import unless we need it
+    import jax  # NOQA: PLC0415
 
-    # device_put copies straight to the target device; JAX (x64 off) caps float64
-    # at float32 on ingest, so no separate astype/jnp.asarray copy is needed.
     return jax.device_put(np.asarray(numpy_array), _jax_device(cuda_device))
 
 
@@ -170,7 +168,7 @@ def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
     `torch.Tensor`
         The converted Torch tensor.
     """
-    import torch  # NOQA: PLC0415 - Avoid a heavy import unless we need it
+    import torch  # NOQA: PLC0415
 
     tensor = torch.tensor(numpy_array)
     if tensor.dtype == torch.float64:

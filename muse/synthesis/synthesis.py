@@ -71,8 +71,8 @@ def _calc_einsum(
     use_jax = _use_jax(cuda_device, backend)
     logger.debug(f"Using {'jax' if use_jax else 'numpy'} for synthesis")
     if use_jax:
-        import jax  # NOQA: PLC0415 - optional backend
-        import jax.numpy as jnp  # NOQA: PLC0415 - optional backend
+        import jax  # NOQA: PLC0415
+        import jax.numpy as jnp  # NOQA: PLC0415
 
         return jax_to_numpy(
             jnp.einsum(

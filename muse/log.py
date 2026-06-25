@@ -37,7 +37,7 @@ def log_gpu_status() -> None:
 
     found_gpu = False
     if importlib.util.find_spec("jax") is not None:
-        import jax  # NOQA: PLC0415 - optional backend
+        import jax  # NOQA: PLC0415
 
         try:
             gpu_devices = jax.devices("gpu")
@@ -48,7 +48,7 @@ def log_gpu_status() -> None:
             logger.debug(f"GPU CUDA - jax: {gpu_devices[0]}")
 
     if not found_gpu and importlib.util.find_spec("torch") is not None:
-        import torch  # NOQA: PLC0415 - optional backend
+        import torch  # NOQA: PLC0415
 
         found_gpu = torch.cuda.is_available()
         if found_gpu:
