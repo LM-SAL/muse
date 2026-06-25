@@ -1,15 +1,15 @@
 import string
-import contextlib
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-import torch
 import xarray as xr
 
 import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy, update_attrs
+from muse.utils.utils import add_history, numpy_to_jax, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -47,7 +47,7 @@ def _calc_einsum(
     cuda_device: int | None = None,
 ):
     """
-    Compute the tensor product using torch.einsum, optionally on a CUDA device.
+    Compute the tensor product using JAX einsum, optionally on a CUDA device.
 
     Parameters
     ----------
@@ -64,23 +64,21 @@ def _calc_einsum(
 
     Returns
     -------
-    `numpy.ndarray`
+    `jax.Array`
         Result of the einsum operation.
     """
-    device_context = torch.cuda.device(f"cuda:{cuda_device}") if cuda_device is not None else contextlib.nullcontext()
-    with device_context:
-        logger.debug(f"Using torch on cuda:{cuda_device}" if cuda_device is not None else "Using CPU with torch")
-        result = torch.einsum(
-            f"{einsum_str}->{out_str}",
-            numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
-            numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
-        )
-    return torch_to_numpy(result)
+    logger.debug(f"Using JAX on cuda:{cuda_device}" if cuda_device is not None else "Using CPU with JAX")
+    return jnp.einsum(
+        f"{einsum_str}->{out_str}",
+        numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
+        numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
+        precision=jax.lax.Precision.HIGHEST,
+    )
 
 
 def _build_einsum_indices(raster_dims, response_dims, sum_over):
     """
-    Build the torch.einsum spec for contracting the VDEM raster with the response.
+    Build the JAX einsum spec for contracting the VDEM raster with the response.
 
     Each unique dimension name gets one index letter; dimensions shared by both
     operands reuse the same letter (so einsum contracts over them). The output

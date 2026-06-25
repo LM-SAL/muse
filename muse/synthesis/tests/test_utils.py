@@ -1,11 +1,18 @@
+import jax
 import numpy as np
 import pytest
-import torch
 
 import astropy.units as u
 
 import muse.synthesis.utils as synthesis_utils
 from muse.tests.helpers import assert_dataset_structure
+
+
+def _gpu_devices():
+    try:
+        return jax.devices("gpu")
+    except RuntimeError:
+        return []
 
 
 def _tiny_vdem_inputs():
@@ -31,10 +38,9 @@ def _expected_tiny_vdem():
     return expected
 
 
-def test_create_simple_vdem_tiny_cube(monkeypatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-
+def test_create_simple_vdem_tiny_cube() -> None:
     result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
+    assert isinstance(result.vdem.data, jax.Array)
 
     assert_dataset_structure(
         result,
@@ -56,8 +62,7 @@ def test_create_simple_vdem_tiny_cube(monkeypatch) -> None:
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
 
 
-def test_create_simple_vdem_units_parse_with_astropy(monkeypatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+def test_create_simple_vdem_units_parse_with_astropy() -> None:
     result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
 
     for var in (result.vdem, result.logT, result.vdop, result.x, result.y):
@@ -66,14 +71,13 @@ def test_create_simple_vdem_units_parse_with_astropy(monkeypatch) -> None:
 
 def test_create_simple_vdem_defaults_to_cpu(monkeypatch) -> None:
     calls = []
-    original = synthesis_utils.numpy_to_torch
+    original = synthesis_utils.numpy_to_jax
 
-    def spy_numpy_to_torch(numpy_array, cuda_device=None):
+    def spy_numpy_to_jax(numpy_array, cuda_device=None):
         calls.append(cuda_device)
         return original(numpy_array, cuda_device=cuda_device)
 
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(synthesis_utils, "numpy_to_torch", spy_numpy_to_torch)
+    monkeypatch.setattr(synthesis_utils, "numpy_to_jax", spy_numpy_to_jax)
 
     synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
 
@@ -90,8 +94,7 @@ def test_create_simple_vdem_defaults_to_cpu(monkeypatch) -> None:
         ("x", np.array([1.0], dtype=np.float32), "non-LOS"),
     ],
 )
-def test_create_simple_vdem_validates_inputs(monkeypatch, key, value, match) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
     inputs = _tiny_vdem_inputs()
     inputs[key] = value
 
@@ -100,8 +103,10 @@ def test_create_simple_vdem_validates_inputs(monkeypatch, key, value, match) -> 
 
 
 @pytest.mark.cuda
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
 def test_create_simple_vdem_cuda_tiny_cube() -> None:
+    if not _gpu_devices():
+        pytest.skip("requires a CUDA GPU")
+
     result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), cuda_device=0)
 
     np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-6)

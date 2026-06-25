@@ -33,7 +33,7 @@ dependencies = [
   "attrs>=26.1.0",
   "loguru>=0.7.3",
   "numpy>=2.4.0",
-  "torch>=2.12.0",
+  "jax>=0.10.2",
   "xarray[io,parallel]>=2026.4.0",
   "matplotlib>=3.10.0",
 ]

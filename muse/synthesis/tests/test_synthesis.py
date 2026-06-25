@@ -1,6 +1,6 @@
+import jax
 import numpy as np
 import pytest
-import torch
 
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
@@ -11,6 +11,13 @@ SPEED_OF_LIGHT_KMS = 299792.458
 # Dimension names for the science contraction used across the einsum-index tests.
 RASTER_DIMS = ("logT", "vdop", "y", "slit", "step")
 RESPONSE_DIMS = ("line", "vdop", "logT", "slit", "SG_xpixel")
+
+
+def _gpu_devices():
+    try:
+        return jax.devices("gpu")
+    except RuntimeError:
+        return []
 
 
 def test_build_einsum_indices_contracts_shared_dims() -> None:
@@ -44,6 +51,7 @@ def test_build_einsum_indices_general_shapes() -> None:
 def test_vdem_synthesis(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     detector_response = vdem_synthesis(reshaped_vdem, response)
+    assert isinstance(detector_response.flux.data, jax.Array)
     assert_dataset_structure(
         detector_response,
         data_vars=("flux",),
@@ -64,7 +72,7 @@ def test_vdem_synthesis(response, vdem) -> None:
 
 def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     # Independently recompute one flux value with a plain xarray multiply + sum over
-    # the shared logT/vdop/slit dims, and compare to the torch-einsum result. This
+    # the shared logT/vdop/slit dims, and compare to the JAX einsum result. This
     # guards the einsum index bookkeeping, not just the output shape.
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     result = vdem_synthesis(reshaped_vdem, response)
@@ -166,8 +174,10 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
 
 
 @pytest.mark.cuda
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
+    if not _gpu_devices():
+        pytest.skip("requires a CUDA GPU")
+
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     cpu = vdem_synthesis(reshaped_vdem, response)
     gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0)
