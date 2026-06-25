@@ -31,7 +31,7 @@ permissions: {}
 
 jobs:
   core:
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
     with:
       submodules: false
       coverage: codecov
@@ -44,10 +44,10 @@ jobs:
   sdist_verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: '3.13'
       - run: python -m pip install -U --user build
@@ -57,7 +57,7 @@ jobs:
 
   test:
     needs: [core, sdist_verify]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
     with:
       submodules: false
       coverage: codecov
@@ -74,7 +74,7 @@ jobs:
 
   docs:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
     with:
       default_python: '3.13'
       submodules: false
@@ -96,15 +96,10 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'Run publish')
       )
     needs: [test, docs]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish.yml@afacbe8ebafa67b369e1f605b4f6989284ba2e87  # v2.6.5
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
-      sdist: true
-      targets: |
-        - cp3{12,13,14}-manylinux*_x86_64
-        - cp3{12,13,14}-macosx_x86_64
-        - cp3{12,13,14}-macosx_arm64
-        - cp3{12,13,14}-win_amd64
-      test_extras: 'tests'
+      python-version: '3.13'
+      test_extras: 'all,tests'
       test_command: 'pytest -p no:warnings --doctest-rst --pyargs muse'
       submodules: false
       save_artifacts: true
@@ -121,13 +116,11 @@ jobs:
       name: pypi
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           merge-multiple: true
           pattern: dist-*
           path: dist
-
       - run: ls -lha dist/
-
       - name: Run upload
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
