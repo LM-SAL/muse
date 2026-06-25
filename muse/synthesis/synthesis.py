@@ -51,7 +51,7 @@ def _calc_einsum(
     einsum_str: str,
     out_str: str,
     cuda_device: int | None = None,
-    backend: str | None = "numpy",
+    backend: str = "numpy",
 ):
     """
     Compute the tensor product using the selected array backend.
@@ -68,7 +68,7 @@ def _calc_einsum(
         Einsum output string.
     cuda_device : `int` or `None`, optional
         CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or None for CPU.
-    backend : `str` or `None`, optional
+    backend : `str`, optional
         ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are opt-in.
 
     Returns
@@ -155,7 +155,7 @@ def vdem_synthesis(
     *,
     sum_over=DEFAULTS_MUSE.sum_over_dims_synthesis,
     cuda_device: int | None = None,
-    backend: str | None = "numpy",
+    backend: str = "numpy",
 ) -> xr.Dataset:
     """
     Given a VDEM raster, and response function(s) synthesize observables by
@@ -172,7 +172,7 @@ def vdem_synthesis(
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
         CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), defaults to None (CPU).
-    backend : `str` or `None`, optional
+    backend : `str`, optional
         ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are
         opt-in: neither is selected implicitly, so results do not change with
         what is installed. The JAX and Torch paths downcast float64 inputs to

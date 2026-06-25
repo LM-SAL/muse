@@ -58,7 +58,7 @@ optional-dependencies.docs = [
   "sphinxext-opengraph",
 ]
 optional-dependencies.tests = [
-  "muse[jax]",
+  "muse[all]",
   "pytest",
   "pytest-doctestplus",
   "pytest-loguru",

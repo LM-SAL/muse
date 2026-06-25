@@ -102,7 +102,6 @@ def test_vdem_synthesis_jax_backend_matches_numpy(response, vdem) -> None:
 
 
 def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
-    pytest.importorskip("torch")
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
     torch_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux

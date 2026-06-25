@@ -50,7 +50,7 @@ def _jax_device(cuda_device: int | None):
         raise ValueError(msg) from exc
 
 
-def _resolve_backend(cuda_device: int | None = None, backend: str | None = "numpy") -> str:
+def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> str:
     """
     Validate and resolve the array backend, returning ``"numpy"``, ``"jax"``, or ``"torch"``.
 
@@ -64,8 +64,8 @@ def _resolve_backend(cuda_device: int | None = None, backend: str | None = "nump
     cuda_device : `int` or `None`, optional
         CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or
         `None` for CPU.
-    backend : `str` or `None`, optional
-        ``"numpy"`` (default, also for `None`), ``"jax"``, or ``"torch"``.
+    backend : `str`, optional
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``.
 
     Raises
     ------
@@ -74,7 +74,6 @@ def _resolve_backend(cuda_device: int | None = None, backend: str | None = "nump
         NumPy asked for a CUDA device, or a negative CUDA device. A device index the
         backend cannot serve is reported later, when the array is placed.
     """
-    backend = backend or "numpy"
     if backend not in ("numpy", "jax", "torch"):
         msg = f"Unknown backend {backend!r}; choose 'numpy', 'jax', or 'torch'"
         raise ValueError(msg)

@@ -2,6 +2,7 @@ import importlib.util
 
 import numpy as np
 import pytest
+import torch
 import xarray as xr
 
 import astropy.units as u
@@ -20,9 +21,9 @@ from muse.utils.utils import (
 @pytest.mark.parametrize(
     ("cuda_device", "backend", "expected"),
     [
-        (None, None, "numpy"),  # None and the "numpy" default behave the same: accelerators are opt-in
         (None, "numpy", "numpy"),
         (None, "jax", "jax"),
+        (None, "torch", "torch"),
     ],
 )
 def test_resolve_backend_decision(cuda_device, backend, expected) -> None:
@@ -182,13 +183,11 @@ def test_jax_numpy_round_trip_cuda() -> None:
 
 
 def test_torch_numpy_round_trip() -> None:
-    pytest.importorskip("torch")
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
 
 
 def test_numpy_to_torch_caps_precision_at_float32() -> None:
-    torch = pytest.importorskip("torch")
     assert numpy_to_torch(np.ones(3, dtype=np.float64)).dtype == torch.float32  # Downcast
     assert numpy_to_torch(np.ones(3, dtype=np.float32)).dtype == torch.float32  # Unchanged
     assert numpy_to_torch(np.ones(3, dtype=np.float16)).dtype == torch.float16  # Narrower kept
