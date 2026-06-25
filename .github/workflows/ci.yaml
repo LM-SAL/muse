@@ -62,7 +62,6 @@ jobs:
       submodules: false
       coverage: codecov
       toxdeps: tox-pypi-filter
-      posargs: -n auto
       envs: |
         - linux: py314
         - windows: py312
