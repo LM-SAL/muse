@@ -4,6 +4,7 @@ Functions whose scope is not limited to one part of the muse package.
 
 import inspect
 import datetime
+import importlib.util
 from collections.abc import Callable
 
 import numpy as np
@@ -14,7 +15,7 @@ import astropy.units as u
 import muse
 from muse.log import logger
 
-__all__ = ["add_history", "jax_to_numpy", "numpy_to_jax", "update_attrs"]
+__all__ = ["add_history", "jax_to_numpy", "numpy_to_jax", "numpy_to_torch", "torch_to_numpy", "update_attrs"]
 
 
 def jax_to_numpy(jax_array):
@@ -49,6 +50,35 @@ def _jax_device(cuda_device: int | None):
         raise ValueError(msg) from exc
 
 
+def _jax_gpu_devices():
+    if importlib.util.find_spec("jax") is None:
+        return []
+    import jax  # NOQA: PLC0415 - optional backend
+
+    try:
+        return jax.devices("gpu")
+    except RuntimeError:
+        return []
+
+
+def _use_jax_backend(cuda_device: int | None = None) -> bool:
+    """
+    Return `True` to run on JAX, `False` to fall back to NumPy.
+
+    Raises if a CUDA device is requested but JAX cannot serve it, so a GPU request
+    never degrades silently to the CPU.
+    """
+    if cuda_device is None:
+        return importlib.util.find_spec("jax") is not None
+    if cuda_device < 0:
+        msg = f"CUDA device {cuda_device} is not valid"
+        raise ValueError(msg)
+    if len(_jax_gpu_devices()) > cuda_device:
+        return True
+    msg = f"CUDA device {cuda_device} is not available to JAX"
+    raise ValueError(msg)
+
+
 def numpy_to_jax(numpy_array: np.ndarray, cuda_device: int | None = None):
     """
     Convert a `numpy.ndarray` to a JAX array.
@@ -70,12 +100,64 @@ def numpy_to_jax(numpy_array: np.ndarray, cuda_device: int | None = None):
         The converted JAX array.
     """
     import jax  # NOQA: PLC0415 - Avoid a heavy import unless we need it
-    import jax.numpy as jnp  # NOQA: PLC0415
 
-    array = np.asarray(numpy_array)
-    if array.dtype == np.float64:
-        array = array.astype(np.float32)
-    return jax.device_put(jnp.asarray(array), _jax_device(cuda_device))
+    # device_put copies straight to the target device; JAX (x64 off) caps float64
+    # at float32 on ingest, so no separate astype/jnp.asarray copy is needed.
+    return jax.device_put(np.asarray(numpy_array), _jax_device(cuda_device))
+
+
+def torch_to_numpy(torch_tensor):
+    """
+    Convert a `torch.Tensor` to a `numpy.ndarray`.
+
+    The tensor is detached from the autograd graph and moved to the CPU first
+    so tensors on CUDA devices convert cleanly.
+
+    Parameters
+    ----------
+    torch_tensor : `torch.Tensor`
+        Torch tensor to convert.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        The converted NumPy array.
+    """
+    tensor = torch_tensor.detach().cpu()
+    try:
+        return tensor.numpy()
+    except TypeError:  # dtypes numpy lacks, e.g. bfloat16 / float8
+        return np.array(tensor.tolist())
+
+
+def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
+    """
+    Convert a `numpy.ndarray` to a `torch.Tensor`.
+
+    Floating-point precision is capped at float32: ``float64`` input is downcast
+    to ``float32``, while narrower dtypes (``float16``, integers) are left as-is.
+
+    Parameters
+    ----------
+    numpy_array : `numpy.ndarray`
+        The array to convert.
+    cuda_device : `int` or `None`, optional
+        If provided, transfer the tensor to the specified CUDA device.
+
+    Returns
+    -------
+    `torch.Tensor`
+        The converted Torch tensor.
+    """
+    import torch  # NOQA: PLC0415 - Avoid a heavy import unless we need it
+
+    tensor = torch.tensor(numpy_array)
+    if tensor.dtype == torch.float64:
+        tensor = tensor.float()
+    if cuda_device is not None:
+        with torch.cuda.device(f"cuda:{cuda_device}"):
+            return tensor.cuda()
+    return tensor
 
 
 def _history_entries(history) -> list:

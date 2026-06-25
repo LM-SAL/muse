@@ -1,14 +1,22 @@
 import jax
 import numpy as np
 import pytest
+import torch
 import xarray as xr
 
 import astropy.units as u
 
-from muse.utils.utils import add_history, jax_to_numpy, numpy_to_jax, update_attrs
+from muse.utils.utils import (
+    add_history,
+    jax_to_numpy,
+    numpy_to_jax,
+    numpy_to_torch,
+    torch_to_numpy,
+    update_attrs,
+)
 
 
-def _gpu_devices():
+def _jax_gpu_devices():
     try:
         return jax.devices("gpu")
     except RuntimeError:
@@ -134,7 +142,7 @@ def test_numpy_to_jax_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_jax_numpy_round_trip_cuda() -> None:
-    gpu_devices = _gpu_devices()
+    gpu_devices = _jax_gpu_devices()
     if not gpu_devices:
         pytest.skip("requires a CUDA GPU")
 
@@ -142,3 +150,25 @@ def test_jax_numpy_round_trip_cuda() -> None:
     jax_array = numpy_to_jax(array, cuda_device=0)
     assert jax_array.device == gpu_devices[0]
     np.testing.assert_array_equal(jax_to_numpy(jax_array), array)
+
+
+def test_torch_numpy_round_trip() -> None:
+    array = np.arange(6.0).reshape(2, 3)
+    np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
+
+
+def test_numpy_to_torch_caps_precision_at_float32() -> None:
+    assert numpy_to_torch(np.ones(3, dtype=np.float64)).dtype == torch.float32  # Downcast
+    assert numpy_to_torch(np.ones(3, dtype=np.float32)).dtype == torch.float32  # Unchanged
+    assert numpy_to_torch(np.ones(3, dtype=np.float16)).dtype == torch.float16  # Narrower kept
+
+
+@pytest.mark.cuda
+def test_torch_numpy_round_trip_cuda() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("requires a CUDA GPU")
+
+    array = np.arange(6.0).reshape(2, 3)
+    tensor = numpy_to_torch(array, cuda_device=0)
+    assert tensor.is_cuda
+    np.testing.assert_array_equal(torch_to_numpy(tensor), array)

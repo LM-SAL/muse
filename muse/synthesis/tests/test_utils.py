@@ -6,13 +6,14 @@ import astropy.units as u
 
 import muse.synthesis.utils as synthesis_utils
 from muse.tests.helpers import assert_dataset_structure
+from muse.utils.utils import _use_jax_backend
 
 
 def _gpu_devices():
     try:
-        return jax.devices("gpu")
-    except RuntimeError:
-        return []
+        return _use_jax_backend(0)
+    except ValueError:
+        return False
 
 
 def _tiny_vdem_inputs():
@@ -83,6 +84,15 @@ def test_create_simple_vdem_defaults_to_cpu(monkeypatch) -> None:
 
     assert calls
     assert set(calls) == {None}
+
+
+def test_create_simple_vdem_numpy_backend(monkeypatch) -> None:
+    monkeypatch.setattr(synthesis_utils, "_use_jax_backend", lambda *_args, **_kwargs: False)
+
+    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
+
+    assert isinstance(result.vdem.data, np.ndarray)
+    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=5e-6)
 
 
 @pytest.mark.parametrize(

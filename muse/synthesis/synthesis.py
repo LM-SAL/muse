@@ -1,7 +1,5 @@
 import string
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 import xarray as xr
 
@@ -9,7 +7,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, numpy_to_jax, update_attrs
+from muse.utils.utils import _use_jax_backend, add_history, numpy_to_jax, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -47,7 +45,7 @@ def _calc_einsum(
     cuda_device: int | None = None,
 ):
     """
-    Compute the tensor product using JAX einsum, optionally on a CUDA device.
+    Compute the tensor product using the best available array backend.
 
     Parameters
     ----------
@@ -64,21 +62,31 @@ def _calc_einsum(
 
     Returns
     -------
-    `jax.Array`
+    array-like
         Result of the einsum operation.
     """
-    logger.debug(f"Using JAX on cuda:{cuda_device}" if cuda_device is not None else "Using CPU with JAX")
-    return jnp.einsum(
+    use_jax = _use_jax_backend(cuda_device)
+    logger.debug(f"Using {'jax' if use_jax else 'numpy'} for synthesis")
+    if use_jax:
+        import jax  # NOQA: PLC0415 - optional backend
+        import jax.numpy as jnp  # NOQA: PLC0415 - optional backend
+
+        return jnp.einsum(
+            f"{einsum_str}->{out_str}",
+            numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
+            numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
+            precision=jax.lax.Precision.HIGHEST,
+        )
+    return np.einsum(
         f"{einsum_str}->{out_str}",
-        numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
-        numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
-        precision=jax.lax.Precision.HIGHEST,
+        np.asarray(raster.vdem.data),
+        np.asarray(response.SG_resp.data),
     )
 
 
 def _build_einsum_indices(raster_dims, response_dims, sum_over):
     """
-    Build the JAX einsum spec for contracting the VDEM raster with the response.
+    Build the einsum spec for contracting the VDEM raster with the response.
 
     Each unique dimension name gets one index letter; dimensions shared by both
     operands reuse the same letter (so einsum contracts over them). The output
