@@ -26,7 +26,7 @@ class FrozenDict(dict):
 
     Unlike `types.MappingProxyType`, instances are picklable, which keeps frozen
     defaults usable with multiprocessing. The mapping itself stays read-only across a
-    pickle round-trip, but numpy/`Quantity` values it holds regain their writable flag
+    pickle round-trip, but numpy or `astropy.units.Quantity` values it holds regain their writable flag
     on unpickle; this is harmless because each process operates on its own copy.
     """
 
@@ -254,11 +254,11 @@ class InstrumentDefaults:
     This is not a deeply immutable container. The converters copy input values and make
     common array buffers read-only, but some nested objects still expose mutable APIs:
 
-    * `xarray.DataArray` fields can still have `.data`, coordinates, `.attrs`, and
-      `.encoding` reassigned or mutated through xarray APIs.
+    * `xarray.DataArray` fields can still have ``.data``, coordinates, ``.attrs``, and
+      ``.encoding`` reassigned or mutated through xarray APIs.
     * Object-dtype arrays or custom objects stored inside mappings can still mutate their
       contained Python objects even when the outer array or mapping is read-only.
-    * `FrozenDict` prevents normal mapping mutation, but it is still a `dict` subclass
+    * `muse.variables_schema.FrozenDict` prevents normal mapping mutation, but it is still a `dict` subclass
       for pickle compatibility.
 
     Because nested state can change, instances are intentionally unhashable.
