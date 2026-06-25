@@ -7,7 +7,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import _use_jax, add_history, numpy_to_jax, update_attrs
+from muse.utils.utils import _use_jax, add_history, jax_to_numpy, numpy_to_jax, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -74,11 +74,13 @@ def _calc_einsum(
         import jax  # NOQA: PLC0415 - optional backend
         import jax.numpy as jnp  # NOQA: PLC0415 - optional backend
 
-        return jnp.einsum(
-            f"{einsum_str}->{out_str}",
-            numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
-            numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
-            precision=jax.lax.Precision.HIGHEST,
+        return jax_to_numpy(
+            jnp.einsum(
+                f"{einsum_str}->{out_str}",
+                numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
+                numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
+                precision=jax.lax.Precision.HIGHEST,
+            )
         )
     return np.einsum(
         f"{einsum_str}->{out_str}",

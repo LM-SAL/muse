@@ -1,7 +1,6 @@
 import jax
 import numpy as np
 import pytest
-import torch
 import xarray as xr
 
 import astropy.units as u
@@ -179,11 +178,13 @@ def test_jax_numpy_round_trip_cuda() -> None:
 
 
 def test_torch_numpy_round_trip() -> None:
+    pytest.importorskip("torch")
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
 
 
 def test_numpy_to_torch_caps_precision_at_float32() -> None:
+    torch = pytest.importorskip("torch")
     assert numpy_to_torch(np.ones(3, dtype=np.float64)).dtype == torch.float32  # Downcast
     assert numpy_to_torch(np.ones(3, dtype=np.float32)).dtype == torch.float32  # Unchanged
     assert numpy_to_torch(np.ones(3, dtype=np.float16)).dtype == torch.float16  # Narrower kept
@@ -191,6 +192,7 @@ def test_numpy_to_torch_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_torch_numpy_round_trip_cuda() -> None:
+    torch = pytest.importorskip("torch")
     if not torch.cuda.is_available():
         pytest.skip("requires a CUDA GPU")
 

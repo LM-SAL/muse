@@ -1,4 +1,3 @@
-import jax
 import numpy as np
 import pytest
 
@@ -52,7 +51,7 @@ def test_build_einsum_indices_general_shapes() -> None:
 def test_vdem_synthesis(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     detector_response = vdem_synthesis(reshaped_vdem, response)
-    assert isinstance(detector_response.flux.data, jax.Array)
+    assert isinstance(detector_response.flux.data, np.ndarray)
     assert_dataset_structure(
         detector_response,
         data_vars=("flux",),

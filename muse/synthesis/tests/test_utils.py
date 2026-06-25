@@ -1,4 +1,3 @@
-import jax
 import numpy as np
 import pytest
 
@@ -41,7 +40,7 @@ def _expected_tiny_vdem():
 
 def test_create_simple_vdem_tiny_cube() -> None:
     result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
-    assert isinstance(result.vdem.data, jax.Array)
+    assert isinstance(result.vdem.data, np.ndarray)
 
     assert_dataset_structure(
         result,

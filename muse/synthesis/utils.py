@@ -229,7 +229,9 @@ def create_simple_vdem(
         vdem = _create_vdem_array_jax_kernel()(
             temperature, velocity, ne_nh, cell_length, velocity_axis, log_temperature_axis
         )
-        log_temperature_axis, velocity_axis = [jax_to_numpy(q) for q in [log_temperature_axis, velocity_axis]]
+        log_temperature_axis, velocity_axis, vdem = [
+            jax_to_numpy(q) for q in [log_temperature_axis, velocity_axis, vdem]
+        ]
     else:
         cell_length = cell_length.astype(np.float32, copy=False)
         velocity, temperature, ne_nh, velocity_axis, log_temperature_axis = [
