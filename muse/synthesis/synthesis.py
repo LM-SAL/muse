@@ -171,10 +171,10 @@ def vdem_synthesis(
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
-        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``),
-        defaults to None (CPU).
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``).
+        Defaults to None.
     backend : `str`, optional
-        ``"numpy"`` (default), ``"jax"`` or ``"torch"``.
+        Allowed values are : ``"numpy"`` (default), ``"jax"`` or ``"torch"``.
         The JAX and Torch paths downcast float64 inputs to
         float32; the NumPy path keeps the input dtype.
 
