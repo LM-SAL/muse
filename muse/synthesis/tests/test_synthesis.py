@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import torch
 
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
@@ -44,6 +43,7 @@ def test_build_einsum_indices_general_shapes() -> None:
 def test_vdem_synthesis(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     detector_response = vdem_synthesis(reshaped_vdem, response)
+    assert isinstance(detector_response.flux.data, np.ndarray)
     assert_dataset_structure(
         detector_response,
         data_vars=("flux",),
@@ -54,7 +54,8 @@ def test_vdem_synthesis(response, vdem) -> None:
     assert detector_response.flux.attrs["units"] == "ph / s"
     assert detector_response.attrs["HISTORY"] == [
         "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), cuda_device=None)",
+        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), "
+        "cuda_device=None, backend=numpy)",
     ]
     np.testing.assert_array_equal(
         detector_response.line_wvl.values,
@@ -64,7 +65,7 @@ def test_vdem_synthesis(response, vdem) -> None:
 
 def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     # Independently recompute one flux value with a plain xarray multiply + sum over
-    # the shared logT/vdop/slit dims, and compare to the torch-einsum result. This
+    # the shared logT/vdop/slit dims, and compare to the einsum result. This
     # guards the einsum index bookkeeping, not just the output shape.
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     result = vdem_synthesis(reshaped_vdem, response)
@@ -74,6 +75,39 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     expected = float(contribution.sum().values)  # sums over logT, vdop, slit
     got = float(result.flux.isel(y=it, step=istep, line=iline, SG_xpixel=ipixel).values)
     np.testing.assert_allclose(got, expected, rtol=1e-5)
+
+
+def test_vdem_synthesis_numpy_backend(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+
+    result = vdem_synthesis(reshaped_vdem, response, backend="numpy")
+
+    assert isinstance(result.flux.data, np.ndarray)
+    assert_dataset_structure(
+        result,
+        data_vars=("flux",),
+        coords=("y", "step", "line", "SG_xpixel", "line_wvl"),
+        sizes={"y": 32, "step": 11, "line": 7, "SG_xpixel": 32},
+        finite_vars=("flux",),
+    )
+
+
+def test_vdem_synthesis_jax_backend_matches_numpy(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
+    jax_flux = vdem_synthesis(reshaped_vdem, response, backend="jax").flux
+
+    assert isinstance(jax_flux.data, np.ndarray)
+    np.testing.assert_allclose(jax_flux.values, numpy_flux.values, rtol=1e-4)
+
+
+def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
+    torch_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
+
+    assert isinstance(torch_flux.data, np.ndarray)
+    np.testing.assert_allclose(torch_flux.values, numpy_flux.values, rtol=1e-4)
 
 
 def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:
@@ -166,11 +200,10 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
 
 
 @pytest.mark.cuda
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     cpu = vdem_synthesis(reshaped_vdem, response)
-    gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0)
+    gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0, backend="jax")
     assert_dataset_structure(
         gpu,
         data_vars=("flux",),

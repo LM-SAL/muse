@@ -1,3 +1,5 @@
+import importlib.util
+
 import numpy as np
 import pytest
 import torch
@@ -5,7 +7,48 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy, update_attrs
+from muse.utils.utils import (
+    _resolve_backend,
+    add_history,
+    jax_to_numpy,
+    numpy_to_jax,
+    numpy_to_torch,
+    torch_to_numpy,
+    update_attrs,
+)
+
+
+@pytest.mark.parametrize(
+    ("cuda_device", "backend", "expected"),
+    [
+        (None, "numpy", "numpy"),
+        (None, "jax", "jax"),
+        (None, "torch", "torch"),
+    ],
+)
+def test_resolve_backend_decision(cuda_device, backend, expected) -> None:
+    assert _resolve_backend(cuda_device, backend) == expected
+
+
+@pytest.mark.parametrize(
+    ("cuda_device", "backend", "match"),
+    [
+        (None, "cupy", "Unknown backend"),
+        (0, "numpy", "numpy backend does not support cuda_device"),
+        (-1, "jax", "is not valid"),
+    ],
+)
+def test_resolve_backend_rejects(cuda_device, backend, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _resolve_backend(cuda_device, backend)
+
+
+def test_resolve_backend_accelerator_not_installed_raises(monkeypatch) -> None:
+    monkeypatch.setattr(importlib.util, "find_spec", lambda *_: None)
+    with pytest.raises(ValueError, match="JAX is not installed"):
+        _resolve_backend(backend="jax")
+    with pytest.raises(ValueError, match="Torch is not installed"):
+        _resolve_backend(backend="torch")
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):
@@ -114,6 +157,27 @@ def test_update_attrs_merges_history_from_multiple_sources() -> None:
     assert ds.attrs["instrument"] == "MUSE"
 
 
+def test_jax_numpy_round_trip() -> None:
+    array = np.arange(6.0).reshape(2, 3)
+    np.testing.assert_array_equal(jax_to_numpy(numpy_to_jax(array)), array)
+
+
+def test_numpy_to_jax_caps_precision_at_float32() -> None:
+    assert numpy_to_jax(np.ones(3, dtype=np.float64)).dtype.name == "float32"  # Downcast
+    assert numpy_to_jax(np.ones(3, dtype=np.float32)).dtype.name == "float32"  # Unchanged
+    assert numpy_to_jax(np.ones(3, dtype=np.float16)).dtype.name == "float16"  # Narrower kept
+
+
+@pytest.mark.cuda
+def test_jax_numpy_round_trip_cuda() -> None:
+    import jax  # NOQA: PLC0415
+
+    array = np.arange(6.0).reshape(2, 3)
+    jax_array = numpy_to_jax(array, cuda_device=0)
+    assert jax_array.device == jax.devices("gpu")[0]
+    np.testing.assert_array_equal(jax_to_numpy(jax_array), array)
+
+
 def test_torch_numpy_round_trip() -> None:
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
@@ -126,9 +190,8 @@ def test_numpy_to_torch_caps_precision_at_float32() -> None:
 
 
 @pytest.mark.cuda
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
 def test_torch_numpy_round_trip_cuda() -> None:
     array = np.arange(6.0).reshape(2, 3)
     tensor = numpy_to_torch(array, cuda_device=0)
-    assert tensor.is_cuda  # numpy_to_torch places it on the GPU
-    np.testing.assert_array_equal(torch_to_numpy(tensor), array)  # torch_to_numpy pulls it back
+    assert tensor.is_cuda
+    np.testing.assert_array_equal(torch_to_numpy(tensor), array)

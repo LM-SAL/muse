@@ -30,15 +30,27 @@ def log_gpu_status() -> None:
     """
     Log CUDA/GPU availability.
 
-    Imports torch lazily and is not called at import time, so importing this module (or
-    :mod:`muse`) stays torch-free. Call this explicitly when the GPU diagnostic is
-    wanted.
+    Optional accelerator backends are imported lazily and this is not called at
+    import time, so importing this module (or :mod:`muse`) stays backend-free.
     """
-    import contextlib  # NOQA: PLC0415
+    import importlib.util  # NOQA: PLC0415
 
-    import torch  # NOQA: PLC0415
+    found_gpu = False
+    if importlib.util.find_spec("jax") is not None:
+        import jax  # NOQA: PLC0415
 
-    found_gpu = torch.cuda.is_available()
-    with contextlib.suppress(RuntimeError, AssertionError):
-        logger.debug(f"GPU CUDA - pytorch: {torch.cuda.device(torch.cuda.current_device())}")
+        try:
+            gpu_devices = jax.devices("gpu")
+        except RuntimeError:
+            gpu_devices = []
+        found_gpu = bool(gpu_devices)
+        if gpu_devices:
+            logger.debug(f"GPU CUDA - jax: {gpu_devices[0]}")
+
+    if not found_gpu and importlib.util.find_spec("torch") is not None:
+        import torch  # NOQA: PLC0415
+
+        found_gpu = torch.cuda.is_available()
+        if found_gpu:
+            logger.debug(f"GPU CUDA - torch: {torch.cuda.device(torch.cuda.current_device())}")
     logger.debug(f"GPU FOUND STATUS: {found_gpu}")

@@ -1,8 +1,7 @@
 import numpy as np
-import torch
 import xarray as xr
 
-from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy
+from muse.utils.utils import add_history
 
 __all__ = ["create_simple_vdem"]
 
@@ -16,8 +15,6 @@ def create_simple_vdem(
     y,
     velocity_axis,
     log_temperature_axis,
-    *,
-    cuda_device: int | None = None,
 ):
     r"""
     Calculates DEM as a function of temperature and velocity,
@@ -43,8 +40,6 @@ def create_simple_vdem(
         1D velocity bin centers in km/s.
     log_temperature_axis : numpy.ndarray
         1D temperature bin centers in log10(K).
-    cuda_device : int or None, optional
-        CUDA device index, or None for CPU. Default is None.
 
     Returns
     -------
@@ -114,7 +109,7 @@ def create_simple_vdem(
     x = np.asarray(x)
     y = np.asarray(y)
 
-    # Snapshot the numpy inputs for provenance before they are converted to tensors.
+    # Snapshot the numpy inputs for provenance before they are down-cast to float32.
     call_inputs = dict(locals())
 
     if temperature.ndim != 3:
@@ -136,49 +131,44 @@ def create_simple_vdem(
         )
         raise ValueError(msg)
 
-    n_velocity_bins = len(velocity_axis)
-    n_temperature_bins = len(log_temperature_axis)
-
-    cell_length = numpy_to_torch(cell_length.astype(np.float32, copy=False), cuda_device=cuda_device)
+    cell_length = cell_length.astype(np.float32, copy=False)
     velocity, temperature, ne_nh, velocity_axis, log_temperature_axis = [
-        numpy_to_torch(q.astype(np.float32, copy=False), cuda_device=cuda_device)
-        for q in [velocity, temperature, ne_nh, velocity_axis, log_temperature_axis]
+        q.astype(np.float32, copy=False) for q in [velocity, temperature, ne_nh, velocity_axis, log_temperature_axis]
     ]
 
-    # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
-    # (the line-of-sight z axis is integrated out).
-    vdem_shape = [n_temperature_bins, n_velocity_bins, *velocity.shape[:2]]
+    n_velocity_bins = len(velocity_axis)
+    n_temperature_bins = len(log_temperature_axis)
 
     log_temperature_bin_width = log_temperature_axis[1] - log_temperature_axis[0]
     velocity_bin_width = velocity_axis[1] - velocity_axis[0]
 
     # Each line-of-sight cell spans the temperatures between it and its neighbour; its
     # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
-    temperature_prev = temperature.roll(1, dims=2)
+    temperature_prev = np.roll(temperature, 1, axis=2)
     temperature_prev[:, :, 0] = 100.0
-    max_temperature = torch.maximum(temperature, temperature_prev)
-    min_temperature = torch.minimum(temperature, temperature_prev)
+    max_temperature = np.maximum(temperature, temperature_prev)
+    min_temperature = np.minimum(temperature, temperature_prev)
 
-    vdem = torch.zeros(size=vdem_shape, dtype=ne_nh.dtype, device=ne_nh.device)
+    # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
+    # (the line-of-sight z axis is integrated out).
+    vdem = np.zeros((n_temperature_bins, n_velocity_bins, *velocity.shape[:2]), dtype=ne_nh.dtype)
     for i_temperature in range(n_temperature_bins):
         bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
         bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
-        log_temperature_clipped = torch.log10(temperature.clip(bin_lo, bin_hi))
-        log_temperature_prev_clipped = torch.log10(temperature_prev.clip(bin_lo, bin_hi))
-        bin_fraction = torch.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
+        log_temperature_clipped = np.log10(np.clip(temperature, bin_lo, bin_hi))
+        log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
+        bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
         temperature_mask = (max_temperature >= bin_lo) & (min_temperature < bin_hi)
 
         for i_velocity in range(n_velocity_bins):
-            voxel_mask = (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0) & temperature_mask
-            voxel_mask &= velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0
+            voxel_mask = (
+                (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0)
+                & temperature_mask
+                & (velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0)
+            )
             # n_e * n_H * bin_fraction * cell_length summed along the line of sight
             los_integrand = ne_nh * bin_fraction * voxel_mask * cell_length.reshape(1, 1, -1)
             vdem[i_temperature, i_velocity, ...] = los_integrand.sum(axis=2)
-
-    log_temperature_axis, velocity_axis, vdem = [torch_to_numpy(q) for q in [log_temperature_axis, velocity_axis, vdem]]
-
-    if cuda_device is not None:
-        torch.cuda.empty_cache()
 
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(

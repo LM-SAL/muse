@@ -33,13 +33,17 @@ dependencies = [
   "attrs>=26.1.0",
   "loguru>=0.7.3",
   "numpy>=2.4.0",
-  "torch>=2.12.0",
   "xarray[io,parallel]>=2026.4.0",
   "matplotlib>=3.10.0",
 ]
-optional-dependencies.all = [ "muse" ]
+optional-dependencies.all = [
+  "muse[jax,torch]"
+]
+optional-dependencies.jax = [ "jax>=0.10.2" ]
+optional-dependencies.torch = [ "torch>=2.12.0" ]
 optional-dependencies.dev = [ "muse[all,docs,tests]" ]
 optional-dependencies.docs = [
+  "muse",
   "default-values",
   "joblib",                   # for sphinx-gallery parallel
   "packaging",
@@ -54,6 +58,7 @@ optional-dependencies.docs = [
   "sphinxext-opengraph",
 ]
 optional-dependencies.tests = [
+  "muse[all]",
   "pytest",
   "pytest-doctestplus",
   "pytest-loguru",

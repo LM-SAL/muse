@@ -4,6 +4,7 @@ Functions whose scope is not limited to one part of the muse package.
 
 import inspect
 import datetime
+import importlib.util
 from collections.abc import Callable
 
 import numpy as np
@@ -14,7 +15,106 @@ import astropy.units as u
 import muse
 from muse.log import logger
 
-__all__ = ["add_history", "numpy_to_torch", "torch_to_numpy", "update_attrs"]
+__all__ = ["add_history", "jax_to_numpy", "numpy_to_jax", "numpy_to_torch", "torch_to_numpy", "update_attrs"]
+
+
+def jax_to_numpy(jax_array):
+    """
+    Convert a JAX array to a `numpy.ndarray`.
+
+    The array is copied back to host memory first so arrays on accelerator
+    devices convert cleanly.
+
+    Parameters
+    ----------
+    jax_array : `jax.Array`
+        JAX array to convert.
+
+    Returns
+    -------
+    `numpy.ndarray`
+        The converted NumPy array.
+    """
+    return np.asarray(jax_array)
+
+
+def _jax_device(cuda_device: int | None):
+    import jax  # NOQA: PLC0415
+
+    if cuda_device is None:
+        return jax.devices("cpu")[0]
+    try:
+        return jax.devices("gpu")[cuda_device]
+    except (RuntimeError, IndexError) as exc:
+        msg = f"CUDA device {cuda_device} is not available to JAX"
+        raise ValueError(msg) from exc
+
+
+def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> str:
+    """
+    Validate and resolve the array backend, returning ``"numpy"``, ``"jax"``, or ``"torch"``.
+
+    JAX and Torch are opt-in: ``backend`` defaults to ``"numpy"`` (also for `None`), so
+    the array library never changes with what happens to be installed in the environment
+    (the accelerator paths are float32, the NumPy path keeps the input dtype). This is the
+    single source of truth for which backends are valid.
+
+    Parameters
+    ----------
+    cuda_device : `int` or `None`, optional
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or
+        `None` for CPU.
+    backend : `str`, optional
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``.
+
+    Raises
+    ------
+    ValueError
+        For an unknown ``backend``, an accelerator backend that is not installed,
+        NumPy asked for a CUDA device, or a negative CUDA device. A device index the
+        backend cannot serve is reported later, when the array is placed.
+    """
+    if backend not in ("numpy", "jax", "torch"):
+        msg = f"Unknown backend {backend!r}; choose 'numpy', 'jax', or 'torch'"
+        raise ValueError(msg)
+    if backend == "numpy":
+        if cuda_device is not None:
+            msg = "The numpy backend does not support cuda_device; use backend='jax' or 'torch'"
+            raise ValueError(msg)
+        return "numpy"
+    if cuda_device is not None and cuda_device < 0:
+        msg = f"CUDA device {cuda_device} is not valid"
+        raise ValueError(msg)
+    if importlib.util.find_spec(backend) is None:
+        name = "JAX" if backend == "jax" else "Torch"
+        msg = f"backend={backend!r} requested but {name} is not installed"
+        raise ValueError(msg)
+    return backend
+
+
+def numpy_to_jax(numpy_array: np.ndarray, cuda_device: int | None = None):
+    """
+    Convert a `numpy.ndarray` to a JAX array.
+
+    Floating-point precision is capped at float32: ``float64`` input is downcast
+    to ``float32``, while narrower dtypes (``float16``, integers) are left as-is.
+
+    Parameters
+    ----------
+    numpy_array : `numpy.ndarray`
+        The array to convert.
+    cuda_device : `int` or `None`, optional
+        If provided, transfer the array to the specified CUDA device. If omitted,
+        keep the old CPU default used by the previous tensor bridge.
+
+    Returns
+    -------
+    `jax.Array`
+        The converted JAX array.
+    """
+    import jax  # NOQA: PLC0415
+
+    return jax.device_put(np.asarray(numpy_array), _jax_device(cuda_device))
 
 
 def torch_to_numpy(torch_tensor):
@@ -22,7 +122,7 @@ def torch_to_numpy(torch_tensor):
     Convert a `torch.Tensor` to a `numpy.ndarray`.
 
     The tensor is detached from the autograd graph and moved to the CPU first
-    (both no-ops when already so) so that tensors on a CUDA device convert cleanly.
+    so tensors on CUDA devices convert cleanly.
 
     Parameters
     ----------
@@ -60,10 +160,9 @@ def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
     `torch.Tensor`
         The converted Torch tensor.
     """
-    import torch  # NOQA: PLC0415 - Avoid a heavy import unless we need it
+    import torch  # NOQA: PLC0415
 
     tensor = torch.tensor(numpy_array)
-    # Enforce at most float32 precision
     if tensor.dtype == torch.float64:
         tensor = tensor.float()
     if cuda_device is not None:

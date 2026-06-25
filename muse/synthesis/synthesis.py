@@ -1,15 +1,21 @@
 import string
-import contextlib
 
 import numpy as np
-import torch
 import xarray as xr
 
 import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, numpy_to_torch, torch_to_numpy, update_attrs
+from muse.utils.utils import (
+    _resolve_backend,
+    add_history,
+    jax_to_numpy,
+    numpy_to_jax,
+    numpy_to_torch,
+    torch_to_numpy,
+    update_attrs,
+)
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -45,9 +51,10 @@ def _calc_einsum(
     einsum_str: str,
     out_str: str,
     cuda_device: int | None = None,
+    backend: str = "numpy",
 ):
     """
-    Compute the tensor product using torch.einsum, optionally on a CUDA device.
+    Compute the tensor product using the selected array backend.
 
     Parameters
     ----------
@@ -60,27 +67,49 @@ def _calc_einsum(
     out_str : `str`
         Einsum output string.
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use, or None for CPU.
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or None for CPU.
+    backend : `str`, optional
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are opt-in.
 
     Returns
     -------
-    `numpy.ndarray`
+    array-like
         Result of the einsum operation.
     """
-    device_context = torch.cuda.device(f"cuda:{cuda_device}") if cuda_device is not None else contextlib.nullcontext()
-    with device_context:
-        logger.debug(f"Using torch on cuda:{cuda_device}" if cuda_device is not None else "Using CPU with torch")
-        result = torch.einsum(
-            f"{einsum_str}->{out_str}",
-            numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
-            numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
+    backend = _resolve_backend(cuda_device, backend)
+    logger.debug(f"Using {backend} for synthesis")
+    if backend == "torch":
+        import torch  # NOQA: PLC0415
+
+        return torch_to_numpy(
+            torch.einsum(
+                f"{einsum_str}->{out_str}",
+                numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
+                numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
+            )
         )
-    return torch_to_numpy(result)
+    if backend == "jax":
+        import jax  # NOQA: PLC0415
+        import jax.numpy as jnp  # NOQA: PLC0415
+
+        return jax_to_numpy(
+            jnp.einsum(
+                f"{einsum_str}->{out_str}",
+                numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
+                numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
+                precision=jax.lax.Precision.HIGHEST,
+            )
+        )
+    return np.einsum(
+        f"{einsum_str}->{out_str}",
+        np.asarray(raster.vdem.data),
+        np.asarray(response.SG_resp.data),
+    )
 
 
 def _build_einsum_indices(raster_dims, response_dims, sum_over):
     """
-    Build the torch.einsum spec for contracting the VDEM raster with the response.
+    Build the einsum spec for contracting the VDEM raster with the response.
 
     Each unique dimension name gets one index letter; dimensions shared by both
     operands reuse the same letter (so einsum contracts over them). The output
@@ -126,6 +155,7 @@ def vdem_synthesis(
     *,
     sum_over=DEFAULTS_MUSE.sum_over_dims_synthesis,
     cuda_device: int | None = None,
+    backend: str = "numpy",
 ) -> xr.Dataset:
     """
     Given a VDEM raster, and response function(s) synthesize observables by
@@ -141,7 +171,12 @@ def vdem_synthesis(
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
-        CUDA device index for GPU use, defaults to None (CPU).
+        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), defaults to None (CPU).
+    backend : `str`, optional
+        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are
+        opt-in: neither is selected implicitly, so results do not change with
+        what is installed. The JAX and Torch paths downcast float64 inputs to
+        float32; the NumPy path keeps the input dtype.
 
     Returns
     -------
@@ -170,6 +205,7 @@ def vdem_synthesis(
         einsum_str=einsum_str,
         out_str=out_str,
         cuda_device=cuda_device,
+        backend=backend,
     )
     ds = xr.Dataset()
     update_attrs(ds, raster)
