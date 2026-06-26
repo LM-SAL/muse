@@ -19,7 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Physics",
 ]
-urls.Documentation = "https://docs.muse.org"
+urls.Documentation = "https://muse-lmsal.readthedocs.io/en/latest/"
 urls.Download = "https://pypi.org/project/muse"
 urls.Homepage = "https://muse.lmsal.com"
 urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
@@ -33,7 +33,7 @@ dependencies = [
   "xarray[io,parallel]>=2026.4.0",
 ]
 optional-dependencies.all = ["muse[jax,torch]"]
-optional-dependencies.dev = ["muse[all,docs,tests], setuptools-scm"]
+optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
   "joblib",  # for sphinx-gallery parallel
