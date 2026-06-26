@@ -6,6 +6,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
+from muse.transforms.transforms import reshape_slit_step_to_x, reshape_x_to_slit_step
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import (
     _resolve_backend,
@@ -183,6 +184,22 @@ def vdem_synthesis(
     `xarray.Dataset`
         Dataset of the spectrum on the detector.
     """
+    if "SG_wvl" not in response.coords:
+        msg = "response.SG_wvl must be a coordinate"
+        raise ValueError(msg)
+
+    if "line_wvl" not in response.coords:
+        msg = "response.line_wvl must be a coordinate"
+        raise ValueError(msg)
+
+    if "slit" in response.dims and "slit" not in raster.dims and response.slit.size > 1:
+        msg = "response has a slit dimension and number of slits are greater than one, but raster does not"
+        raise ValueError(msg)
+
+    if "slit" not in response.dims and "slit" in raster.dims:
+        msg = "raster has a slit dimension but response does not"
+        raise ValueError(msg)
+
     for dim in sum_over:
         if dim not in response.dims:
             msg = f"{dim!r} is not a response dimension"
@@ -235,6 +252,16 @@ def vdem_synthesis(
     logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
     da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
     ds["flux"] = da
+
+    if "x" in raster.dims:
+        ds = reshape_x_to_slit_step(ds)
+        ds = ds.assign_coords(SG_wvl=response.SG_wvl)
+        ds = reshape_slit_step_to_x(ds)
+    else:
+        ds = ds.assign_coords(SG_wvl=response.SG_wvl)
+    ds.SG_wvl.attrs.update({"units": str(u.AA)})
+    ds = ds.assign_coords(line_wvl=response.line_wvl)
+    ds.line_wvl.attrs.update({"units": str(u.AA)})
 
     ds.flux.attrs.update({"units": str(raster_vdem_unit * response_sg_resp_unit)})
 
