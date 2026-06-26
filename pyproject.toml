@@ -1,20 +1,12 @@
-[build-system]
-build-backend = "setuptools.build_meta"
-requires = [
-  "setuptools>=62.1",
-  "setuptools-scm[toml]>=8",
-  "wheel",
-]
-
 [project]
 name = "muse"
 description = "A library to analyze and reduce data from the MUSE Mission."
 readme = { file = "README.rst", content-type = "text/x-rst" }
-license-files = [ "licenses/LICENSE.rst" ]
+requires-python = ">=3.12"
+license-files = ["licenses/LICENSE.rst"]
 authors = [
   { name = "MUSE Instrument Team", email = "nfreij@seti.org" },
 ]
-requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Science/Research",
@@ -27,24 +19,24 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Physics",
 ]
-dynamic = [ "version" ]
+urls.Documentation = "https://muse-lmsal.readthedocs.io/en/latest/"
+urls.Download = "https://pypi.org/project/muse"
+urls.Homepage = "https://muse.lmsal.com"
+urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
+urls."Source Code" = "https://github.com/LM-SAL/muse"
 dependencies = [
   "astropy>=7.2",
   "attrs>=26.1.0",
   "loguru>=0.7.3",
+  "matplotlib>=3.10.0",
   "numpy>=2.4.0",
   "xarray[io,parallel]>=2026.4.0",
-  "matplotlib>=3.10.0",
 ]
-optional-dependencies.all = [
-  "muse[jax,torch]"
-]
-optional-dependencies.jax = [ "jax>=0.10.2" ]
-optional-dependencies.torch = [ "torch>=2.12.0" ]
-optional-dependencies.dev = [ "muse[all,docs,tests]" ]
+optional-dependencies.all = ["muse[jax,torch]"]
+optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
-  "joblib",                   # for sphinx-gallery parallel
+  "joblib",  # for sphinx-gallery parallel
   "packaging",
   "pydata-sphinx-theme",
   "sphinx",
@@ -56,6 +48,7 @@ optional-dependencies.docs = [
   "sphinx-gallery",
   "sphinxext-opengraph",
 ]
+optional-dependencies.jax = ["jax>=0.10.2"]
 optional-dependencies.tests = [
   "muse[all]",
   "pytest-doctestplus",
@@ -64,18 +57,39 @@ optional-dependencies.tests = [
   "pytest-remotedata",
   "pytest",
 ]
-urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
-urls."Source Code" = "https://github.com/LM-SAL/muse"
-urls.Documentation = "https://docs.muse.org"
-urls.Download = "https://pypi.org/project/muse"
-urls.Homepage = "https://muse.lmsal.com"
+optional-dependencies.torch = ["torch>=2.12.0"]
+dynamic = ["version"]
+
+[build-system]
+requires = [
+  "setuptools>=62.1",
+  "setuptools-scm[toml]>=8",
+  "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.gilesbot]
+pull_requests.enabled = true
+towncrier_changelog.enabled = true
+towncrier_changelog.verify_pr_number = true
+towncrier_changelog.changelog_skip_label = "No Changelog Entry Needed"
+towncrier_changelog.help_url = "https://github.com/LM-SAL/muse/blob/main/changelog/README.rst"
+towncrier_changelog.changelog_missing_long = """\
+  There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory \
+  following the instructions in the changelog [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst).\
+  """
+towncrier_changelog.type_incorrect_long = """\
+  The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog \
+  [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst)\
+  """
+towncrier_changelog.number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
 
 [tool.setuptools]
 zip-safe = false
 include-package-data = true
-exclude-package-data."*" = [ "*.c", "*.h" ]
-packages.find.include = [ "muse*" ]
-packages.find.exclude = [ "muse._dev*" ]
+exclude-package-data."*" = ["*.c", "*.h"]
+packages.find.include = ["muse*"]
+packages.find.exclude = ["muse._dev*"]
 
 [tool.setuptools_scm]
 version_file = "muse/_version.py"
@@ -98,18 +112,11 @@ type = [
   { directory = "trivial", name = "Internal Changes", showcontent = true },
 ]
 
-[tool.gilesbot]
-pull_requests.enabled = true
-towncrier_changelog.enabled = true
-towncrier_changelog.verify_pr_number = true
-towncrier_changelog.changelog_skip_label = "No Changelog Entry Needed"
-towncrier_changelog.help_url = "https://github.com/LM-SAL/muse/blob/main/changelog/README.rst"
-towncrier_changelog.changelog_missing_long = """\
-  There isn't a changelog file in this pull request. Please add a changelog file to the `changelog/` directory \
-  following the instructions in the changelog [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst).\
-  """
-towncrier_changelog.type_incorrect_long = """\
-  The changelog file you added is not one of the allowed types. Please use one of the types described in the changelog \
-  [README](https://github.com/LM-SAL/muse/blob/main/changelog/README.rst)\
-  """
-towncrier_changelog.number_incorrect_long = "The number in the changelog file you added does not match the number of this pull request. Please rename the file."
+[tool.ty.src]
+include = ["muse"]
+exclude = [
+  "muse/**/tests/**",
+  "muse/conftest.py",
+  "muse/_version.py",
+  "muse/version.py"
+]
