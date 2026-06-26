@@ -1,15 +1,19 @@
+from pathlib import Path
+
+import dask
 import numpy as np
 import xarray as xr
-import astropy.units as u
-from pathlib import Path
-import dask
 
-from muse.utils.documentation import format_docstring
+import astropy.units as u
+
 from muse.log import logger
+from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
-@format_docstring("DEFAULTS_MUSE", 
+
+@format_docstring(
+    "DEFAULTS_MUSE",
     gain="ccd_gain",
 )
 def read_response(
@@ -55,23 +59,20 @@ def read_response(
         The response function dataset.
     """
     # At function start
-    assert Path(respfile).exists() or respfile.endswith('.zarr'), \
-        f"Response file does not exist: {respfile}"
+    assert Path(respfile).exists() or respfile.endswith(".zarr"), f"Response file does not exist: {respfile}"
 
     # For interpolation methods
-    assert logTmethod in ["nearest", "linear", "cubic", "quadratic"], \
-        f"Invalid logTmethod: {logTmethod}"
-    assert vdopmethod in ["nearest", "linear", "cubic", "quadratic"], \
-        f"Invalid vdopmethod: {vdopmethod}"
+    assert logTmethod in ["nearest", "linear", "cubic", "quadratic"], f"Invalid logTmethod: {logTmethod}"
+    assert vdopmethod in ["nearest", "linear", "cubic", "quadratic"], f"Invalid vdopmethod: {vdopmethod}"
 
     # For axes
     if logT is not None:
-        assert hasattr(logT, 'data'), "logT must be an xarray DataArray or similar"
+        assert hasattr(logT, "data"), "logT must be an xarray DataArray or similar"
         assert len(logT.data) > 0, "logT array must not be empty"
         assert np.all(np.isfinite(logT.data)), "logT must contain only finite values"
 
     if vdop is not None:
-        assert hasattr(vdop, 'data'), "vdop must be an xarray DataArray or similar"
+        assert hasattr(vdop, "data"), "vdop must be an xarray DataArray or similar"
         assert len(vdop.data) > 0, "vdop array must not be empty"
         assert np.all(np.isfinite(vdop.data)), "vdop must contain only finite values"
 
@@ -85,9 +86,9 @@ def read_response(
         else xr.load_dataset(respfile)
     )
     assert isinstance(r, xr.Dataset), "Response file must contain an xarray Dataset"
-    assert 'SG_resp' in r.data_vars, "Response dataset must contain 'SG_resp' variable"
-    assert 'logT' in r.coords or 'logT' in r.dims, "Response must have logT coordinate"
-    assert 'vdop' in r.coords or 'vdop' in r.dims, "Response must have vdop coordinate"
+    assert "SG_resp" in r.data_vars, "Response dataset must contain 'SG_resp' variable"
+    assert "logT" in r.coords or "logT" in r.dims, "Response must have logT coordinate"
+    assert "vdop" in r.coords or "vdop" in r.dims, "Response must have vdop coordinate"
 
     if logT is not None:
         loc_max = np.argmin(np.abs(logT.data - r.logT.max().data))
@@ -143,10 +144,7 @@ def read_response(
         else:
             r["line_wvl"] = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
 
-    if gain is None:
-        gain = np.array([10])
-    else:
-        gain = np.atleast_1d(gain)
+    gain = np.array([10]) if gain is None else np.atleast_1d(gain)
     r = r.assign_coords(gain=("channel", gain)) if "channel" in r.dims else r.assign_coords(gain=("line", gain))
 
     # JMS this should be removed once we have the new response files with units in the attributes:
@@ -158,7 +156,6 @@ def read_response(
     add_history(r, locals(), read_response)
 
     return r
-
 
 
 def load_and_concat_responses(resp_dir, resp_files, logT, vdop, slit, logTmethod, channels):

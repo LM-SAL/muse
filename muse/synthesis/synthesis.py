@@ -132,13 +132,15 @@ def _build_einsum_indices(
     return f"{raster_spec},{response_spec}", out_str, out_dims
 
 
-def _validate_inputs(raster: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]):
+def _validate_inputs(
+    raster: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]
+) -> tuple[u.UnitBase, u.UnitBase]:
     """
     Validate ``raster``/``response`` structure and units for synthesis.
 
     Checks slit-dimension consistency, that every ``sum_over`` dimension exists on
-    the response, and that ``vdem``, ``SG_resp``, ``line_wvl``, and ``SG_wvl``
-    define valid units (wavelengths convertible to Angstrom).
+    the response, and that ``vdem``/``SG_resp`` define valid units while
+    ``line_wvl``/``SG_wvl`` are coordinates with wavelength units.
 
     Returns
     -------
@@ -157,8 +159,8 @@ def _validate_inputs(raster: xr.Dataset, response: xr.Dataset, sum_over: Sequenc
             raise ValueError(msg)
     raster_vdem_unit = require_unit(raster, "vdem", "raster.vdem")
     response_sg_resp_unit = require_unit(response, "SG_resp", "response.SG_resp")
-    require_unit(response, "line_wvl", "response.line_wvl", convertible_to=u.AA)
-    require_unit(response, "SG_wvl", "response.SG_wvl", convertible_to=u.AA)
+    require_unit(response, "line_wvl", "response.line_wvl", coord_only=True, convertible_to=u.AA)
+    require_unit(response, "SG_wvl", "response.SG_wvl", coord_only=True, convertible_to=u.AA)
     return raster_vdem_unit, response_sg_resp_unit
 
 
@@ -243,7 +245,7 @@ def vdem_synthesis(
     # SG_wvl carries a slit dimension, so only attach it when slit survives in the
     # output (or the response never had one); otherwise it would re-introduce slit.
     slit_preserved = "slit" not in response.SG_resp.dims or "slit" in ds.flux.dims
-    if slit_preserved and "SG_wvl" in response:
+    if slit_preserved and "SG_wvl" in response.coords:
         if "x" in raster.dims:
             ds = reshape_x_to_slit_step(ds)
             ds = ds.assign_coords(SG_wvl=response.SG_wvl)
