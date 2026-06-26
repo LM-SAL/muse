@@ -27,6 +27,22 @@ def _tiny_response():
     return ds
 
 
+def _tiny_moment_spectrum():
+    return xr.Dataset(
+        data_vars={
+            "flux": (
+                ("SG_xpixel",),
+                [1.0, 2.0, 10.0, 2.0, 1.0],
+                {"units": "ph / s"},
+            ),
+        },
+        coords={
+            "SG_xpixel": [0, 1, 2, 3, 4],
+            "dopp_vel": (("SG_xpixel",), [-200.0, -100.0, 0.0, 100.0, 200.0], {"units": "km/s"}),
+        },
+    )
+
+
 def test_wavelength_doppler_round_trip() -> None:
     resp = _tiny_response()
     with_vel = synthesis_utils.wavelength_to_doppler(resp)
@@ -73,23 +89,28 @@ def test_calculate_moments_structure(response, vdem) -> None:
 
 
 def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
-    spectrum = xr.Dataset(
-        data_vars={
-            "flux": (
-                ("SG_xpixel",),
-                [1.0, 2.0, 3.0],
-                {"units": "ph / s"},
-            ),
-        },
-        coords={
-            "SG_xpixel": [0, 1, 2],
-            "dopp_vel": (("SG_xpixel",), [-100.0, 0.0, 100.0], {"units": "km/s"}),
-        },
-    )
+    spectrum = _tiny_moment_spectrum()
 
     moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
 
     assert moments["0th"].attrs["units"] == "ph / s"
+
+
+def test_calculate_moments_vmask_keeps_peak_window() -> None:
+    spectrum = _tiny_moment_spectrum()
+
+    moments = synthesis_utils.calculate_moments(spectrum, vmax=300, vmask=1)
+
+    assert moments["0th"].item() == 10.0
+    assert moments["1st"].item() == 0.0
+    assert moments["2nd"].item() == 0.0
+
+
+def test_calculate_moments_requires_vmask_with_vdop_reference() -> None:
+    spectrum = _tiny_moment_spectrum()
+
+    with pytest.raises(ValueError, match="vmask must be provided"):
+        synthesis_utils.calculate_moments(spectrum, vmax=300, vdop_reference=xr.Dataset())
 
 
 def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
