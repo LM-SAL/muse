@@ -4,9 +4,10 @@
 # full list see the documentation:
 # http://www.sphinx-doc.org/en/master/config
 
-import os
 import datetime
+import os
 from pathlib import Path
+
 from packaging.version import Version
 
 # -- Read the Docs Specific Configuration --------------------------------------
@@ -43,6 +44,7 @@ copyright = f"{datetime.datetime.now(datetime.UTC).year}, {author}"  # NOQA: A00
 # -- General configuration ---------------------------------------------------
 
 import warnings
+
 from astropy.utils.exceptions import AstropyDeprecationWarning
 from matplotlib import MatplotlibDeprecationWarning
 
@@ -117,6 +119,8 @@ intersphinx_mapping = {
         "https://docs.scipy.org/doc/scipy/reference/",
         (None, "https://www.astropy.org/astropy-data/intersphinx/scipy.inv"),
     ),
+    "jax": ("https://docs.jax.dev/en/latest/", None),
+    "torch": ("https://pytorch.org/docs/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "sunpy": ("https://docs.sunpy.org/en/stable/", None),
