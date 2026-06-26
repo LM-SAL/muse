@@ -10,7 +10,7 @@ Units are attrs
 Every physical quantity carries an ``astropy.units`` unit, stored as a string in the relevant ``.attrs["units"]``.
 We have converters which normalize to a canonical unit on construction (arcsec, Angstrom, km/s, etc), so downstream code can assume the canonical unit without re-checking.
 
-**Why** For now, ``astropy.units`` does not play well with xarray and since MUSE mixes wavelengths, Doppler velocities, and spatial scales.
+**Why** For now, ``astropy.units`` does not play well with xarray, and MUSE mixes wavelengths, Doppler velocities, and spatial scales.
 A silent unit mismatch (nm vs Angstrom, km/s vs m/s) will produce incorrect numbers that we can not catch.
 I hope by adding the units to the ``attrs``, we can at least catch these errors at a boundary.
 
@@ -36,7 +36,7 @@ Treat every input :class:`~xarray.Dataset` as read-only.
 Produce results with ``assign`` / ``assign_coords`` / arithmetic, which return a *new* dataset that **shares** the underlying arrays.
 So adding a coordinate or attr is cheap and never duplicates the large data variables.
 
-**Why.** We will have large data arrays (e.g., ``vdem``, ``SG_resp``, ``flux``) where as the coordinates and attrs are tiny.
+**Why.** We will have large data arrays (e.g., ``vdem``, ``SG_resp``, ``flux``) whereas the coordinates and attrs are tiny.
 Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, which does not scale. In-place mutation (``ds.coords[...] = ...``) silently changes the caller's object, this is something we want to avoid.
 
 **Rules.**
