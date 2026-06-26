@@ -1,9 +1,16 @@
+import string
+
 import numpy as np
 import xarray as xr
 
+import astropy.units as u
+from astropy.constants import c as speed_of_light
+
+from muse.log import logger
+from muse.transforms.transforms import reshape_x_to_slit_step
 from muse.utils.utils import add_history
 
-__all__ = ["create_simple_vdem"]
+__all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_lambda_xarray", "lambda_to_doppler_xarray"]
 
 
 def create_simple_vdem(
@@ -195,3 +202,171 @@ def create_simple_vdem(
     vdem_ds.vdop.attrs["units"] = "km/s"
     add_history(vdem_ds, call_inputs, create_simple_vdem)
     return vdem_ds
+
+
+def calculate_moments(
+    spect: xr.Dataset,
+    *,
+    moment_dim: str = "vdop",
+    vmax: float | None = None,
+    vmask: xr.Dataset | None = None,
+    vdop0_prox: xr.Dataset | None = None,
+) -> xr.Dataset:
+    """
+    Compute the zeroth, first, and second moments from a spectrum.
+
+    Parameters
+    ----------
+    spectrum : `xarray.Dataset`
+        Input spectrum.
+    moment_dim : `str`, optional
+        Doppler shift axis name, by default "vdop".
+    vmax : `float` or None, optional
+        Maximum velocity for integration, by default None.
+    vmask : `xarray.Dataset` or None, optional
+        Mask for velocity.
+    vdop0_prox : `xarray.Dataset`, optional
+        Doppler shift proxy, e.g., from main line obtained by the
+        SDC code, by default `None`.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        Dataset containing the moments.
+    """
+    spectrum = spect.copy(deep=True)
+    # TODO: We should see about enforcing this?
+    if "vdop" not in spectrum.variables:
+        spectrum = lambda_to_doppler_xarray(spectrum)
+    index_list = list(string.ascii_lowercase)
+    einsum_str = ""
+    vdop_dict = {}
+    for ij, j in enumerate(spectrum.dopp_vel.dims):
+        einsum_str += index_list[ij]
+        vdop_dict[j] = index_list[ij]
+    einsum_str += ","
+    out_str = ""
+    out_str_vmax = ""
+    for ik, k in enumerate(spectrum.flux.dims):
+        if k in spectrum.dopp_vel.dims:
+            einsum_str += vdop_dict[k]
+            out_str_vmax += vdop_dict[k]
+        else:
+            einsum_str += index_list[ij + ik + 1]
+            out_str_vmax += index_list[ij + ik + 1]
+        if k != moment_dim:
+            out_str += vdop_dict[k] if k in spectrum.dopp_vel.dims else index_list[ij + ik + 1]
+        logger.debug(f"{einsum_str}->{out_str}")
+
+    if vmax is not None and vdop0_prox is not None:
+        da = spectrum["dopp_vel"].copy(deep=True)
+        mom1st_rs = reshape_x_to_slit_step(vdop0_prox["SDC main, 1st mom"].sel(line=["Fe XIX", "Fe IX", "Fe XV"]))
+        x_vmax = xr.where(np.abs(da - mom1st_rs) > da.differentiate("SG_xpixel") * vmask, 0.0, 1.0)
+        x_vmax = x_vmax.where(np.abs(da) < vmax, 0.0 * da)
+        logger.debug(f"{einsum_str}->{out_str_vmax}", x_vmax.dims, spectrum.flux.dims)
+        spec1 = spectrum.copy(deep=True)
+        spec1["flux"] = x_vmax * spectrum.flux
+    elif vmax is not None:
+        da = spectrum["dopp_vel"].copy(deep=True)
+        x_vmax = xr.where(np.abs(da) > vmax, 0.0 * da, 1.0 + 0.0 * da)
+        logger.debug(f"{einsum_str}->{out_str_vmax}", x_vmax.dims, spectrum.flux.dims)
+        spec1 = spectrum.copy(deep=True)
+        spec1["flux"] = xr.DataArray(
+            np.einsum(f"{einsum_str}->{out_str_vmax}", x_vmax, spectrum.flux),
+            dims=spectrum.flux.dims,
+        )
+        if vmask is not None:
+            spec1_new = spec1.copy(deep=True)
+            spec1max = spec1.flux.argmax(dim=["SG_xpixel"])
+            spec1_new["xpixels"] = spec1max["SG_xpixel"]
+            spec1_new["xpixels"] = spec1_new.xpixels.expand_dims(
+                {"SG_xpixel": np.size(spec1["SG_xpixel"].to_numpy())},
+            ).copy(deep=True)
+            spec1["flux"] = spec1.flux.where(np.abs(spec1_new.xpixels - spec1.coords["SG_xpixel"]) < vmask, 0)
+    else:
+        spec1 = spectrum.copy(deep=True)
+
+    einsum_str = ""
+    vdop_dict = {}
+    for ij, j in enumerate(spec1.dopp_vel.dims):
+        einsum_str += index_list[ij]
+        vdop_dict[j] = index_list[ij]
+    einsum_str += ","
+    out_str = ""
+    out_str_vmax = ""
+    for ik, k in enumerate(spec1.flux.dims):
+        if k in spec1.dopp_vel.dims:
+            einsum_str += vdop_dict[k]
+            out_str_vmax += vdop_dict[k]
+        else:
+            einsum_str += index_list[ij + ik + 1]
+            out_str_vmax += index_list[ij + ik + 1]
+        if k != moment_dim:
+            out_str += vdop_dict[k] if k in spec1.dopp_vel.dims else index_list[ij + ik + 1]
+        logger.debug(f"{einsum_str}->{out_str}")
+
+    spec1["flux"] = spec1.flux.where(spec1.flux > 0, 0)
+    zeroth = spec1.flux.sum(dim=moment_dim)
+    first = np.einsum(f"{einsum_str}->{out_str}", spec1.dopp_vel.data, spec1.flux) / zeroth
+    # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0-I1^2
+    second = np.sqrt(
+        np.einsum(f"{einsum_str}->{out_str}", spec1.dopp_vel.data**2, spec1.flux) / zeroth - first**2,
+    )
+    out_dims = list(spectrum.flux.dims)
+    out_dims = out_dims.remove(moment_dim)
+    out_coords = list(spectrum.flux.coords)
+    out_coords = out_coords.remove(moment_dim)
+    moments = xr.Dataset()
+    moments["0th"] = xr.DataArray(zeroth, dims=out_dims, coords=out_coords)
+    moments["1st"] = xr.DataArray(first, dims=out_dims, coords=out_coords)
+    moments["2nd"] = xr.DataArray(second, dims=out_dims, coords=out_coords)
+    moments.attrs = spectrum.attrs
+    moments["0th"].attrs = spec1.flux.attrs
+    moments["1st"].attrs["units"] = str(u.km / u.s)
+    moments["2nd"].attrs["units"] = str(u.km / u.s)
+    add_history(moments, locals(), calculate_moments)
+    return moments
+
+
+def lambda_to_doppler_xarray(resp):
+    """
+    Convert wavelengths to Doppler shift in km/s.
+
+    Parameters
+    ----------
+    response : `xarray`
+        include SG_wvl and line_wvl in coordinates.
+
+    Returns
+    -------
+    `xarray`
+        added Doppler shift coordinate in km/s.
+    """
+    response = resp.copy(deep=True)
+    response.coords["dopp_vel"] = (response.coords["SG_wvl"] / response.coords["line_wvl"] - 1) * (
+        speed_of_light.to(u.km / u.s)
+    ).value
+    response.coords["dopp_vel"].attrs["units"] = str(u.km / u.s)
+    return response
+
+
+def doppler_to_lambda_xarray(resp):
+    """
+    Convert Doppler shift in km/s to wavelengths in amgstrons.
+
+    Parameters
+    ----------
+    response : `xarray`
+        include dopp_vel and line_wvl in coordinates.
+
+    Returns
+    -------
+    `xarray`
+        added SG_wvl coordinate in amgstrons.
+    """
+    response = resp.copy(deep=True)
+    response.coords["SG_wvl"] = response.coords["line_wvl"] * (
+        1 + response.coords["dopp_vel"] / (speed_of_light.to(u.km / u.s)).value
+    )
+    response.coords["SG_wvl"].attrs["units"] = str(u.AA)
+    return response
