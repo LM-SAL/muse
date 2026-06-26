@@ -120,7 +120,7 @@ intersphinx_mapping = {
         (None, "https://www.astropy.org/astropy-data/intersphinx/scipy.inv"),
     ),
     "jax": ("https://docs.jax.dev/en/latest/", None),
-    "torch": ("https://docs.pytorch.org/docs/stable/", None),
+    "torch": ("https://pytorch.org/docs/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "sunpy": ("https://docs.sunpy.org/en/stable/", None),
