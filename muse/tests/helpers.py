@@ -214,12 +214,11 @@ def fake_response():
     response = xr.Dataset(
         data_vars={
             "SG_resp": (["line", "vdop", "logT", "slit", "SG_xpixel"], table_resp),
-            "SG_wvl": (["line", "slit", "SG_xpixel"], table_sgwvl),
         },
         coords={"logT": lgtaxis, "vdop": dopaxis, "line": line, "slit": slit, "SG_xpixel": SG_XPIXEL},
         attrs={"description": "No attributes"},
     )
-    response = response.assign_coords(line_wvl=("line", line_wvl))
+    response = response.assign_coords(line_wvl=("line", line_wvl), SG_wvl=(["line", "slit", "SG_xpixel"], table_sgwvl))
     response.line_wvl.attrs["units"] = "Angstrom"
     response.logT.attrs["long_name"] = "log$_{10}$(T)"
     response.logT.attrs["units"] = "log$_{10}$ (K)"

@@ -183,6 +183,15 @@ def test_vdem_synthesis_rejects_non_length_wavelength_units(response, vdem) -> N
         vdem_synthesis(reshaped_vdem, bad_response)
 
 
+@pytest.mark.parametrize("name", ["line_wvl", "SG_wvl"])
+def test_vdem_synthesis_requires_response_wavelength_coords(response, vdem, name) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    bad_response = response.reset_coords(name)
+
+    with pytest.raises(ValueError, match=rf"response\.{name} is missing"):
+        vdem_synthesis(reshaped_vdem, bad_response)
+
+
 def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
     # Not summing over slit leaves it as a flux dimension, which triggers the
     # SG_wvl coordinate assignment branch.
