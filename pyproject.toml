@@ -33,7 +33,7 @@ dependencies = [
   "xarray[io,parallel]>=2026.4.0",
 ]
 optional-dependencies.all = ["muse[jax,torch]"]
-optional-dependencies.dev = ["muse[all,docs,tests,typecheck]"]
+optional-dependencies.dev = ["muse[all,docs,tests], setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
   "joblib",  # for sphinx-gallery parallel
@@ -58,7 +58,6 @@ optional-dependencies.tests = [
   "pytest",
 ]
 optional-dependencies.torch = ["torch>=2.12.0"]
-optional-dependencies.typecheck = ["ty"]
 dynamic = ["version"]
 
 [build-system]

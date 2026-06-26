@@ -1,12 +1,12 @@
 exclude: .*(.fits|.fts|.fit|.txt|.csv)$
 repos:
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.25.2
+    rev: v1.26.1
     hooks:
       - id: zizmor
     # This should be before any formatting hooks like isort
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.18"
+    rev: "v0.15.20"
     hooks:
       - id: ruff
         args: ["--fix", "--unsafe-fixes"]
