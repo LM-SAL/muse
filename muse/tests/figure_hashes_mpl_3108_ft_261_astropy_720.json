@@ -1,9 +1,9 @@
 {
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "ec58a198d0b5b81dc81c9769facc306ca7226ff615f83856bcecb9527695b7d0",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "6a029b61733e30697b73510c674f7168962bd5a66e3e626c6b355413764cdf65",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "b47a648cdc376fa485e92970b2c2bcd2db96710277d2c665786fc65f1802abbf",
-  "muse.tests.test_figures.test_vdem_intensity_map": "f2691297351b739cb93dc5a28a1f43f3e1d19fde746728d4c2ee3dafea8d062a",
-  "muse.tests.test_figures.test_response_logt_profile": "eb4fd9c7b611e5fb6c841e0cca64a4117060e8a11425c35ea1e2a82d8f568f69",
-  "muse.tests.test_figures.test_response_line_profiles": "7347689dc02ec775547b193918d51b9be911146bfc42a48d5c0a33999901b6ba",
-  "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "8ecac869564aebbba4e44ed235f7ae0ffaa91ad24e2a88fa488e1a777a3203d2"
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "adf8cff0fef723eda6a3eabfb69c227a690460c2dbb62e1fe9bf2ae661e86bb0",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "95c27a38291a9a2c5135b71dae3a5881128231092cf487739ac6d08d6181b995",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "9090f3b913a7c785ec038c6e6a01dde844e537bc47fbeeb53ee5750eec4646b4",
+  "muse.tests.test_figures.test_vdem_intensity_map": "0772526f8cee58e6bdd7d5651a9a30b283290b9c9ef57f4523b031cf75ebe45b",
+  "muse.tests.test_figures.test_response_logt_profile": "8079e322cea505b5e69d8c0f2cf69f56d477d2e053668963ed409de58164f9f0",
+  "muse.tests.test_figures.test_response_line_profiles": "dbe404fd497d0b3f448ccd9cdf5da72b247d5f22e988056ae47a1437024c0123",
+  "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "e310f2c8bb82813638f2b73e387e07a6e20bf7225513a73be5b38b23399dcedd"
 }
