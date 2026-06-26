@@ -5,7 +5,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, update_attrs
+from muse.utils.utils import add_history, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["match_fov", "reshape_slit_step_to_x", "reshape_x_to_slit_step"]
@@ -21,22 +21,8 @@ _SPATIAL_EQUIVALENCY = [
 ]
 
 
-def _coordinate_unit(ds: xr.Dataset, coord_name: str):
-    if coord_name not in ds.coords:
-        msg = f"{coord_name} coordinate is missing"
-        raise ValueError(msg)
-    if "units" not in ds[coord_name].attrs:
-        msg = f"{coord_name} coordinate must define units"
-        raise ValueError(msg)
-    try:
-        return u.Unit(ds[coord_name].attrs["units"])
-    except (TypeError, ValueError) as exc:
-        msg = f"{coord_name} coordinate units must be a valid astropy unit"
-        raise ValueError(msg) from exc
-
-
 def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
-    unit = _coordinate_unit(ds, coord_name)
+    unit = require_unit(ds, coord_name, f"{coord_name} coordinate", coord_only=True)
     try:
         return unit.to(target_unit, equivalencies=_SPATIAL_EQUIVALENCY)
     except u.UnitConversionError as exc:
@@ -289,10 +275,7 @@ def reshape_x_to_slit_step(
     `xarray.Dataset`
         vdem or spectra with raster and slit axis.
     """
-    if "x" not in ds.coords:
-        msg = "x coordinate is missing"
-        raise ValueError(msg)
-    x_unit = _coordinate_unit(ds, "x")
+    x_unit = require_unit(ds, "x", "x coordinate", coord_only=True)
     attrs = {}
     if "slit" in ds.coords:
         reshaped = ds.unstack("x")
