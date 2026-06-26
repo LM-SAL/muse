@@ -57,6 +57,6 @@ Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, whi
 Lineage
 =======
 
-Functions that return a dataset record the call that produced it via `muse.utils.add_history`.
+Functions that return a dataset record the call that produced it via :func:`muse.utils.add_history`.
 This keeps a human-readable trail of the operations on the data itself.
-There is a simplar one for ``attrs``, `muse.utils.update_attrs`.
+There is a similar one for ``attrs``, :func:`muse.utils.update_attrs`.
