@@ -37,6 +37,7 @@ Furthermore, it allows you to create your own custom calibration routines and ap
 
           known_issues
           contributing
+          design
           reference/index
           changelog
 
