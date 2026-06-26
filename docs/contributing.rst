@@ -11,7 +11,7 @@ Providing Feedback
 
 We could always use more voices and opinions in the discussions about ``muse`` and its development from both users and developers.
 There are several ways to make your voice heard.
-You can open issues on our `issue tracker`_, comment in the `SunPy chat room`_, or email us directly at ``nabil.freij@gmail.com``.
+You can open issues on our `issue tracker`_, comment in the `muse discussion`_, or email us directly at ``nfreij@seti.org``.
 Whether it be (non)constructive criticism, inquiries about current or future capabilities, or flattering praise, we would love to hear from you.
 
 Reporting Bugs
@@ -19,7 +19,7 @@ Reporting Bugs
 
 If you run into unexpected behavior or a bug please report it.
 All bugs are raised and stored on our `issue tracker`_.
-If you are not sure whether your problem is a bug, a deficiency in functionality, or something else, you can email ``nabil.freij@gmail.com``.
+If you are not sure whether your problem is a bug, a deficiency in functionality, or something else, you can email ``nfreij@seti.org``.
 Ideally, we would like a short code example so we can run into the bug on our own machines.
 
 Contributing Code
@@ -49,4 +49,4 @@ Before you can contribute code to muse, you first need to install the developmen
 .. _GitHub guide: https://github.com/git-guides
 .. _git guide: https://git-scm.com/book/en/v2/Getting-Started-Git-Basics
 .. _sunpy Developers Guide: http://docs.sunpy.org/en/latest/dev_guide
-.. _SunPy chat room: https://app.element.io/#/room/#sunpy:openastronomy.org
+.. _muse discussion: https://github.com/LM-SAL/muse/discussions
