@@ -72,6 +72,26 @@ def test_calculate_moments_structure(response, vdem) -> None:
     assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
 
 
+def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
+    spectrum = xr.Dataset(
+        data_vars={
+            "flux": (
+                ("SG_xpixel",),
+                [1.0, 2.0, 3.0],
+                {"units": "ph / s"},
+            ),
+        },
+        coords={
+            "SG_xpixel": [0, 1, 2],
+            "dopp_vel": (("SG_xpixel",), [-100.0, 0.0, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
+
+    assert moments["0th"].attrs["units"] == "ph / s"
+
+
 def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
     spectrum = _spectrum(response, vdem)
     before_attrs = dict(spectrum.attrs)

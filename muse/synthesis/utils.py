@@ -292,7 +292,9 @@ def calculate_moments(
             )
     else:
         masked_spectrum = spectrum
-    masked_spectrum = masked_spectrum.assign(flux=masked_spectrum.flux.where(masked_spectrum.flux > 0, 0))
+    masked_spectrum = masked_spectrum.assign(
+        flux=masked_spectrum.flux.where(masked_spectrum.flux > 0, 0).assign_attrs(spectrum.flux.attrs)
+    )
     zeroth = masked_spectrum.flux.sum(dim=moment_dim)
     velocity_data = masked_spectrum.dopp_vel.data
     first = np.einsum(f"{einsum_str}->{moment_out}", velocity_data, masked_spectrum.flux) / zeroth
