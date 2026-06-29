@@ -38,6 +38,7 @@ optional-dependencies.docs = [
   "muse",
   "joblib",  # for sphinx-gallery parallel
   "packaging",
+  "plasmacalcs[most]",
   "pydata-sphinx-theme",
   "sphinx",
   "sphinx-autodoc-typehints",
