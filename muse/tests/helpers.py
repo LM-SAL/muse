@@ -16,11 +16,67 @@ from muse.variables import DEFAULTS_MUSE
 __all__ = [
     "assert_dataset_structure",
     "fake_response",
+    "fake_response_file",
     "fake_vdem",
     "fake_vdem_offgrid",
     "fake_vdem_single_vdop",
     "warnings_as_errors",
 ]
+
+
+@pytest.fixture
+def warnings_as_errors():
+    warnings.simplefilter("error")
+    yield
+    warnings.resetwarnings()
+
+
+def get_hash_library_name():
+    """
+    Generate the hash library name for this env.
+    """
+    ft2_version = f"{mpl.ft2font.__freetype_version__.replace('.', '')}"
+    mpl_version = (
+        "dev" if (("dev" in mpl.__version__) or ("rc" in mpl.__version__)) else mpl.__version__.replace(".", "")
+    )
+    astropy_version = (
+        "dev"
+        if (("dev" in astropy.__version__) or ("rc" in astropy.__version__))
+        else astropy.__version__.replace(".", "")
+    )
+    return f"figure_hashes_mpl_{mpl_version}_ft_{ft2_version}_astropy_{astropy_version}.json"
+
+
+def figure_test(test_function):
+    """
+    A decorator for a test that verifies the hash of the current figure or the returned
+    figure, with the name of the test function as the hash identifier in the library. A
+    PNG is also created in the 'result_image' directory, which is created on the current
+    path.
+
+    All such decorated tests are marked with `pytest.mark.mpl_image` for convenient filtering.
+
+    Examples
+    --------
+    @figure_test
+    def test_simple_plot():
+        plt.plot([0,1])
+    """
+    hash_library_name = get_hash_library_name()
+    hash_library_file = Path(__file__).parent / hash_library_name
+
+    @pytest.mark.mpl_image_compare(
+        hash_library=hash_library_file, savefig_kwargs={"metadata": {"Software": None}}, style="default"
+    )
+    @wraps(test_function)
+    def test_wrapper(*args, **kwargs):
+        ret = test_function(*args, **kwargs)
+        if ret is None:
+            ret = plt.gcf()
+        return ret
+
+    return test_wrapper
+
 
 nslit = 35
 steps = 11
@@ -229,55 +285,54 @@ def fake_response():
     return response.assign_coords(channel=("line", channel))
 
 
-@pytest.fixture
-def warnings_as_errors():
-    warnings.simplefilter("error")
-    yield
-    warnings.resetwarnings()
-
-
-def get_hash_library_name():
+def fake_response_file():
     """
-    Generate the hash library name for this env.
+    Response dataset shaped like the real on-disk MUSE response files, for IO tests.
     """
-    ft2_version = f"{mpl.ft2font.__freetype_version__.replace('.', '')}"
-    mpl_version = (
-        "dev" if (("dev" in mpl.__version__) or ("rc" in mpl.__version__)) else mpl.__version__.replace(".", "")
+    n_logT, n_vdop, n_slit, n_pixel, n_wave = 5, 7, 4, 8, 6
+    logT_axis = np.linspace(5.0, 7.0, n_logT)
+    vdop_axis = np.linspace(-300.0, 300.0, n_vdop)
+    slit_axis = np.arange(n_slit)
+    sg_xpixel = np.arange(n_pixel)
+    wavelength = np.linspace(160.0, 180.0, n_wave)
+
+    # Smooth, non-negative response: Gaussian in logT x vdop, gently modulated by slit/pixel.
+    logT_profile = np.exp(-(((logT_axis - 6.0) / 0.4) ** 2))
+    vdop_profile = np.exp(-((vdop_axis / 150.0) ** 2))
+    slit_profile = 1.0 + 0.05 * np.cos(np.pi * slit_axis / n_slit)
+    pixel_profile = np.exp(-(((sg_xpixel - n_pixel / 2.0) / 3.0) ** 2))
+    # Dimension order matches the real files:
+    # (pressure, logT, line, vdop, abundance, slit, SG_xpixel).
+    sg_resp = (
+        logT_profile[None, :, None, None, None, None, None]
+        * vdop_profile[None, None, None, :, None, None, None]
+        * slit_profile[None, None, None, None, None, :, None]
+        * pixel_profile[None, None, None, None, None, None, :]
     )
-    astropy_version = (
-        "dev"
-        if (("dev" in astropy.__version__) or ("rc" in astropy.__version__))
-        else astropy.__version__.replace(".", "")
+    sg_wvl = 170.62314 + 0.014714709 * sg_xpixel[:, np.newaxis] - 0.39 * slit_axis[np.newaxis, :]
+    effective_area = np.linspace(0.1, 1.0, n_wave)[np.newaxis, :]
+
+    response = xr.Dataset(
+        data_vars={
+            "SG_resp": (["pressure", "logT", "line", "vdop", "abundance", "slit", "SG_xpixel"], sg_resp),
+            "effective_area": (["pressure", "wavelength"], effective_area),
+        },
+        coords={
+            "logT": logT_axis,
+            "vdop": vdop_axis,
+            "slit": slit_axis,
+            "SG_xpixel": sg_xpixel,
+            "wavelength": wavelength,
+            "pressure": [3.0e15],
+            "abundance": ["sun_coronal_2021_chianti"],
+            "line": ["Fe IX 171.073"],
+        },
     )
-    return f"figure_hashes_mpl_{mpl_version}_ft_{ft2_version}_astropy_{astropy_version}.json"
-
-
-def figure_test(test_function):
-    """
-    A decorator for a test that verifies the hash of the current figure or the returned
-    figure, with the name of the test function as the hash identifier in the library. A
-    PNG is also created in the 'result_image' directory, which is created on the current
-    path.
-
-    All such decorated tests are marked with `pytest.mark.mpl_image` for convenient filtering.
-
-    Examples
-    --------
-    @figure_test
-    def test_simple_plot():
-        plt.plot([0,1])
-    """
-    hash_library_name = get_hash_library_name()
-    hash_library_file = Path(__file__).parent / hash_library_name
-
-    @pytest.mark.mpl_image_compare(
-        hash_library=hash_library_file, savefig_kwargs={"metadata": {"Software": None}}, style="default"
+    response = response.assign_coords(
+        line_wvl=("line", [171.073]),
+        channel=("line", [171]),
+        SG_wvl=(["SG_xpixel", "slit"], sg_wvl),
     )
-    @wraps(test_function)
-    def test_wrapper(*args, **kwargs):
-        ret = test_function(*args, **kwargs)
-        if ret is None:
-            ret = plt.gcf()
-        return ret
-
-    return test_wrapper
+    # Real files carry no units on line_wvl/SG_wvl; the reader is expected to inject Angstrom.
+    response.SG_resp.attrs["units"] = "1e-27 cm5 ph / s"
+    return response
