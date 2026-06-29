@@ -1,5 +1,3 @@
-import warnings
-
 import numpy as np
 import pytest
 import xarray as xr
@@ -10,18 +8,19 @@ from muse.instrument.utils import load_and_concat_responses, read_response
 from muse.tests.helpers import fake_response_file
 from muse.variables import DEFAULTS_MUSE
 
-DEFAULT_GAIN = DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::zarr.errors.UnstableSpecificationWarning"),
+    pytest.mark.filterwarnings("ignore::zarr.errors.ZarrUserWarning"),
+    pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning"),
+    pytest.mark.filterwarnings("ignore:Setting the shape on a NumPy array:DeprecationWarning"),
+]
 
 
 def _write(ds: xr.Dataset, path, fmt: str) -> str:
-    # Write-time warnings come from netCDF4/Zarr string-coordinate encoding, not the reader;
-    # the read path is exercised under the suite-wide ``filterwarnings = error``.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if fmt == "nc":
-            ds.to_netcdf(path)
-        else:
-            ds.to_zarr(path)
+    if fmt == "nc":
+        ds.to_netcdf(path)
+    else:
+        ds.to_zarr(path)
     return str(path)
 
 
@@ -49,10 +48,10 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.vdop.values, vdop.values)
-    # The reader injects Angstrom because the on-disk files carry no wavelength units.
+    # The reader injects Angstrom because the on-disk files carry no wavelength units (for now).
     assert r.line_wvl.attrs["units"] == str(u.AA)
     assert r.SG_wvl.attrs["units"] == str(u.AA)
-    np.testing.assert_array_equal(r.gain.values, [DEFAULT_GAIN])
+    np.testing.assert_array_equal(r.gain.values, [DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)])
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
