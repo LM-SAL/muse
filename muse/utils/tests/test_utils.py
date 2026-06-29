@@ -82,19 +82,17 @@ def test_add_history_stores_serializable_keyword_inputs() -> None:
 @pytest.mark.parametrize("backend", ["netcdf4", "zarr"])
 def test_add_history_stored_attrs_round_trip(tmp_path, backend) -> None:
     ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), shift=3 * u.km / u.s)
-
     if backend == "netcdf4":
-        pytest.importorskip("netCDF4")
         path = tmp_path / "out.nc"
         ds.to_netcdf(path, engine="netcdf4")
         loaded = xr.open_dataset(path, engine="netcdf4")
     else:
-        pytest.importorskip("zarr")
         path = tmp_path / "out.zarr"
         ds.to_zarr(path, zarr_format=3, consolidated=False)
         loaded = xr.open_zarr(path, consolidated=False)
 
-    # The coerced keyword inputs survive a real write/read cycle with both backends.
+    # The coerced keyword inputs must survive a
+    # real write/read cycle with both backends.
     assert loaded.attrs["gain"] == 2.0
     assert loaded.attrs["flag"] == 1
     assert loaded.attrs["shift"] == "3.0 km / s"
@@ -102,11 +100,18 @@ def test_add_history_stored_attrs_round_trip(tmp_path, backend) -> None:
 
 
 def test_add_history_warns_on_unserializable_keyword_input(caplog) -> None:
-    ds = _record(xr.Dataset(), weights=np.ones(20))
+    ds = _record(xr.Dataset(), weights=object())
 
     assert "weights" not in ds.attrs
     assert "weights" in caplog.text
     assert "serializable" in caplog.text
+
+
+def test_add_history_silently_drops_array_keyword_inputs(caplog) -> None:
+    ds = _record(xr.Dataset(), weights=np.ones(20))
+
+    assert "weights" not in ds.attrs
+    assert "weights" not in caplog.text
 
 
 def test_add_history_records_bare_name_without_locals() -> None:

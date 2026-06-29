@@ -312,7 +312,8 @@ def add_history(
                 safe = _attr_safe(value)
                 if safe is not None:
                     ds.attrs[arg] = safe
-                elif value is not None:
+                elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset):
+                    # Drop Arrays/datasets silently; only warn for other types.
                     logger.warning(
                         f"Not storing keyword input {arg!r} as an attribute: a "
                         f"{type(value).__name__} is not netCDF/zarr serializable.",

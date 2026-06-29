@@ -31,6 +31,9 @@ lint.ignore = [
   "FIX002",  # Line contains TODO, consider resolving the issue
   "I",  # Ignore isort
   "ISC001",  # May cause conflicts when used with the formatter
+  "N802",  # Function name `test_read_response_empty_logT_raises` should be lowercase
+  "N803",  # Argument name `logT` should be lowercase
+  "N806",  # Variable `logT_profile` in function should be lowercase
   "PLR0912",  # Too many branches (31 > 12)
   "PLR0913",  # Too many arguments in function definition
   "PLR0915",  # Too many statements (91 > 50)

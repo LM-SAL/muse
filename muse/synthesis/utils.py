@@ -255,6 +255,9 @@ def calculate_moments(
         Dataset containing the moments.
     """
     require_unit(spectrum, "flux", "spectrum.flux")
+    if "dopp_vel" not in spectrum.coords:
+        msg = "spectrum is missing the 'dopp_vel' coordinate; run wavelength_to_doppler first to add it."
+        raise ValueError(msg)
     dopp_unit = require_unit(spectrum, "dopp_vel", "spectrum.dopp_vel", coord_only=True, convertible_to=u.km / u.s)
     # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
     spectrum = spectrum.assign_coords(dopp_vel=spectrum.dopp_vel * dopp_unit.to(u.km / u.s))

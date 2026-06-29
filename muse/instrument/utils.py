@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Sequence
 
 import dask
 import numpy as np
@@ -11,21 +12,20 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
+__all__ = ["load_and_concat_responses", "read_response"]
 
-@format_docstring(
-    "DEFAULTS_MUSE",
-    gain="ccd_gain",
-)
+
+@format_docstring("DEFAULTS_MUSE", gain="ccd_gain")
+@u.quantity_input(gain=u.electron / u.DN)
 def read_response(
-    respfile: str,
+    response_file: str | Path,
     *,
-    logT: np.ndarray = None,
-    vdop: np.ndarray = None,
-    slit: np.ndarray = None,
-    logTmethod: np.ndarray = "nearest",
-    vdopmethod: np.ndarray = "nearest",
-    gain=DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN),
-    **kwargs: dict | None,
+    logT: xr.DataArray | None = None,
+    vdop: xr.DataArray | None = None,
+    slit: xr.DataArray | None = None,
+    logT_method: str = "nearest",
+    vdop_method: str = "nearest",
+    gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
 ) -> xr.Dataset:
     """
     Reads a response function into an `xarray.Dataset` interpolating if needed
@@ -33,104 +33,70 @@ def read_response(
 
     Parameters
     ----------
-    respfile : `str`
-        Response function in Xarray readable format.
-    logT : `array-like`, optional
-        Temperature axis
-    vdop : `array-like`, optional
-        Velocity axis
-    slit : `array-like`, optional
+    response_file : `str` | `pathlib.Path`
+        Response function in Xarray readable format (netCDF file or Zarr store).
+    logT : `xarray.DataArray`, optional
+        Temperature axis to (re)sample onto.
+    vdop : `xarray.DataArray`, optional
+        Velocity axis to (re)sample onto.
+    slit : `xarray.DataArray`, optional
         Number of slits array of integers.
-    logTmethod: `str`
+    logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-    vdopmethod: `str`
+        Allowed values are "nearest", "linear", "cubic" and "quadratic".
+    vdop_method : `str`, optional
         Interpolation method for vdop, by default "nearest".
-    kwargs : `dict`
-        Keyword arguments to pass to `xarray.Dataset.assign_coords`.
-        This is currently only used for the `LINE` attribute.
-    gain: `int`
-        number of electron per DN, by default 10
-    **kwargs : dict, optional
-        Additional keyword arguments.
+        Allowed values are "nearest", "linear", "cubic" and "quadratic".
+    gain : `astropy.units.Quantity`, optional
+        Camera gain, convertible to electron/DN, by default {gain}.
 
     Returns
     -------
     `xarray.Dataset`
-        The response function dataset.
+        The combined response function dataset.
+
+    Raises
+    ------
+    ValueError
+        If ``response_file`` does not exist, an interpolation method is invalid, the
+        ``logT``/``vdop`` axes are malformed, or the loaded dataset is
+        missing the ``SG_resp`` variable or the ``logT``/``vdop`` coordinates.
     """
-    # At function start
-    assert Path(respfile).exists() or respfile.endswith(".zarr"), f"Response file does not exist: {respfile}"
+    _INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
+    response_file = Path(response_file)
+    if not response_file.exists():
+        msg = f"Response does not exist: {response_file}"
+        raise ValueError(msg)
+    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
+        if method not in _INTERP_METHODS:
+            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
+            raise ValueError(msg)
 
-    # For interpolation methods
-    assert logTmethod in ["nearest", "linear", "cubic", "quadratic"], f"Invalid logTmethod: {logTmethod}"
-    assert vdopmethod in ["nearest", "linear", "cubic", "quadratic"], f"Invalid vdopmethod: {vdopmethod}"
-
-    # For axes
-    if logT is not None:
-        assert hasattr(logT, "data"), "logT must be an xarray DataArray or similar"
-        assert len(logT.data) > 0, "logT array must not be empty"
-        assert np.all(np.isfinite(logT.data)), "logT must contain only finite values"
-
-    if vdop is not None:
-        assert hasattr(vdop, "data"), "vdop must be an xarray DataArray or similar"
-        assert len(vdop.data) > 0, "vdop array must not be empty"
-        assert np.all(np.isfinite(vdop.data)), "vdop must contain only finite values"
-
-    if slit is not None:
-        assert isinstance(slit, (np.ndarray, xr.DataArray)), "slit must be array-like"
-        assert slit.max() >= 0, "slit indices must be non-negative"
+    for name, axis in (("logT", logT), ("vdop", vdop)):
+        if axis is None:
+            continue
+        if len(axis.data) == 0:
+            msg = f"{name} array must not be empty"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(axis.data)):
+            msg = f"{name} must contain only finite values"
+            raise ValueError(msg)
 
     r = (
-        xr.open_zarr(respfile)
-        if respfile.rsplit(".", maxsplit=1)[-1] == "zarr" or Path(respfile).is_dir()
-        else xr.load_dataset(respfile)
+        xr.open_zarr(response_file)
+        if response_file.suffix == ".zarr" and response_file.is_dir()
+        else xr.load_dataset(response_file)
     )
-    assert isinstance(r, xr.Dataset), "Response file must contain an xarray Dataset"
-    assert "SG_resp" in r.data_vars, "Response dataset must contain 'SG_resp' variable"
-    assert "logT" in r.coords or "logT" in r.dims, "Response must have logT coordinate"
-    assert "vdop" in r.coords or "vdop" in r.dims, "Response must have vdop coordinate"
+    if "SG_resp" not in r.data_vars:
+        msg = "Response dataset must contain 'SG_resp' variable"
+        raise ValueError(msg)
+    for name in ("logT", "vdop"):
+        if name not in r.coords and name not in r.dims:
+            msg = f"Response must have {name} coordinate"
+            raise ValueError(msg)
 
-    if logT is not None:
-        loc_max = np.argmin(np.abs(logT.data - r.logT.max().data))
-        if logT.max() > logT[loc_max]:
-            logger.info("Response function is smaller than the VDEM in temp")
-            logger.info("Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest')")
-
-            logT = logT.where(logT <= logT[loc_max], drop=True)
-        loc_min = np.argmin(np.abs(logT.data - r.logT.min().data))
-        if logT.min() < logT[loc_min]:
-            logger.info("Response function is smaller than the VDEM in temp")
-            logger.info("Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest')")
-            logT = logT.where(logT >= logT[loc_min], drop=True)
-        if logTmethod == "nearest":
-            r = r.sel(logT=logT, drop=True, method="nearest")
-        else:
-            r = r.interp(logT=logT, method=logTmethod)
-            r["SG_resp"] = r.SG_resp.fillna(0)
-            r["SG_resp"] = r.SG_resp.where(r.SG_resp > 0, 0)
-        r["logT"] = logT
-        r = r.assign_coords(logT=logT)
-
-    if vdop is not None:
-        loc_max = np.argmin(np.abs(vdop.data - r.vdop.max().data))
-        if vdop.max() > vdop[loc_max]:
-            logger.info("Response function is smaller than the VDEM in vdop")
-            logger.info("Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest')")
-            vdop = vdop.where(vdop <= vdop[loc_max], drop=True)
-        loc_min = np.argmin(np.abs(vdop.data - r.vdop.min().data))
-        if vdop.min() < vdop[loc_min]:
-            logger.info("Response function is smaller than the VDEM in vdop")
-            logger.info("Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest')")
-            vdop = vdop.where(vdop >= vdop[loc_min], drop=True)
-        if vdopmethod == "nearest":
-            r = r.sel(vdop=vdop, drop=True, method="nearest")
-        else:
-            r = r.interp(vdop=vdop, method=vdopmethod)
-            r["SG_resp"] = r.SG_resp.fillna(0)
-            r["SG_resp"] = r.SG_resp.where(r.SG_resp > 0, 0)
-
-        r["vdop"] = vdop
-        r = r.assign_coords(vdop=vdop)
+    r = _resample_axis(r, "logT", logT, logT_method)
+    r = _resample_axis(r, "vdop", vdop, vdop_method)
 
     if slit is not None:
         r = r.sel(slit=np.arange(slit.max() + 1), drop=True, method="nearest")
@@ -139,59 +105,138 @@ def read_response(
         r = r.expand_dims("line")
 
     if "line_wvl" not in r:
-        if r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL")) is None and "channel" in r.dims:
+        fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
+        if fallback is None and "channel" in r.dims:
             r["line_wvl"] = r.channel
         else:
-            r["line_wvl"] = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
+            r["line_wvl"] = fallback
 
-    gain = np.array([10]) if gain is None else np.atleast_1d(gain)
-    r = r.assign_coords(gain=("channel", gain)) if "channel" in r.dims else r.assign_coords(gain=("line", gain))
+    gain = gain.to(u.electron / u.DN)
+    gain_dim = "channel" if "channel" in r.dims else "line"
+    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.to_value(u.electron / u.DN))))
+    r.gain.attrs["units"] = str(u.electron / u.DN)
 
-    # JMS this should be removed once we have the new response files with units in the attributes:
-    if "SG_wvl" in r and "units" not in r.SG_wvl.attrs:
-        r.SG_wvl.attrs.update({"units": str(u.AA)})
-    if "units" not in r.line_wvl.attrs:
-        r.line_wvl.attrs.update({"units": str(u.AA)})
+    # The current response files carry no wavelength units; warn and assume Angstrom for now.
+    _require_wavelength_units(r, "SG_wvl")
+    _require_wavelength_units(r, "line_wvl")
 
     add_history(r, locals(), read_response)
-
     return r
 
 
-def load_and_concat_responses(resp_dir, resp_files, logT, vdop, slit, logTmethod, channels):
+def _require_wavelength_units(r: xr.Dataset, name: str) -> None:
     """
-    Load multiple response functions and concatenate them along `line`.
+    Ensure ``r[name]`` carries wavelength units, assuming Angstrom when missing.
+
+    Older response files store no units on ``SG_wvl``/``line_wvl``. For now a missing
+    ``units`` attribute logs a warning and Angstrom is assumed; this is intended to
+    become a hard error once all response files carry units.
+    """
+    if name not in r:
+        return
+    if "units" not in r[name].attrs:
+        logger.warning(
+            f"Response {name} is missing the 'units' attribute; assuming Angstrom. "
+            f"This will raise an error in a future release once response files carry units."
+        )
+        r[name].attrs.update({"units": str(u.AA)})
+
+
+def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
+    """
+    Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or ``vdop``).
+
+    Out-of-range requested points are trimmed to the response grid first. The
+    ``"nearest"`` method selects existing samples; any other method interpolates and
+    clamps the result to be finite and non-negative.
+    """
+    if axis is None:
+        return r
+    in_range = (axis >= r[name].min()) & (axis <= r[name].max())
+    if not bool(in_range.all()):
+        logger.info(
+            f"Requested {name} extends beyond the response range; trimming to the response grid. "
+            f"Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest') to match."
+        )
+        axis = axis.where(in_range, drop=True)
+        if axis.size == 0:
+            msg = f"Requested {name} axis has no overlap with the response range"
+            raise ValueError(msg)
+    if method == "nearest":
+        r = r.sel({name: axis}, drop=True, method="nearest")
+    else:
+        r = r.interp({name: axis}, method=method)
+    # Clamp on every path so nearest and interpolated responses behave consistently.
+    r["SG_resp"] = r.SG_resp.fillna(0).clip(min=0)
+    return r.assign_coords({name: axis})
+
+
+def load_and_concat_responses(
+    response_directory: str | Path,
+    response_files: Sequence[str],
+    *,
+    channels: Sequence[int],
+    logT: xr.DataArray | None = None,
+    vdop: xr.DataArray | None = None,
+    slit: xr.DataArray | None = None,
+    logT_method: str = "nearest",
+    vdop_method: str = "linear",
+) -> xr.Dataset:
+    """
+    Load multiple response functions and concatenate them along ``line``.
 
     Parameters
     ----------
-    resp_dir : str or Path
+    response_directory : `str` or `pathlib.Path`
         Directory containing the response files.
-    resp_files : list of str
-        Filenames of response functions to load (in order).
-    logT, vdop, slit, logTmethod : passed to `read_response`
-    channels : list of int
-        Channel values to assign (length must equal len(resp_files)).
+    response_files : `Sequence` of `str`
+        Filenames of response functions to load, in order.
+    channels : `Sequence` of `int`
+        Channel values to assign; length must equal ``len(response_files)``.
+    logT : `xarray.DataArray`, optional
+        Temperature axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
+    vdop : `xarray.DataArray`, optional
+        Velocity axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
+    slit : `xarray.DataArray`, optional
+        Number of slits array of integers. Passed to `muse.instrument.utils.read_response`.
+    logT_method : `str`, optional
+        Interpolation method for logT, by default "nearest".
+        Allowed values are "nearest", "linear", "cubic" and "quadratic".
+        Passed to `muse.instrument.utils.read_response`.
+    vdop_method : `str`, optional
+        Interpolation method for vdop, by default "linear".
+        Allowed values are "nearest", "linear", "cubic" and "quadratic".
+        Passed to `muse.instrument.utils.read_response`.
 
     Returns
     -------
-    xr.Dataset
+    `xarray.Dataset`
         Concatenated response dataset with assigned channel coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the length of ``channels`` does not match ``response_files``.
     """
+    if len(channels) != len(response_files):
+        msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
+        raise ValueError(msg)
+
     datasets = []
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
-        for f in resp_files:
+        for f in response_files:
             ds = read_response(
-                str(Path(resp_dir) / f),
+                Path(response_directory) / f,
                 logT=logT,
                 vdop=vdop,
                 slit=slit,
-                logTmethod=logTmethod,
-                vdopmethod="linear",
+                logT_method=logT_method,
+                vdop_method=vdop_method,
             ).compute()
             if "effective_area" in ds.data_vars:
                 ds = ds.drop_vars("effective_area")
             datasets.append(ds)
 
         response = xr.concat(datasets, dim="line", coords="different", compat="equals")
-        response = response.assign_coords(channel=("line", channels))
+        response = response.assign_coords(channel=("line", list(channels)))
     return response.compute()
