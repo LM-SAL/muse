@@ -132,7 +132,7 @@ def test_calculate_moments_rejects_bad_moment_dim(response, vdem) -> None:
 def test_calculate_moments_requires_dopp_vel(response, vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))  # no dopp_vel coordinate
-    with pytest.raises(ValueError, match=r"spectrum\.dopp_vel is missing"):
+    with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
         synthesis_utils.calculate_moments(spectrum)
 
 
