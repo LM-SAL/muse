@@ -31,19 +31,18 @@ def warnings_as_errors():
     warnings.resetwarnings()
 
 
+def _clean_version(version: str) -> str:
+    """Collapse dev/rc versions to "dev", otherwise strip the dots."""
+    return "dev" if ("dev" in version or "rc" in version) else version.replace(".", "")
+
+
 def get_hash_library_name():
     """
     Generate the hash library name for this env.
     """
-    ft2_version = f"{mpl.ft2font.__freetype_version__.replace('.', '')}"
-    mpl_version = (
-        "dev" if (("dev" in mpl.__version__) or ("rc" in mpl.__version__)) else mpl.__version__.replace(".", "")
-    )
-    astropy_version = (
-        "dev"
-        if (("dev" in astropy.__version__) or ("rc" in astropy.__version__))
-        else astropy.__version__.replace(".", "")
-    )
+    ft2_version = mpl.ft2font.__freetype_version__.replace(".", "")
+    mpl_version = _clean_version(mpl.__version__)
+    astropy_version = _clean_version(astropy.__version__)
     return f"figure_hashes_mpl_{mpl_version}_ft_{ft2_version}_astropy_{astropy_version}.json"
 
 

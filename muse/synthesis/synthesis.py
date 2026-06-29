@@ -217,24 +217,18 @@ def vdem_synthesis(
     update_attrs(ds, response)
     for key in dims:
         ds[key] = raster[key] if key in raster.vdem.dims else response[key]
-    coords_depending_on_summed_dim = []
-    for dim in sum_over:
-        coords_depending_on_summed_dim.append(
-            {coord_name for coord_name, coord in response.SG_resp.coords.items() if dim in coord.dims}
-        )
-        coords_depending_on_summed_dim.append(
-            {coord_name for coord_name, _ in raster.vdem.coords.items() if dim in raster.vdem.dims}
-        )
-    coords_depending_on_summed_dim = set.union(*coords_depending_on_summed_dim)
+    summed = set(sum_over)
+    dropped = {
+        name
+        for source in (response.SG_resp, raster.vdem)
+        for name, coord in source.coords.items()
+        if summed & set(coord.dims)
+    }
+    response_coords = set(response.SG_resp.coords) - dropped
+    raster_coords = set(raster.coords) - dropped
 
-    response_coords = set(response.SG_resp.coords) - coords_depending_on_summed_dim
-    raster_coords = set(raster.coords) - coords_depending_on_summed_dim
-
-    coords = {}
-    for key in response_coords:
-        coords[key] = response.coords[key]
-    for key in raster_coords - response_coords:
-        coords[key] = raster.coords[key]
+    coords = {key: response.coords[key] for key in response_coords}
+    coords |= {key: raster.coords[key] for key in raster_coords - response_coords}
 
     logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
     da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
