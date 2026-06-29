@@ -154,26 +154,35 @@ def create_simple_vdem(
     max_temperature = np.maximum(temperature, temperature_prev)
     min_temperature = np.minimum(temperature, temperature_prev)
 
+    # Every voxel falls in exactly one velocity bin, so the old per-bin masking loop is just a
+    # scatter: digitize the line-of-sight velocity onto the contiguous bin edges
+    # [center - dv/2, center + dv/2) once, then accumulate each temperature bin's emission into it.
+    n_x, n_y = velocity.shape[:2]
+    velocity_edges = np.concatenate(
+        [velocity_axis - velocity_bin_width / 2.0, [velocity_axis[-1] + velocity_bin_width / 2.0]]
+    )
+    velocity_bin = np.searchsorted(velocity_edges, velocity, side="right") - 1
+    in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
+    # Flat [velocity_bin, x, y] destination index per voxel (constant across temperature bins).
+    scatter_index = velocity_bin * (n_x * n_y) + np.arange(n_x * n_y).reshape(n_x, n_y, 1)
+
     # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
     # (the line-of-sight z axis is integrated out).
-    vdem = np.zeros((n_temperature_bins, n_velocity_bins, *velocity.shape[:2]), dtype=ne_nh.dtype)
+    vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=ne_nh.dtype)
     for i_temperature in range(n_temperature_bins):
         bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
         bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
         log_temperature_clipped = np.log10(np.clip(temperature, bin_lo, bin_hi))
         log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
         bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
-        temperature_mask = (max_temperature >= bin_lo) & (min_temperature < bin_hi)
-
-        for i_velocity in range(n_velocity_bins):
-            voxel_mask = (
-                (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0)
-                & temperature_mask
-                & (velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0)
-            )
-            # n_e * n_H * bin_fraction * cell_length summed along the line of sight
-            los_integrand = ne_nh * bin_fraction * voxel_mask * cell_length.reshape(1, 1, -1)
-            vdem[i_temperature, i_velocity, ...] = los_integrand.sum(axis=2)
+        voxel_mask = in_velocity_range & (max_temperature >= bin_lo) & (min_temperature < bin_hi)
+        # n_e * n_H * bin_fraction * cell_length, scattered into its velocity bin and summed along z.
+        los_integrand = ne_nh * bin_fraction * cell_length.reshape(1, 1, -1)
+        vdem[i_temperature] = np.bincount(
+            scatter_index[voxel_mask],
+            weights=los_integrand[voxel_mask],
+            minlength=n_velocity_bins * n_x * n_y,
+        ).reshape(n_velocity_bins, n_x, n_y)
 
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
