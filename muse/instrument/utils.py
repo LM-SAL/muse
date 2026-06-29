@@ -59,7 +59,7 @@ def read_response(
     ------
     ValueError
         If ``response_file`` does not exist, an interpolation method is invalid, the
-        ``logT``/``vdop``/``slit`` axes are malformed, or the loaded dataset is
+        ``logT``/``vdop`` axes are malformed, or the loaded dataset is
         missing the ``SG_resp`` variable or the ``logT``/``vdop`` coordinates.
     """
     _INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
@@ -67,32 +67,19 @@ def read_response(
     if not response_file.exists():
         msg = f"Response does not exist: {response_file}"
         raise ValueError(msg)
-    if logT_method not in _INTERP_METHODS:
-        msg = f"Invalid logT_method: {logT_method}, allowed values are {_INTERP_METHODS}"
-        raise ValueError(msg)
-    if vdop_method not in _INTERP_METHODS:
-        msg = f"Invalid vdop_method: {vdop_method}, allowed values are {_INTERP_METHODS}"
-        raise ValueError(msg)
+    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
+        if method not in _INTERP_METHODS:
+            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
+            raise ValueError(msg)
 
     for name, axis in (("logT", logT), ("vdop", vdop)):
         if axis is None:
             continue
-        if not hasattr(axis, "data"):
-            msg = f"{name} must be an xarray DataArray or similar"
-            raise ValueError(msg)
         if len(axis.data) == 0:
             msg = f"{name} array must not be empty"
             raise ValueError(msg)
         if not np.all(np.isfinite(axis.data)):
             msg = f"{name} must contain only finite values"
-            raise ValueError(msg)
-
-    if slit is not None:
-        if not isinstance(slit, np.ndarray | xr.DataArray):
-            msg = "slit must be array-like"
-            raise ValueError(msg)
-        if slit.max() < 0:
-            msg = "slit indices must be non-negative"
             raise ValueError(msg)
 
     r = (
@@ -229,11 +216,10 @@ def load_and_concat_responses(
     Raises
     ------
     ValueError
-        If ``channels`` is missing or its length does not match ``response_files``.
+        If the length of ``channels`` does not match ``response_files``.
     """
-    n_channels = None if channels is None else len(channels)
-    if n_channels != len(response_files):
-        msg = f"channels ({n_channels}) must match the number of response_files ({len(response_files)})"
+    if len(channels) != len(response_files):
+        msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
         raise ValueError(msg)
 
     datasets = []
