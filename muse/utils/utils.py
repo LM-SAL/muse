@@ -17,6 +17,7 @@ from muse.log import logger
 
 __all__ = [
     "add_history",
+    "coord_as_unit",
     "jax_to_numpy",
     "numpy_to_jax",
     "numpy_to_torch",
@@ -69,6 +70,37 @@ def require_unit(ds: xr.Dataset, name: str, label: str, *, coord_only: bool = Fa
             msg = f"{label} units must be convertible to {convertible_to}"
             raise ValueError(msg) from exc
     return unit
+
+
+def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.DataArray:
+    """
+    Return coordinate ``name`` converted to ``target_unit``.
+
+    Parameters
+    ----------
+    ds : `xarray.Dataset`
+        Dataset to inspect.
+    name : `str`
+        Coordinate name.
+    target_unit : unit-like
+        Unit to convert the coordinate values to.
+    label : `str`
+        Human-readable name used in error messages.
+
+    Returns
+    -------
+    `xarray.DataArray`
+        Coordinate values in ``target_unit`` with updated ``units`` attrs.
+    """
+    target_unit = u.Unit(target_unit)
+    unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)
+    converted = ds.coords[name] * unit.to(target_unit)
+    return xr.DataArray(
+        converted.data,
+        dims=converted.dims,
+        attrs={**ds.coords[name].attrs, "units": str(target_unit)},
+        name=name,
+    )
 
 
 def jax_to_numpy(jax_array):

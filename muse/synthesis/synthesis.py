@@ -12,6 +12,7 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import (
     _resolve_backend,
     add_history,
+    coord_as_unit,
     jax_to_numpy,
     numpy_to_jax,
     numpy_to_torch,
@@ -217,35 +218,25 @@ def vdem_synthesis(
     update_attrs(ds, response)
     for key in dims:
         ds[key] = raster[key] if key in raster.vdem.dims else response[key]
-    summed = set(sum_over)
-    dropped = {
-        name
-        for source in (response.SG_resp, raster.vdem)
-        for name, coord in source.coords.items()
-        if summed & set(coord.dims)
-    }
-    response_coords = set(response.SG_resp.coords) - dropped
-    raster_coords = set(raster.coords) - dropped
-
-    coords = {key: response.coords[key] for key in response_coords}
-    coords |= {key: raster.coords[key] for key in raster_coords - response_coords}
+    out_dims = set(dims)
+    coords = {name: coord for name, coord in raster.coords.items() if set(coord.dims) <= out_dims}
+    coords.update({name: coord for name, coord in response.SG_resp.coords.items() if set(coord.dims) <= out_dims})
 
     logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
     da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
     ds["flux"] = da
-    ds = ds.assign_coords(line_wvl=response.line_wvl)
-    ds.line_wvl.attrs.update({"units": str(u.AA)})
+    ds = ds.assign_coords(line_wvl=coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl"))
     ds.flux.attrs.update({"units": str(raster_vdem_unit * response_sg_resp_unit)})
     # SG_wvl carries a slit dimension, so only attach it when slit survives in the
     # output (or the response never had one); otherwise it would re-introduce slit.
     slit_preserved = "slit" not in response.SG_resp.dims or "slit" in ds.flux.dims
     if slit_preserved and "SG_wvl" in response.coords:
+        sg_wvl = coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl")
         if "x" in raster.dims:
             ds = reshape_x_to_slit_step(ds)
-            ds = ds.assign_coords(SG_wvl=response.SG_wvl)
+            ds = ds.assign_coords(SG_wvl=sg_wvl)
             ds = reshape_slit_step_to_x(ds)
         else:
-            ds = ds.assign_coords(SG_wvl=response.SG_wvl)
-        ds.SG_wvl.attrs.update({"units": str(u.AA)})
+            ds = ds.assign_coords(SG_wvl=sg_wvl)
     add_history(ds, locals(), vdem_synthesis)
     return ds

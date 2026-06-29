@@ -208,6 +208,20 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
     assert detector_response.SG_wvl.dims == ("line", "slit", "SG_xpixel")
 
 
+def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response_nm = response.assign_coords(line_wvl=response.line_wvl / 10.0, SG_wvl=response.SG_wvl / 10.0)
+    response_nm.line_wvl.attrs["units"] = "nm"
+    response_nm.SG_wvl.attrs["units"] = "nm"
+
+    detector_response = vdem_synthesis(reshaped_vdem, response_nm, sum_over=("logT", "vdop"))
+
+    np.testing.assert_allclose(detector_response.line_wvl.values, response.line_wvl.values)
+    np.testing.assert_allclose(detector_response.SG_wvl.values, response.SG_wvl.values)
+    assert detector_response.line_wvl.attrs["units"] == "Angstrom"
+    assert detector_response.SG_wvl.attrs["units"] == "Angstrom"
+
+
 @pytest.mark.cuda
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)

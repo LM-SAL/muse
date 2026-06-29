@@ -106,10 +106,13 @@ def read_response(
 
     if "line_wvl" not in r:
         fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
-        if fallback is None and "channel" in r.dims:
-            r["line_wvl"] = r.channel
+        if fallback is not None:
+            r = r.assign_coords(line_wvl=fallback)
+        elif "channel" in r.coords:
+            r = r.assign_coords(line_wvl=r.channel)
         else:
-            r["line_wvl"] = fallback
+            msg = "Response must define line_wvl or LINE_WVL/MAIN_LINE_WVL metadata"
+            raise ValueError(msg)
 
     gain = gain.to(u.electron / u.DN)
     gain_dim = "channel" if "channel" in r.dims else "line"
@@ -222,21 +225,17 @@ def load_and_concat_responses(
         msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
         raise ValueError(msg)
 
-    datasets = []
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
-        for f in response_files:
-            ds = read_response(
+        datasets = [
+            read_response(
                 Path(response_directory) / f,
                 logT=logT,
                 vdop=vdop,
                 slit=slit,
                 logT_method=logT_method,
                 vdop_method=vdop_method,
-            ).compute()
-            if "effective_area" in ds.data_vars:
-                ds = ds.drop_vars("effective_area")
-            datasets.append(ds)
-
+            ).drop_vars("effective_area", errors="ignore")
+            for f in response_files
+        ]
         response = xr.concat(datasets, dim="line", coords="different", compat="equals")
-        response = response.assign_coords(channel=("line", list(channels)))
-    return response.compute()
+    return response.assign_coords(channel=("line", list(channels)))

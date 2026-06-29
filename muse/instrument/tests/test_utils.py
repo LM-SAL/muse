@@ -166,6 +166,14 @@ def test_read_response_requires_sg_resp(tmp_path) -> None:
         read_response(path)
 
 
+def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
+    src = fake_response_file().drop_vars(["line_wvl", "channel"])
+    path = _write(src, tmp_path / "resp.nc", "nc")
+
+    with pytest.raises(ValueError, match="line_wvl"):
+        read_response(path)
+
+
 def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     first = fake_response_file()
     second = fake_response_file().assign_coords(

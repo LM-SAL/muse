@@ -6,7 +6,7 @@ import astropy.units as u
 from astropy.constants import c as speed_of_light
 
 from muse.transforms.transforms import reshape_x_to_slit_step
-from muse.utils.utils import add_history, require_unit
+from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
 
@@ -300,11 +300,7 @@ def calculate_moments(
         (masked_spectrum.flux * velocity**2).sum(dim=moment_dim) / zeroth - first**2,
     )
     # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
-    moments = xr.Dataset()
-    moments["0th"] = zeroth
-    moments["1st"] = first
-    moments["2nd"] = second
-    moments.attrs = dict(spectrum.attrs)
+    moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second}, attrs=dict(spectrum.attrs))
     moments["0th"].attrs = dict(masked_spectrum.flux.attrs)
     moments["1st"].attrs["units"] = str(u.km / u.s)
     moments["2nd"].attrs["units"] = str(u.km / u.s)
@@ -326,11 +322,9 @@ def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
     `xarray.Dataset`
         A new dataset with an added ``dopp_vel`` coordinate in km/s.
     """
-    sg_unit = require_unit(response, "SG_wvl", "response.SG_wvl", coord_only=True, convertible_to=u.AA)
-    line_unit = require_unit(response, "line_wvl", "response.line_wvl", coord_only=True, convertible_to=u.AA)
     c_kms = speed_of_light.to_value(u.km / u.s)
-    sg_wvl = response.coords["SG_wvl"] * sg_unit.to(u.AA)
-    line_wvl = response.coords["line_wvl"] * line_unit.to(u.AA)
+    sg_wvl = coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl")
+    line_wvl = coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl")
     dopp_vel = (sg_wvl / line_wvl - 1) * c_kms
     dopp_vel.attrs["units"] = str(u.km / u.s)
     response = response.assign_coords(dopp_vel=dopp_vel)
@@ -352,11 +346,9 @@ def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     `xarray.Dataset`
         A new dataset with an added ``SG_wvl`` coordinate in Angstrom.
     """
-    dopp_unit = require_unit(response, "dopp_vel", "response.dopp_vel", coord_only=True, convertible_to=u.km / u.s)
-    line_unit = require_unit(response, "line_wvl", "response.line_wvl", coord_only=True, convertible_to=u.AA)
     c_kms = speed_of_light.to_value(u.km / u.s)
-    line_wvl = response.coords["line_wvl"] * line_unit.to(u.AA)
-    dopp_vel = response.coords["dopp_vel"] * dopp_unit.to(u.km / u.s)
+    line_wvl = coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl")
+    dopp_vel = coord_as_unit(response, "dopp_vel", u.km / u.s, "response.dopp_vel")
     sg_wvl = line_wvl * (1 + dopp_vel / c_kms)
     sg_wvl.attrs["units"] = str(u.AA)
     response = response.assign_coords(SG_wvl=sg_wvl)
