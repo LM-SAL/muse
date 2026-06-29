@@ -132,25 +132,25 @@ def test_read_response_gain_rejects_wrong_units(tmp_path) -> None:
 
 
 def test_read_response_missing_file_raises(tmp_path) -> None:
-    with pytest.raises((AssertionError, ValueError), match="does not exist"):
+    with pytest.raises(ValueError, match="does not exist"):
         read_response(str(tmp_path / "absent.nc"))
 
 
 def test_read_response_invalid_method_raises(tmp_path) -> None:
     path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises((AssertionError, ValueError), match="Invalid logT_method"):
+    with pytest.raises(ValueError, match="Invalid logT_method"):
         read_response(path, logT_method="sinc")
 
 
 def test_read_response_empty_logT_raises(tmp_path) -> None:
     path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises((AssertionError, ValueError), match="must not be empty"):
+    with pytest.raises(ValueError, match="must not be empty"):
         read_response(path, logT=xr.DataArray(np.array([]), dims="logT"))
 
 
 def test_read_response_nonfinite_logT_raises(tmp_path) -> None:
     path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises((AssertionError, ValueError), match="finite"):
+    with pytest.raises(ValueError, match="finite"):
         read_response(path, logT=xr.DataArray(np.array([5.0, np.nan]), dims="logT"))
 
 
@@ -162,7 +162,7 @@ def test_read_response_out_of_range_logT_raises(tmp_path) -> None:
 
 def test_read_response_requires_sg_resp(tmp_path) -> None:
     path = _write(fake_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
-    with pytest.raises((AssertionError, ValueError), match="SG_resp"):
+    with pytest.raises(ValueError, match="SG_resp"):
         read_response(path)
 
 
@@ -190,3 +190,13 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     np.testing.assert_array_equal(resp.channel.values, [171, 284])
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "SG_resp" in resp.data_vars
+
+
+def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
+    _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
+    with pytest.raises(ValueError, match=r"channels .* must match the number of response_files"):
+        load_and_concat_responses(
+            response_directory=tmp_path,
+            response_files=["a.zarr"],
+            channels=[171, 284],
+        )
