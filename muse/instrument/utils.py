@@ -100,19 +100,13 @@ def read_response(
         if response_file.suffix == ".zarr" and response_file.is_dir()
         else xr.load_dataset(response_file)
     )
-
-    if not isinstance(r, xr.Dataset):
-        msg = "Response file must contain an xarray Dataset"
-        raise TypeError(msg)
     if "SG_resp" not in r.data_vars:
         msg = "Response dataset must contain 'SG_resp' variable"
         raise ValueError(msg)
-    if "logT" not in r.coords and "logT" not in r.dims:
-        msg = "Response must have logT coordinate"
-        raise ValueError(msg)
-    if "vdop" not in r.coords and "vdop" not in r.dims:
-        msg = "Response must have vdop coordinate"
-        raise ValueError(msg)
+    for name in ("logT", "vdop"):
+        if name not in r.coords and name not in r.dims:
+            msg = f"Response must have {name} coordinate"
+            raise ValueError(msg)
 
     r = _resample_axis(r, "logT", logT, logT_method)
     r = _resample_axis(r, "vdop", vdop, vdop_method)
