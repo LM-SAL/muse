@@ -30,34 +30,6 @@ def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
         raise ValueError(msg) from exc
 
 
-def _muse_pixel_grid(coord: xr.DataArray, n: int) -> np.ndarray:
-    return np.linspace(coord[0].values, coord[-1].values, n)
-
-
-def _target_pixel_count(coord: xr.DataArray, pixel_arcsec: float, to_cm: float) -> tuple[int, float]:
-    """Number of MUSE pixels (``n``) spanning ``coord``, and the exact (non-rounded) span."""
-    span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
-    return int(np.round(span_pixels)), span_pixels
-
-
-def _upsample_block_count(coord_size: int, n: int, span_pixels: float, sub_interpolation: int) -> int:
-    """Number of sub-pixel samples to interpolate per MUSE pixel before block-averaging down to ``n``."""
-    if coord_size // n > 3:
-        # factor = coord_size / span_pixels; the rounded sample count n equals round(span_pixels).
-        return int(np.round(coord_size / span_pixels))
-    # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
-    # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
-    return max(1, int(coord_size / n * sub_interpolation))
-
-
-def _block_average(ds: xr.Dataset, axis: str, n: int, blocks: int) -> xr.Dataset:
-    """Average each group of ``blocks`` consecutive samples along ``axis`` down to ``n`` MUSE pixels."""
-    centers = _muse_pixel_grid(ds[axis], n)
-    block_index, center_values = (arr.flatten() for arr in np.meshgrid(range(blocks), centers))
-    ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, center_values))
-    return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})
-
-
 def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_interpolation: int) -> xr.Dataset:
     """
     Resample ``ds`` onto the MUSE pixel size along ``axis`` (``"x"`` or ``"y"``).
@@ -75,13 +47,25 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
         raise ValueError(msg)
     to_cm = _coordinate_unit_to(ds, axis, u.cm)
 
-    n, span_pixels = _target_pixel_count(coord, pixel_arcsec, to_cm)
-    if n > coord.size:
-        return ds.interp({axis: _muse_pixel_grid(coord, n)})
+    def grid(n):
+        return np.linspace(coord[0].values, coord[-1].values, n)
 
-    blocks = _upsample_block_count(coord.size, n, span_pixels, sub_interpolation)
-    ds = ds.interp({axis: _muse_pixel_grid(coord, n * blocks)})
-    return _block_average(ds, axis, n, blocks)
+    span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
+    n = int(np.round(span_pixels))
+    if n > coord.size:
+        return ds.interp({axis: grid(n)})
+    if coord.size // n > 3:
+        # factor = coord.size / span_pixels; the rounded sample count n equals round(span_pixels).
+        blocks = int(np.round(coord.size / span_pixels))
+        ds = ds.interp({axis: grid(n * blocks)})
+    else:
+        # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
+        # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
+        blocks = max(1, int(coord.size / n * sub_interpolation))
+        ds = ds.interp({axis: grid(n * blocks)})
+    block_index, centers = (arr.flatten() for arr in np.meshgrid(range(blocks), grid(n)))
+    ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, centers))
+    return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})
 
 
 @format_docstring(
