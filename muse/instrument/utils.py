@@ -114,10 +114,11 @@ def read_response(
             msg = "Response must define line_wvl or LINE_WVL/MAIN_LINE_WVL metadata"
             raise ValueError(msg)
 
-    gain = gain.to(u.electron / u.DN)
+    gain_unit = u.electron / u.DN
+    gain = gain.to(gain_unit)
     gain_dim = "channel" if "channel" in r.dims else "line"
-    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.to_value(u.electron / u.DN))))
-    r.gain.attrs["units"] = str(u.electron / u.DN)
+    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.value)))
+    r.gain.attrs["units"] = str(gain_unit)
 
     # The current response files carry no wavelength units; warn and assume Angstrom for now.
     _require_wavelength_units(r, "SG_wvl")
