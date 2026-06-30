@@ -224,6 +224,8 @@ def calculate_moments(
     spectrum: xr.Dataset,
     *,
     moment_dim: str = "SG_xpixel",
+    integration_name: str = "flux",
+    doppler_name: str = "dopp_vel",
     vmax: float | None = None,
     vmask: float | None = None,
     vdop_reference: xr.Dataset | None = None,
@@ -234,12 +236,16 @@ def calculate_moments(
     Parameters
     ----------
     spectrum : `xarray.Dataset`
-        Input spectrum. Must carry a ``dopp_vel`` coordinate (km/s); run
+        Input spectrum. Must carry a Doppler-velocity coordinate (km/s); run
         `wavelength_to_doppler` first if you only have wavelengths.
     moment_dim : `str`, optional
         Spectral axis to integrate the line profile over, by default ``"SG_xpixel"``.
-        The Doppler velocities used for the moments come from the ``dopp_vel``
+        The Doppler velocities used for the moments come from the ``doppler_name``
         coordinate, which is normalized to km/s on entry.
+    integration_name : `str`, optional
+        Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
+    doppler_name : `str`, optional
+        Name of the Doppler-velocity coordinate in ``spectrum``, by default ``"dopp_vel"``.
     vmax : `float` or None, optional
         Maximum absolute velocity (km/s) to include in the integration, by default None.
     vmask : `float` or None, optional
@@ -254,20 +260,22 @@ def calculate_moments(
     `xarray.Dataset`
         Dataset containing the moments.
     """
-    require_unit(spectrum, "flux", "spectrum.flux")
-    if "dopp_vel" not in spectrum.coords:
-        msg = "spectrum is missing the 'dopp_vel' coordinate; run wavelength_to_doppler first to add it."
+    require_unit(spectrum, integration_name, f"spectrum.{integration_name}")
+    if doppler_name not in spectrum.coords:
+        msg = f"spectrum is missing the {doppler_name!r} coordinate; run wavelength_to_doppler first to add it."
         raise ValueError(msg)
-    dopp_unit = require_unit(spectrum, "dopp_vel", "spectrum.dopp_vel", coord_only=True, convertible_to=u.km / u.s)
+    dopp_unit = require_unit(
+        spectrum, doppler_name, f"spectrum.{doppler_name}", coord_only=True, convertible_to=u.km / u.s
+    )
     # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
-    spectrum = spectrum.assign_coords(dopp_vel=spectrum.dopp_vel * dopp_unit.to(u.km / u.s))
-    spectrum.dopp_vel.attrs["units"] = str(u.km / u.s)
+    spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * dopp_unit.to(u.km / u.s)})
+    spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
 
     if vmax is not None and vdop_reference is not None:
         if vmask is None:
             msg = "vmask must be provided when vdop_reference is provided"
             raise ValueError(msg)
-        velocity = spectrum["dopp_vel"]
+        velocity = spectrum[doppler_name]
         first_moment_proxy = reshape_x_to_slit_step(
             vdop_reference["SDC main, 1st mom"].sel(line=["Fe XIX", "Fe IX", "Fe XV"])
         )
@@ -275,33 +283,39 @@ def calculate_moments(
             np.abs(velocity - first_moment_proxy) > velocity.differentiate("SG_xpixel") * vmask, 0.0, 1.0
         )
         velocity_mask = velocity_mask.where(np.abs(velocity) < vmax, 0.0 * velocity)
-        masked_flux = (spectrum.flux * velocity_mask).transpose(*spectrum.flux.dims)
-        masked_spectrum = spectrum.assign(flux=masked_flux)
+        masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
+        masked_spectrum = spectrum.assign({integration_name: masked_flux})
     elif vmax is not None:
-        velocity = spectrum["dopp_vel"]
+        velocity = spectrum[doppler_name]
         velocity_mask = xr.where(np.abs(velocity) > vmax, 0.0 * velocity, 1.0 + 0.0 * velocity)
-        masked_flux = (spectrum.flux * velocity_mask).transpose(*spectrum.flux.dims)
-        masked_spectrum = spectrum.assign(flux=masked_flux)
+        masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
+        masked_spectrum = spectrum.assign({integration_name: masked_flux})
         if vmask is not None:
-            peak_index = masked_spectrum.flux.argmax(dim=moment_dim)
+            peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
             peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
             distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
-            masked_spectrum = masked_spectrum.assign(flux=masked_spectrum.flux.where(distance < vmask, 0))
+            masked_spectrum = masked_spectrum.assign(
+                {integration_name: masked_spectrum[integration_name].where(distance < vmask, 0)}
+            )
     else:
         masked_spectrum = spectrum
     masked_spectrum = masked_spectrum.assign(
-        flux=masked_spectrum.flux.where(masked_spectrum.flux > 0, 0).assign_attrs(spectrum.flux.attrs)
+        {
+            integration_name: masked_spectrum[integration_name]
+            .where(masked_spectrum[integration_name] > 0, 0)
+            .assign_attrs(spectrum[integration_name].attrs)
+        }
     )
-    zeroth = masked_spectrum.flux.sum(dim=moment_dim)
-    velocity = masked_spectrum["dopp_vel"]
-    first = (masked_spectrum.flux * velocity).sum(dim=moment_dim) / zeroth
+    zeroth = masked_spectrum[integration_name].sum(dim=moment_dim)
+    velocity = masked_spectrum[doppler_name]
+    first = (masked_spectrum[integration_name] * velocity).sum(dim=moment_dim) / zeroth
     # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
     second = np.sqrt(
-        (masked_spectrum.flux * velocity**2).sum(dim=moment_dim) / zeroth - first**2,
+        (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / zeroth - first**2,
     )
     # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
     moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second}, attrs=dict(spectrum.attrs))
-    moments["0th"].attrs = dict(masked_spectrum.flux.attrs)
+    moments["0th"].attrs = dict(masked_spectrum[integration_name].attrs)
     moments["1st"].attrs["units"] = str(u.km / u.s)
     moments["2nd"].attrs["units"] = str(u.km / u.s)
     add_history(moments, locals(), calculate_moments)
