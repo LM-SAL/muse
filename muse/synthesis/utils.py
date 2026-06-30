@@ -10,6 +10,45 @@ from muse.utils.utils import add_history, coord_as_unit, require_unit
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
 
 
+def _velocity_scatter_index(
+    velocity: np.ndarray, velocity_axis: np.ndarray, velocity_bin_width: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Map each voxel's line-of-sight velocity onto a flat ``(velocity_bin, x, y)`` index.
+
+    Every voxel falls in exactly one velocity bin, so the old per-bin masking loop is just a
+    scatter: digitize the line-of-sight velocity onto the contiguous bin edges
+    [center - dv/2, center + dv/2) once, then accumulate each temperature bin's emission into it.
+
+    Returns
+    -------
+    scatter_index : numpy.ndarray
+        Flat index into a raveled ``(n_velocity_bins, n_x, n_y)`` array, suitable for
+        `numpy.bincount`. Entries for out-of-range voxels are clipped but unused; callers
+        must mask with ``in_velocity_range`` before reading them.
+    in_velocity_range : numpy.ndarray
+        Boolean mask, `True` where the voxel's velocity falls inside ``velocity_axis``.
+    """
+    n_velocity_bins = len(velocity_axis)
+    n_x, n_y = velocity.shape[:2]
+    velocity_edges = np.concatenate(
+        [velocity_axis - velocity_bin_width / 2.0, [velocity_axis[-1] + velocity_bin_width / 2.0]]
+    )
+    # side="right" gives the half-open bin [edge_lo, edge_hi): a voxel sitting exactly on an
+    # edge lands in the upper bin, matching the (>= bin_lo) & (< bin_hi) temperature convention below.
+    velocity_bin = np.searchsorted(velocity_edges, velocity, side="right") - 1
+    in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
+
+    x_index = np.arange(n_x).reshape(n_x, 1, 1)
+    y_index = np.arange(n_y).reshape(1, n_y, 1)
+    scatter_index = np.ravel_multi_index(
+        (velocity_bin, x_index, y_index),
+        (n_velocity_bins, n_x, n_y),
+        mode="clip",
+    )
+    return scatter_index, in_velocity_range
+
+
 def create_simple_vdem(
     temperature: npt.ArrayLike,
     velocity: npt.ArrayLike,
@@ -153,19 +192,8 @@ def create_simple_vdem(
     max_temperature = np.maximum(temperature, temperature_prev)
     min_temperature = np.minimum(temperature, temperature_prev)
 
-    # Every voxel falls in exactly one velocity bin, so the old per-bin masking loop is just a
-    # scatter: digitize the line-of-sight velocity onto the contiguous bin edges
-    # [center - dv/2, center + dv/2) once, then accumulate each temperature bin's emission into it.
     n_x, n_y = velocity.shape[:2]
-    velocity_edges = np.concatenate(
-        [velocity_axis - velocity_bin_width / 2.0, [velocity_axis[-1] + velocity_bin_width / 2.0]]
-    )
-    # side="right" gives the half-open bin [edge_lo, edge_hi): a voxel sitting exactly on an
-    # edge lands in the upper bin, matching the (>= bin_lo) & (< bin_hi) temperature convention below.
-    velocity_bin = np.searchsorted(velocity_edges, velocity, side="right") - 1
-    in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
-    # Flat [velocity_bin, x, y] destination index per voxel (constant across temperature bins).
-    scatter_index = velocity_bin * (n_x * n_y) + np.arange(n_x * n_y).reshape(n_x, n_y, 1)
+    scatter_index, in_velocity_range = _velocity_scatter_index(velocity, velocity_axis, velocity_bin_width)
     # Independent of i_temperature, so reshape the LOS axis once instead of every iteration.
     cell_length_los = cell_length.reshape(1, 1, -1)
 

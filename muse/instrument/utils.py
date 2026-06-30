@@ -14,6 +14,64 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_and_concat_responses", "read_response"]
 
+_INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
+
+
+def _is_zarr_store(path: Path) -> bool:
+    """
+    Detect a Zarr store by content rather than a ``.zarr`` filename suffix.
+
+    Zarr stores have no required extension; a directory is a store if it carries
+    Zarr's own marker file (``zarr.json`` for v3, ``.zgroup`` for v2).
+    """
+    return path.is_dir() and ((path / "zarr.json").exists() or (path / ".zgroup").exists())
+
+
+def _validate_interp_methods(logT_method: str, vdop_method: str) -> None:
+    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
+        if method not in _INTERP_METHODS:
+            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
+            raise ValueError(msg)
+
+
+def _validate_axes(logT: xr.DataArray | None, vdop: xr.DataArray | None) -> None:
+    for name, axis in (("logT", logT), ("vdop", vdop)):
+        if axis is None:
+            continue
+        if len(axis.data) == 0:
+            msg = f"{name} array must not be empty"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(axis.data)):
+            msg = f"{name} must contain only finite values"
+            raise ValueError(msg)
+
+
+def _ensure_line_dim(r: xr.Dataset) -> xr.Dataset:
+    if "channel" not in r.dims and "line" not in r.dims:
+        return r.expand_dims("line")
+    return r
+
+
+def _assign_line_wvl(r: xr.Dataset) -> xr.Dataset:
+    if "line_wvl" in r:
+        return r
+    fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
+    if fallback is not None:
+        return r.assign_coords(line_wvl=fallback)
+    if "channel" in r.coords:
+        return r.assign_coords(line_wvl=r.channel)
+    msg = "Response must define line_wvl or LINE_WVL/MAIN_LINE_WVL metadata"
+    raise ValueError(msg)
+
+
+def _assign_gain(r: xr.Dataset, gain: u.Quantity) -> xr.Dataset:
+    gain_unit = u.electron / u.DN
+    gain = gain.to(gain_unit)
+    gain_dim = "channel" if "channel" in r.dims else "line"
+    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.value)))
+    r.gain.attrs["units"] = str(gain_unit)
+    return r
+
 
 @format_docstring("DEFAULTS_MUSE", gain="ccd_gain")
 @u.quantity_input(gain=u.electron / u.DN)
@@ -62,31 +120,14 @@ def read_response(
         ``logT``/``vdop`` axes are malformed, or the loaded dataset is
         missing the ``SG_resp`` variable or the ``logT``/``vdop`` coordinates.
     """
-    _INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
     response_file = Path(response_file)
     if not response_file.exists():
         msg = f"Response does not exist: {response_file}"
         raise ValueError(msg)
-    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
-        if method not in _INTERP_METHODS:
-            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
-            raise ValueError(msg)
+    _validate_interp_methods(logT_method, vdop_method)
+    _validate_axes(logT, vdop)
 
-    for name, axis in (("logT", logT), ("vdop", vdop)):
-        if axis is None:
-            continue
-        if len(axis.data) == 0:
-            msg = f"{name} array must not be empty"
-            raise ValueError(msg)
-        if not np.all(np.isfinite(axis.data)):
-            msg = f"{name} must contain only finite values"
-            raise ValueError(msg)
-
-    r = (
-        xr.open_zarr(response_file)
-        if response_file.suffix == ".zarr" and response_file.is_dir()
-        else xr.open_dataset(response_file)
-    )
+    r = xr.open_zarr(response_file) if _is_zarr_store(response_file) else xr.open_dataset(response_file)
     if "SG_resp" not in r.data_vars:
         msg = "Response dataset must contain 'SG_resp' variable"
         raise ValueError(msg)
@@ -101,24 +142,9 @@ def read_response(
     if slit is not None:
         r = r.sel(slit=np.arange(slit.max() + 1), drop=True, method="nearest")
 
-    if "channel" not in r.dims and "line" not in r.dims:
-        r = r.expand_dims("line")
-
-    if "line_wvl" not in r:
-        fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
-        if fallback is not None:
-            r = r.assign_coords(line_wvl=fallback)
-        elif "channel" in r.coords:
-            r = r.assign_coords(line_wvl=r.channel)
-        else:
-            msg = "Response must define line_wvl or LINE_WVL/MAIN_LINE_WVL metadata"
-            raise ValueError(msg)
-
-    gain_unit = u.electron / u.DN
-    gain = gain.to(gain_unit)
-    gain_dim = "channel" if "channel" in r.dims else "line"
-    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.value)))
-    r.gain.attrs["units"] = str(gain_unit)
+    r = _ensure_line_dim(r)
+    r = _assign_line_wvl(r)
+    r = _assign_gain(r, gain)
 
     # The current response files carry no wavelength units; warn and assume Angstrom for now.
     _require_wavelength_units(r, "SG_wvl")
