@@ -5,7 +5,6 @@ import xarray as xr
 import astropy.units as u
 from astropy.constants import c as speed_of_light
 
-from muse.transforms.transforms import reshape_x_to_slit_step
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
@@ -228,7 +227,6 @@ def calculate_moments(
     doppler_name: str = "dopp_vel",
     vmax: float | None = None,
     vmask: float | None = None,
-    vdop_reference: xr.Dataset | None = None,
 ) -> xr.Dataset:
     """
     Compute the zeroth, first, and second moments from a spectrum.
@@ -251,9 +249,6 @@ def calculate_moments(
     vmask : `float` or None, optional
         Half-width (in ``SG_xpixel``) of the window kept around the line peak, by default None.
         Only used together with ``vmax``.
-    vdop_reference : `xarray.Dataset`, optional
-        Doppler shift proxy, e.g., from the main line obtained by the
-        SDC code, by default `None`.
 
     Returns
     -------
@@ -271,36 +266,20 @@ def calculate_moments(
     spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * dopp_unit.to(u.km / u.s)})
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
 
-    velocity = spectrum[doppler_name]
-    if vmax is not None and vdop_reference is not None:
-        if vmask is None:
-            msg = "vmask must be provided when vdop_reference is provided"
-            raise ValueError(msg)
-        first_moment_proxy = reshape_x_to_slit_step(
-            vdop_reference["SDC main, 1st mom"].sel(line=["Fe XIX", "Fe IX", "Fe XV"])
-        )
-        velocity_mask = xr.where(
-            np.abs(velocity - first_moment_proxy) > velocity.differentiate("SG_xpixel") * vmask, 0.0, 1.0
-        )
-        velocity_mask = velocity_mask.where(np.abs(velocity) < vmax, 0.0)
-    elif vmax is not None:
+    if vmax is not None:
+        velocity = spectrum[doppler_name]
         velocity_mask = xr.where(np.abs(velocity) > vmax, 0.0, 1.0)
-    else:
-        velocity_mask = None
-
-    if velocity_mask is None:
-        masked_spectrum = spectrum
-    else:
         masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
         masked_spectrum = spectrum.assign({integration_name: masked_flux})
-
-    if vmax is not None and vdop_reference is None and vmask is not None:
-        peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
-        peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
-        distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
-        masked_spectrum = masked_spectrum.assign(
-            {integration_name: masked_spectrum[integration_name].where(distance < vmask, 0)}
-        )
+        if vmask is not None:
+            peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
+            peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
+            distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
+            masked_spectrum = masked_spectrum.assign(
+                {integration_name: masked_spectrum[integration_name].where(distance < vmask, 0)}
+            )
+    else:
+        masked_spectrum = spectrum
     masked_spectrum = masked_spectrum.assign(
         {
             integration_name: masked_spectrum[integration_name]

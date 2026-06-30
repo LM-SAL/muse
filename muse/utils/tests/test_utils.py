@@ -79,6 +79,7 @@ def test_add_history_stores_serializable_keyword_inputs() -> None:
     assert "weights" not in ds.attrs  # Large array dropped, not serializable as an attr
 
 
+@pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
 @pytest.mark.parametrize("backend", ["netcdf4", "zarr"])
 def test_add_history_stored_attrs_round_trip(tmp_path, backend) -> None:
     ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), shift=3 * u.km / u.s)

@@ -7,7 +7,6 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
-from muse.transforms.transforms import reshape_slit_step_to_x, reshape_x_to_slit_step
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import (
     _resolve_backend,
@@ -231,12 +230,6 @@ def vdem_synthesis(
     # output (or the response never had one); otherwise it would re-introduce slit.
     slit_preserved = "slit" not in response.SG_resp.dims or "slit" in ds.flux.dims
     if slit_preserved and "SG_wvl" in response.coords:
-        sg_wvl = coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl")
-        if "x" in raster.dims:
-            ds = reshape_x_to_slit_step(ds)
-            ds = ds.assign_coords(SG_wvl=sg_wvl)
-            ds = reshape_slit_step_to_x(ds)
-        else:
-            ds = ds.assign_coords(SG_wvl=sg_wvl)
+        ds = ds.assign_coords(SG_wvl=coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl"))
     add_history(ds, locals(), vdem_synthesis)
     return ds

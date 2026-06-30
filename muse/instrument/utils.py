@@ -85,7 +85,7 @@ def read_response(
     r = (
         xr.open_zarr(response_file)
         if response_file.suffix == ".zarr" and response_file.is_dir()
-        else xr.load_dataset(response_file)
+        else xr.open_dataset(response_file)
     )
     if "SG_resp" not in r.data_vars:
         msg = "Response dataset must contain 'SG_resp' variable"

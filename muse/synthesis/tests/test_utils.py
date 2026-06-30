@@ -106,13 +106,6 @@ def test_calculate_moments_vmask_keeps_peak_window() -> None:
     assert moments["2nd"].item() == 0.0
 
 
-def test_calculate_moments_requires_vmask_with_vdop_reference() -> None:
-    spectrum = _tiny_moment_spectrum()
-
-    with pytest.raises(ValueError, match="vmask must be provided"):
-        synthesis_utils.calculate_moments(spectrum, vmax=300, vdop_reference=xr.Dataset())
-
-
 def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
     spectrum = _spectrum(response, vdem)
     before_attrs = dict(spectrum.attrs)
