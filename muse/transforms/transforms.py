@@ -5,7 +5,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, update_attrs
+from muse.utils.utils import add_history, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["match_fov", "reshape_slit_step_to_x", "reshape_x_to_slit_step"]
@@ -21,27 +21,51 @@ _SPATIAL_EQUIVALENCY = [
 ]
 
 
-def _coordinate_unit(ds: xr.Dataset, coord_name: str):
-    if coord_name not in ds.coords:
-        msg = f"{coord_name} coordinate is missing"
-        raise ValueError(msg)
-    if "units" not in ds[coord_name].attrs:
-        msg = f"{coord_name} coordinate must define units"
-        raise ValueError(msg)
-    try:
-        return u.Unit(ds[coord_name].attrs["units"])
-    except (TypeError, ValueError) as exc:
-        msg = f"{coord_name} coordinate units must be a valid astropy unit"
-        raise ValueError(msg) from exc
-
-
 def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
-    unit = _coordinate_unit(ds, coord_name)
+    unit = require_unit(ds, coord_name, f"{coord_name} coordinate", coord_only=True)
     try:
         return unit.to(target_unit, equivalencies=_SPATIAL_EQUIVALENCY)
     except u.UnitConversionError as exc:
         msg = f"{coord_name} coordinate units must be convertible to {target_unit}"
         raise ValueError(msg) from exc
+
+
+def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_interpolation: int) -> xr.Dataset:
+    """
+    Resample ``ds`` onto the MUSE pixel size along ``axis`` (``"x"`` or ``"y"``).
+
+    Interpolates up when the target grid is finer, integer-factor averages down when it
+    is much coarser, and otherwise sub-interpolates before averaging. A size-1 axis is
+    returned unchanged. ``coord`` must be strictly monotonically increasing; the
+    block-averaging math also assumes it is roughly evenly spaced.
+    """
+    coord = ds[axis]
+    if coord.size <= 1:
+        return ds
+    if not np.all(np.diff(coord.values) > 0):
+        msg = f"{axis} coordinate must be strictly monotonically increasing to resample onto the MUSE pixel grid"
+        raise ValueError(msg)
+    to_cm = _coordinate_unit_to(ds, axis, u.cm)
+
+    def grid(n):
+        return np.linspace(coord[0].values, coord[-1].values, n)
+
+    span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
+    n = int(np.round(span_pixels))
+    if n > coord.size:
+        return ds.interp({axis: grid(n)})
+    if coord.size // n > 3:
+        # factor = coord.size / span_pixels; the rounded sample count n equals round(span_pixels).
+        blocks = int(np.round(coord.size / span_pixels))
+        ds = ds.interp({axis: grid(n * blocks)})
+    else:
+        # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
+        # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
+        blocks = max(1, int(coord.size / n * sub_interpolation))
+        ds = ds.interp({axis: grid(n * blocks)})
+    block_index, centers = (arr.flatten() for arr in np.meshgrid(range(blocks), grid(n)))
+    ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, centers))
+    return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})
 
 
 @format_docstring(
@@ -164,80 +188,11 @@ def match_fov(
 
     vdem_xr = vdem.copy(deep=True)
 
-    sim_units_to_cm = _coordinate_unit_to(vdem_xr, "x", u.cm)
-    if len(vdem_xr.x) > 1:
-        nx = int(
-            np.round(
-                (vdem_xr.x[-1] - vdem_xr.x[0]) * sim_units_to_cm / (_CM_PER_ARCSEC_AT_1_AU * dx_pix.value),
-            )
-        )
-        if nx > len(vdem_xr.x):
-            vdem_xr = vdem_xr.interp(x=np.linspace(vdem_xr.x[0].values, vdem_xr.x[-1].values, nx))
-        elif (int(len(vdem_xr.x) / nx)) > 3:
-            factor = len(vdem_xr.x) / (
-                (vdem_xr.x[-1].data - vdem_xr.x[0].data) * sim_units_to_cm / _CM_PER_ARCSEC_AT_1_AU / dx_pix.value
-            )
-            nx = int(np.round(len(vdem_xr.x) / factor))
-            new_nx = nx * int(np.round(factor))
-            vdem_xr = vdem_xr.interp(x=np.linspace(vdem_xr.x[0].values, vdem_xr.x[-1].values, new_nx))
-            xc, t = (
-                arr.flatten()
-                for arr in np.meshgrid(
-                    range(int(np.round(factor))), np.linspace(vdem_xr.x[0].values, vdem_xr.x[-1].values, nx)
-                )
-            )
-            vdem_xr = vdem_xr.assign_coords(xt=("x", xc), xr=("x", t))
-            vdem_xr = vdem_xr.set_index(x=("xt", "xr")).unstack("x")
-            vdem_xr = vdem_xr.mean(dim="xt")
-            vdem_xr = vdem_xr.rename({"xr": "x"})
-        else:
-            nx_int = int(len(vdem_xr.x) / nx * sub_interpolation)
-            if sub_interpolation > 0:
-                vdem_xr = vdem_xr.interp(x=np.linspace(vdem_xr.x[0].values, vdem_xr.x[-1].values, nx * nx_int))
-            xc, t = (
-                arr.flatten()
-                for arr in np.meshgrid(
-                    range(int(np.round(nx_int))), np.linspace(vdem_xr.x[0].values, vdem_xr.x[-1].values, nx)
-                )
-            )
-            vdem_xr = vdem_xr.assign_coords(xt=("x", xc), xr=("x", t))
-            vdem_xr = vdem_xr.set_index(x=("xt", "xr")).unstack("x")
-            vdem_xr = vdem_xr.mean(dim="xt")
-            vdem_xr = vdem_xr.rename({"xr": "x"})
-    sim_units_to_cm = _coordinate_unit_to(vdem_xr, "y", u.cm)
-    if len(vdem_xr.y) > 1:
-        ny = int((vdem_xr.y[-1] - vdem_xr.y[0]) * sim_units_to_cm / (_CM_PER_ARCSEC_AT_1_AU * dy_pix.value))
-        if ny > len(vdem_xr.y):
-            vdem_xr = vdem_xr.interp(y=np.linspace(vdem_xr.y[0].values, vdem_xr.y[-1].values, ny))
-        elif (int(len(vdem_xr.y) / ny)) > 3:
-            factor = len(vdem_xr.y) / (
-                (vdem_xr.y[-1].data - vdem_xr.y[0].data) * sim_units_to_cm / _CM_PER_ARCSEC_AT_1_AU / dy_pix.value
-            )
-            ny = int(np.round(len(vdem_xr.y) / factor))
-            new_ny = ny * int(np.round(factor))
-            vdem_xr = vdem_xr.interp(y=np.linspace(vdem_xr.y[0].values, vdem_xr.y[-1].values, new_ny))
-            xc, t = (
-                arr.flatten()
-                for arr in np.meshgrid(
-                    range(int(np.round(factor))), np.linspace(vdem_xr.y[0].values, vdem_xr.y[-1].values, ny)
-                )
-            )
-            vdem_xr = vdem_xr.assign_coords(xt=("y", xc), xr=("y", t))
-            vdem_xr = vdem_xr.set_index(y=("xt", "xr")).unstack("y")
-            vdem_xr = vdem_xr.mean(dim="xt")
-            vdem_xr = vdem_xr.rename({"xr": "y"})
-        else:
-            ny_int = int(len(vdem_xr.y) / ny * sub_interpolation)
-            vdem_xr = vdem_xr.interp(y=np.linspace(vdem_xr.y[0].values, vdem_xr.y[-1].values, ny * ny_int))
-            xc, t = (
-                arr.flatten()
-                for arr in np.meshgrid(range(ny_int), np.linspace(vdem_xr.y[0].values, vdem_xr.y[-1].values, ny))
-            )
-            vdem_xr = vdem_xr.assign_coords(xt=("y", xc), xr=("y", t))
-            vdem_xr = vdem_xr.set_index(y=("xt", "xr")).unstack("y")
-            vdem_xr = vdem_xr.mean(dim="xt")
-            vdem_xr = vdem_xr.rename({"xr": "y"})
-    if vdem_xr.x.size > 1:
+    vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
+    vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
+
+    nx = vdem_xr.x.size
+    if nx > 1:
         if nslits * nraster > nx:
             if restype[10:] != "notile":
                 vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode)
@@ -248,9 +203,8 @@ def match_fov(
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value
     vdem_xr.x.attrs["units"] = "arcsec"
     vdem_xr.y.attrs["units"] = "arcsec"
-    for varss in vdem.data_vars:
-        for atrs in vdem[varss].attrs:
-            vdem_xr[varss].attrs[atrs] = vdem[varss].attrs[atrs]
+    for var in vdem.data_vars:
+        vdem_xr[var].attrs.update(vdem[var].attrs)
 
     update_attrs(vdem_xr, vdem)
     add_history(vdem_xr, locals(), match_fov)
@@ -289,10 +243,7 @@ def reshape_x_to_slit_step(
     `xarray.Dataset`
         vdem or spectra with raster and slit axis.
     """
-    if "x" not in ds.coords:
-        msg = "x coordinate is missing"
-        raise ValueError(msg)
-    x_unit = _coordinate_unit(ds, "x")
+    x_unit = require_unit(ds, "x", "x coordinate", coord_only=True)
     attrs = {}
     if "slit" in ds.coords:
         reshaped = ds.unstack("x")

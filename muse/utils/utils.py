@@ -15,7 +15,93 @@ import astropy.units as u
 import muse
 from muse.log import logger
 
-__all__ = ["add_history", "jax_to_numpy", "numpy_to_jax", "numpy_to_torch", "torch_to_numpy", "update_attrs"]
+__all__ = [
+    "add_history",
+    "coord_as_unit",
+    "jax_to_numpy",
+    "numpy_to_jax",
+    "numpy_to_torch",
+    "require_unit",
+    "torch_to_numpy",
+    "update_attrs",
+]
+
+
+def require_unit(ds: xr.Dataset, name: str, label: str, *, coord_only: bool = False, convertible_to=None):
+    """
+    Validate that ``ds[name]`` exists and carries a usable ``astropy`` unit.
+
+    Parameters
+    ----------
+    ds : `xarray.Dataset`
+        Dataset to inspect.
+    name : `str`
+        Variable or coordinate name to look up.
+    label : `str`
+        Human-readable name used in error messages (e.g. ``"raster.vdem"`` or
+        ``"x coordinate"``).
+    coord_only : `bool`, optional
+        When `True`, require ``name`` to be a coordinate rather than any
+        variable, by default `False`.
+    convertible_to : `astropy.units.Unit`, optional
+        When given, also require the unit to be convertible to this unit.
+
+    Returns
+    -------
+    `astropy.units.Unit`
+        The parsed unit of ``ds[name]``.
+    """
+    if name not in (ds.coords if coord_only else ds):
+        msg = f"{label} is missing"
+        raise ValueError(msg)
+    array = ds[name]
+    if "units" not in array.attrs:
+        msg = f"{label} must define units"
+        raise ValueError(msg)
+    try:
+        unit = u.Unit(array.attrs["units"])
+    except (TypeError, ValueError) as exc:
+        msg = f"{label} units must be a valid astropy unit"
+        raise ValueError(msg) from exc
+    if convertible_to is not None:
+        try:
+            unit.to(convertible_to)
+        except u.UnitConversionError as exc:
+            msg = f"{label} units must be convertible to {convertible_to}"
+            raise ValueError(msg) from exc
+    return unit
+
+
+def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.DataArray:
+    """
+    Return coordinate ``name`` converted to ``target_unit``.
+
+    Parameters
+    ----------
+    ds : `xarray.Dataset`
+        Dataset to inspect.
+    name : `str`
+        Coordinate name.
+    target_unit : `str`
+        Unit to convert the coordinate values to.
+        Must be a valid astropy unit string.
+    label : `str`
+        Human-readable name used in error messages.
+
+    Returns
+    -------
+    `xarray.DataArray`
+        Coordinate values in ``target_unit`` with updated ``units`` attrs.
+    """
+    target_unit = u.Unit(target_unit)
+    unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)
+    converted = ds.coords[name] * unit.to(target_unit)
+    return xr.DataArray(
+        converted.data,
+        dims=converted.dims,
+        attrs={**ds.coords[name].attrs, "units": str(target_unit)},
+        name=name,
+    )
 
 
 def jax_to_numpy(jax_array):
@@ -259,7 +345,8 @@ def add_history(
                 safe = _attr_safe(value)
                 if safe is not None:
                     ds.attrs[arg] = safe
-                elif value is not None:
+                elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset):
+                    # Drop Arrays/datasets silently; only warn for other types.
                     logger.warning(
                         f"Not storing keyword input {arg!r} as an attribute: a "
                         f"{type(value).__name__} is not netCDF/zarr serializable.",

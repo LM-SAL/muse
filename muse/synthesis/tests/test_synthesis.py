@@ -77,37 +77,14 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     np.testing.assert_allclose(got, expected, rtol=1e-5)
 
 
-def test_vdem_synthesis_numpy_backend(response, vdem) -> None:
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-
-    result = vdem_synthesis(reshaped_vdem, response, backend="numpy")
-
-    assert isinstance(result.flux.data, np.ndarray)
-    assert_dataset_structure(
-        result,
-        data_vars=("flux",),
-        coords=("y", "step", "line", "SG_xpixel", "line_wvl"),
-        sizes={"y": 32, "step": 11, "line": 7, "SG_xpixel": 32},
-        finite_vars=("flux",),
-    )
-
-
-def test_vdem_synthesis_jax_backend_matches_numpy(response, vdem) -> None:
+@pytest.mark.parametrize("backend", ["jax", "torch"])
+def test_vdem_synthesis_accelerator_backend_matches_numpy(response, vdem, backend) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
-    jax_flux = vdem_synthesis(reshaped_vdem, response, backend="jax").flux
+    accel_flux = vdem_synthesis(reshaped_vdem, response, backend=backend).flux
 
-    assert isinstance(jax_flux.data, np.ndarray)
-    np.testing.assert_allclose(jax_flux.values, numpy_flux.values, rtol=1e-4)
-
-
-def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
-    torch_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
-
-    assert isinstance(torch_flux.data, np.ndarray)
-    np.testing.assert_allclose(torch_flux.values, numpy_flux.values, rtol=1e-4)
+    assert isinstance(accel_flux.data, np.ndarray)
+    np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
 
 
 def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:
@@ -183,6 +160,15 @@ def test_vdem_synthesis_rejects_non_length_wavelength_units(response, vdem) -> N
         vdem_synthesis(reshaped_vdem, bad_response)
 
 
+@pytest.mark.parametrize("name", ["line_wvl", "SG_wvl"])
+def test_vdem_synthesis_requires_response_wavelength_coords(response, vdem, name) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    bad_response = response.reset_coords(name)
+
+    with pytest.raises(ValueError, match=rf"response\.{name} is missing"):
+        vdem_synthesis(reshaped_vdem, bad_response)
+
+
 def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
     # Not summing over slit leaves it as a flux dimension, which triggers the
     # SG_wvl coordinate assignment branch.
@@ -197,6 +183,20 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
         finite_vars=("flux",),
     )
     assert detector_response.SG_wvl.dims == ("line", "slit", "SG_xpixel")
+
+
+def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response_nm = response.assign_coords(line_wvl=response.line_wvl / 10.0, SG_wvl=response.SG_wvl / 10.0)
+    response_nm.line_wvl.attrs["units"] = "nm"
+    response_nm.SG_wvl.attrs["units"] = "nm"
+
+    detector_response = vdem_synthesis(reshaped_vdem, response_nm, sum_over=("logT", "vdop"))
+
+    np.testing.assert_allclose(detector_response.line_wvl.values, response.line_wvl.values)
+    np.testing.assert_allclose(detector_response.SG_wvl.values, response.SG_wvl.values)
+    assert detector_response.line_wvl.attrs["units"] == "Angstrom"
+    assert detector_response.SG_wvl.attrs["units"] == "Angstrom"
 
 
 @pytest.mark.cuda

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from muse.synthesis.synthesis import vdem_synthesis
+from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
 from muse.tests.helpers import fake_vdem_single_vdop, figure_test
 from muse.transforms.transforms import reshape_x_to_slit_step
 
@@ -52,4 +53,18 @@ def test_vdem_synthesis_doppler_shift(response):
     ax.set_xlabel("SG_wvl [Angstrom]")
     ax.set_ylabel("flux [ph / s]")
     ax.legend()
+    return fig
+
+
+@figure_test
+def test_calculate_moments_maps(response, vdem):
+    """0th/1st/2nd moment maps over (y, step) for line 0 at the central slit."""
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    spectrum = wavelength_to_doppler(vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop")))
+    moments = calculate_moments(spectrum).isel(line=0, slit=17)
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4), constrained_layout=True)
+    titles = ("0th: intensity [ph / s]", "1st: velocity [km / s]", "2nd: width [km / s]")
+    for ax, name, title in zip(axes, ("0th", "1st", "2nd"), titles, strict=True):
+        moments[name].plot(ax=ax)
+        ax.set_title(title)
     return fig

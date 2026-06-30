@@ -8,5 +8,6 @@ API Reference
    :maxdepth: 2
 
    muse
+   instrument
    synthesis
    utils

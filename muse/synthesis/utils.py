@@ -1,21 +1,64 @@
 import numpy as np
+import numpy.typing as npt
 import xarray as xr
 
-from muse.utils.utils import add_history
+import astropy.units as u
+from astropy.constants import c as speed_of_light
 
-__all__ = ["create_simple_vdem"]
+from muse.utils.utils import add_history, coord_as_unit, require_unit
+
+__all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
+
+
+def _velocity_scatter_index(
+    velocity: np.ndarray, velocity_axis: np.ndarray, velocity_bin_width: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Map each voxel's line-of-sight velocity onto a flat ``(velocity_bin, x, y)`` index.
+
+    Every voxel falls in exactly one velocity bin, so the old per-bin masking loop is just a
+    scatter: digitize the line-of-sight velocity onto the contiguous bin edges
+    [center - dv/2, center + dv/2) once, then accumulate each temperature bin's emission into it.
+
+    Returns
+    -------
+    scatter_index : numpy.ndarray
+        Flat index into a raveled ``(n_velocity_bins, n_x, n_y)`` array, suitable for
+        `numpy.bincount`. Entries for out-of-range voxels are clipped but unused; callers
+        must mask with ``in_velocity_range`` before reading them.
+    in_velocity_range : numpy.ndarray
+        Boolean mask, `True` where the voxel's velocity falls inside ``velocity_axis``.
+    """
+    n_velocity_bins = len(velocity_axis)
+    n_x, n_y = velocity.shape[:2]
+    velocity_edges = np.concatenate(
+        [velocity_axis - velocity_bin_width / 2.0, [velocity_axis[-1] + velocity_bin_width / 2.0]]
+    )
+    # side="right" gives the half-open bin [edge_lo, edge_hi): a voxel sitting exactly on an
+    # edge lands in the upper bin, matching the (>= bin_lo) & (< bin_hi) temperature convention below.
+    velocity_bin = np.searchsorted(velocity_edges, velocity, side="right") - 1
+    in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
+
+    x_index = np.arange(n_x).reshape(n_x, 1, 1)
+    y_index = np.arange(n_y).reshape(1, n_y, 1)
+    scatter_index = np.ravel_multi_index(
+        (velocity_bin, x_index, y_index),
+        (n_velocity_bins, n_x, n_y),
+        mode="clip",
+    )
+    return scatter_index, in_velocity_range
 
 
 def create_simple_vdem(
-    temperature,
-    velocity,
-    ne_nh,
-    cell_length,
-    x,
-    y,
-    velocity_axis,
-    log_temperature_axis,
-):
+    temperature: npt.ArrayLike,
+    velocity: npt.ArrayLike,
+    ne_nh: npt.ArrayLike,
+    cell_length: npt.ArrayLike,
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    velocity_axis: npt.ArrayLike,
+    log_temperature_axis: npt.ArrayLike,
+) -> xr.Dataset:
     r"""
     Calculates DEM as a function of temperature and velocity,
     x (0) and y (1) axes are horizontal z (2) vertical.
@@ -149,26 +192,33 @@ def create_simple_vdem(
     max_temperature = np.maximum(temperature, temperature_prev)
     min_temperature = np.minimum(temperature, temperature_prev)
 
+    n_x, n_y = velocity.shape[:2]
+    scatter_index, in_velocity_range = _velocity_scatter_index(velocity, velocity_axis, velocity_bin_width)
+    # Independent of i_temperature, so reshape the LOS axis once instead of every iteration.
+    cell_length_los = cell_length.reshape(1, 1, -1)
+
     # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
     # (the line-of-sight z axis is integrated out).
-    vdem = np.zeros((n_temperature_bins, n_velocity_bins, *velocity.shape[:2]), dtype=ne_nh.dtype)
+    vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=ne_nh.dtype)
     for i_temperature in range(n_temperature_bins):
         bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
         bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
         log_temperature_clipped = np.log10(np.clip(temperature, bin_lo, bin_hi))
         log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
         bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
-        temperature_mask = (max_temperature >= bin_lo) & (min_temperature < bin_hi)
-
-        for i_velocity in range(n_velocity_bins):
-            voxel_mask = (
-                (velocity >= velocity_axis[i_velocity] - velocity_bin_width / 2.0)
-                & temperature_mask
-                & (velocity < velocity_axis[i_velocity] + velocity_bin_width / 2.0)
+        voxel_mask = in_velocity_range & (max_temperature >= bin_lo) & (min_temperature < bin_hi)
+        # n_e * n_H * bin_fraction * cell_length, scattered into its velocity bin and summed along z.
+        los_integrand = ne_nh * bin_fraction * cell_length_los
+        # np.bincount always returns float64; cast back to keep vdem's (float32) accumulation semantics.
+        vdem[i_temperature] = (
+            np.bincount(
+                scatter_index[voxel_mask],
+                weights=los_integrand[voxel_mask],
+                minlength=n_velocity_bins * n_x * n_y,
             )
-            # n_e * n_H * bin_fraction * cell_length summed along the line of sight
-            los_integrand = ne_nh * bin_fraction * voxel_mask * cell_length.reshape(1, 1, -1)
-            vdem[i_temperature, i_velocity, ...] = los_integrand.sum(axis=2)
+            .reshape(n_velocity_bins, n_x, n_y)
+            .astype(ne_nh.dtype, copy=False)
+        )
 
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
@@ -195,3 +245,136 @@ def create_simple_vdem(
     vdem_ds.vdop.attrs["units"] = "km/s"
     add_history(vdem_ds, call_inputs, create_simple_vdem)
     return vdem_ds
+
+
+def calculate_moments(
+    spectrum: xr.Dataset,
+    *,
+    moment_dim: str = "SG_xpixel",
+    integration_name: str = "flux",
+    doppler_name: str = "dopp_vel",
+    vmax: float | None = None,
+    vmask: float | None = None,
+) -> xr.Dataset:
+    """
+    Compute the zeroth, first, and second moments from a spectrum.
+
+    Parameters
+    ----------
+    spectrum : `xarray.Dataset`
+        Input spectrum. Must carry a Doppler-velocity coordinate (km/s); run
+        `wavelength_to_doppler` first if you only have wavelengths.
+    moment_dim : `str`, optional
+        Spectral axis to integrate the line profile over, by default ``"SG_xpixel"``.
+        The Doppler velocities used for the moments come from the ``doppler_name``
+        coordinate, which is normalized to km/s on entry.
+    integration_name : `str`, optional
+        Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
+    doppler_name : `str`, optional
+        Name of the Doppler-velocity coordinate in ``spectrum``, by default ``"dopp_vel"``.
+    vmax : `float` or None, optional
+        Maximum absolute velocity (km/s) to include in the integration, by default None.
+    vmask : `float` or None, optional
+        Half-width (in ``SG_xpixel``) of the window kept around the line peak, by default None.
+        Only used together with ``vmax``.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        Dataset containing the moments.
+    """
+    require_unit(spectrum, integration_name, f"spectrum.{integration_name}")
+    if doppler_name not in spectrum.coords:
+        msg = f"spectrum is missing the {doppler_name!r} coordinate; run wavelength_to_doppler first to add it."
+        raise ValueError(msg)
+    dopp_unit = require_unit(
+        spectrum, doppler_name, f"spectrum.{doppler_name}", coord_only=True, convertible_to=u.km / u.s
+    )
+    # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
+    spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * dopp_unit.to(u.km / u.s)})
+    spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
+
+    if vmax is not None:
+        velocity = spectrum[doppler_name]
+        velocity_mask = xr.where(np.abs(velocity) > vmax, 0.0, 1.0)
+        masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
+        masked_spectrum = spectrum.assign({integration_name: masked_flux})
+        if vmask is not None:
+            peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
+            peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
+            distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
+            masked_spectrum = masked_spectrum.assign(
+                {integration_name: masked_spectrum[integration_name].where(distance < vmask, 0)}
+            )
+    else:
+        masked_spectrum = spectrum
+    masked_spectrum = masked_spectrum.assign(
+        {
+            integration_name: masked_spectrum[integration_name]
+            .where(masked_spectrum[integration_name] > 0, 0)
+            .assign_attrs(spectrum[integration_name].attrs)
+        }
+    )
+    zeroth = masked_spectrum[integration_name].sum(dim=moment_dim)
+    velocity = masked_spectrum[doppler_name]
+    # Pixels with no flux (e.g. fully masked) would divide by zero; leave them NaN, not inf.
+    safe_zeroth = zeroth.where(zeroth > 0)
+    first = (masked_spectrum[integration_name] * velocity).sum(dim=moment_dim) / safe_zeroth
+    # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
+    variance = (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
+    second = np.sqrt(variance.clip(min=0))
+    # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
+    moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second}, attrs=dict(spectrum.attrs))
+    moments["0th"].attrs = dict(masked_spectrum[integration_name].attrs)
+    moments["1st"].attrs["units"] = str(u.km / u.s)
+    moments["2nd"].attrs["units"] = str(u.km / u.s)
+    add_history(moments, locals(), calculate_moments)
+    return moments
+
+
+def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
+    """
+    Add a Doppler-shift coordinate in km/s derived from wavelengths.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Must include ``SG_wvl`` and ``line_wvl`` coordinates.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset with an added ``dopp_vel`` coordinate in km/s.
+    """
+    c_kms = speed_of_light.to_value(u.km / u.s)
+    sg_wvl = coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl")
+    line_wvl = coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl")
+    dopp_vel = (sg_wvl / line_wvl - 1) * c_kms
+    dopp_vel.attrs["units"] = str(u.km / u.s)
+    response = response.assign_coords(dopp_vel=dopp_vel)
+    add_history(response, locals(), wavelength_to_doppler)
+    return response
+
+
+def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
+    """
+    Add a wavelength coordinate in Angstrom derived from a Doppler shift.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Must include ``dopp_vel`` and ``line_wvl`` coordinates.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset with an added ``SG_wvl`` coordinate in Angstrom.
+    """
+    c_kms = speed_of_light.to_value(u.km / u.s)
+    line_wvl = coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl")
+    dopp_vel = coord_as_unit(response, "dopp_vel", u.km / u.s, "response.dopp_vel")
+    sg_wvl = line_wvl * (1 + dopp_vel / c_kms)
+    sg_wvl.attrs["units"] = str(u.AA)
+    response = response.assign_coords(SG_wvl=sg_wvl)
+    add_history(response, locals(), doppler_to_wavelength)
+    return response
