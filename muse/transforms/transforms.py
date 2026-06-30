@@ -55,9 +55,10 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
         blocks = int(np.round(coord.size / span_pixels))
         ds = ds.interp({axis: grid(n * blocks)})
     else:
-        blocks = int(coord.size / n * sub_interpolation)
-        if sub_interpolation > 0:
-            ds = ds.interp({axis: grid(n * blocks)})
+        # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
+        # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
+        blocks = max(1, int(coord.size / n * sub_interpolation))
+        ds = ds.interp({axis: grid(n * blocks)})
     block_index, centers = (arr.flatten() for arr in np.meshgrid(range(blocks), grid(n)))
     ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, centers))
     return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})

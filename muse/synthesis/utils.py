@@ -310,11 +310,12 @@ def calculate_moments(
     )
     zeroth = masked_spectrum[integration_name].sum(dim=moment_dim)
     velocity = masked_spectrum[doppler_name]
-    first = (masked_spectrum[integration_name] * velocity).sum(dim=moment_dim) / zeroth
+    # Pixels with no flux (e.g. fully masked) would divide by zero; leave them NaN, not inf.
+    safe_zeroth = zeroth.where(zeroth > 0)
+    first = (masked_spectrum[integration_name] * velocity).sum(dim=moment_dim) / safe_zeroth
     # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
-    second = np.sqrt(
-        (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / zeroth - first**2,
-    )
+    variance = (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
+    second = np.sqrt(variance.clip(min=0))
     # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
     moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second}, attrs=dict(spectrum.attrs))
     moments["0th"].attrs = dict(masked_spectrum[integration_name].attrs)
