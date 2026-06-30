@@ -82,8 +82,9 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
         Dataset to inspect.
     name : `str`
         Coordinate name.
-    target_unit : unit-like
+    target_unit : `str`
         Unit to convert the coordinate values to.
+        Must be a valid astropy unit string.
     label : `str`
         Human-readable name used in error messages.
 
