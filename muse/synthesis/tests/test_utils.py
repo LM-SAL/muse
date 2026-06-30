@@ -180,6 +180,8 @@ def test_create_simple_vdem_tiny_cube() -> None:
     assert result.x.attrs["units"] == "cm"
     assert result.y.attrs["units"] == "cm"
     assert result.vdop.attrs["units"] == "km/s"
+    for var in (result.vdem, result.logT, result.vdop, result.x, result.y):
+        u.Unit(var.attrs["units"])  # every unit string must parse as an astropy unit
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
 
 
@@ -194,13 +196,6 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     emission_per_vdop = result.vdem.sum(dim=("logT", "x", "y")).values
     assert emission_per_vdop[1] > 0  # vdop == 0 bin
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
-
-
-def test_create_simple_vdem_units_parse_with_astropy() -> None:
-    result = synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs())
-
-    for var in (result.vdem, result.logT, result.vdop, result.x, result.y):
-        u.Unit(var.attrs["units"])
 
 
 @pytest.mark.parametrize(

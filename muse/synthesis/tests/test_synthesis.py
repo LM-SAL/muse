@@ -77,37 +77,14 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     np.testing.assert_allclose(got, expected, rtol=1e-5)
 
 
-def test_vdem_synthesis_numpy_backend(response, vdem) -> None:
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-
-    result = vdem_synthesis(reshaped_vdem, response, backend="numpy")
-
-    assert isinstance(result.flux.data, np.ndarray)
-    assert_dataset_structure(
-        result,
-        data_vars=("flux",),
-        coords=("y", "step", "line", "SG_xpixel", "line_wvl"),
-        sizes={"y": 32, "step": 11, "line": 7, "SG_xpixel": 32},
-        finite_vars=("flux",),
-    )
-
-
-def test_vdem_synthesis_jax_backend_matches_numpy(response, vdem) -> None:
+@pytest.mark.parametrize("backend", ["jax", "torch"])
+def test_vdem_synthesis_accelerator_backend_matches_numpy(response, vdem, backend) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
-    jax_flux = vdem_synthesis(reshaped_vdem, response, backend="jax").flux
+    accel_flux = vdem_synthesis(reshaped_vdem, response, backend=backend).flux
 
-    assert isinstance(jax_flux.data, np.ndarray)
-    np.testing.assert_allclose(jax_flux.values, numpy_flux.values, rtol=1e-4)
-
-
-def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
-    torch_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
-
-    assert isinstance(torch_flux.data, np.ndarray)
-    np.testing.assert_allclose(torch_flux.values, numpy_flux.values, rtol=1e-4)
+    assert isinstance(accel_flux.data, np.ndarray)
+    np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
 
 
 def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:
