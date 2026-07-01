@@ -183,4 +183,5 @@ sphinx_gallery_conf = {
     "doc_module": ("muse"),
     "only_warn_on_example_error": True,
     "matplotlib_animations": True,
+    "show_memory": True,
 }
