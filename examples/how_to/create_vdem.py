@@ -8,15 +8,16 @@ This how-to demonstrates how to create a Velocity-Differential Emission Measure 
 A VDEM contains the physical properties of the solar atmosphere (temperature, velocity, spatial structure).
 """
 
+import gc
 import os
 import contextlib
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import PlasmaCalcs
 import pooch
 from matplotlib import colors
+from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
 from muse.synthesis.utils import create_simple_vdem
 
@@ -42,13 +43,11 @@ tar_path = pooch.retrieve(
     processor=pooch.Untar(),
 )
 
-PlasmaCalcs.DEFAULTS.ARRAY_MBYTES_MAX = 8e04
-PlasmaCalcs.DEFAULTS.RESULT_ARRAY_GBYTES_MAX = 14
-# Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
 simulation_path = Path(os.path.commonpath(tar_path))
+# Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
 with contextlib.chdir(simulation_path):
     # In your case, you may need to change the snapshot number if you have your own simulation.
-    muram_calc = PlasmaCalcs.MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
+    muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
     temperature = muram_calc("T")  # Temperature array in K
     r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
     ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission messaure 1/cm^6
@@ -68,7 +67,24 @@ vdem = create_simple_vdem(
     y_coord,
     velocity_axis,
     log_temperature_axis,
+    # Used to split the x axis into this many contiguous blocks and process them one at a time.
+    # Required for the online documentation build.
+    n_x_chunks=8,
 )
+# Due to tight memory constraints, the online documentation build requires deleting a few large variables.
+del (
+    temperature,
+    velocity,
+    ne_nh,
+    cell_length,
+    x_coord,
+    y_coord,
+    velocity_axis,
+    log_temperature_axis,
+    MuramCalculator,
+    muram_calc,
+)
+gc.collect()
 
 ##############################################################################
 # The VDEM contains information about:
@@ -81,9 +97,9 @@ vdem = create_simple_vdem(
 
 print(vdem)
 # Moment 0 from VDEM
-vdem.vdem.sum(dim=["logT", "vdop"]).plot(norm=colors.LogNorm(vmin=1))
+vdem.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1))
 
 plt.show()
 
 ##############################################################################
-# Now that you have a VDEM, you can use it to create synthetic MUSE observation.
+# Now that you have a VDEM, you can use it to create a synthetic MUSE observation.
