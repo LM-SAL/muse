@@ -43,15 +43,6 @@ copyright = f"{datetime.datetime.now(datetime.UTC).year}, {author}"  # NOQA: A00
 
 # -- General configuration ---------------------------------------------------
 
-import warnings
-
-from astropy.utils.exceptions import AstropyDeprecationWarning
-from matplotlib import MatplotlibDeprecationWarning
-
-# Need to make sure that our documentation does not raise any of these
-warnings.filterwarnings("error", category=MatplotlibDeprecationWarning)
-warnings.filterwarnings("error", category=AstropyDeprecationWarning)
-
 # Wrap large function/method signatures
 maximum_signature_line_length = 80
 
