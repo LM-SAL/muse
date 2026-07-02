@@ -178,7 +178,7 @@ def create_simple_vdem(
     ValueError
         If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
         shape, if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes, or if ``n_x_chunks`` is less than 1.
+        corresponding axes.
 
     Notes
     -----

@@ -50,7 +50,7 @@ with contextlib.chdir(simulation_path):
     muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
     temperature = muram_calc("T")  # Temperature array in K
     r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
-    ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission messaure 1/cm^6
+    ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
     velocity = muram_calc("u", component="z") * 1e-5  # velocity along the line of sight in km/s
     cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # grid spacing along the line of sight in cm
     x_coord = muram_calc("maindims_x_coord")
