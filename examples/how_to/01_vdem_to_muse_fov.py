@@ -6,6 +6,7 @@ Matching a VDEM to MUSE's FOV
 This how-to demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
 """
 
+import gc
 import os
 from pathlib import Path
 
@@ -52,6 +53,8 @@ vdem_muse_fov = match_fov(vdem)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 vdem.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1), ax=ax1)
 vdem_muse_fov.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1), ax=ax2)
+del vdem
+gc.collect()
 
 ##############################################################################
 # Now we can also introduce the :func:`muse.transforms.reshape_x_to_slit_step` function to reshape the VDEM to match the MUSE slit step configuration.
@@ -61,6 +64,8 @@ vdem_muse_fov.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogN
 # The result is a reshaped VDEM that can be used to create a synthetic MUSE observation.
 
 vdem_muse_fov_slit = reshape_x_to_slit_step(vdem_muse_fov)
+del vdem_muse_fov
+gc.collect()
 
 ##############################################################################
 # Now when we print the reshaped VDEM, we can see that it has been reshaped to
@@ -80,6 +85,8 @@ vdem_muse_fov_slit.isel(step=0).vdem.sum(dim=["logT", "vdop"]).plot(norm=colors.
 # the reshaped VDEM back to the original shape.
 
 vdem_muse_fov_original = reshape_slit_step_to_x(vdem_muse_fov_slit)
+del vdem_muse_fov_slit
+gc.collect()
 
 print(vdem_muse_fov_original)
 
