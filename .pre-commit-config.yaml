@@ -16,7 +16,7 @@ repos:
       - id: ruff-format
         exclude: *exclude_dirs
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: "v0.0.54"
+    rev: "v0.0.56"
     hooks:
       - id: ty
         stages: [manual]
@@ -54,7 +54,7 @@ repos:
         types_or: [python, rst]
   # See https://github.com/python-trio/trio/pull/3255
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.47.2
+    rev: v1.48.0
     hooks:
       - id: typos
         types_or: [python, rst]
