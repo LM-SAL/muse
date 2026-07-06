@@ -9,5 +9,6 @@ API Reference
 
    muse
    instrument
+   transforms
    synthesis
    utils
