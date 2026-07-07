@@ -5,128 +5,10 @@ import xarray as xr
 import astropy.units as u
 from astropy.constants import c as speed_of_light
 
+from muse import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
-
-
-def _velocity_scatter_index(
-    velocity: np.ndarray, velocity_axis: np.ndarray, velocity_bin_width: float
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Map each voxel's line-of-sight velocity onto a flat ``(velocity_bin, x, y)`` index.
-
-    Every voxel falls in exactly one velocity bin, so the old per-bin masking loop is just a
-    scatter: digitize the line-of-sight velocity onto the contiguous bin edges
-    [center - dv/2, center + dv/2) once, then accumulate each temperature bin's emission into it.
-
-    Returns
-    -------
-    scatter_index : numpy.ndarray
-        Flat index into a raveled ``(n_velocity_bins, n_x, n_y)`` array, suitable for
-        `numpy.bincount`. Entries for out-of-range voxels are clipped but unused; callers
-        must mask with ``in_velocity_range`` before reading them.
-    in_velocity_range : numpy.ndarray
-        Boolean mask, `True` where the voxel's velocity falls inside ``velocity_axis``.
-    """
-    n_velocity_bins = len(velocity_axis)
-    n_x, n_y = velocity.shape[:2]
-    velocity_edges = np.concatenate(
-        [velocity_axis - velocity_bin_width / 2.0, [velocity_axis[-1] + velocity_bin_width / 2.0]]
-    )
-    # side="right" gives the half-open bin [edge_lo, edge_hi): a voxel sitting exactly on an
-    # edge lands in the upper bin, matching the (>= bin_lo) & (< bin_hi) temperature convention below.
-    velocity_bin = np.searchsorted(velocity_edges, velocity, side="right") - 1
-    in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
-
-    x_index = np.arange(n_x).reshape(n_x, 1, 1)
-    y_index = np.arange(n_y).reshape(1, n_y, 1)
-    scatter_index = np.ravel_multi_index(
-        (velocity_bin, x_index, y_index),
-        (n_velocity_bins, n_x, n_y),
-        mode="clip",
-    )
-    return scatter_index, in_velocity_range
-
-
-def _create_simple_vdem_block(
-    temperature: np.ndarray,
-    velocity: np.ndarray,
-    ne_nh: np.ndarray,
-    cell_length: np.ndarray,
-    x: np.ndarray,
-    y: np.ndarray,
-    velocity_axis: np.ndarray,
-    log_temperature_axis: np.ndarray,
-) -> xr.Dataset:
-    """
-    Compute a VDEM for one contiguous x-block of the domain.
-
-    Same conventions as `create_simple_vdem`; the line-of-sight integration is independent
-    per (x, y) column, so calling this per x-block and concatenating along ``x`` is exact.
-    """
-    cell_length = cell_length.astype(np.float32, copy=False)
-    # Dense-voxel ne_nh can exceed float32 max (~3.4e38 1/cm^6); apply the 1e27 units
-    # normalization while still float64 so neither this cast nor the LOS product overflows.
-    ne_nh = (ne_nh / 1e27).astype(np.float32, copy=False)
-    velocity, temperature, velocity_axis, log_temperature_axis = [
-        q.astype(np.float32, copy=False) for q in [velocity, temperature, velocity_axis, log_temperature_axis]
-    ]
-
-    n_velocity_bins = len(velocity_axis)
-    n_temperature_bins = len(log_temperature_axis)
-
-    log_temperature_bin_width = log_temperature_axis[1] - log_temperature_axis[0]
-    velocity_bin_width = velocity_axis[1] - velocity_axis[0]
-
-    # Each line-of-sight cell spans the temperatures between it and its neighbour; its
-    # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
-    temperature_prev = np.roll(temperature, 1, axis=2)
-    temperature_prev[:, :, 0] = 100.0
-    max_temperature = np.maximum(temperature, temperature_prev)
-    min_temperature = np.minimum(temperature, temperature_prev)
-
-    n_x, n_y = velocity.shape[:2]
-    scatter_index, in_velocity_range = _velocity_scatter_index(velocity, velocity_axis, velocity_bin_width)
-    del velocity  # Not needed past this point
-    # Independent of i_temperature, so reshape the LOS axis once instead of every iteration.
-    cell_length_los = cell_length.reshape(1, 1, -1)
-
-    # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
-    # (the line-of-sight z axis is integrated out).
-    vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=ne_nh.dtype)
-    for i_temperature in range(n_temperature_bins):
-        bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
-        bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
-        log_temperature_clipped = np.log10(np.clip(temperature, bin_lo, bin_hi))
-        log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
-        bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
-        voxel_mask = in_velocity_range & (max_temperature >= bin_lo) & (min_temperature < bin_hi)
-        # n_e * n_H * bin_fraction * cell_length, scattered into its velocity bin and summed along z.
-        los_integrand = ne_nh * bin_fraction * cell_length_los
-        # np.bincount always returns float64; cast back to keep vdem's (float32) accumulation semantics.
-        vdem[i_temperature] = (
-            np.bincount(
-                scatter_index[voxel_mask],
-                weights=los_integrand[voxel_mask],
-                minlength=n_velocity_bins * n_x * n_y,
-            )
-            .reshape(n_velocity_bins, n_x, n_y)
-            .astype(ne_nh.dtype, copy=False)
-        )
-
-    vdem_ds = xr.Dataset()
-    vdem_ds["vdem"] = xr.DataArray(
-        vdem[:, ::-1, :, :],
-        dims=["logT", "vdop", "x", "y"],
-        coords={
-            "logT": log_temperature_axis,
-            "vdop": -velocity_axis[::-1],
-            "x": x,
-            "y": y,
-        },
-    )
-    return vdem_ds
 
 
 def create_simple_vdem(
@@ -138,6 +20,7 @@ def create_simple_vdem(
     y: npt.ArrayLike,
     velocity_axis: npt.ArrayLike,
     log_temperature_axis: npt.ArrayLike,
+    integration_axis: int = 2,
     n_x_chunks: int = 1,
 ) -> xr.Dataset:
     r"""
@@ -151,19 +34,25 @@ def create_simple_vdem(
     temperature : numpy.ndarray
         3D array of gas temperature in K.
     velocity : numpy.ndarray
-        3D array of line-of-sight velocity in km/s (positive towards the observer).
+        3D array of the velocity component along ``integration_axis`` in km/s
+        (positive towards the observer).
     ne_nh : numpy.ndarray
         3D array of ``n_e * n_H`` in 1/cm^6.
     cell_length : numpy.ndarray
-        1D array of cell length along the line-of-sight (z) axis in cm (may be non-uniform).
+        1D array of cell length along the line-of-sight (``integration_axis``) axis in cm
+        (may be non-uniform).
     x : numpy.ndarray
-        1D array of the x-axis coordinate in cm.
+        1D array of the coordinate of the first non-LOS axis in cm.
     y : numpy.ndarray
-        1D array of the y-axis coordinate in cm.
+        1D array of the coordinate of the second non-LOS axis in cm.
     velocity_axis : numpy.ndarray
         1D velocity bin centers in km/s.
     log_temperature_axis : numpy.ndarray
         1D temperature bin centers in log10(K).
+    integration_axis : int, optional
+        Axis of ``temperature``/``velocity``/``ne_nh`` to integrate along, by default 2.
+        ``x`` and ``y`` label the two remaining axes in their original order, and the
+        integration enters the box at index 0 of this axis.
     n_x_chunks : int, optional
         Split the x axis into this many contiguous blocks and process them one at a time,
         by default 1. The line-of-sight integration is independent per (x, y) column, so this
@@ -180,15 +69,15 @@ def create_simple_vdem(
     ------
     ValueError
         If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
-        shape, if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes, or if ``temperature``/``velocity``/``ne_nh`` contain
-        non-finite values.
+        shape, or if ``cell_length``/``x``/``y`` lengths do not match the
+        corresponding axes. Non-finite values in ``temperature``/``velocity``/``ne_nh``
+        only log a warning; the affected voxels can propagate NaN into the output.
 
     Notes
     -----
     Remove any convection zone from the box first.
 
-    Integration is along the z axis.
+    Integration is along ``integration_axis`` (the last axis by default).
 
     The intensity of a spectral line can be defined as :math:`I = \int n_e^2\, G(T) dl`, where
     :math:`n_e` is the electron density, :math:`G(T)` is the contribution function, and the emission
@@ -243,13 +132,15 @@ def create_simple_vdem(
     if temperature.ndim != 3:
         msg = f"temperature must be a 3D array, got {temperature.ndim}D"
         raise ValueError(msg)
+    # Views only; the rest of the function integrates over the last axis.
+    temperature, velocity, ne_nh = (np.moveaxis(q, integration_axis, -1) for q in (temperature, velocity, ne_nh))
     if velocity.shape != temperature.shape or ne_nh.shape != temperature.shape:
         msg = f"velocity {velocity.shape} and ne_nh {ne_nh.shape} must match temperature {temperature.shape}"
         raise ValueError(msg)
     if temperature.shape[2] != len(cell_length):
         msg = (
             f"cell_length ({len(cell_length)}) must match temperature along the "
-            f"line-of-sight (z) axis ({temperature.shape[2]})"
+            f"line-of-sight axis {integration_axis} ({temperature.shape[2]})"
         )
         raise ValueError(msg)
     if temperature.shape[0] != len(x) or temperature.shape[1] != len(y):
@@ -260,22 +151,70 @@ def create_simple_vdem(
         raise ValueError(msg)
     for name, cube in (("temperature", temperature), ("velocity", velocity), ("ne_nh", ne_nh)):
         if not np.isfinite(cube).all():
-            msg = f"{name} contains non-finite values (NaN or inf)"
-            raise ValueError(msg)
+            msg = f"{name} contains non-finite values (NaN or inf), this will cause issues during synthesis"
+            logger.warning(msg)
     n_x_chunks = min(n_x_chunks, len(x))
 
-    vdem_ds = xr.concat(
-        [
-            _create_simple_vdem_block(t, v, n, cell_length, xb, y, velocity_axis, log_temperature_axis)
-            for t, v, n, xb in zip(
-                np.array_split(temperature, n_x_chunks, axis=0),
-                np.array_split(velocity, n_x_chunks, axis=0),
-                np.array_split(ne_nh, n_x_chunks, axis=0),
-                np.array_split(x, n_x_chunks),
-                strict=True,
-            )
-        ],
-        dim="x",
+    n_velocity_bins = len(velocity_axis)
+    n_temperature_bins = len(log_temperature_axis)
+    n_y = len(y)
+    log_temperature_bin_width = log_temperature_axis[1] - log_temperature_axis[0]
+    velocity_bin_width = velocity_axis[1] - velocity_axis[0]
+    # Contiguous half-open velocity bins [center - dv/2, center + dv/2): a voxel sitting exactly
+    # on an edge lands in the upper bin, matching the (>= bin_lo) & (< bin_hi) temperature convention below.
+    velocity_edges = np.append(velocity_axis - velocity_bin_width / 2.0, velocity_axis[-1] + velocity_bin_width / 2.0)
+    cell_length_los = cell_length.reshape(1, 1, -1)
+
+    # The line-of-sight integration is independent per (x, y) column, so processing contiguous
+    # x-blocks one at a time and concatenating is exact; n_x_chunks only lowers peak memory.
+    blocks = []
+    for x_block in np.array_split(np.arange(len(x)), n_x_chunks):
+        n_x_block = len(x_block)
+        block = slice(x_block[0], x_block[-1] + 1)
+        # Input dtypes are kept as-is; the vdem output dtype follows ne_nh, and the LOS
+        # accumulation below happens in float64 regardless (np.bincount always sums in float64).
+        ne_nh_block = ne_nh[block] / 1e27  # normalize to the 1e27 / cm^5 output units
+        temperature_block = temperature[block]
+        # Each line-of-sight cell spans the temperatures between it and its neighbour; its
+        # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
+        temperature_prev = np.roll(temperature_block, 1, axis=2)
+        temperature_prev[:, :, 0] = 100.0
+        max_temperature = np.maximum(temperature_block, temperature_prev)
+        min_temperature = np.minimum(temperature_block, temperature_prev)
+        # Every voxel falls in exactly one velocity bin, so scatter each voxel onto a flat
+        # (velocity_bin, x, y) index; that index has no z axis, so np.bincount's accumulation
+        # is the line-of-sight sum. Out-of-range voxels get invalid indices but are masked out below.
+        velocity_bin = np.searchsorted(velocity_edges, velocity[block], side="right") - 1
+        in_velocity_range = (velocity_bin >= 0) & (velocity_bin < n_velocity_bins)
+        scatter_index = velocity_bin * (n_x_block * n_y) + np.arange(n_x_block * n_y).reshape(n_x_block, n_y, 1)
+
+        vdem_block = np.zeros((n_temperature_bins, n_velocity_bins, n_x_block, n_y), dtype=ne_nh_block.dtype)
+        for i_temperature in range(n_temperature_bins):
+            bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
+            bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
+            log_temperature_clipped = np.log10(np.clip(temperature_block, bin_lo, bin_hi))
+            log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
+            bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
+            voxel_mask = in_velocity_range & (max_temperature >= bin_lo) & (min_temperature < bin_hi)
+            # n_e * n_H * bin_fraction * cell_length, scattered into its velocity bin and summed along z.
+            los_integrand = ne_nh_block * bin_fraction * cell_length_los
+            vdem_block[i_temperature] = np.bincount(
+                scatter_index[voxel_mask],
+                weights=los_integrand[voxel_mask],
+                minlength=n_velocity_bins * n_x_block * n_y,
+            ).reshape(n_velocity_bins, n_x_block, n_y)
+        blocks.append(vdem_block)
+
+    vdem_ds = xr.Dataset()
+    vdem_ds["vdem"] = xr.DataArray(
+        np.concatenate(blocks, axis=2)[:, ::-1],
+        dims=["logT", "vdop", "x", "y"],
+        coords={
+            "logT": log_temperature_axis,
+            "vdop": -velocity_axis[::-1],
+            "x": x,
+            "y": y,
+        },
     )
     vdem_ds["vdem"].attrs = {
         "description": "VDEM(logT, vdop, x, y)",
