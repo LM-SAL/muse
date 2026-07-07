@@ -6,7 +6,6 @@ Matching a VDEM to MUSE's FOV
 This how-to demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
 """
 
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -25,13 +24,15 @@ from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit
 # To download the data, we will use `pooch <https://www.fatiando.org/pooch/latest/>`__.
 # To avoid downloading individual files, we will use a tar-ed snapshot.
 
-tar_path = pooch.retrieve(
+extract_path = Path(pooch.os_cache("muse")) / "muse_example_vdem"
+pooch.retrieve(
     "https://www.dropbox.com/scl/fi/xb2f6pvs4cn1yg54n0pdg/muse_example_vdem.zarr.tar.gz?rlkey=u5y19c5lydrw9kur9bzahkvsv&st=t5vltlk8&dl=1",
     known_hash="dc7d0b8af5360fb3458cb7e180eb7709170ecdecee2e3797bfa2a7816f00c9ea",
     fname="muse_example_vdem.zarr.tar.gz",
-    processor=pooch.Untar(),
+    path=extract_path.parent,
+    processor=pooch.Untar(extract_dir=extract_path.name),
 )
-vdem = xr.open_zarr(Path(os.path.commonpath(tar_path)))
+vdem = xr.open_zarr(extract_path / "muse_example_vdem.zarr")
 
 ##############################################################################
 # First, let's print the VDEM to see what it looks like.
