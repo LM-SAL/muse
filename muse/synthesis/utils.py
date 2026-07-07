@@ -1,5 +1,3 @@
-from venv import logger
-
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
@@ -7,6 +5,7 @@ import xarray as xr
 import astropy.units as u
 from astropy.constants import c as speed_of_light
 
+from muse import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
@@ -21,6 +20,7 @@ def create_simple_vdem(
     y: npt.ArrayLike,
     velocity_axis: npt.ArrayLike,
     log_temperature_axis: npt.ArrayLike,
+    integration_axis: int = 2,
     n_x_chunks: int = 1,
 ) -> xr.Dataset:
     r"""
@@ -34,19 +34,25 @@ def create_simple_vdem(
     temperature : numpy.ndarray
         3D array of gas temperature in K.
     velocity : numpy.ndarray
-        3D array of line-of-sight velocity in km/s (positive towards the observer).
+        3D array of the velocity component along ``integration_axis`` in km/s
+        (positive towards the observer).
     ne_nh : numpy.ndarray
         3D array of ``n_e * n_H`` in 1/cm^6.
     cell_length : numpy.ndarray
-        1D array of cell length along the line-of-sight (z) axis in cm (may be non-uniform).
+        1D array of cell length along the line-of-sight (``integration_axis``) axis in cm
+        (may be non-uniform).
     x : numpy.ndarray
-        1D array of the x-axis coordinate in cm.
+        1D array of the coordinate of the first non-LOS axis in cm.
     y : numpy.ndarray
-        1D array of the y-axis coordinate in cm.
+        1D array of the coordinate of the second non-LOS axis in cm.
     velocity_axis : numpy.ndarray
         1D velocity bin centers in km/s.
     log_temperature_axis : numpy.ndarray
         1D temperature bin centers in log10(K).
+    integration_axis : int, optional
+        Axis of ``temperature``/``velocity``/``ne_nh`` to integrate along, by default 2.
+        ``x`` and ``y`` label the two remaining axes in their original order, and the
+        integration enters the box at index 0 of this axis.
     n_x_chunks : int, optional
         Split the x axis into this many contiguous blocks and process them one at a time,
         by default 1. The line-of-sight integration is independent per (x, y) column, so this
@@ -63,15 +69,15 @@ def create_simple_vdem(
     ------
     ValueError
         If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
-        shape, if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes, or if ``temperature``/``velocity``/``ne_nh`` contain
-        non-finite values.
+        shape, or if ``cell_length``/``x``/``y`` lengths do not match the
+        corresponding axes. Non-finite values in ``temperature``/``velocity``/``ne_nh``
+        only log a warning; the affected voxels can propagate NaN into the output.
 
     Notes
     -----
     Remove any convection zone from the box first.
 
-    Integration is along the z axis.
+    Integration is along ``integration_axis`` (the last axis by default).
 
     The intensity of a spectral line can be defined as :math:`I = \int n_e^2\, G(T) dl`, where
     :math:`n_e` is the electron density, :math:`G(T)` is the contribution function, and the emission
@@ -126,13 +132,15 @@ def create_simple_vdem(
     if temperature.ndim != 3:
         msg = f"temperature must be a 3D array, got {temperature.ndim}D"
         raise ValueError(msg)
+    # Views only; the rest of the function integrates over the last axis.
+    temperature, velocity, ne_nh = (np.moveaxis(q, integration_axis, -1) for q in (temperature, velocity, ne_nh))
     if velocity.shape != temperature.shape or ne_nh.shape != temperature.shape:
         msg = f"velocity {velocity.shape} and ne_nh {ne_nh.shape} must match temperature {temperature.shape}"
         raise ValueError(msg)
     if temperature.shape[2] != len(cell_length):
         msg = (
             f"cell_length ({len(cell_length)}) must match temperature along the "
-            f"line-of-sight (z) axis ({temperature.shape[2]})"
+            f"line-of-sight axis {integration_axis} ({temperature.shape[2]})"
         )
         raise ValueError(msg)
     if temperature.shape[0] != len(x) or temperature.shape[1] != len(y):

@@ -199,6 +199,21 @@ def test_create_simple_vdem_x_chunking_is_exact() -> None:
     np.testing.assert_array_equal(chunked.vdem.values, unchunked.vdem.values)
 
 
+@pytest.mark.parametrize("integration_axis", [0, 1])
+def test_create_simple_vdem_integration_axis_matches_transposed_input(integration_axis: int) -> None:
+    # Feeding cubes with the LOS axis moved elsewhere plus the matching integration_axis must
+    # reproduce the default-axis result; ne_nh varies along every axis so a mix-up cannot cancel.
+    inputs = _tiny_vdem_inputs()
+    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2)
+    default = synthesis_utils.create_simple_vdem(**inputs)
+
+    moved = dict(inputs)
+    for cube in ("temperature", "velocity", "ne_nh"):
+        moved[cube] = np.moveaxis(inputs[cube], 2, integration_axis)
+    result = synthesis_utils.create_simple_vdem(**moved, integration_axis=integration_axis)
+    np.testing.assert_array_equal(result.vdem.values, default.vdem.values)
+
+
 def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:
     # Dense voxels: ne_nh = 1e39 exceeds float32 max (~3.4e38); the float64 pipeline must
     # carry it through the 1e27 units normalization and the per-voxel LOS product intact.
@@ -212,16 +227,15 @@ def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:
     np.testing.assert_allclose(result.vdem.values, expected, rtol=1e-12)
 
 
-@pytest.mark.parametrize(
-    ("field", "non_finite"),
-    [("ne_nh", np.inf), ("temperature", np.nan), ("velocity", np.inf)],
-)
-def test_create_simple_vdem_rejects_non_finite_input(field: str, non_finite: float) -> None:
+@pytest.mark.parametrize("field", ["ne_nh", "temperature", "velocity"])
+def test_create_simple_vdem_warns_on_non_finite_input(field: str, caplog: pytest.LogCaptureFixture) -> None:
     inputs = _tiny_vdem_inputs()
     inputs[field] = inputs[field].copy()
-    inputs[field][0, 0, 0] = non_finite
-    with pytest.raises(ValueError, match=f"{field} contains non-finite"):
-        synthesis_utils.create_simple_vdem(**inputs)
+    inputs[field][0, 0, 0] = np.nan
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    assert f"{field} contains non-finite" in caplog.text
+    assert "vdem" in result  # warning, not an error: the VDEM is still produced
 
 
 @pytest.mark.parametrize(

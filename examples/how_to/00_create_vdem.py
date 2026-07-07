@@ -48,9 +48,11 @@ pooch.retrieve(
 with contextlib.chdir(simulation_path):
     # In your case, you may need to change the snapshot number if you have your own simulation.
     muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
+    #
     # The float32 downcasts halve the memory held by the large simulation cubes.
-    # They are only needed for the memory-constrained online documentation build — you do
-    # not need them.
+    # They are only needed for the memory-constrained online documentation build
+    # You do not need them and this will introduce NaN values into the output
+    #
     temperature = muram_calc("T").astype(np.float32)  # Temperature array in K
     r_per_nH_tot = (
         (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum().astype(np.float32)
@@ -101,7 +103,7 @@ gc.collect()
 # We can now print and plot the VDEM we created.
 
 print(vdem)
-# Moment 0 from VDEM
+# We can now plot the first moment of the VDEM
 vdem.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1))
 
 plt.show()
