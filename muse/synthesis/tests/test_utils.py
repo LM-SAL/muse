@@ -206,11 +206,22 @@ def test_create_simple_vdem_no_float32_overflow() -> None:
     np.testing.assert_allclose(result.vdem.values, expected, rtol=5e-6)
 
 
-def test_create_simple_vdem_rejects_non_finite_input() -> None:
+@pytest.mark.parametrize(
+    ("field", "non_finite", "expected_message"),
+    [
+        ("ne_nh", np.inf, "ne_nh contains non-finite"),
+        ("ne_nh", np.nan, "ne_nh contains non-finite"),
+        ("temperature", np.inf, "temperature contains non-finite"),
+        ("temperature", np.nan, "temperature contains non-finite"),
+        ("velocity", np.inf, "velocity contains non-finite"),
+        ("velocity", np.nan, "velocity contains non-finite"),
+    ],
+)
+def test_create_simple_vdem_rejects_non_finite_input(field: str, non_finite: float, expected_message: str) -> None:
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = inputs["ne_nh"].copy()
-    inputs["ne_nh"][0, 0, 0] = np.inf
-    with pytest.raises(ValueError, match="ne_nh contains non-finite"):
+    inputs[field] = inputs[field].copy()
+    inputs[field][0, 0, 0] = non_finite
+    with pytest.raises(ValueError, match=expected_message):
         synthesis_utils.create_simple_vdem(**inputs)
 
 

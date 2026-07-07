@@ -31,7 +31,11 @@ def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
 
 
 def _interp_keep_dtype(ds: xr.Dataset, axis: str, target) -> xr.Dataset:
-    """Interpolate along ``axis`` and cast data variables back to their original dtype (interp promotes to float64)."""
+    """
+    Interpolate along ``axis`` and cast data variables back to their original dtype.
+
+    Coordinates keep xarray's interpolation dtype, usually float64.
+    """
     dtypes = {name: var.dtype for name, var in ds.data_vars.items()}
     out = ds.interp({axis: target})
     return out.assign({name: out[name].astype(dtype) for name, dtype in dtypes.items() if out[name].dtype != dtype})

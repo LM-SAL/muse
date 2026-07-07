@@ -12,7 +12,6 @@ import gc
 import contextlib
 from pathlib import Path
 
-import dask.array as da
 import matplotlib.pyplot as plt
 import numpy as np
 import pooch
@@ -58,17 +57,11 @@ with contextlib.chdir(simulation_path):
     y_coord = muram_calc("maindims_y_coord")
 velocity_axis = np.arange(-500, 510, 10)  # Velocity axis in km/s
 log_temperature_axis = np.arange(5.5, 7.6, 0.1)
-n_spatial_chunks = 8
-cube_chunks = (
-    max(1, int(np.ceil(temperature.shape[0] / n_spatial_chunks))),
-    max(1, int(np.ceil(temperature.shape[1] / n_spatial_chunks))),
-    -1,
-)
 
 vdem = create_simple_vdem(
-    da.asarray(temperature.data).rechunk(cube_chunks),
-    da.asarray(velocity.data).rechunk(cube_chunks),
-    da.asarray(ne_nh.data).rechunk(cube_chunks),
+    temperature.values,
+    velocity.values,
+    ne_nh,
     cell_length,
     x_coord,
     y_coord,
@@ -76,7 +69,7 @@ vdem = create_simple_vdem(
     log_temperature_axis,
     # Used to split the x axis into this many contiguous blocks and process them one at a time.
     # Required for the online documentation build.
-    n_x_chunks=n_spatial_chunks,
+    n_x_chunks=8,
 )
 # Due to tight memory constraints, the online documentation build requires deleting a few large variables.
 del (
