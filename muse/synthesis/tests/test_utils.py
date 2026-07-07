@@ -192,16 +192,26 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
 
 
 def test_create_simple_vdem_no_float32_overflow() -> None:
-    # Dense chromospheric voxels: ne_nh * cell_length ~ 4e38 exceeds float32 max, so the
-    # 1e27 units normalization must be applied per voxel, not after the LOS sum.
+    # Dense voxels: float64 ne_nh = 1e39 exceeds float32 max (~3.4e38), so both the float32
+    # input cast and the per-voxel LOS product must happen after the 1e27 units normalization.
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.full((2, 3, 2), 4e31, dtype=np.float32)
+    inputs["ne_nh"] = np.full((2, 3, 2), 1e39, dtype=np.float64)
     inputs["cell_length"] = np.full(2, 1e7, dtype=np.float32)
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     assert np.isfinite(result.vdem.values).all()
-    # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 4e31, contributing cell_length 2 -> 1e7.
-    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem() * 4e31 * 1e7 / 2.0, rtol=5e-6)
+    # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 1e39, contributing cell_length 2 -> 1e7.
+    # Scale the float32 expectation in float64 - the factor itself is above float32 max.
+    expected = _expected_tiny_vdem().astype(np.float64) * 1e39 * 1e7 / 2.0
+    np.testing.assert_allclose(result.vdem.values, expected, rtol=5e-6)
+
+
+def test_create_simple_vdem_rejects_non_finite_input() -> None:
+    inputs = _tiny_vdem_inputs()
+    inputs["ne_nh"] = inputs["ne_nh"].copy()
+    inputs["ne_nh"][0, 0, 0] = np.inf
+    with pytest.raises(ValueError, match="ne_nh contains non-finite"):
+        synthesis_utils.create_simple_vdem(**inputs)
 
 
 @pytest.mark.parametrize(

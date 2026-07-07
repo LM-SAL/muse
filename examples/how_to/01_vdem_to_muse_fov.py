@@ -27,7 +27,7 @@ from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit
 
 tar_path = pooch.retrieve(
     "https://www.dropbox.com/scl/fi/xb2f6pvs4cn1yg54n0pdg/muse_example_vdem.zarr.tar.gz?rlkey=u5y19c5lydrw9kur9bzahkvsv&st=t5vltlk8&dl=1",
-    known_hash="bc05a8b074b2c7994e0075ccfd21ba748e40b6efdab1d8f967885a2b9fc34c0d",
+    known_hash="93cdf8c4506497b0e11368b076b68901a8ff0c4d408dc34e12cddd2823d4ca44",
     fname="muse_example_vdem.zarr.tar.gz",
     processor=pooch.Untar(),
 )

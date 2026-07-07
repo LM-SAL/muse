@@ -66,8 +66,11 @@ def _create_simple_vdem_block(
     per (x, y) column, so calling this per x-block and concatenating along ``x`` is exact.
     """
     cell_length = cell_length.astype(np.float32, copy=False)
-    velocity, temperature, ne_nh, velocity_axis, log_temperature_axis = [
-        q.astype(np.float32, copy=False) for q in [velocity, temperature, ne_nh, velocity_axis, log_temperature_axis]
+    # Dense-voxel ne_nh can exceed float32 max (~3.4e38 1/cm^6); apply the 1e27 units
+    # normalization while still float64 so neither this cast nor the LOS product overflows.
+    ne_nh = (ne_nh / 1e27).astype(np.float32, copy=False)
+    velocity, temperature, velocity_axis, log_temperature_axis = [
+        q.astype(np.float32, copy=False) for q in [velocity, temperature, velocity_axis, log_temperature_axis]
     ]
 
     n_velocity_bins = len(velocity_axis)
@@ -87,9 +90,7 @@ def _create_simple_vdem_block(
     scatter_index, in_velocity_range = _velocity_scatter_index(velocity, velocity_axis, velocity_bin_width)
     del velocity  # Not needed past this point
     # Independent of i_temperature, so reshape the LOS axis once instead of every iteration.
-    # The 1e27 units normalization is folded in here: applying it after the sum lets the
-    # per-voxel float32 product ne_nh * cell_length (~1e38) overflow to inf.
-    cell_length_los = cell_length.reshape(1, 1, -1) / 1e27
+    cell_length_los = cell_length.reshape(1, 1, -1)
 
     # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
     # (the line-of-sight z axis is integrated out).
@@ -180,7 +181,8 @@ def create_simple_vdem(
     ValueError
         If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
         shape, if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes.
+        corresponding axes, or if ``temperature``/``velocity``/``ne_nh`` contain
+        non-finite values.
 
     Notes
     -----
@@ -256,6 +258,10 @@ def create_simple_vdem(
             f"temperature dimensions {temperature.shape[:2]}"
         )
         raise ValueError(msg)
+    for name, cube in (("temperature", temperature), ("velocity", velocity), ("ne_nh", ne_nh)):
+        if not np.isfinite(cube).all():
+            msg = f"{name} contains non-finite values (NaN or inf)"
+            raise ValueError(msg)
     n_x_chunks = min(n_x_chunks, len(x))
 
     vdem_ds = xr.concat(
