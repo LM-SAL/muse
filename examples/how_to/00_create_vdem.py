@@ -54,10 +54,11 @@ with contextlib.chdir(simulation_path):
     # You do not need them and this will introduce NaN values into the output
     #
     temperature = muram_calc("T").astype(np.float32)  # Temperature array in K
-    r_per_nH_tot = (
-        (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum().astype(np.float32)
-    )
-    ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
+    r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
+    # ne_nh must stay float64 because the dense voxels exceed the float32 maximum (~3.4e38 1/cm^6)
+    # But due to memory constraints, we must use float32, which will introduce NaN values into the
+    #  output
+    ne_nh = ((muram_calc("r") / r_per_nH_tot) ** 2).astype(np.float32)  # Emission measure 1/cm^6
     velocity = (muram_calc("u", component="z") * 1e-5).astype(np.float32)  # LOS velocity in km/s
     cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # grid spacing along the line of sight in cm
     x_coord = muram_calc("maindims_x_coord")
@@ -76,7 +77,7 @@ vdem = create_simple_vdem(
     log_temperature_axis,
     # Used to split the x axis into this many contiguous blocks and process them one at a time.
     # Required for the online documentation build.
-    n_x_chunks=8,
+    n_x_chunks=16,
 )
 # Due to tight memory constraints, the online documentation build requires deleting a few large variables.
 del (
