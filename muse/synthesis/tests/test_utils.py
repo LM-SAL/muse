@@ -191,6 +191,19 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
 
 
+def test_create_simple_vdem_no_float32_overflow() -> None:
+    # Dense chromospheric voxels: ne_nh * cell_length ~ 4e38 exceeds float32 max, so the
+    # 1e27 units normalization must be applied per voxel, not after the LOS sum.
+    inputs = _tiny_vdem_inputs()
+    inputs["ne_nh"] = np.full((2, 3, 2), 4e31, dtype=np.float32)
+    inputs["cell_length"] = np.full(2, 1e7, dtype=np.float32)
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    assert np.isfinite(result.vdem.values).all()
+    # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 4e31, contributing cell_length 2 -> 1e7.
+    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem() * 4e31 * 1e7 / 2.0, rtol=5e-6)
+
+
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [

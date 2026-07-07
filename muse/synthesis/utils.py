@@ -87,7 +87,9 @@ def _create_simple_vdem_block(
     scatter_index, in_velocity_range = _velocity_scatter_index(velocity, velocity_axis, velocity_bin_width)
     del velocity  # Not needed past this point
     # Independent of i_temperature, so reshape the LOS axis once instead of every iteration.
-    cell_length_los = cell_length.reshape(1, 1, -1)
+    # The 1e27 units normalization is folded in here: applying it after the sum lets the
+    # per-voxel float32 product ne_nh * cell_length (~1e38) overflow to inf.
+    cell_length_los = cell_length.reshape(1, 1, -1) / 1e27
 
     # The VDEM array has shape [n_temperature_bins, n_velocity_bins, x, y]
     # (the line-of-sight z axis is integrated out).
@@ -114,7 +116,7 @@ def _create_simple_vdem_block(
 
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
-        vdem[:, ::-1, :, :] / 1e27,
+        vdem[:, ::-1, :, :],
         dims=["logT", "vdop", "x", "y"],
         coords={
             "logT": log_temperature_axis,
