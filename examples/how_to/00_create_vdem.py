@@ -48,10 +48,15 @@ pooch.retrieve(
 with contextlib.chdir(simulation_path):
     # In your case, you may need to change the snapshot number if you have your own simulation.
     muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
-    temperature = muram_calc("T")  # Temperature array in K
-    r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
+    # The float32 downcasts halve the memory held by the large simulation cubes.
+    # They are only needed for the memory-constrained online documentation build — you do
+    # not need them.
+    temperature = muram_calc("T").astype(np.float32)  # Temperature array in K
+    r_per_nH_tot = (
+        (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum().astype(np.float32)
+    )
     ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
-    velocity = muram_calc("u", component="z") * 1e-5  # velocity along the line of sight in km/s
+    velocity = (muram_calc("u", component="z") * 1e-5).astype(np.float32)  # LOS velocity in km/s
     cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # grid spacing along the line of sight in cm
     x_coord = muram_calc("maindims_x_coord")
     y_coord = muram_calc("maindims_y_coord")

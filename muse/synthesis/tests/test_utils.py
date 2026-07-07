@@ -132,21 +132,21 @@ def test_calculate_moments_requires_dopp_vel(response, vdem) -> None:
 def _tiny_vdem_inputs():
     # x (axis 0) and y (axis 1) lengths differ so the test also pins the x-then-y axis order.
     return {
-        "temperature": np.full((2, 3, 2), 1e5, dtype=np.float32),
-        "velocity": np.zeros((2, 3, 2), dtype=np.float32),
-        "ne_nh": np.ones((2, 3, 2), dtype=np.float32),
-        "cell_length": np.array([2.0, 3.0], dtype=np.float32),
-        "x": np.array([10.0, 11.0], dtype=np.float32),
-        "y": np.array([20.0, 21.0, 22.0], dtype=np.float32),
-        "velocity_axis": np.array([-1.0, 0.0, 1.0], dtype=np.float32),
-        "log_temperature_axis": np.array([4.5, 5.0, 5.5], dtype=np.float32),
+        "temperature": np.full((2, 3, 2), 1e5),
+        "velocity": np.zeros((2, 3, 2)),
+        "ne_nh": np.ones((2, 3, 2)),
+        "cell_length": np.array([2.0, 3.0]),
+        "x": np.array([10.0, 11.0]),
+        "y": np.array([20.0, 21.0, 22.0]),
+        "velocity_axis": np.array([-1.0, 0.0, 1.0]),
+        "log_temperature_axis": np.array([4.5, 5.0, 5.5]),
     }
 
 
 def _expected_tiny_vdem():
     # Uniform column: only the boundary cell (prev=100) has a temperature gradient, so it
     # spreads over the low-T bins; every (x, y) column is identical.
-    expected = np.zeros((3, 3, 2, 3), dtype=np.float32)
+    expected = np.zeros((3, 3, 2, 3))
     expected[0, 1] = 2e-27
     expected[1, 1] = 1e-27
     return expected
@@ -168,13 +168,11 @@ def test_create_simple_vdem_tiny_cube() -> None:
     np.testing.assert_array_equal(result.vdop.values, [-1.0, -0.0, 1.0])
     np.testing.assert_array_equal(result.x.values, [10.0, 11.0])
     np.testing.assert_array_equal(result.y.values, [20.0, 21.0, 22.0])
-    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=5e-6)  # float32 rounding
-    assert result.vdem.attrs["units"] == "1e27 / cm5"
-    assert result.x.attrs["units"] == "cm"
-    assert result.y.attrs["units"] == "cm"
-    assert result.vdop.attrs["units"] == "km/s"
-    for var in (result.vdem, result.logT, result.vdop, result.x, result.y):
-        u.Unit(var.attrs["units"])  # every unit string must parse as an astropy unit
+    np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-12)
+    units = {name: result[name].attrs["units"] for name in ("vdem", "logT", "vdop", "x", "y")}
+    assert units == {"vdem": "1e27 / cm5", "logT": "dex(K)", "vdop": "km/s", "x": "cm", "y": "cm"}
+    for unit in units.values():
+        u.Unit(unit)  # Every unit string must parse as an astropy unit
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
 
 
@@ -182,7 +180,7 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     # Velocity exactly on a bin edge must land in the upper bin ([edge_lo, edge_hi) convention).
     inputs = _tiny_vdem_inputs()
     # Bin centers [-1, 0, 1] with dv=1 give edges [-1.5, -0.5, 0.5, 1.5]; -0.5 is the -1|0 edge.
-    inputs["velocity"] = np.full((2, 3, 2), -0.5, dtype=np.float32)
+    inputs["velocity"] = np.full((2, 3, 2), -0.5)
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     # vdop axis is -velocity_axis[::-1] = [-1, 0, 1]; emission must sit in vdop=0, not vdop=-1.
@@ -191,47 +189,48 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
 
 
-def test_create_simple_vdem_no_float32_overflow() -> None:
-    # Dense voxels: float64 ne_nh = 1e39 exceeds float32 max (~3.4e38), so both the float32
-    # input cast and the per-voxel LOS product must happen after the 1e27 units normalization.
+def test_create_simple_vdem_x_chunking_is_exact() -> None:
+    # Chunked processing must be bit-identical to the single-pass result; vary ne_nh along x
+    # so a block mix-up cannot cancel out.
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.full((2, 3, 2), 1e39, dtype=np.float64)
-    inputs["cell_length"] = np.full(2, 1e7, dtype=np.float32)
+    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2)
+    unchunked = synthesis_utils.create_simple_vdem(**inputs)
+    chunked = synthesis_utils.create_simple_vdem(**inputs, n_x_chunks=2)
+    np.testing.assert_array_equal(chunked.vdem.values, unchunked.vdem.values)
+
+
+def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:
+    # Dense voxels: ne_nh = 1e39 exceeds float32 max (~3.4e38); the float64 pipeline must
+    # carry it through the 1e27 units normalization and the per-voxel LOS product intact.
+    inputs = _tiny_vdem_inputs()
+    inputs["ne_nh"] = np.full((2, 3, 2), 1e39)
+    inputs["cell_length"] = np.full(2, 1e7)
 
     result = synthesis_utils.create_simple_vdem(**inputs)
-    assert np.isfinite(result.vdem.values).all()
     # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 1e39, contributing cell_length 2 -> 1e7.
-    # Scale the float32 expectation in float64 - the factor itself is above float32 max.
-    expected = _expected_tiny_vdem().astype(np.float64) * 1e39 * 1e7 / 2.0
-    np.testing.assert_allclose(result.vdem.values, expected, rtol=5e-6)
+    expected = _expected_tiny_vdem() * 1e39 * 1e7 / 2.0
+    np.testing.assert_allclose(result.vdem.values, expected, rtol=1e-12)
 
 
 @pytest.mark.parametrize(
-    ("field", "non_finite", "expected_message"),
-    [
-        ("ne_nh", np.inf, "ne_nh contains non-finite"),
-        ("ne_nh", np.nan, "ne_nh contains non-finite"),
-        ("temperature", np.inf, "temperature contains non-finite"),
-        ("temperature", np.nan, "temperature contains non-finite"),
-        ("velocity", np.inf, "velocity contains non-finite"),
-        ("velocity", np.nan, "velocity contains non-finite"),
-    ],
+    ("field", "non_finite"),
+    [("ne_nh", np.inf), ("temperature", np.nan), ("velocity", np.inf)],
 )
-def test_create_simple_vdem_rejects_non_finite_input(field: str, non_finite: float, expected_message: str) -> None:
+def test_create_simple_vdem_rejects_non_finite_input(field: str, non_finite: float) -> None:
     inputs = _tiny_vdem_inputs()
     inputs[field] = inputs[field].copy()
     inputs[field][0, 0, 0] = non_finite
-    with pytest.raises(ValueError, match=expected_message):
+    with pytest.raises(ValueError, match=f"{field} contains non-finite"):
         synthesis_utils.create_simple_vdem(**inputs)
 
 
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [
-        ("temperature", np.ones((1, 2), dtype=np.float32), "3D array"),
-        ("velocity", np.zeros((1, 1, 3), dtype=np.float32), "must match temperature"),
-        ("cell_length", np.array([1.0, 2.0, 3.0], dtype=np.float32), "line-of-sight"),
-        ("x", np.array([1.0], dtype=np.float32), "non-LOS"),
+        ("temperature", np.ones((1, 2)), "3D array"),
+        ("velocity", np.zeros((1, 1, 3)), "must match temperature"),
+        ("cell_length", np.array([1.0, 2.0, 3.0]), "line-of-sight"),
+        ("x", np.array([1.0]), "non-LOS"),
     ],
 )
 def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
