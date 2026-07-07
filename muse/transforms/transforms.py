@@ -30,6 +30,13 @@ def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
         raise ValueError(msg) from exc
 
 
+def _interp_keep_dtype(ds: xr.Dataset, axis: str, target) -> xr.Dataset:
+    """Interpolate along ``axis`` and cast data variables back to their original dtype (interp promotes to float64)."""
+    dtypes = {name: var.dtype for name, var in ds.data_vars.items()}
+    out = ds.interp({axis: target})
+    return out.assign({name: out[name].astype(dtype) for name, dtype in dtypes.items() if out[name].dtype != dtype})
+
+
 def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_interpolation: int) -> xr.Dataset:
     """
     Resample ``ds`` onto the MUSE pixel size along ``axis`` (``"x"`` or ``"y"``).
@@ -53,16 +60,16 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
     n = int(np.round(span_pixels))
     if n > coord.size:
-        return ds.interp({axis: grid(n)})
+        return _interp_keep_dtype(ds, axis, grid(n))
     if coord.size // n > 3:
         # factor = coord.size / span_pixels; the rounded sample count n equals round(span_pixels).
         blocks = int(np.round(coord.size / span_pixels))
-        ds = ds.interp({axis: grid(n * blocks)})
+        ds = _interp_keep_dtype(ds, axis, grid(n * blocks))
     else:
         # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
         # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
         blocks = max(1, int(coord.size / n * sub_interpolation))
-        ds = ds.interp({axis: grid(n * blocks)})
+        ds = _interp_keep_dtype(ds, axis, grid(n * blocks))
     block_index, centers = (arr.flatten() for arr in np.meshgrid(range(blocks), grid(n)))
     ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, centers))
     return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})
@@ -186,7 +193,9 @@ def match_fov(
         vdem = vdem.rename({"y": "x"})
         vdem = vdem.rename({"ynew": "y"})
 
-    vdem_xr = vdem.copy(deep=True)
+    # Shallow copy: every transform below returns a new object; the copy only isolates
+    # coord/attr mutations on the degenerate size-1 paths where resampling is a no-op.
+    vdem_xr = vdem.copy()
 
     vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
     vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
@@ -195,7 +204,12 @@ def match_fov(
     if nx > 1:
         if nslits * nraster > nx:
             if restype[10:] != "notile":
-                vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode)
+                if mode == "wrap":
+                    # dask.array.pad silently clips a wrap pad wider than the axis; modular
+                    # indexing tiles any width and works on both numpy and dask backends.
+                    vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster) % nx)
+                else:
+                    vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode)
         else:
             vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster))
 
