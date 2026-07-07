@@ -1,5 +1,7 @@
 import importlib.util
 
+import dask
+import dask.array as da
 import numpy as np
 import pytest
 import torch
@@ -113,6 +115,26 @@ def test_add_history_silently_drops_array_keyword_inputs(caplog) -> None:
 
     assert "weights" not in ds.attrs
     assert "weights" not in caplog.text
+
+
+def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
+    def explode():
+        msg = "dask array was computed"
+        raise AssertionError(msg)
+
+    def demo(ds, lazy_array=None, lazy_dataarray=None):
+        add_history(ds, locals(), demo)
+
+    lazy_array = da.from_delayed(dask.delayed(explode)(), shape=(), dtype=float)
+    lazy_dataarray = xr.DataArray(lazy_array)
+    ds = xr.Dataset()
+
+    demo(ds, lazy_array=lazy_array, lazy_dataarray=lazy_dataarray)
+
+    assert ds.attrs["HISTORY"] == ["demo(ds=ds, lazy_array=lazy_array, lazy_dataarray=lazy_dataarray)"]
+    assert "lazy_array" not in ds.attrs
+    assert "lazy_dataarray" not in ds.attrs
+    assert "serializable" not in caplog.text
 
 
 def test_add_history_records_bare_name_without_locals() -> None:

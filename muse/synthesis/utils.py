@@ -66,8 +66,11 @@ def _create_simple_vdem_block(
     per (x, y) column, so calling this per x-block and concatenating along ``x`` is exact.
     """
     cell_length = cell_length.astype(np.float32, copy=False)
-    velocity, temperature, ne_nh, velocity_axis, log_temperature_axis = [
-        q.astype(np.float32, copy=False) for q in [velocity, temperature, ne_nh, velocity_axis, log_temperature_axis]
+    # Dense-voxel ne_nh can exceed float32 max (~3.4e38 1/cm^6); apply the 1e27 units
+    # normalization while still float64 so neither this cast nor the LOS product overflows.
+    ne_nh = (ne_nh / 1e27).astype(np.float32, copy=False)
+    velocity, temperature, velocity_axis, log_temperature_axis = [
+        q.astype(np.float32, copy=False) for q in [velocity, temperature, velocity_axis, log_temperature_axis]
     ]
 
     n_velocity_bins = len(velocity_axis)
@@ -114,7 +117,7 @@ def _create_simple_vdem_block(
 
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
-        vdem[:, ::-1, :, :] / 1e27,
+        vdem[:, ::-1, :, :],
         dims=["logT", "vdop", "x", "y"],
         coords={
             "logT": log_temperature_axis,
@@ -178,7 +181,8 @@ def create_simple_vdem(
     ValueError
         If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
         shape, if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes.
+        corresponding axes, or if ``temperature``/``velocity``/``ne_nh`` contain
+        non-finite values.
 
     Notes
     -----
@@ -254,6 +258,10 @@ def create_simple_vdem(
             f"temperature dimensions {temperature.shape[:2]}"
         )
         raise ValueError(msg)
+    for name, cube in (("temperature", temperature), ("velocity", velocity), ("ne_nh", ne_nh)):
+        if not np.isfinite(cube).all():
+            msg = f"{name} contains non-finite values (NaN or inf)"
+            raise ValueError(msg)
     n_x_chunks = min(n_x_chunks, len(x))
 
     vdem_ds = xr.concat(

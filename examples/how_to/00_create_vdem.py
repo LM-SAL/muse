@@ -1,7 +1,7 @@
 """
-=============
-Create a VDEM
-=============
+==================
+00 - Create a VDEM
+==================
 
 This how-to demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
 
@@ -9,7 +9,6 @@ A VDEM contains the physical properties of the solar atmosphere (temperature, ve
 """
 
 import gc
-import os
 import contextlib
 from pathlib import Path
 
@@ -36,14 +35,15 @@ from muse.synthesis.utils import create_simple_vdem
 # To download the data, we will use `pooch <https://www.fatiando.org/pooch/latest/>`__.
 # To avoid downloading individual files, we will use a tar-ed snapshot.
 
-tar_path = pooch.retrieve(
+simulation_path = Path(pooch.os_cache("muse")) / "flare_nature_astro"
+pooch.retrieve(
     "https://www.dropbox.com/scl/fi/tpkscbv2jq0slpz5hbupe/flare_nature_astro.tar.gz?rlkey=egmnsk2u8y17sdx4d6rcl8brm&st=kllq9izh&e=1&dl=1",
     known_hash="4ddc37682e65ee343657929beb8ddc50f472411ebd9fca66ec6ee18afeaf68c9",
     fname="flare_nature_astro.tar.gz",
-    processor=pooch.Untar(),
+    path=simulation_path.parent,
+    processor=pooch.Untar(extract_dir=simulation_path.parent),
 )
 
-simulation_path = Path(os.path.commonpath(tar_path))
 # Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
 with contextlib.chdir(simulation_path):
     # In your case, you may need to change the snapshot number if you have your own simulation.

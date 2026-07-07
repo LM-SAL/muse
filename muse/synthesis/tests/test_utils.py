@@ -191,6 +191,40 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
 
 
+def test_create_simple_vdem_no_float32_overflow() -> None:
+    # Dense voxels: float64 ne_nh = 1e39 exceeds float32 max (~3.4e38), so both the float32
+    # input cast and the per-voxel LOS product must happen after the 1e27 units normalization.
+    inputs = _tiny_vdem_inputs()
+    inputs["ne_nh"] = np.full((2, 3, 2), 1e39, dtype=np.float64)
+    inputs["cell_length"] = np.full(2, 1e7, dtype=np.float32)
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    assert np.isfinite(result.vdem.values).all()
+    # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 1e39, contributing cell_length 2 -> 1e7.
+    # Scale the float32 expectation in float64 - the factor itself is above float32 max.
+    expected = _expected_tiny_vdem().astype(np.float64) * 1e39 * 1e7 / 2.0
+    np.testing.assert_allclose(result.vdem.values, expected, rtol=5e-6)
+
+
+@pytest.mark.parametrize(
+    ("field", "non_finite", "expected_message"),
+    [
+        ("ne_nh", np.inf, "ne_nh contains non-finite"),
+        ("ne_nh", np.nan, "ne_nh contains non-finite"),
+        ("temperature", np.inf, "temperature contains non-finite"),
+        ("temperature", np.nan, "temperature contains non-finite"),
+        ("velocity", np.inf, "velocity contains non-finite"),
+        ("velocity", np.nan, "velocity contains non-finite"),
+    ],
+)
+def test_create_simple_vdem_rejects_non_finite_input(field: str, non_finite: float, expected_message: str) -> None:
+    inputs = _tiny_vdem_inputs()
+    inputs[field] = inputs[field].copy()
+    inputs[field][0, 0, 0] = non_finite
+    with pytest.raises(ValueError, match=expected_message):
+        synthesis_utils.create_simple_vdem(**inputs)
+
+
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [

@@ -7,6 +7,7 @@ import datetime
 import importlib.util
 from collections.abc import Callable
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -282,8 +283,8 @@ def _attr_safe(value):
     """
     if isinstance(value, u.Quantity):
         return f"{value.value} {value.unit}" if value.isscalar else None
-    if isinstance(value, np.ndarray):
-        return value.tolist() if value.size <= 8 else None
+    if isinstance(value, np.ndarray | da.Array):
+        return value.tolist() if isinstance(value, np.ndarray) and value.size <= 8 else None
     if isinstance(value, bool):  # before int - netCDF4 attrs have no bool type, and bool is an int subclass
         return int(value)
     if isinstance(value, str | int | float):
@@ -332,10 +333,10 @@ def add_history(
                 continue
             if isinstance(value, u.Quantity):
                 string_vals.append(f"{arg}={value.value}")
-            elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray):
+            elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):
                 if isinstance(value, np.ndarray) and value.shape in [(), (1,)]:
                     string_vals.append(f"{arg}={value.tolist()}")
-                elif isinstance(value, xr.DataArray) and value.size == 1:
+                elif isinstance(value, xr.DataArray) and value.size == 1 and isinstance(value.data, np.ndarray):
                     string_vals.append(f"{arg}={value.values.tolist()}")
                 else:
                     string_vals.append(f"{arg}={arg}")
@@ -345,7 +346,7 @@ def add_history(
                 safe = _attr_safe(value)
                 if safe is not None:
                     ds.attrs[arg] = safe
-                elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset):
+                elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
                     # Drop Arrays/datasets silently; only warn for other types.
                     logger.warning(
                         f"Not storing keyword input {arg!r} as an attribute: a "
