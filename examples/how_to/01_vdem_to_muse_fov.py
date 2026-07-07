@@ -6,7 +6,6 @@ Matching a VDEM to MUSE's FOV
 This how-to demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
 """
 
-import gc
 import os
 from pathlib import Path
 
@@ -32,7 +31,7 @@ tar_path = pooch.retrieve(
     fname="muse_example_vdem.zarr.tar.gz",
     processor=pooch.Untar(),
 )
-vdem = xr.open_zarr(Path(os.path.commonpath(tar_path))).load()
+vdem = xr.open_zarr(Path(os.path.commonpath(tar_path)))
 
 ##############################################################################
 # First, let's print the VDEM to see what it looks like.
@@ -45,7 +44,7 @@ print(vdem)
 #
 # First we will match the MUSE FOV to the VDEM and compare them.
 #
-# MUSE has a specific field of view (FOV) of 35x11 arcsec:math:`^2`. The
+# MUSE has a specific field of view (FOV) of 35x11 arcsec^2. The
 # :func:`muse.transforms.match_fov` function crops or interpolates the VDEM to match this instrumental FOV. This ensures the synthetic observations accurately represent what MUSE would observe.
 
 vdem_muse_fov = match_fov(vdem)
@@ -53,8 +52,6 @@ vdem_muse_fov = match_fov(vdem)
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 vdem.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1), ax=ax1)
 vdem_muse_fov.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1), ax=ax2)
-del vdem
-gc.collect()
 
 ##############################################################################
 # Now we can also introduce the :func:`muse.transforms.reshape_x_to_slit_step` function to reshape the VDEM to match the MUSE slit step configuration.
@@ -64,8 +61,6 @@ gc.collect()
 # The result is a reshaped VDEM that can be used to create a synthetic MUSE observation.
 
 vdem_muse_fov_slit = reshape_x_to_slit_step(vdem_muse_fov)
-del vdem_muse_fov
-gc.collect()
 
 ##############################################################################
 # Now when we print the reshaped VDEM, we can see that it has been reshaped to
@@ -85,8 +80,6 @@ vdem_muse_fov_slit.isel(step=0).vdem.sum(dim=["logT", "vdop"]).plot(norm=colors.
 # the reshaped VDEM back to the original shape.
 
 vdem_muse_fov_original = reshape_slit_step_to_x(vdem_muse_fov_slit)
-del vdem_muse_fov_slit
-gc.collect()
 
 print(vdem_muse_fov_original)
 
