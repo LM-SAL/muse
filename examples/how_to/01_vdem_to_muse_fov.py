@@ -1,7 +1,7 @@
 """
-=============================
-Matching a VDEM to MUSE's FOV
-=============================
+==================================
+01 - Matching a VDEM to MUSE's FOV
+==================================
 
 This how-to demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
 """

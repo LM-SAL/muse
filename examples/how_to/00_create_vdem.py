@@ -1,7 +1,7 @@
 """
-=============
-Create a VDEM
-=============
+==================
+00 - Create a VDEM
+==================
 
 This how-to demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
 
@@ -41,7 +41,7 @@ pooch.retrieve(
     known_hash="4ddc37682e65ee343657929beb8ddc50f472411ebd9fca66ec6ee18afeaf68c9",
     fname="flare_nature_astro.tar.gz",
     path=simulation_path.parent,
-    processor=pooch.Untar(extract_dir=simulation_path.name),
+    processor=pooch.Untar(extract_dir=simulation_path.parent),
 )
 
 # Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
