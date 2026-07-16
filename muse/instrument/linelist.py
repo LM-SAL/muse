@@ -3,18 +3,16 @@
 import os
 import re
 import warnings
-from pathlib import Path
+from types import ModuleType
 from importlib import reload
 
 import numpy as np
 import xarray as xr
 
-from muse.log import logger
-
-__all__ = ["chianti_line_list", "get_line_list", "line_list_cache_path"]
+__all__ = ["create_chianti_line_list"]
 
 
-def chianti_line_list(
+def create_chianti_line_list(
     temperature: xr.DataArray,
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
@@ -23,7 +21,6 @@ def chianti_line_list(
     minimum_abundance: float | None = None,
     element_list: list[str] | None = None,
     ion_list: list[str] | None = None,
-    workers: int = 1,
 ) -> xr.Dataset:
     """
     Generate a line list with contribution functions using ChiantiPy.
@@ -49,9 +46,6 @@ def chianti_line_list(
     ion_list : `list` of `str`, optional
         CHIANTI ion names to include, such as ``"fe_9"``. Mutually exclusive
         with ``element_list`` and ``minimum_abundance``.
-    workers : `int`, optional
-        Number of CHIANTI worker processes. Values greater than one use
-        `ChiantiPy.core.ipymspectrum`; by default, one.
 
     Returns
     -------
@@ -63,27 +57,52 @@ def chianti_line_list(
     The ``XUVTOP`` environment variable must point to a local CHIANTI database.
     ChiantiPy's ``gui`` default is forced off for headless batch jobs.
     """
-    if density is None and pressure is None:
-        msg = "Specify density or pressure"
-        raise ValueError(msg)
-    if density is not None and pressure is not None:
-        msg = "density and pressure are mutually exclusive"
-        raise ValueError(msg)
-
-    _validate_positive_data_array(temperature, "temperature", dimension="logT")
-    plasma_name, plasma_grid = ("density", density) if density is not None else ("pressure", pressure)
-    _validate_positive_data_array(plasma_grid, plasma_name)
-
-    if not isinstance(workers, int) or isinstance(workers, bool):
-        msg = "workers must be an integer"
-        raise TypeError(msg)
-    if workers < 1:
-        msg = "workers must be at least one"
-        raise ValueError(msg)
-    wavelength_range = _validate_wavelength_range(wavelength_range)
+    wavelength_range = _validate_line_list_inputs(temperature, density, pressure, wavelength_range)
     element_list, ion_list = _normalize_species_selection(element_list, ion_list)
     _validate_species_selection(minimum_abundance, element_list, ion_list)
 
+    chiantipy_version, ch = _initialize_chianti()
+
+    if density is not None:
+        temperature_bc, density_bc = xr.broadcast(temperature, density)
+        extra_coord_name = density.dims[0]
+        extra_coord = np.log10(density.data)
+    else:
+        density_bc = pressure / temperature
+        temperature_bc = temperature.broadcast_like(density_bc)
+        extra_coord_name = pressure.dims[0]
+        extra_coord = pressure.data
+    temperature_flat = temperature_bc.data.reshape(-1)
+    density_flat = density_bc.data.reshape(-1)
+
+    chianti_kwargs = {
+        "em": 1.0,
+        "abundance": abundance,
+        "allLines": True,
+        "keepIons": True,
+        "minAbund": minimum_abundance,
+        "ionList": ion_list,
+        "elementList": element_list,
+    }
+    bunch = ch.bunch(temperature_flat, density_flat, wavelength_range, **chianti_kwargs)
+
+    line_list = _chianti_bunch_to_dataset(
+        bunch,
+        temperature=temperature,
+        temperature_bc=temperature_bc,
+        extra_coords={extra_coord_name: extra_coord},
+        abundance=abundance,
+        wavelength_range=wavelength_range,
+        chiantipy_version=chiantipy_version,
+    )
+    if element_list is not None:
+        line_list.attrs["element_list"] = ",".join(element_list)
+    if ion_list is not None:
+        line_list.attrs["ion_list"] = ",".join(ion_list)
+    return line_list
+
+
+def _initialize_chianti() -> tuple[str, ModuleType]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
@@ -92,7 +111,8 @@ def chianti_line_list(
             msg = "ChiantiPy is required for this function, install it with `pip install muse[chianti]`"
             raise ImportError(msg) from None
 
-    if "XUVTOP" not in os.environ:
+    xuvtop = os.environ.get("XUVTOP")
+    if xuvtop is None:
         msg = (
             "The XUVTOP environment variable is not set; ChiantiPy cannot locate the CHIANTI database. "
             "Point it at a local copy of the database, e.g. `export XUVTOP=/path/to/chianti/dbase` "
@@ -106,204 +126,28 @@ def chianti_line_list(
         warnings.simplefilter("ignore", RuntimeWarning)
         import ChiantiPy.tools.data as chdata  # noqa: PLC0415
 
-        if not hasattr(chdata, "Defaults") or chdata.Xuvtop != os.environ["XUVTOP"]:
+        if not hasattr(chdata, "Defaults") or getattr(chdata, "Xuvtop", None) != xuvtop:
             chdata = reload(chdata)
         import ChiantiPy.core as ch  # noqa: PLC0415
 
     if not hasattr(chdata, "Defaults"):
-        msg = f"ChiantiPy could not initialize the CHIANTI database at {os.environ['XUVTOP']}"
+        msg = f"ChiantiPy could not initialize the CHIANTI database at {xuvtop}"
         raise OSError(msg)
 
     chdata.Defaults["gui"] = False
-
-    if density is not None:
-        temperature_bc, density_bc = xr.broadcast(temperature, density)
-        temperature_flat = temperature_bc.data.reshape(-1)
-        density_flat = density_bc.data.reshape(-1)
-        extra_coord_name = density.dims[0]
-        extra_coord = np.log10(density.data)
-    else:
-        density = pressure / temperature
-        temperature_bc = temperature.broadcast_like(density)
-        density_flat = density.data.reshape(-1)
-        temperature_flat = temperature_bc.data.reshape(-1)
-        extra_coord_name = pressure.dims[0]
-        extra_coord = pressure.data
-
-    kwargs = {
-        "em": 1.0,
-        "abundance": abundance,
-        "allLines": True,
-        "keepIons": True,
-        "minAbund": minimum_abundance,
-        "ionList": ion_list,
-        "elementList": element_list,
-    }
-    if workers == 1:
-        bunch = ch.bunch(temperature_flat, density_flat, wavelength_range, **kwargs)
-    else:
-        from ipyparallel import Cluster  # noqa: PLC0415
-
-        cluster = Cluster(n=workers, cluster_id="")
-        client = cluster.start_and_connect_sync()
-        logger.info(f"Calculating line list with {len(client.ids)} CHIANTI workers")
-        try:
-            bunch = ch.ipymspectrum(
-                temperature_flat,
-                density_flat,
-                wavelength_range,
-                doContinuum=False,
-                **kwargs,
-            )
-        finally:
-            cluster.stop_cluster_sync()
-
-    line_list = _dataset_from_chianti_bunch(
-        bunch,
-        temperature,
-        temperature_bc,
-        {extra_coord_name: extra_coord},
-        abundance,
-        wavelength_range,
-        ChiantiPy.__version__,
-    )
-    if element_list is not None:
-        line_list.attrs["element_list"] = ",".join(element_list)
-    if ion_list is not None:
-        line_list.attrs["ion_list"] = ",".join(ion_list)
-    return line_list
+    return ChiantiPy.__version__, ch
 
 
-def line_list_cache_path(
-    output_dir: Path,
-    abundance: str,
-    wavelength_range,
-    *,
-    density_dependent: bool = False,
-    element_list: list[str] | None = None,
-    ion_list: list[str] | None = None,
-) -> Path:
-    """Return the canonical cache path used by `get_line_list`."""
-    wavelength_range = _validate_wavelength_range(wavelength_range)
-    element_list, ion_list = _normalize_species_selection(element_list, ion_list)
-    prefix = "ll_wvl_eDens" if density_dependent else "ll_wvl"
-    lower, upper = (_format_wavelength_bound(bound) for bound in wavelength_range)
-    restriction = ""
-    if element_list is not None:
-        restriction = f"_elements-{'-'.join(element_list)}"
-    if ion_list is not None:
-        restriction = f"_ions-{'-'.join(ion_list)}"
-    return Path(output_dir) / f"{prefix}{lower}_{upper}_{abundance}{restriction}.ncdf"
-
-
-def get_line_list(
-    *,
-    output_dir: Path,
-    abundance: str,
-    wavelength_range,
-    temperature: xr.DataArray,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
-    minimum_abundance: float | None = None,
-    element_list: list[str] | None = None,
-    ion_list: list[str] | None = None,
-    line_list_file: Path | None = None,
-    compute_if_missing: bool = True,
-    workers: int = 1,
-) -> xr.Dataset:
-    """
-    Load a cached CHIANTI line list, computing and caching it when absent.
-
-    Cache writes use a temporary file and atomic replace so concurrent tasks
-    cannot observe a partially written dataset.
-
-    Parameters
-    ----------
-    output_dir : `pathlib.Path`
-        Directory containing cached line lists.
-    abundance : `str`
-        CHIANTI abundance name.
-    wavelength_range : array-like
-        Two-element wavelength range in Angstroms.
-    temperature : `xarray.DataArray`
-        Temperature grid in K with a ``logT`` dimension.
-    pressure, density : `xarray.DataArray`, optional
-        Electron pressure or density grid; mutually exclusive.
-    minimum_abundance : `float`, optional
-        Minimum elemental abundance to keep.
-    element_list : `list` of `str`, optional
-        CHIANTI element symbols to include. Mutually exclusive with
-        ``ion_list`` and ``minimum_abundance``.
-    ion_list : `list` of `str`, optional
-        CHIANTI ion names to include, such as ``"fe_9"``. Mutually exclusive
-        with ``element_list`` and ``minimum_abundance``.
-    line_list_file : `pathlib.Path`, optional
-        Explicit line-list file, bypassing the derived cache name.
-    compute_if_missing : `bool`, optional
-        If `False`, raise instead of computing a missing cache.
-    workers : `int`, optional
-        Number of CHIANTI worker processes used when computing; by default,
-        one.
-
-    Returns
-    -------
-    `xarray.Dataset`
-        The loaded or computed line list.
-    """
-    element_list, ion_list = _normalize_species_selection(element_list, ion_list)
-    _validate_species_selection(minimum_abundance, element_list, ion_list)
-    if line_list_file is not None and (element_list is not None or ion_list is not None):
-        msg = "element_list and ion_list cannot be used with an explicit line_list_file"
-        raise ValueError(msg)
-
-    cache_path = (
-        Path(line_list_file)
-        if line_list_file is not None
-        else line_list_cache_path(
-            output_dir,
-            abundance,
-            wavelength_range,
-            density_dependent=density is not None,
-            element_list=element_list,
-            ion_list=ion_list,
-        )
-    )
-    if line_list_file is not None or cache_path.exists():
-        logger.info(f"Loading line list from {cache_path}")
-        return _load_dataset(cache_path)
-
-    if not compute_if_missing:
-        msg = f"line-list cache {cache_path} does not exist; run the line-list preparation step first"
-        raise FileNotFoundError(msg)
-
-    logger.info("Calculating line list")
-    line_list = chianti_line_list(
-        temperature=temperature,
-        pressure=pressure,
-        density=density,
-        abundance=abundance,
-        wavelength_range=wavelength_range,
-        minimum_abundance=minimum_abundance,
-        element_list=element_list,
-        ion_list=ion_list,
-        workers=workers,
-    )
-
-    tmp_path = cache_path.with_name(f"{cache_path.name}.tmp{os.getpid()}")
-    _save_compressed_netcdf(tmp_path, line_list)
-    tmp_path.replace(cache_path)
-    return line_list
-
-
-def _dataset_from_chianti_bunch(
+def _chianti_bunch_to_dataset(
     bunch,
-    temperature,
-    temperature_bc,
-    extra_coords,
-    abundance,
-    wavelength_range,
-    chiantipy_version,
-):
+    *,
+    temperature: xr.DataArray,
+    temperature_bc: xr.DataArray,
+    extra_coords: dict[str, np.ndarray],
+    abundance: str | None,
+    wavelength_range: tuple[float, float],
+    chiantipy_version: str,
+) -> xr.Dataset:
     import ChiantiPy.tools.io as chio  # noqa: PLC0415
 
     per_transition = {
@@ -338,17 +182,27 @@ def _dataset_from_chianti_bunch(
     return line_list.isel(trans_index=in_range)
 
 
-def _save_compressed_netcdf(path: Path, dataset: xr.Dataset) -> None:
-    encoding = {key: {"zlib": True, "complevel": 5} for key in dataset.data_vars}
-    dataset.to_netcdf(path, encoding=encoding, mode="w", engine="h5netcdf")
+def _validate_line_list_inputs(
+    temperature: xr.DataArray,
+    density: xr.DataArray | None,
+    pressure: xr.DataArray | None,
+    wavelength_range,
+) -> tuple[float, float]:
+    if density is None and pressure is None:
+        msg = "Specify density or pressure"
+        raise ValueError(msg)
+    if density is not None and pressure is not None:
+        msg = "density and pressure are mutually exclusive"
+        raise ValueError(msg)
+
+    _validate_positive_data_array(temperature, "temperature", dimension="logT")
+    plasma_name, plasma_grid = ("density", density) if density is not None else ("pressure", pressure)
+    _validate_positive_data_array(plasma_grid, plasma_name)
+
+    return _validate_wavelength_range(wavelength_range)
 
 
-def _load_dataset(path: Path) -> xr.Dataset:
-    with xr.open_dataset(path, engine="h5netcdf") as dataset:
-        return dataset.load()
-
-
-def _validate_wavelength_range(wavelength_range):
+def _validate_wavelength_range(wavelength_range) -> tuple[float, float]:
     try:
         values = np.asarray(wavelength_range, dtype=float)
     except (TypeError, ValueError):
@@ -367,7 +221,7 @@ def _validate_wavelength_range(wavelength_range):
     return float(lower), float(upper)
 
 
-def _validate_positive_data_array(values, name, *, dimension=None):
+def _validate_positive_data_array(values, name: str, *, dimension: str | None = None) -> None:
     if not isinstance(values, xr.DataArray):
         msg = f"{name} must be an xarray.DataArray"
         raise TypeError(msg)
@@ -388,10 +242,6 @@ def _validate_positive_data_array(values, name, *, dimension=None):
     if np.any(values.data <= 0):
         msg = f"{name} must contain only positive values"
         raise ValueError(msg)
-
-
-def _format_wavelength_bound(bound):
-    return f"{float(bound):g}"
 
 
 def _normalize_species_selection(element_list, ion_list):

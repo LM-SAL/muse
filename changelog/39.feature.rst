@@ -1,2 +1,2 @@
-Add CHIANTI line-list generation and caching, including optional ion and
-element restrictions.
+Add CHIANTI line-list generation, including optional ion and element
+restrictions.

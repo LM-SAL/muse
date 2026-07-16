@@ -77,7 +77,7 @@ jobs:
           python -m pip install --editable '.[chianti]' \
             pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
       - name: Test live CHIANTI line-list generation
-        run: python -m pytest muse/instrument/tests/test_linelist.py::test_line_list_live -q
+        run: python -m pytest muse/instrument/tests/test_linelist.py::test_create_chianti_line_list_live -q
       - name: Save CHIANTI 11.0.2 database
         if: |
           steps.cache-chianti.outputs.cache-hit != 'true' &&
