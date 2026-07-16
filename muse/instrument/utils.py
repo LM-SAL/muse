@@ -117,7 +117,8 @@ def read_response(
     gain_unit = u.electron / u.DN
     gain = gain.to(gain_unit)
     gain_dim = "channel" if "channel" in r.dims else "line"
-    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.value)))
+    gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
+    r = r.assign_coords(gain=(gain_dim, gain_values))
     r.gain.attrs["units"] = str(gain_unit)
 
     # The current response files carry no wavelength units; warn and assume Angstrom for now.
@@ -197,7 +198,8 @@ def load_and_concat_responses(
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
     channels : `Sequence` of `int`
-        Channel values to assign; length must equal ``len(response_files)``.
+        One channel value per response file. The value is repeated for every
+        line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
     vdop : `xarray.DataArray`, optional
@@ -228,16 +230,20 @@ def load_and_concat_responses(
         raise ValueError(msg)
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
-        datasets = [
-            read_response(
-                Path(response_directory) / f,
+        datasets = []
+        for filename in response_files:
+            dataset = read_response(
+                Path(response_directory) / filename,
                 logT=logT,
                 vdop=vdop,
                 slit=slit,
                 logT_method=logT_method,
                 vdop_method=vdop_method,
             ).drop_vars("effective_area", errors="ignore")
-            for f in response_files
-        ]
+            unused_dims = [dim for dim in dataset.dims if dim not in dataset.SG_resp.dims]
+            datasets.append(dataset.drop_dims(unused_dims))
         response = xr.concat(datasets, dim="line", coords="different", compat="equals")
-    return response.assign_coords(channel=("line", list(channels)))
+    line_channels = [
+        channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
+    ]
+    return response.assign_coords(channel=("line", line_channels))

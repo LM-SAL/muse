@@ -175,7 +175,21 @@ def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
 
 
 def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
-    first = fake_response_file()
+    first = xr.concat(
+        [
+            fake_response_file().assign_coords(
+                line=("line", ["Fe XIX 108.355"]),
+                line_wvl=("line", [108.355]),
+                channel=("line", [108]),
+            ),
+            fake_response_file().assign_coords(
+                line=("line", ["Fe XXI 108.117"]),
+                line_wvl=("line", [108.117]),
+                channel=("line", [108]),
+            ),
+        ],
+        dim="line",
+    )
     second = fake_response_file().assign_coords(
         line=("line", ["Fe XV 284.163"]),
         line_wvl=("line", [284.163]),
@@ -191,12 +205,14 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         vdop=_axis([-100.0, 0.0, 100.0], "vdop"),
         slit=_slit(3),
         logT_method="nearest",
-        channels=[171, 284],
+        channels=[108, 284],
     )
 
-    assert resp.sizes["line"] == 2
-    np.testing.assert_array_equal(resp.channel.values, [171, 284])
+    assert resp.sizes["line"] == 3
+    np.testing.assert_array_equal(resp.channel.values, [108, 108, 284])
+    np.testing.assert_array_equal(resp.gain.values, np.full(3, DEFAULTS_MUSE.ccd_gain.value))
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
+    assert "wavelength" not in resp.dims
     assert "SG_resp" in resp.data_vars
 
 

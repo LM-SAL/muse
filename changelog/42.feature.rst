@@ -1,0 +1,2 @@
+Add ``map_response_to_sg_detector`` to convert unit-bearing spectral responses
+into MUSE slit and detector geometry ready for synthesis.
