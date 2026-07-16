@@ -42,7 +42,7 @@ jobs:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   chianti:
-    name: CHIANTI database smoke test
+    name: CHIANTI line-list integration test
     if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
     env:
@@ -71,12 +71,12 @@ jobs:
             --file "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
             --directory "${XUVTOP}"
           test -f "${XUVTOP}/ip/chianti.ip"
-      - name: Install response-test dependencies
+      - name: Install line-list test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install --editable '.[chianti]' \
             pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
-      - name: Test the live CHIANTI line-list path
+      - name: Test live CHIANTI line-list generation
         run: python -m pytest muse/instrument/tests/test_linelist.py::test_line_list_live -q
       - name: Save CHIANTI 11.0.2 database
         if: |

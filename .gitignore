@@ -282,4 +282,3 @@ benchmark/test*py
 # TODO: remove in the future
 muse/_compiler.c
 uv.lock
-chianti_line_list_cache/
