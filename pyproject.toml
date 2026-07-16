@@ -32,7 +32,14 @@ dependencies = [
   "numpy>=2.4.0",
   "xarray[io,parallel]>=2026.4.0",
 ]
-optional-dependencies.all = ["muse[jax,torch]"]
+optional-dependencies.all = ["muse[chianti,jax,torch]"]
+optional-dependencies.chianti = [
+  "ChiantiPy>=0.15.0",
+  "h5netcdf",
+  "ipyparallel",
+  "numexpr",
+  "periodictable",
+]
 optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
@@ -46,7 +53,7 @@ optional-dependencies.docs = [
   "sphinx-copybutton",
   "sphinx-design",
   "sphinx-gallery",
-  "memory_profiler", # for sphinx-gallery memory usage
+  "memory_profiler",  # for sphinx-gallery memory usage
   "sphinxext-opengraph",
 ]
 optional-dependencies.jax = ["jax>=0.10.2"]

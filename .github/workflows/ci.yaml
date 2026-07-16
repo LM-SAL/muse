@@ -41,6 +41,54 @@ jobs:
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  chianti:
+    name: CHIANTI database smoke test
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    env:
+      XUVTOP: ${{ github.workspace }}/.chianti/CHIANTI_11.0.2_database
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.13'
+      - name: Restore CHIANTI 11.0.2 database
+        id: cache-chianti
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .chianti/CHIANTI_11.0.2_database
+          key: chianti-database-${{ runner.os }}-11.0.2
+      - name: Download CHIANTI 11.0.2 database
+        if: steps.cache-chianti.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${XUVTOP}"
+          curl --fail --location --retry 3 \
+            --output "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
+            https://download.chiantidatabase.org/CHIANTI_11.0.2_database.tar.gz
+          tar --extract --gzip \
+            --file "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
+            --directory "${XUVTOP}"
+          test -f "${XUVTOP}/ip/chianti.ip"
+      - name: Install response-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --editable '.[chianti]' \
+            pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
+      - name: Test the live CHIANTI line-list path
+        run: python -m pytest muse/instrument/tests/test_linelist.py::test_line_list_live -q
+      - name: Save CHIANTI 11.0.2 database
+        if: |
+          steps.cache-chianti.outputs.cache-hit != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .chianti/CHIANTI_11.0.2_database
+          key: ${{ steps.cache-chianti.outputs.cache-primary-key }}
+
   sdist_verify:
     runs-on: ubuntu-latest
     steps:
