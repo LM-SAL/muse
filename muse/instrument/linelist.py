@@ -63,13 +63,18 @@ def chianti_line_list(
     The ``XUVTOP`` environment variable must point to a local CHIANTI database.
     ChiantiPy's ``gui`` default is forced off for headless batch jobs.
     """
-    if (density is None) == (pressure is None):
-        msg = "Specify exactly one of density or pressure"
+    if density is None and pressure is None:
+        msg = "Specify density or pressure"
         raise ValueError(msg)
-    if not isinstance(temperature, xr.DataArray):
-        msg = "temperature must be an xarray.DataArray with a logT dimension"
-        raise TypeError(msg)
-    if isinstance(workers, bool) or not isinstance(workers, int):
+    if density is not None and pressure is not None:
+        msg = "density and pressure are mutually exclusive"
+        raise ValueError(msg)
+
+    _validate_positive_data_array(temperature, "temperature", dimension="logT")
+    plasma_name, plasma_grid = ("density", density) if density is not None else ("pressure", pressure)
+    _validate_positive_data_array(plasma_grid, plasma_name)
+
+    if not isinstance(workers, int) or isinstance(workers, bool):
         msg = "workers must be an integer"
         raise TypeError(msg)
     if workers < 1:
@@ -345,11 +350,44 @@ def _load_dataset(path: Path) -> xr.Dataset:
 
 def _validate_wavelength_range(wavelength_range):
     try:
-        lower, upper = wavelength_range
+        values = np.asarray(wavelength_range, dtype=float)
     except (TypeError, ValueError):
         msg = "wavelength_range must contain exactly two values"
         raise ValueError(msg) from None
-    return lower, upper
+    if values.shape != (2,):
+        msg = "wavelength_range must contain exactly two values"
+        raise ValueError(msg)
+    if not np.all(np.isfinite(values)):
+        msg = "wavelength_range must contain only finite values"
+        raise ValueError(msg)
+    lower, upper = values
+    if lower >= upper:
+        msg = "wavelength_range must be in increasing order"
+        raise ValueError(msg)
+    return float(lower), float(upper)
+
+
+def _validate_positive_data_array(values, name, *, dimension=None):
+    if not isinstance(values, xr.DataArray):
+        msg = f"{name} must be an xarray.DataArray"
+        raise TypeError(msg)
+    expected_dims = (dimension,) if dimension is not None else None
+    if (expected_dims is not None and values.dims != expected_dims) or (expected_dims is None and values.ndim != 1):
+        qualifier = f"one-dimensional {dimension}" if dimension is not None else "one-dimensional"
+        msg = f"{name} must be a {qualifier} array"
+        raise ValueError(msg)
+    if values.size == 0:
+        msg = f"{name} must not be empty"
+        raise ValueError(msg)
+    if not np.issubdtype(values.dtype, np.number):
+        msg = f"{name} must contain numeric values"
+        raise TypeError(msg)
+    if not np.all(np.isfinite(values.data)):
+        msg = f"{name} must contain only finite values"
+        raise ValueError(msg)
+    if np.any(values.data <= 0):
+        msg = f"{name} must contain only positive values"
+        raise ValueError(msg)
 
 
 def _format_wavelength_bound(bound):

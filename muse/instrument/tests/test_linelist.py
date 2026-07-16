@@ -114,20 +114,64 @@ def test_get_line_list_missing_raises(tmp_path, fake_linelist):
         )
 
 
-def test_rejects_both_density_and_pressure():
+def test_rejects_missing_density_and_pressure():
     temperature = xr.DataArray([1e6], dims="logT")
-    grid = xr.DataArray([1e9], dims="density")
-    with pytest.raises(ValueError, match="exactly one"):
-        chianti_line_list(temperature, density=grid, pressure=grid)
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="Specify density or pressure"):
         chianti_line_list(temperature)
 
 
-def test_rejects_missing_wavelength_range():
+def test_rejects_both_density_and_pressure():
+    temperature = xr.DataArray([1e6], dims="logT")
+    grid = xr.DataArray([1e9], dims="density")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        chianti_line_list(temperature, density=grid, pressure=grid)
+
+
+@pytest.mark.parametrize(
+    ("temperature", "error", "error_type"),
+    [
+        (np.array([1e6]), "xarray.DataArray", TypeError),
+        (xr.DataArray([1e6], dims="temperature"), "one-dimensional logT", ValueError),
+        (xr.DataArray([], dims="logT"), "not be empty", ValueError),
+        (xr.DataArray(["hot"], dims="logT"), "numeric", TypeError),
+        (xr.DataArray([np.nan], dims="logT"), "finite", ValueError),
+        (xr.DataArray([0.0], dims="logT"), "positive", ValueError),
+    ],
+)
+def test_rejects_invalid_temperature(temperature, error, error_type):
+    pressure = xr.DataArray([3e15], dims="pressure")
+    with pytest.raises(error_type, match=error):
+        chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172))
+
+
+@pytest.mark.parametrize(
+    ("pressure", "error", "error_type"),
+    [
+        ([3e15], "xarray.DataArray", TypeError),
+        (xr.DataArray([[3e15]], dims=("pressure", "sample")), "one-dimensional", ValueError),
+        (xr.DataArray([np.nan], dims="pressure"), "finite", ValueError),
+        (xr.DataArray([0.0], dims="pressure"), "positive", ValueError),
+    ],
+)
+def test_rejects_invalid_plasma_grid(pressure, error, error_type):
+    temperature = xr.DataArray([1e6], dims="logT")
+    with pytest.raises(error_type, match=error):
+        chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172))
+
+
+@pytest.mark.parametrize(
+    ("wavelength_range", "error"),
+    [
+        (None, "exactly two"),
+        ((170, np.nan), "finite"),
+        ((172, 170), "in increasing order"),
+    ],
+)
+def test_rejects_invalid_wavelength_range(wavelength_range, error):
     temperature = xr.DataArray([1e6], dims="logT")
     pressure = xr.DataArray([3e15], dims="pressure")
-    with pytest.raises(ValueError, match="wavelength_range"):
-        chianti_line_list(temperature, pressure=pressure)
+    with pytest.raises(ValueError, match=error):
+        chianti_line_list(temperature, pressure=pressure, wavelength_range=wavelength_range)
 
 
 @pytest.mark.parametrize(
