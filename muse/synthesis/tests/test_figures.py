@@ -9,7 +9,9 @@ from muse.transforms.transforms import reshape_x_to_slit_step
 
 @figure_test
 def test_vdem_synthesis_detector_spectrum(response, vdem):
-    """Synthesized detector spectrum (flux vs SG_xpixel) per line at the brightest y/step."""
+    """
+    Synthesized detector spectrum (flux vs SG_xpixel) per line at the brightest y/step.
+    """
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     flux = vdem_synthesis(reshaped_vdem, response).flux
     brightest = flux.sum(dim=["line", "SG_xpixel"])
@@ -22,7 +24,9 @@ def test_vdem_synthesis_detector_spectrum(response, vdem):
 
 @figure_test
 def test_vdem_synthesis_fov(response, vdem):
-    """Synthesized total-flux FOV: slit-summed (y, step) vs full-resolution (y, x)."""
+    """
+    Synthesized total-flux FOV: slit-summed (y, step) vs full-resolution (y, x).
+    """
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     # Default sum_over collapses slit -> coarse (y, step) field.
     collapsed = vdem_synthesis(reshaped_vdem, response).flux.sum(dim=["line", "SG_xpixel"])
@@ -40,7 +44,10 @@ def test_vdem_synthesis_fov(response, vdem):
 
 @figure_test
 def test_vdem_synthesis_doppler_shift(response):
-    """Line-0 spectra synthesized at vdop -300/0/+300 km/s march across wavelength about the rest line."""
+    """
+    Line-0 spectra synthesized at vdop -300/0/+300 km/s march across wavelength about
+    the rest line.
+    """
     fig, ax = plt.subplots()
     for vdop_kms in (-300.0, 0.0, 300.0):
         reshaped_vdem = reshape_x_to_slit_step(fake_vdem_single_vdop(vdop_kms), nslits=35, nraster=11)
@@ -58,7 +65,9 @@ def test_vdem_synthesis_doppler_shift(response):
 
 @figure_test
 def test_calculate_moments_maps(response, vdem):
-    """0th/1st/2nd moment maps over (y, step) for line 0 at the central slit."""
+    """
+    0th/1st/2nd moment maps over (y, step) for line 0 at the central slit.
+    """
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     spectrum = wavelength_to_doppler(vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop")))
     moments = calculate_moments(spectrum).isel(line=0, slit=17)

@@ -1,4 +1,6 @@
-"""CHIANTI line lists with contribution functions (GOFNT)."""
+"""
+CHIANTI line lists with contribution functions (GOFNT).
+"""
 
 import os
 import re

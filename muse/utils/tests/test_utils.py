@@ -54,7 +54,9 @@ def test_resolve_backend_accelerator_not_installed_raises(monkeypatch) -> None:
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):
-    """Record a call on ``ds`` so its keyword inputs are stored as attributes."""
+    """
+    Record a call on ``ds`` so its keyword inputs are stored as attributes.
+    """
     add_history(ds, locals(), _record)
     return ds
 

@@ -174,8 +174,8 @@ def vdem_synthesis(
     backend: str = "numpy",
 ) -> xr.Dataset:
     """
-    Given a VDEM raster, and response function(s) synthesize observables by
-    computing the tensor product.
+    Given a VDEM raster, and response function(s) synthesize observables by computing
+    the tensor product.
 
     Parameters
     ----------

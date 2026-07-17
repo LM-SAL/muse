@@ -26,8 +26,9 @@ class FrozenDict(dict):
 
     Unlike `types.MappingProxyType`, instances are picklable, which keeps frozen
     defaults usable with multiprocessing. The mapping itself stays read-only across a
-    pickle round-trip, but numpy or `astropy.units.Quantity` values it holds regain their writable flag
-    on unpickle; this is harmless because each process operates on its own copy.
+    pickle round-trip, but numpy or `astropy.units.Quantity` values it holds regain
+    their writable flag on unpickle; this is harmless because each process operates on
+    its own copy.
     """
 
     def _readonly(self, *_args, **_kwargs):
@@ -196,8 +197,8 @@ def _mapping_values_equal(a, b):
     """
     Compare two mappings whose values may be arrays.
 
-    Values are compared with `numpy.array_equal`, which ignores units; safe here
-    because the converters normalize units before storage.
+    Values are compared with `numpy.array_equal`, which ignores units; safe here because
+    the converters normalize units before storage.
     """
     return a.keys() == b.keys() and all(np.array_equal(a[key], b[key]) for key in a)
 
