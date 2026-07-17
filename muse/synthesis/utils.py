@@ -5,7 +5,7 @@ import xarray as xr
 import astropy.units as u
 from astropy.constants import c as speed_of_light
 
-from muse import logger
+from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
