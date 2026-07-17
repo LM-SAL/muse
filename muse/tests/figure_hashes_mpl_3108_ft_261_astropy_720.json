@@ -1,4 +1,7 @@
 {
+  "muse.instrument.tests.test_figures.test_spectral_response_doppler_profiles": "699b8e2612438b35511d887c44d79b0969fd389af0f42d066550615846412b84",
+  "muse.instrument.tests.test_figures.test_spectral_response_broadening_profiles": "e9c712acaa5cb29ea62ed92f94529d128cc48bd87326e6731b9cb2c6ff91d009",
+  "muse.instrument.tests.test_figures.test_spectral_response_effective_area_cutoff": "95c8b4b260df8bb7dd7d270519986666c00e2c4898af1f8b86c8e8a4aea82948",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "adf8cff0fef723eda6a3eabfb69c227a690460c2dbb62e1fe9bf2ae661e86bb0",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "95c27a38291a9a2c5135b71dae3a5881128231092cf487739ac6d08d6181b995",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "9090f3b913a7c785ec038c6e6a01dde844e537bc47fbeeb53ee5750eec4646b4",
