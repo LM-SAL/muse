@@ -5,18 +5,21 @@ import numpy as np
 import pytest
 import xarray as xr
 
+import astropy.units as u
+
+from muse.instrument import linelist
 from muse.instrument.linelist import create_chianti_line_list
 
 
 def test_rejects_missing_density_and_pressure():
-    temperature = xr.DataArray([1e6], dims="logT")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     with pytest.raises(ValueError, match="Specify density or pressure"):
         create_chianti_line_list(temperature)
 
 
 def test_rejects_both_density_and_pressure():
-    temperature = xr.DataArray([1e6], dims="logT")
-    grid = xr.DataArray([1e9], dims="density")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    grid = xr.DataArray([1e9] / u.cm**3, dims="density")
     with pytest.raises(ValueError, match="mutually exclusive"):
         create_chianti_line_list(temperature, density=grid, pressure=grid)
 
@@ -24,48 +27,53 @@ def test_rejects_both_density_and_pressure():
 @pytest.mark.parametrize(
     ("temperature", "error", "error_type"),
     [
-        (np.array([1e6]), "xarray.DataArray", TypeError),
-        (xr.DataArray([1e6], dims="temperature"), "one-dimensional logT", ValueError),
-        (xr.DataArray([], dims="logT"), "not be empty", ValueError),
-        (xr.DataArray(["hot"], dims="logT"), "numeric", TypeError),
-        (xr.DataArray([np.nan], dims="logT"), "finite", ValueError),
-        (xr.DataArray([0.0], dims="logT"), "positive", ValueError),
+        (np.array([1e6]) * u.K, "xarray.DataArray", TypeError),
+        (xr.DataArray([1e6] * u.K, dims="temperature"), "one-dimensional logT", ValueError),
+        (xr.DataArray([] * u.K, dims="logT"), "not be empty", ValueError),
+        (xr.DataArray([1e6], dims="logT"), "astropy.units.Quantity", TypeError),
+        (xr.DataArray([np.nan] * u.K, dims="logT"), "finite", ValueError),
+        (xr.DataArray([0.0] * u.K, dims="logT"), "positive", ValueError),
+        (xr.DataArray([1e6] * u.m, dims="logT"), "convertible", ValueError),
     ],
 )
 def test_rejects_invalid_temperature(temperature, error, error_type):
-    pressure = xr.DataArray([3e15], dims="pressure")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(error_type, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172))
+        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
     ("pressure", "error", "error_type"),
     [
-        ([3e15], "xarray.DataArray", TypeError),
-        (xr.DataArray([[3e15]], dims=("pressure", "sample")), "one-dimensional", ValueError),
-        (xr.DataArray([np.nan], dims="pressure"), "finite", ValueError),
-        (xr.DataArray([0.0], dims="pressure"), "positive", ValueError),
+        ([3e15] * u.K / u.cm**3, "xarray.DataArray", TypeError),
+        (xr.DataArray([[3e15]] * u.K / u.cm**3, dims=("pressure", "sample")), "one-dimensional", ValueError),
+        (xr.DataArray([3e15], dims="pressure"), "astropy.units.Quantity", TypeError),
+        (xr.DataArray([np.nan] * u.K / u.cm**3, dims="pressure"), "finite", ValueError),
+        (xr.DataArray([0.0] * u.K / u.cm**3, dims="pressure"), "positive", ValueError),
+        (xr.DataArray([3e15] * u.m, dims="pressure"), "convertible", ValueError),
     ],
 )
 def test_rejects_invalid_plasma_grid(pressure, error, error_type):
-    temperature = xr.DataArray([1e6], dims="logT")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     with pytest.raises(error_type, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172))
+        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
-    ("wavelength_range", "error"),
+    ("wavelength_range", "error", "error_type"),
     [
-        (None, "exactly two"),
-        ((170, np.nan), "finite"),
-        ((172, 170), "in increasing order"),
+        (None, "astropy.units.Quantity", TypeError),
+        ([170] * u.AA, "exactly two", ValueError),
+        ([170, np.nan] * u.AA, "finite", ValueError),
+        ([172, 170] * u.AA, "in increasing order", ValueError),
+        ([170, 172] * u.s, "convertible", ValueError),
     ],
 )
-def test_rejects_invalid_wavelength_range(wavelength_range, error):
-    temperature = xr.DataArray([1e6], dims="logT")
-    pressure = xr.DataArray([3e15], dims="pressure")
-    with pytest.raises(ValueError, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=wavelength_range)
+def test_rejects_invalid_wavelength_range(wavelength_range, error, error_type):
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+    with pytest.raises(error_type, match=error):
+        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=wavelength_range, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
@@ -78,34 +86,79 @@ def test_rejects_invalid_wavelength_range(wavelength_range, error):
     ],
 )
 def test_rejects_invalid_species_selection(kwargs, error):
-    temperature = xr.DataArray([1e6], dims="logT")
-    pressure = xr.DataArray([3e15], dims="pressure")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(ValueError, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172), **kwargs)
+        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("minimum_abundance", "error", "error_type"),
+    [
+        (None, "Specify minimum_abundance", ValueError),
+        (True, "real number", TypeError),
+        (0, "finite and positive", ValueError),
+        (np.inf, "finite and positive", ValueError),
+    ],
+)
+def test_rejects_invalid_minimum_abundance(minimum_abundance, error, error_type):
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+    with pytest.raises(error_type, match=error):
+        create_chianti_line_list(
+            temperature,
+            pressure=pressure,
+            wavelength_range=[170, 172] * u.AA,
+            minimum_abundance=minimum_abundance,
+        )
+
+
+def test_converts_units_for_chianti(monkeypatch):
+    captured = {}
+
+    class FakeChianti:
+        @staticmethod
+        def bunch(temperature, density, wavelength_range, **kwargs):
+            captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
+            return object()
+
+    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
+    monkeypatch.setattr(linelist, "_chianti_bunch_to_dataset", lambda *_args, **_kwargs: xr.Dataset())
+
+    create_chianti_line_list(
+        xr.DataArray([1] * u.MK, dims="logT"),
+        pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+        wavelength_range=[17, 17.2] * u.nm,
+        minimum_abundance=np.float64(1e-5),
+    )
+
+    np.testing.assert_allclose(captured["temperature"], [1e6])
+    np.testing.assert_allclose(captured["density"], [3e9])
+    np.testing.assert_allclose(captured["wavelength_range"], [170, 172])
+    assert type(captured["minAbund"]) is float
 
 
 def test_missing_xuvtop_raises(monkeypatch):
-    pytest.importorskip("ChiantiPy")
     monkeypatch.delenv("XUVTOP", raising=False)
-    temperature = xr.DataArray([1e6], dims="logT")
-    pressure = xr.DataArray([3e15], dims="pressure")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(OSError, match="XUVTOP"):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=(170, 172))
+        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
-@pytest.mark.skipif(os.environ.get("XUVTOP") is None, reason="CHIANTI database (XUVTOP) not available")
+@pytest.mark.remote_data
 def test_create_chianti_line_list_live(monkeypatch):
-    pytest.importorskip("ChiantiPy")
+    assert os.environ.get("XUVTOP")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         import ChiantiPy.tools.data as chdata  # noqa: PLC0415
 
     monkeypatch.delattr(chdata, "Defaults")
-    temperature = 10 ** xr.DataArray(np.arange(5.6, 6.2, 0.2), dims="logT")
-    pressure = xr.DataArray([3e15], dims="pressure")
+    temperature = xr.DataArray(10 ** np.arange(5.6, 6.2, 0.2) * u.K, dims="logT")
+    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     line_list = create_chianti_line_list(
         abundance="sun_coronal_2021_chianti",
-        wavelength_range=(170, 172),
+        wavelength_range=[170, 172] * u.AA,
         temperature=temperature,
         pressure=pressure,
         ion_list=["fe_9"],

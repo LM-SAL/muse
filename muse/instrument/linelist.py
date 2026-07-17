@@ -6,10 +6,13 @@ import os
 import re
 import warnings
 from types import ModuleType
+from numbers import Real
 from importlib import reload
 
 import numpy as np
 import xarray as xr
+
+import astropy.units as u
 
 __all__ = ["create_chianti_line_list"]
 
@@ -19,7 +22,7 @@ def create_chianti_line_list(
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
-    wavelength_range=None,
+    wavelength_range: u.Quantity | None = None,
     minimum_abundance: float | None = None,
     element_list: list[str] | None = None,
     ion_list: list[str] | None = None,
@@ -30,18 +33,21 @@ def create_chianti_line_list(
     Parameters
     ----------
     temperature : `xarray.DataArray`
-        Temperature array in K with a ``logT`` dimension.
+        Temperature array with an `astropy.units.Quantity` payload convertible
+        to K and a ``logT`` dimension.
     density : `xarray.DataArray`, optional
-        Electron density array in cm^-3. Mutually exclusive with ``pressure``.
+        Electron density array with an `astropy.units.Quantity` payload
+        convertible to cm^-3. Mutually exclusive with ``pressure``.
     pressure : `xarray.DataArray`, optional
-        Electron pressure array in K cm^-3. Mutually exclusive with ``density``.
+        Electron pressure array with an `astropy.units.Quantity` payload
+        convertible to K cm^-3. Mutually exclusive with ``density``.
     abundance : `str`, optional
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``.
-    wavelength_range : array-like
-        Two-element wavelength range in Angstroms.
+    wavelength_range : `astropy.units.Quantity`
+        Two-element wavelength range convertible to Angstroms.
     minimum_abundance : `float`, optional
-        Minimum elemental abundance to keep. Mutually exclusive with
-        ``element_list`` and ``ion_list``.
+        Finite positive minimum elemental abundance to keep. Mutually exclusive
+        with ``element_list`` and ``ion_list``.
     element_list : `list` of `str`, optional
         CHIANTI element symbols to include, such as ``"fe"`` and ``"o"``.
         Mutually exclusive with ``ion_list`` and ``minimum_abundance``.
@@ -59,21 +65,24 @@ def create_chianti_line_list(
     The ``XUVTOP`` environment variable must point to a local CHIANTI database.
     ChiantiPy's ``gui`` default is forced off for headless batch jobs.
     """
-    wavelength_range = _validate_line_list_inputs(temperature, density, pressure, wavelength_range)
+    density_dependent = density is not None
+    temperature, plasma_grid, wavelength_range = _validate_line_list_inputs(
+        temperature, density, pressure, wavelength_range
+    )
     element_list, ion_list = _normalize_species_selection(element_list, ion_list)
-    _validate_species_selection(minimum_abundance, element_list, ion_list)
+    minimum_abundance = _validate_species_selection(minimum_abundance, element_list, ion_list)
 
     chiantipy_version, ch = _initialize_chianti()
 
-    if density is not None:
-        temperature_bc, density_bc = xr.broadcast(temperature, density)
-        extra_coord_name = density.dims[0]
-        extra_coord = np.log10(density.data)
+    if density_dependent:
+        temperature_bc, density_bc = xr.broadcast(temperature, plasma_grid)
+        extra_coord_name = plasma_grid.dims[0]
+        extra_coord = np.log10(plasma_grid.data)
     else:
-        density_bc = pressure / temperature
+        density_bc = plasma_grid / temperature
         temperature_bc = temperature.broadcast_like(density_bc)
-        extra_coord_name = pressure.dims[0]
-        extra_coord = pressure.data
+        extra_coord_name = plasma_grid.dims[0]
+        extra_coord = plasma_grid.data
     temperature_flat = temperature_bc.data.reshape(-1)
     density_flat = density_bc.data.reshape(-1)
 
@@ -126,6 +135,13 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
         # Without a chiantirc file, ChiantiPy evaluates os.path.isfile(False)
         # at import, which raises a RuntimeWarning on Python >= 3.14.
         warnings.simplefilter("ignore", RuntimeWarning)
+        # ChiantiPy imports its optional ipyparallel implementation from core.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"ipyparallel not found\.",
+            category=UserWarning,
+            module=r"ChiantiPy\.core\.IpyMspectrum",
+        )
         import ChiantiPy.tools.data as chdata  # noqa: PLC0415
 
         if not hasattr(chdata, "Defaults") or getattr(chdata, "Xuvtop", None) != xuvtop:
@@ -189,7 +205,7 @@ def _validate_line_list_inputs(
     density: xr.DataArray | None,
     pressure: xr.DataArray | None,
     wavelength_range,
-) -> tuple[float, float]:
+) -> tuple[xr.DataArray, xr.DataArray, tuple[float, float]]:
     if density is None and pressure is None:
         msg = "Specify density or pressure"
         raise ValueError(msg)
@@ -197,19 +213,24 @@ def _validate_line_list_inputs(
         msg = "density and pressure are mutually exclusive"
         raise ValueError(msg)
 
-    _validate_positive_data_array(temperature, "temperature", dimension="logT")
-    plasma_name, plasma_grid = ("density", density) if density is not None else ("pressure", pressure)
-    _validate_positive_data_array(plasma_grid, plasma_name)
+    temperature = _validate_positive_data_array(temperature, "temperature", u.K, dimension="logT")
+    if density is not None:
+        plasma_grid = _validate_positive_data_array(density, "density", u.cm**-3)
+    else:
+        plasma_grid = _validate_positive_data_array(pressure, "pressure", u.K / u.cm**3)
 
-    return _validate_wavelength_range(wavelength_range)
+    return temperature, plasma_grid, _validate_wavelength_range(wavelength_range)
 
 
-def _validate_wavelength_range(wavelength_range) -> tuple[float, float]:
+def _validate_wavelength_range(wavelength_range: u.Quantity | None) -> tuple[float, float]:
+    if not isinstance(wavelength_range, u.Quantity):
+        msg = "wavelength_range must be an astropy.units.Quantity convertible to Angstrom"
+        raise TypeError(msg)
     try:
-        values = np.asarray(wavelength_range, dtype=float)
-    except (TypeError, ValueError):
-        msg = "wavelength_range must contain exactly two values"
-        raise ValueError(msg) from None
+        values = np.asarray(wavelength_range.to_value(u.AA), dtype=float)
+    except u.UnitConversionError as exc:
+        msg = "wavelength_range units must be convertible to Angstrom"
+        raise ValueError(msg) from exc
     if values.shape != (2,):
         msg = "wavelength_range must contain exactly two values"
         raise ValueError(msg)
@@ -223,7 +244,7 @@ def _validate_wavelength_range(wavelength_range) -> tuple[float, float]:
     return float(lower), float(upper)
 
 
-def _validate_positive_data_array(values, name: str, *, dimension: str | None = None) -> None:
+def _validate_positive_data_array(values, name: str, unit, *, dimension: str | None = None) -> xr.DataArray:
     if not isinstance(values, xr.DataArray):
         msg = f"{name} must be an xarray.DataArray"
         raise TypeError(msg)
@@ -235,15 +256,21 @@ def _validate_positive_data_array(values, name: str, *, dimension: str | None = 
     if values.size == 0:
         msg = f"{name} must not be empty"
         raise ValueError(msg)
-    if not np.issubdtype(values.dtype, np.number):
-        msg = f"{name} must contain numeric values"
+    if not isinstance(values.data, u.Quantity):
+        msg = f"{name} data must be an astropy.units.Quantity convertible to {unit}"
         raise TypeError(msg)
-    if not np.all(np.isfinite(values.data)):
+    try:
+        data = values.data.to_value(unit)
+    except u.UnitConversionError as exc:
+        msg = f"{name} units must be convertible to {unit}"
+        raise ValueError(msg) from exc
+    if not np.all(np.isfinite(data)):
         msg = f"{name} must contain only finite values"
         raise ValueError(msg)
-    if np.any(values.data <= 0):
+    if np.any(data <= 0):
         msg = f"{name} must contain only positive values"
         raise ValueError(msg)
+    return values.copy(data=data)
 
 
 def _normalize_species_selection(element_list, ion_list):
@@ -277,7 +304,20 @@ def _normalize_species_names(values, name, pattern):
     return normalized
 
 
-def _validate_species_selection(minimum_abundance, element_list, ion_list):
+def _validate_species_selection(minimum_abundance, element_list, ion_list) -> float | None:
+    if minimum_abundance is None and element_list is None and ion_list is None:
+        msg = "Specify minimum_abundance, element_list, or ion_list"
+        raise ValueError(msg)
     if minimum_abundance is not None and (element_list is not None or ion_list is not None):
         msg = "minimum_abundance is mutually exclusive with element_list and ion_list"
         raise ValueError(msg)
+    if minimum_abundance is None:
+        return None
+    if isinstance(minimum_abundance, bool) or not isinstance(minimum_abundance, Real):
+        msg = "minimum_abundance must be a real number"
+        raise TypeError(msg)
+    minimum_abundance = float(minimum_abundance)
+    if not np.isfinite(minimum_abundance) or minimum_abundance <= 0:
+        msg = "minimum_abundance must be finite and positive"
+        raise ValueError(msg)
+    return minimum_abundance
