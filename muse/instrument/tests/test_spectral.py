@@ -46,6 +46,26 @@ def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
     )
 
 
+def synthetic_effective_area(
+    values=(1.0, 1.0, 1.0),
+    wavelength=(169.0, 171.0, 173.0),
+    *,
+    area_units="cm2",
+    wavelength_units="Angstrom",
+):
+    """
+    Return a minimal deterministic effective area.
+    """
+    area_attrs = {} if area_units is None else {"units": area_units}
+    wavelength_attrs = {} if wavelength_units is None else {"units": wavelength_units}
+    return xr.DataArray(
+        np.asarray(values),
+        dims="wavelength",
+        coords={"wavelength": ("wavelength", np.asarray(wavelength), wavelength_attrs)},
+        attrs=area_attrs,
+    )
+
+
 class TestCreateWavelengthResponseScalar:
     def test_public_contract_records_history_and_excludes_unselected_lines(self):
         line_list = synthetic_line_list(2)
@@ -239,28 +259,16 @@ class TestCreateWavelengthResponseScalar:
             _create_wavelength_response(synthetic_line_list(1), wavelength_grid=value)
 
     def test_effective_area_units_convert_without_mutating_input(self):
-        wavelength_AA = xr.DataArray(
-            np.linspace(169.0, 173.0, 20),
-            dims="wavelength",
-            attrs={"units": "Angstrom"},
+        wavelength_AA = np.linspace(169.0, 173.0, 20)
+        canonical = synthetic_effective_area(
+            values=np.full(20, 10.0),
+            wavelength=wavelength_AA,
         )
-        canonical = xr.DataArray(
-            np.full(20, 10.0),
-            dims="wavelength",
-            coords={"wavelength": wavelength_AA},
-            attrs={"units": "cm2"},
-        )
-        alternate = xr.DataArray(
-            np.full(20, 0.001),
-            dims="wavelength",
-            coords={
-                "wavelength": xr.DataArray(
-                    wavelength_AA.data / 10,
-                    dims="wavelength",
-                    attrs={"units": "nm"},
-                )
-            },
-            attrs={"units": "m2"},
+        alternate = synthetic_effective_area(
+            values=np.full(20, 0.001),
+            wavelength=wavelength_AA / 10,
+            area_units="m2",
+            wavelength_units="nm",
         )
         before = alternate.copy(deep=True)
         kwargs = {
@@ -283,19 +291,9 @@ class TestCreateWavelengthResponseScalar:
         ],
     )
     def test_effective_area_requires_physical_units(self, area_units, wavelength_units):
-        wavelength_attrs = {} if wavelength_units is None else {"units": wavelength_units}
-        area_attrs = {} if area_units is None else {"units": area_units}
-        effective_area = xr.DataArray(
-            np.ones(3),
-            dims="wavelength",
-            coords={
-                "wavelength": xr.DataArray(
-                    [169.0, 171.0, 173.0],
-                    dims="wavelength",
-                    attrs=wavelength_attrs,
-                )
-            },
-            attrs=area_attrs,
+        effective_area = synthetic_effective_area(
+            area_units=area_units,
+            wavelength_units=wavelength_units,
         )
 
         with pytest.raises(ValueError, match="effective_area"):
@@ -374,40 +372,9 @@ class TestInputValidation:
         with pytest.raises(error, match=name):
             _create_wavelength_response(synthetic_line_list(1), **{name: value})
 
-    def test_effective_area_method_is_validated_only_when_used(self):
-        wavelength = xr.DataArray(
-            [169.0, 171.0, 173.0],
-            dims="wavelength",
-            attrs={"units": "Angstrom"},
-        )
-        effective_area = xr.DataArray(
-            np.ones(3),
-            dims="wavelength",
-            coords={"wavelength": wavelength},
-            attrs={"units": "cm2"},
-        )
-
-        _create_wavelength_response(synthetic_line_list(1), effective_area_method="not-used")
-        with pytest.raises(ValueError, match="effective_area_method"):
-            _create_wavelength_response(
-                synthetic_line_list(1),
-                effective_area=effective_area,
-                effective_area_method="not-supported",
-            )
-
     @pytest.mark.parametrize("value", [-1.0, np.nan])
     def test_effective_area_must_be_finite_and_non_negative(self, value):
-        wavelength = xr.DataArray(
-            [169.0, 171.0, 173.0],
-            dims="wavelength",
-            attrs={"units": "Angstrom"},
-        )
-        effective_area = xr.DataArray(
-            [1.0, value, 1.0],
-            dims="wavelength",
-            coords={"wavelength": wavelength},
-            attrs={"units": "cm2"},
-        )
+        effective_area = synthetic_effective_area(values=[1.0, value, 1.0])
 
         with pytest.raises(ValueError, match="effective_area"):
             _create_wavelength_response(synthetic_line_list(1), effective_area=effective_area)
@@ -421,12 +388,7 @@ class TestInputValidation:
         ],
     )
     def test_effective_area_wavelength_must_increase(self, wavelength):
-        effective_area = xr.DataArray(
-            np.ones(3),
-            dims="wavelength",
-            coords={"wavelength": ("wavelength", wavelength, {"units": "Angstrom"})},
-            attrs={"units": "cm2"},
-        )
+        effective_area = synthetic_effective_area(wavelength=wavelength)
 
         with pytest.raises(ValueError, match="effective_area wavelength coordinate"):
             _create_wavelength_response(synthetic_line_list(1), effective_area=effective_area)
@@ -434,12 +396,7 @@ class TestInputValidation:
     def test_effective_area_is_zero_outside_coverage(self):
         line_list = synthetic_line_list(wavelength=[171.0])
         main_lines = [line_list.full_name.item()]
-        effective_area = xr.DataArray(
-            [2.0, 2.0],
-            dims="wavelength",
-            coords={"wavelength": ("wavelength", [170.5, 171.5], {"units": "Angstrom"})},
-            attrs={"units": "cm2"},
-        )
+        effective_area = synthetic_effective_area(values=[2.0, 2.0], wavelength=[170.5, 171.5])
         kwargs = {"line_list": line_list, "wavelength_grid": DEFAULT_WAVELENGTH_GRID, "main_lines": main_lines}
 
         unscaled = create_band_response(**kwargs)

@@ -14,7 +14,6 @@ from muse.utils.utils import add_history, require_unit
 
 __all__ = ["create_band_response"]
 
-_EFFECTIVE_AREA_METHODS = ("linear", "nearest", "quadratic", "cubic")
 _RESPONSE_NORMALIZATION = 1e-27
 
 
@@ -27,7 +26,6 @@ def create_band_response(
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
     nonthermal_velocity: u.Quantity | xr.DataArray | None = None,
     effective_area: xr.DataArray | None = None,
-    effective_area_method: str = "linear",
 ) -> xr.Dataset:
     """
     Create an instrument-neutral wavelength-space band response.
@@ -55,8 +53,6 @@ def create_band_response(
         Nonthermal-velocity axis with velocity units.
     effective_area : `xarray.DataArray`, optional
         Effective area interpolated onto the wavelength grid.
-    effective_area_method : `str`, optional
-        Effective-area interpolation method, by default ``"linear"``.
 
     Returns
     -------
@@ -70,7 +66,6 @@ def create_band_response(
         line_list,
         wavelength_grid,
         instrumental_width=instrumental_width,
-        effective_area_method=effective_area_method,
         doppler_velocity=doppler_velocity,
         nonthermal_velocity=nonthermal_velocity,
         effective_area=effective_area,
@@ -84,7 +79,6 @@ def _create_wavelength_response(
     line_list: xr.Dataset,
     wavelength_grid: u.Quantity | xr.DataArray,
     instrumental_width: u.Quantity | xr.DataArray = 0 * u.AA,
-    effective_area_method: str = "linear",
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
     nonthermal_velocity: u.Quantity | xr.DataArray | None = None,
     effective_area: xr.DataArray | None = None,
@@ -93,44 +87,7 @@ def _create_wavelength_response(
     include_contaminants: bool = False,
 ) -> xr.Dataset:
     """
-    Compute a spectral response as a function of velocity and temperature.
-
-    Parameters
-    ----------
-    line_list : `xarray.Dataset`
-        CHIANTI line list, e.g. from
-        `muse.instrument.linelist.create_chianti_line_list`.
-    wavelength_grid : `astropy.units.Quantity` or `xarray.DataArray`
-        Wavelength samples. Quantities must be one-dimensional. A unit-bearing
-        `xarray.DataArray` may carry extra physical dimensions but must use
-        ``wavelength_bin`` as its sampling dimension.
-    instrumental_width : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Instrumental-width sigma with wavelength units, by default 0 Angstrom.
-        Quantities must be scalar. Use a unit-bearing `xarray.DataArray` to
-        carry named dimensions.
-    effective_area_method : `str`, optional
-        Effective-area interpolation method, by default ``"linear"``.
-    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Doppler-velocity axis with velocity units.
-    nonthermal_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Nonthermal-velocity axis with velocity units.
-    effective_area : `xarray.DataArray`, optional
-        Effective area interpolated onto the output wavelength grid.
-    main_lines : sequence of `str`, optional
-        Stable ``full_name`` values retained individually, in output order.
-        Repeated transitions with the same name are summed. By default, retain
-        every named line.
-    include_contaminants : `bool`, optional
-        Append the summed response of lines not selected by ``main_lines``, by
-        default `False`. Pass an empty ``main_lines`` sequence to sum the full
-        band when this is enabled.
-
-    Returns
-    -------
-    `xarray.Dataset`
-        Dataset containing ``spectral_response`` with temperature, velocity,
-        line, and ``wavelength_bin`` dimensions. ``wavelength_grid`` contains
-        the wavelength of each bin.
+    Build the wavelength-space response, optionally including contaminants.
     """
     wavelength_grid = _wavelength_grid_in_angstrom(wavelength_grid)
     instrumental_width = _instrumental_width_in_angstrom(instrumental_width)
@@ -138,7 +95,7 @@ def _create_wavelength_response(
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
     if nonthermal_velocity is not None:
         nonthermal_velocity = _velocity_axis(nonthermal_velocity, "nonthermal_velocity")
-    effective_area = _effective_area_in_canonical_units(effective_area, effective_area_method)
+    effective_area = _effective_area_in_canonical_units(effective_area)
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
     main_lines = _validate_main_lines(line_names, main_lines)
@@ -216,13 +173,11 @@ def _create_wavelength_response(
 
     responses = xr.concat(responses, dim="line", coords="different", compat="equals")
     ds = xr.Dataset({"spectral_response": responses})
-    spectral_response_attrs = ds.spectral_response.attrs
 
     if effective_area is not None:
-        interp = effective_area.interp(wavelength=wavelength_grid, method=effective_area_method).fillna(0)
+        interp = effective_area.interp(wavelength=wavelength_grid).fillna(0)
         interp = interp.rename(wavelength="wavelength_grid")
         ds["spectral_response"] = ds.spectral_response * interp
-        ds.spectral_response.attrs.update(spectral_response_attrs)
         ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**5 / u.s / u.sr / u.AA)
     else:
         ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**3 / u.s / u.sr / u.AA)
@@ -261,15 +216,12 @@ def _instrumental_width_in_angstrom(instrumental_width):
     return converted
 
 
-def _effective_area_in_canonical_units(effective_area, effective_area_method):
+def _effective_area_in_canonical_units(effective_area):
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
         msg = "effective_area must be an xarray.DataArray"
         raise TypeError(msg)
-    if effective_area_method not in _EFFECTIVE_AREA_METHODS:
-        msg = f"effective_area_method must be one of {_EFFECTIVE_AREA_METHODS} when effective_area is supplied"
-        raise ValueError(msg)
     dataset = xr.Dataset({"effective_area": effective_area})
     area_unit = require_unit(dataset, "effective_area", "effective_area", convertible_to=u.cm**2)
     wavelength_unit = require_unit(
@@ -489,13 +441,6 @@ def _atomic_mass_from_atomic_number(atomic_number, elements, proton_mass):
     return atomic_mass
 
 
-def _broadcast_response_inputs(wavelength_grid, line_center, doppler_width, gofnt):
-    shift = (wavelength_grid - line_center).broadcast_like(gofnt)
-    width, shift = xr.broadcast(doppler_width, shift)
-    gofnt_scaled = gofnt.broadcast_like(width) / _RESPONSE_NORMALIZATION
-    return xr.broadcast(gofnt_scaled, width, shift)
-
-
 def _evaluate_gaussian_response(
     wavelength_grid,
     line_center,
@@ -505,7 +450,10 @@ def _evaluate_gaussian_response(
     *,
     accumulator=None,
 ):
-    gofnt_scaled, width, shift = _broadcast_response_inputs(wavelength_grid, line_center, doppler_width, gofnt)
+    shift = (wavelength_grid - line_center).broadcast_like(gofnt)
+    width, shift = xr.broadcast(doppler_width, shift)
+    gofnt_scaled = gofnt.broadcast_like(width) / _RESPONSE_NORMALIZATION
+    gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     response = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
     if accumulator is not None:
         response = response + accumulator

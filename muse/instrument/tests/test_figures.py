@@ -1,11 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 
 import astropy.units as u
 
 from muse.instrument.spectral import create_band_response
-from muse.instrument.tests.test_spectral import synthetic_line_list
+from muse.instrument.tests.test_spectral import synthetic_effective_area, synthetic_line_list
 from muse.tests.helpers import figure_test
 
 WAVELENGTH_GRID = np.linspace(170.75, 171.25, 501) * u.AA
@@ -72,12 +71,7 @@ def test_band_response_effective_area_cutoff():
     A finite effective-area range clips an otherwise broad line profile to zero.
     """
     line_list, main_lines = _line_list_and_name()
-    effective_area = xr.DataArray(
-        [1.0, 1.0],
-        dims="wavelength",
-        coords={"wavelength": ("wavelength", [170.9, 171.1], {"units": "Angstrom"})},
-        attrs={"units": "cm2"},
-    )
+    effective_area = synthetic_effective_area(values=[1.0, 1.0], wavelength=[170.9, 171.1])
     kwargs = {
         "line_list": line_list,
         "wavelength_grid": WAVELENGTH_GRID,

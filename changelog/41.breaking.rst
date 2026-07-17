@@ -1,4 +1,0 @@
-Replace ``muse.instrument.spectral.create_response_function`` with
-`muse.instrument.spectral.create_band_response`, which requires an explicit
-unit-bearing wavelength grid and main-line selection and returns an
-instrument-neutral wavelength-space response.
