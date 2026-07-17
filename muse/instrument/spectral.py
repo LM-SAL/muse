@@ -12,12 +12,12 @@ import astropy.units as u
 
 from muse.utils.utils import add_history, require_unit
 
-__all__ = ["create_band_response"]
+__all__ = ["create_spectral_response"]
 
 _RESPONSE_NORMALIZATION = 1e-27
 
 
-def create_band_response(
+def create_spectral_response(
     line_list: xr.Dataset,
     wavelength_grid: u.Quantity | xr.DataArray,
     *,
@@ -28,7 +28,7 @@ def create_band_response(
     effective_area: xr.DataArray | None = None,
 ) -> xr.Dataset:
     """
-    Create an instrument-neutral wavelength-space band response.
+    Create an instrument-neutral wavelength-space spectral response.
 
     Parameters
     ----------
@@ -71,7 +71,7 @@ def create_band_response(
         effective_area=effective_area,
         main_lines=main_lines,
     )
-    add_history(response, call_inputs, create_band_response)
+    add_history(response, call_inputs, create_spectral_response)
     return response
 
 

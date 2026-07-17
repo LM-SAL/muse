@@ -11,7 +11,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.spectral import _create_wavelength_response as _create_wavelength_response_impl
-from muse.instrument.spectral import create_band_response
+from muse.instrument.spectral import create_spectral_response
 
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
@@ -71,7 +71,7 @@ class TestCreateWavelengthResponseScalar:
         line_list = synthetic_line_list(2)
         main_line = line_list.full_name[0].item()
 
-        response = create_band_response(
+        response = create_spectral_response(
             line_list,
             DEFAULT_WAVELENGTH_GRID,
             main_lines=[main_line],
@@ -79,7 +79,7 @@ class TestCreateWavelengthResponseScalar:
 
         assert response.line.values.tolist() == [main_line]
         assert response.component_kind.values.tolist() == ["line"]
-        assert response.attrs["HISTORY"][0].startswith("create_band_response(")
+        assert response.attrs["HISTORY"][0].startswith("create_spectral_response(")
         assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 
     def test_integral_matches_gofnt(self):
@@ -399,8 +399,8 @@ class TestInputValidation:
         effective_area = synthetic_effective_area(values=[2.0, 2.0], wavelength=[170.5, 171.5])
         kwargs = {"line_list": line_list, "wavelength_grid": DEFAULT_WAVELENGTH_GRID, "main_lines": main_lines}
 
-        unscaled = create_band_response(**kwargs)
-        scaled = create_band_response(**kwargs, effective_area=effective_area)
+        unscaled = create_spectral_response(**kwargs)
+        scaled = create_spectral_response(**kwargs, effective_area=effective_area)
         inside = (scaled.wavelength_grid >= 170.5) & (scaled.wavelength_grid <= 171.5)
         outside = ~inside
 

@@ -3,7 +3,7 @@ import numpy as np
 
 import astropy.units as u
 
-from muse.instrument.spectral import create_band_response
+from muse.instrument.spectral import create_spectral_response
 from muse.instrument.tests.test_spectral import synthetic_effective_area, synthetic_line_list
 from muse.tests.helpers import figure_test
 
@@ -16,12 +16,12 @@ def _line_list_and_name():
 
 
 @figure_test
-def test_band_response_doppler_profiles():
+def test_spectral_response_doppler_profiles():
     """
     A single line shifts across wavelength for negative, zero, and positive velocities.
     """
     line_list, main_lines = _line_list_and_name()
-    response = create_band_response(
+    response = create_spectral_response(
         line_list,
         WAVELENGTH_GRID,
         main_lines=main_lines,
@@ -44,16 +44,16 @@ def test_band_response_doppler_profiles():
 
 
 @figure_test
-def test_band_response_broadening_profiles():
+def test_spectral_response_broadening_profiles():
     """
     Thermal, instrumental, and nonthermal broadening produce distinct line widths.
     """
     line_list, main_lines = _line_list_and_name()
     kwargs = {"line_list": line_list, "wavelength_grid": WAVELENGTH_GRID, "main_lines": main_lines}
     responses = {
-        "thermal only": create_band_response(**kwargs),
-        "instrumental sigma=0.05 A": create_band_response(**kwargs, instrumental_width=0.05 * u.AA),
-        "nonthermal=80 km/s": create_band_response(**kwargs, nonthermal_velocity=80 * u.km / u.s),
+        "thermal only": create_spectral_response(**kwargs),
+        "instrumental sigma=0.05 A": create_spectral_response(**kwargs, instrumental_width=0.05 * u.AA),
+        "nonthermal=80 km/s": create_spectral_response(**kwargs, nonthermal_velocity=80 * u.km / u.s),
     }
 
     fig, ax = plt.subplots(constrained_layout=True)
@@ -66,7 +66,7 @@ def test_band_response_broadening_profiles():
 
 
 @figure_test
-def test_band_response_effective_area_cutoff():
+def test_spectral_response_effective_area_cutoff():
     """
     A finite effective-area range clips an otherwise broad line profile to zero.
     """
@@ -78,9 +78,9 @@ def test_band_response_effective_area_cutoff():
         "main_lines": main_lines,
         "instrumental_width": 0.06 * u.AA,
     }
-    raw = create_band_response(**kwargs).spectral_response.sel(logT=6.0).isel(line=0)
+    raw = create_spectral_response(**kwargs).spectral_response.sel(logT=6.0).isel(line=0)
     filtered = (
-        create_band_response(**kwargs, effective_area=effective_area).spectral_response.sel(logT=6.0).isel(line=0)
+        create_spectral_response(**kwargs, effective_area=effective_area).spectral_response.sel(logT=6.0).isel(line=0)
     )
 
     fig, ax = plt.subplots(constrained_layout=True)
