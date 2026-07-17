@@ -1,4 +1,6 @@
-"""Spectral response functions built from CHIANTI line lists."""
+"""
+Spectral response functions built from CHIANTI line lists.
+"""
 
 import numpy as np
 import xarray as xr
@@ -13,7 +15,7 @@ _GAUSSIAN_EXPRESSION = "gofnt_scaled * exp(-0.5 * (shift / width)**2) / gaussian
 
 def create_response_function(
     line_list: xr.Dataset,
-    instrumental_width: float = 0,
+    instrumental_width: float | xr.DataArray = 0,
     normalization: float = 1e-27,
     method: str = "linear",
     vdop: u.Quantity | np.ndarray | list | None = None,
@@ -23,7 +25,7 @@ def create_response_function(
     num_wavelength_bins: int | None = None,
     effective_area: xr.DataArray | None = None,
     num_lines_keep: int = 2,
-    band=None,
+    band: str | xr.DataArray | None = None,
     window_sigma: float | None = None,
 ) -> xr.Dataset:
     """

@@ -1,4 +1,6 @@
-"""Tests for CHIANTI-line Gaussian spectral responses."""
+"""
+Tests for CHIANTI-line Gaussian spectral responses.
+"""
 
 import numpy as np
 import pytest
@@ -15,7 +17,9 @@ WIDE_BAND_LINES = {"wavelength": np.linspace(105.0, 195.0, 30), "logT": np.linsp
 
 
 def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
-    """Return a minimal deterministic iron line list."""
+    """
+    Return a minimal deterministic iron line list.
+    """
     wavelength = np.linspace(170.6, 171.4, n_lines) if wavelength is None else np.asarray(wavelength, dtype=float)
     n_lines = wavelength.size
     logT = np.array([5.8, 6.0, 6.2]) if logT is None else np.asarray(logT, dtype=float)
