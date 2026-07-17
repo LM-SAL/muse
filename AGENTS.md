@@ -22,13 +22,13 @@ tox -e build_docs                                                         # buil
 - Python ≥ 3.12 (CI runs 3.12, 3.13, 3.14). `tox` deps resolve via `uv.lock`.
 - Lint/format = **ruff** (config in `.ruff.toml`), run via pre-commit:
   ```bash
-  pre-commit run --all-files          # ruff + ruff-format + isort + typos + checks
+  pre-commit run --all-files          # docformatter + ruff + ruff-format + isort + typos + checks
   ```
-  Ruff may not be on `PATH` outside pre-commit; prefer hook.
+  Ruff may not be on `PATH` outside pre-commit; prefer hook. docformatter owns docstring wrapping (multi-line summary style) — don't hand-wrap docstrings, let the hook reflow them.
 
 ## Repo layout
 
-**Intended/target** layout. Some pieces (marked *planned*) don't exist yet — arrive with upcoming work — but new code should follow it.
+Current layout; new code should follow it.
 
 ```
 muse/                  package
@@ -36,9 +36,9 @@ muse/                  package
   variables_schema.py  attrs schema + immutability/units machinery (InstrumentDefaults, FrozenDict)
   log.py               loguru logger; import-time torch-free
   utils/               cross-cutting helpers (documentation.py = format_docstring, ...)
-  <subpkg>/tests/      tests live next to the code they cover (planned for new subpackages)
+  <subpkg>/tests/      tests live next to the code they cover
   tests/helpers.py     fake data builders (fake_vdem/fake_response style)
-  conftest.py          shared pytest fixtures (planned)
+  conftest.py          shared pytest fixtures
 docs/                  Sphinx (numpydoc); also doctested by pytest
 changelog/             towncrier news fragments (required on PRs)
 examples/              sphinx-gallery scripts (looser lint rules)
@@ -46,7 +46,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 
 ## Code conventions
 
-- **`__all__`** in every module; keep accurate when adding/removing public names.
+- **`__all__`** in every public implementation module; keep accurate when adding/removing public names.
 - **Docstrings: numpy style** (`pydocstyle convention = numpy`) with `Parameters`/`Returns`. Use `@format_docstring("DEFAULTS_MUSE", param="field_name")` decorator (`muse.utils.documentation`) to inject default values into docstrings — maps `{placeholder}` to field name on named defaults object.
 - **Errors:** assign message to `msg` variable, then raise (ruff `EM`):
   ```python
@@ -57,12 +57,12 @@ examples/              sphinx-gallery scripts (looser lint rules)
 - **Immutable config:** instrument parameters live on frozen attrs class `InstrumentDefaults`; create variants with `attrs.evolve`, never by mutation.
 - **mixedCase allowed for science names** (`logT`, `SG_resp`, `dx_pixel_CI`, `vdop`) — ruff `N8xx` intentionally relaxed. Follow existing names; don't "fix" to snake_case.
 - **Line length 120**, double quotes, ruff-format owns formatting (don't hand-format).
-- Keep module import cheap: **lazy-import `torch`** inside functions where module imported at package init (see `log.py:log_gpu_status`). Leaf submodule not imported by `muse/__init__` may import torch at top level.
+- Keep module import cheap: **lazy-import heavy optional deps** (`torch`, `jax`, `ChiantiPy`) inside functions where module imported at package init (see `log.py:log_gpu_status`). Leaf submodule not imported by `muse/__init__` may import them at top level. On `ImportError`, point at the extra (e.g. `pip install muse[chianti]`).
 
 ## Units & data model
 
 - Quantities use `astropy.units`; converters normalize to canonical unit on construction (e.g. arcsec, Angstrom, km/s). Don't strip units mid-pipeline.
-- Primary containers = `xarray.Dataset`/`DataArray`. Spatial/spectral axes have conventional names: `x`, `y`, `slit`, `step`, `logT`, `vdop`, `channel`, `line`, `SG_xpixel`, `SG_wvl`.
+- Primary containers = `xarray.Dataset`/`DataArray`. Spatial/spectral axes have conventional names: `x`, `y`, `slit`, `step`, `logT`, `vdop`, `channel`, `line`, `SG_xpixel`, `SG_wvl`, `trans_index`, `log_density`.
 - Functions returning dataset record provenance via `add_history(ds, locals(), func)`; preserve when editing pipeline functions — recorded call string asserted in some tests.
 - **Treat datasets as immutable; never mutate inputs in place.** Build new objects with `assign`/`assign_coords` — these share underlying arrays (cheap, no large copy). Don't `ds.copy(deep=True)` whole dataset just to add/tweak a coord or attr.
 - **Deep-copy only the one array you overwrite** (`ds.assign(SG_resp=ds.SG_resp.copy(deep=True))`), never entire dataset.
@@ -85,6 +85,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 
 ## Gotchas
 
+- CHIANTI (`muse/instrument/linelist.py`): needs `[chianti]` extra + `XUVTOP` env var pointing at a local CHIANTI database. Live tests are `remote_data`-gated and run in a dedicated CI job (`chianti` in `ci.yaml`) that downloads/caches the database; validation tests run offline without it.
 - `.history/` = editor backup noise — ignore; excluded from pytest.
 - Legacy `.flake8` / `.isort.cfg` exist but ruff is source of truth for lint (isort rules `I` delegated to isort pre-commit hook).
 - `muse/_version.py` generated by setuptools-scm — never edit by hand.
