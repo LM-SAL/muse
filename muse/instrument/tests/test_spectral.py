@@ -15,13 +15,6 @@ from muse.instrument.spectral import create_spectral_response
 
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
-ORDERS = xr.DataArray([1, 2], dims="order", coords={"order": [1, 2]})
-ORDER_WAVELENGTH_GRID = xr.DataArray(
-    np.linspace((171.0 * 2 / ORDERS - 1.0).values, (171.0 * 2 / ORDERS + 1.0).values, 64),
-    dims=("wavelength_bin", "order"),
-    coords={"order": ORDERS.order},
-    attrs={"units": "Angstrom"},
-)
 DOPPLER_VELOCITY = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
 _create_wavelength_response = partial(_create_wavelength_response_impl, wavelength_grid=DEFAULT_WAVELENGTH_GRID)
 
@@ -199,7 +192,7 @@ class TestCreateWavelengthResponseScalar:
             **kwargs,
         )
         response_m = _create_wavelength_response(
-            doppler_velocity=xr.DataArray([-20000.0, 20000.0], dims="sample", attrs={"units": "m / s"}),
+            doppler_velocity=np.array([-20000.0, 20000.0]) * u.m / u.s,
             nonthermal_velocity=np.array([0.0, 5000.0]) * u.m / u.s,
             **kwargs,
         )
@@ -213,8 +206,8 @@ class TestCreateWavelengthResponseScalar:
         ("name", "value", "error"),
         [
             ("doppler_velocity", [-20.0, 20.0], TypeError),
-            ("doppler_velocity", 0.02 * u.AA, ValueError),
-            ("nonthermal_velocity", xr.DataArray([5.0], dims="sample"), ValueError),
+            ("doppler_velocity", 0.02 * u.AA, u.UnitsError),
+            ("nonthermal_velocity", [5.0], TypeError),
         ],
     )
     def test_velocity_axes_require_velocity_units(self, name, value, error):
@@ -226,18 +219,12 @@ class TestCreateWavelengthResponseScalar:
 
     def test_wavelength_inputs_convert_to_angstrom(self):
         kwargs = {"line_list": synthetic_line_list(1), "instrumental_width": 0.02 * u.AA}
-        wavelength_grid_nm = xr.DataArray(
-            DEFAULT_WAVELENGTH_GRID.to_value(u.nm),
-            dims="wavelength_bin",
-            attrs={"units": "nm"},
-        )
-        before = wavelength_grid_nm.copy(deep=True)
+        wavelength_grid_nm = DEFAULT_WAVELENGTH_GRID.to(u.nm)
 
         response_AA = _create_wavelength_response(wavelength_grid=DEFAULT_WAVELENGTH_GRID, **kwargs)
         response_nm = _create_wavelength_response(wavelength_grid=wavelength_grid_nm, **kwargs)
 
         xr.testing.assert_allclose(response_AA, response_nm)
-        xr.testing.assert_identical(wavelength_grid_nm, before)
         assert response_AA.wavelength_grid.attrs["units"] == "Angstrom"
         assert response_AA.wavelength_grid.dims == ("wavelength_bin",)
         assert "wavelength" not in response_AA.coords
@@ -246,9 +233,7 @@ class TestCreateWavelengthResponseScalar:
         ("value", "error"),
         [
             ([170.0, 172.0], TypeError),
-            (np.array([170.0, 172.0]) * u.s, ValueError),
-            (xr.DataArray([170.0, 172.0], dims="wavelength_bin"), ValueError),
-            (xr.DataArray([170.0, 172.0], dims="other", attrs={"units": "Angstrom"}), ValueError),
+            (np.array([170.0, 172.0]) * u.s, u.UnitsError),
             (170.0 * u.AA, ValueError),
             (np.array([170.0, np.nan]) * u.AA, ValueError),
             (np.array([172.0, 170.0]) * u.AA, ValueError),
@@ -393,6 +378,12 @@ class TestInputValidation:
         with pytest.raises(ValueError, match="effective_area wavelength coordinate"):
             _create_wavelength_response(synthetic_line_list(1), effective_area=effective_area)
 
+    def test_effective_area_must_be_one_dimensional(self):
+        effective_area = synthetic_effective_area().expand_dims(order=[1, 2])
+
+        with pytest.raises(ValueError, match="one-dimensional"):
+            _create_wavelength_response(synthetic_line_list(1), effective_area=effective_area)
+
     def test_effective_area_is_zero_outside_coverage(self):
         line_list = synthetic_line_list(wavelength=[171.0])
         main_lines = [line_list.full_name.item()]
@@ -479,9 +470,8 @@ class TestMainLineSelection:
         ("instrumental_width", "error"),
         [
             (0.02, TypeError),
-            (5 * u.km / u.s, ValueError),
+            (5 * u.km / u.s, u.UnitsError),
             (np.array([0.01, 0.02]) * u.AA, ValueError),
-            (xr.DataArray([0.02], dims="order"), ValueError),
         ],
     )
     def test_instrumental_width_requires_wavelength_units(self, instrumental_width, error):
@@ -505,101 +495,3 @@ class TestMainLineSelection:
                 synthetic_line_list(2),
                 main_lines=main_lines,
             )
-
-
-class TestCreateWavelengthResponseOrderDims:
-    def test_instrumental_width_order_dim(self):
-        line_list = synthetic_line_list(2)
-        width = xr.DataArray(
-            [0.01, 0.05],
-            dims="order",
-            coords={"order": [1, 2]},
-            attrs={"units": "Angstrom"},
-        )
-        response = _create_wavelength_response(
-            line_list,
-            doppler_velocity=DOPPLER_VELOCITY,
-            instrumental_width=width,
-        )
-        assert response.spectral_response.sizes["order"] == 2
-        assert not np.allclose(response.spectral_response.isel(order=0), response.spectral_response.isel(order=1))
-
-    def test_equal_widths_give_identical_slices(self):
-        line_list = synthetic_line_list(1)
-        width = xr.DataArray(
-            [0.02, 0.02],
-            dims="order",
-            coords={"order": [1, 2]},
-            attrs={"units": "Angstrom"},
-        )
-        response = _create_wavelength_response(
-            line_list,
-            doppler_velocity=DOPPLER_VELOCITY,
-            instrumental_width=width,
-        )
-        np.testing.assert_array_equal(
-            response.spectral_response.isel(order=0).values,
-            response.spectral_response.isel(order=1).values,
-        )
-
-    def test_order_dependent_wavelength_grid(self):
-        line_list = synthetic_line_list(2)
-        response = _create_wavelength_response(
-            line_list,
-            doppler_velocity=DOPPLER_VELOCITY,
-            instrumental_width=0.02 * u.AA,
-            wavelength_grid=ORDER_WAVELENGTH_GRID,
-        )
-        assert set(response.wavelength_grid.dims) == {"wavelength_bin", "order"}
-        assert response.spectral_response.sizes["wavelength_bin"] == 64
-
-    def test_contaminant_sum_with_order_dim(self):
-        line_list = synthetic_line_list(3)
-        width = xr.DataArray(
-            [0.01, 0.05],
-            dims="order",
-            coords={"order": [1, 2]},
-            attrs={"units": "Angstrom"},
-        )
-        response = _create_wavelength_response(
-            line_list,
-            doppler_velocity=DOPPLER_VELOCITY,
-            instrumental_width=width,
-            main_lines=[],
-            include_contaminants=True,
-        )
-        assert response.spectral_response.sizes["order"] == 2
-        assert response.spectral_response.sizes["line"] == 1
-
-    def test_effective_area_band_order(self):
-        line_list = synthetic_line_list(2)
-        wavelength = xr.DataArray(
-            np.linspace(168.0, 174.0, 40),
-            dims="wavelength",
-            attrs={"units": "Angstrom"},
-        )
-        effective_area = xr.DataArray(
-            np.full((40, 1), 10.0),
-            dims=("wavelength", "band"),
-            coords={"wavelength": wavelength, "band": [171]},
-            attrs={"units": "cm2"},
-        )
-        effective_area = (
-            effective_area * xr.DataArray([1.0, 0.5], dims="order", coords={"order": [1, 2]})
-        ).assign_attrs(units="cm2")
-        response = _create_wavelength_response(
-            line_list,
-            doppler_velocity=DOPPLER_VELOCITY,
-            instrumental_width=0.02 * u.AA,
-            effective_area=effective_area,
-        )
-        assert {"band", "order", "line", "logT", "doppler_velocity", "wavelength_bin"} <= set(
-            response.spectral_response.dims
-        )
-        assert "wavelength" not in response.coords
-        np.testing.assert_allclose(
-            response.spectral_response.sel(order=2).values,
-            0.5 * response.spectral_response.sel(order=1).values,
-            rtol=1e-12,
-        )
-        assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (Angstrom s sr)")

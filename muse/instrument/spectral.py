@@ -19,12 +19,12 @@ _RESPONSE_NORMALIZATION = 1e-27
 
 def create_spectral_response(
     line_list: xr.Dataset,
-    wavelength_grid: u.Quantity | xr.DataArray,
+    wavelength_grid: u.Quantity,
     *,
     main_lines: Sequence[str],
-    instrumental_width: u.Quantity | xr.DataArray = 0 * u.AA,
-    doppler_velocity: u.Quantity | xr.DataArray | None = None,
-    nonthermal_velocity: u.Quantity | xr.DataArray | None = None,
+    instrumental_width: u.Quantity = 0 * u.AA,
+    doppler_velocity: u.Quantity | None = None,
+    nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
 ) -> xr.Dataset:
     """
@@ -35,24 +35,24 @@ def create_spectral_response(
     line_list : `xarray.Dataset`
         CHIANTI line list, e.g. from
         `muse.instrument.linelist.create_chianti_line_list`.
-    wavelength_grid : `astropy.units.Quantity` or `xarray.DataArray`
-        Wavelength samples. Quantities must be one-dimensional. A unit-bearing
-        `xarray.DataArray` may carry extra physical dimensions but must use
-        ``wavelength_bin`` as its sampling dimension.
+    wavelength_grid : `astropy.units.Quantity`
+        One-dimensional wavelength samples for one channel and spectral order.
     main_lines : sequence of `str`
         Stable ``full_name`` values to retain, in output order. Repeated
         transitions with the same name are summed. Unselected lines are not
         returned.
-    instrumental_width : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Instrumental-width sigma with wavelength units, by default 0 Angstrom.
-        Quantities must be scalar. Use a unit-bearing `xarray.DataArray` to
-        carry named dimensions.
-    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Doppler-velocity axis with velocity units.
-    nonthermal_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Nonthermal-velocity axis with velocity units.
+    instrumental_width : `astropy.units.Quantity`, optional
+        Scalar instrumental-width sigma, by default 0 Angstrom.
+    doppler_velocity : `astropy.units.Quantity`, optional
+        Scalar or one-dimensional Doppler-velocity axis. If `None`, line
+        centers remain at their rest wavelengths and no ``doppler_velocity``
+        dimension is added.
+    nonthermal_velocity : `astropy.units.Quantity`, optional
+        Scalar or one-dimensional nonthermal-velocity axis. If `None`, no
+        nonthermal broadening or ``nonthermal_velocity`` dimension is added.
     effective_area : `xarray.DataArray`, optional
-        Effective area interpolated onto the wavelength grid.
+        One-dimensional effective area with a unit-bearing ``wavelength``
+        coordinate. If `None`, the response is not scaled by effective area.
 
     Returns
     -------
@@ -75,15 +75,21 @@ def create_spectral_response(
     return response
 
 
+@u.quantity_input(
+    wavelength_grid=u.AA,
+    instrumental_width=u.AA,
+    doppler_velocity=u.km / u.s,
+    nonthermal_velocity=u.km / u.s,
+)
 def _create_wavelength_response(
     line_list: xr.Dataset,
-    wavelength_grid: u.Quantity | xr.DataArray,
-    instrumental_width: u.Quantity | xr.DataArray = 0 * u.AA,
-    doppler_velocity: u.Quantity | xr.DataArray | None = None,
-    nonthermal_velocity: u.Quantity | xr.DataArray | None = None,
+    wavelength_grid: u.Quantity,
+    *,
+    instrumental_width: u.Quantity = 0 * u.AA,
+    doppler_velocity: u.Quantity | None = None,
+    nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
     main_lines: Sequence[str] | None = None,
-    *,
     include_contaminants: bool = False,
 ) -> xr.Dataset:
     """
@@ -189,27 +195,10 @@ def _create_wavelength_response(
 
 
 def _instrumental_width_in_angstrom(instrumental_width):
-    if isinstance(instrumental_width, u.Quantity):
-        if not instrumental_width.isscalar:
-            msg = "instrumental_width Quantities must be scalar; use an xarray.DataArray for named dimensions"
-            raise ValueError(msg)
-        try:
-            converted = instrumental_width.to_value(u.AA)
-        except u.UnitConversionError as exc:
-            msg = "instrumental_width units must be convertible to Angstrom"
-            raise ValueError(msg) from exc
-    elif isinstance(instrumental_width, xr.DataArray):
-        unit = require_unit(
-            xr.Dataset({"instrumental_width": instrumental_width}),
-            "instrumental_width",
-            "instrumental_width",
-            convertible_to=u.AA,
-        )
-        converted = instrumental_width * unit.to(u.AA)
-        converted = converted.assign_attrs({**instrumental_width.attrs, "units": str(u.AA)})
-    else:
-        msg = "instrumental_width must be an astropy Quantity or unit-bearing xarray.DataArray"
-        raise TypeError(msg)
+    if not instrumental_width.isscalar:
+        msg = "instrumental_width must be scalar"
+        raise ValueError(msg)
+    converted = instrumental_width.to_value(u.AA)
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):
         msg = "instrumental_width must contain finite, non-negative values"
         raise ValueError(msg)
@@ -222,6 +211,9 @@ def _effective_area_in_canonical_units(effective_area):
     if not isinstance(effective_area, xr.DataArray):
         msg = "effective_area must be an xarray.DataArray"
         raise TypeError(msg)
+    if effective_area.dims != ("wavelength",):
+        msg = "effective_area must be one-dimensional with wavelength as its only dimension"
+        raise ValueError(msg)
     dataset = xr.Dataset({"effective_area": effective_area})
     area_unit = require_unit(dataset, "effective_area", "effective_area", convertible_to=u.cm**2)
     wavelength_unit = require_unit(
@@ -253,19 +245,7 @@ def _effective_area_in_canonical_units(effective_area):
 
 
 def _velocity_axis(values, dim):
-    if isinstance(values, u.Quantity):
-        try:
-            values = values.to_value(u.km / u.s)
-        except u.UnitConversionError as exc:
-            msg = f"{dim} units must be convertible to km / s"
-            raise ValueError(msg) from exc
-    elif isinstance(values, xr.DataArray):
-        unit = require_unit(xr.Dataset({dim: values}), dim, dim, convertible_to=u.km / u.s)
-        values = values.data * unit.to(u.km / u.s)
-    else:
-        msg = f"{dim} must be an astropy Quantity or unit-bearing xarray.DataArray"
-        raise TypeError(msg)
-    values = np.atleast_1d(values)
+    values = np.atleast_1d(values.to_value(u.km / u.s))
     if values.ndim != 1:
         msg = f"{dim} must be scalar or one-dimensional"
         raise ValueError(msg)
@@ -280,40 +260,17 @@ def _velocity_axis(values, dim):
 
 
 def _wavelength_grid_in_angstrom(wavelength_grid):
-    if isinstance(wavelength_grid, u.Quantity):
-        try:
-            values = wavelength_grid.to_value(u.AA)
-        except u.UnitConversionError as exc:
-            msg = "wavelength_grid units must be convertible to Angstrom"
-            raise ValueError(msg) from exc
-        if values.ndim != 1:
-            msg = "wavelength_grid quantities must be one-dimensional"
-            raise ValueError(msg)
-        wavelength_grid = xr.DataArray(values, dims="wavelength_bin")
-    elif isinstance(wavelength_grid, xr.DataArray):
-        unit = require_unit(
-            xr.Dataset({"wavelength_grid": wavelength_grid}),
-            "wavelength_grid",
-            "wavelength_grid",
-            convertible_to=u.AA,
-        )
-        if "wavelength_bin" not in wavelength_grid.dims:
-            msg = "wavelength_grid DataArrays must include a wavelength_bin dimension"
-            raise ValueError(msg)
-        wavelength_grid = wavelength_grid * unit.to(u.AA)
-    else:
-        msg = "wavelength_grid must be an astropy Quantity or unit-bearing xarray.DataArray"
-        raise TypeError(msg)
-
-    values = np.asarray(wavelength_grid)
+    values = wavelength_grid.to_value(u.AA)
+    if values.ndim != 1:
+        msg = "wavelength_grid must be one-dimensional"
+        raise ValueError(msg)
     if values.size == 0 or not np.all(np.isfinite(values)):
         msg = "wavelength_grid must contain finite values"
         raise ValueError(msg)
-    axis = wavelength_grid.get_axis_num("wavelength_bin")
-    if np.any(np.diff(values, axis=axis) <= 0):
-        msg = "wavelength_grid must be strictly increasing along wavelength_bin"
+    if np.any(np.diff(values) <= 0):
+        msg = "wavelength_grid must be strictly increasing"
         raise ValueError(msg)
-    return wavelength_grid.assign_attrs(units=str(u.AA))
+    return xr.DataArray(values, dims="wavelength_bin", attrs={"units": str(u.AA)})
 
 
 def _create_contaminant_response(
