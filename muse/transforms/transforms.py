@@ -47,8 +47,8 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
 
     Interpolates up when the target grid is finer, integer-factor averages down when it
     is much coarser, and otherwise sub-interpolates before averaging. A size-1 axis is
-    returned unchanged. ``coord`` must be strictly monotonically increasing; the
-    block-averaging math also assumes it is roughly evenly spaced.
+    returned unchanged. ``coord`` must be strictly monotonically increasing and roughly
+    evenly spaced for block averaging.
     """
     coord = ds[axis]
     if coord.size <= 1:
@@ -241,8 +241,8 @@ def reshape_x_to_slit_step(
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
 ):
     """
-    For a given xarray data set (either vdem or spectra) we reshape from the x
-    spatial axis to raster step and slits.
+    For a given xarray data set (either vdem or spectra) we reshape from the x spatial
+    axis to raster step and slits.
 
     TODO: Similar function should be done when we have time and we want to
     interpolate or integrate in MUSE time integration and step.
@@ -287,8 +287,8 @@ def reshape_slit_step_to_x(
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
 ):
     """
-    Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes
-    back onto a single x spatial axis.
+    Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
+    onto a single x spatial axis.
 
     The x coordinate is rebuilt from the per-step spacing recorded in
     ``ds.attrs["step_size"]`` (set by `reshape_x_to_slit_step`); when that

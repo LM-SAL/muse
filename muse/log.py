@@ -30,8 +30,8 @@ def log_gpu_status() -> None:
     """
     Log CUDA/GPU availability.
 
-    Optional accelerator backends are imported lazily and this is not called at
-    import time, so importing this module (or :mod:`muse`) stays backend-free.
+    Optional accelerator backends are imported lazily and this is not called at import
+    time, so importing this module (or :mod:`muse`) stays backend-free.
     """
     import importlib.util  # NOQA: PLC0415
 

@@ -32,7 +32,9 @@ def warnings_as_errors():
 
 
 def _clean_version(version: str) -> str:
-    """Collapse dev/rc versions to "dev", otherwise strip the dots."""
+    """
+    Collapse dev/rc versions to "dev", otherwise strip the dots.
+    """
     return "dev" if ("dev" in version or "rc" in version) else version.replace(".", "")
 
 
@@ -217,9 +219,11 @@ def fake_vdem():
 
 def fake_vdem_offgrid():
     """
-    `fake_vdem` with the spatial grid stretched so the x/y spacing no longer
-    matches the MUSE pixel size. Forces `match_fov` down its resample/tile path
-    instead of the "already MUSE pixel size" early return.
+    `fake_vdem` with the spatial grid stretched so the x/y spacing no longer matches the
+    MUSE pixel size.
+
+    This forces `match_fov` down its resample/tile path instead of the early return for
+    MUSE-sized pixels.
     """
     ds = fake_vdem()
     ds = ds.assign_coords(x=ds.x.values * 2.0, y=ds.y.values * 2.0)
@@ -230,9 +234,11 @@ def fake_vdem_offgrid():
 
 def fake_vdem_single_vdop(vdop_kms=0.0):
     """
-    `fake_vdem` with all emission collapsed into the single vdop bin nearest
-    ``vdop_kms``. Isolates one Doppler velocity so synthesized line centroids
-    shift by the classical ``lambda * v / c``, used to verify spectral synthesis.
+    Return `fake_vdem` with all emission collapsed into the vdop bin nearest
+    ``vdop_kms``.
+
+    This isolates one Doppler velocity so synthesized line centroids shift by the
+    classical ``lambda * v / c``.
     """
     ds = fake_vdem()
     vdop_index = int(np.argmin(np.abs(ds.vdop.values - vdop_kms)))

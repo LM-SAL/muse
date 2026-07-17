@@ -28,8 +28,8 @@ def read_response(
     gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
 ) -> xr.Dataset:
     """
-    Reads a response function into an `xarray.Dataset` interpolating if needed
-    in vdop, and logT.
+    Reads a response function into an `xarray.Dataset` interpolating if needed in vdop,
+    and logT.
 
     Parameters
     ----------
@@ -148,7 +148,8 @@ def _require_wavelength_units(r: xr.Dataset, name: str) -> None:
 
 def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
     """
-    Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or ``vdop``).
+    Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or
+    ``vdop``).
 
     Out-of-range requested points are trimmed to the response grid first. The
     ``"nearest"`` method selects existing samples; any other method interpolates and

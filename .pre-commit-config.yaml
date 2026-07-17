@@ -1,27 +1,33 @@
 exclude: .*(.fits|.fts|.fit|.txt|.csv)$
 repos:
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.26.1
+    rev: v1.27.0
     hooks:
       - id: zizmor
     # This should be before any formatting hooks like isort
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.8
+    hooks:
+      - id: docformatter
+        args: ["--black", "--pre-summary-newline", "--pre-summary-space", "--make-summary-multi-line", "--close-quotes-on-newline", "--in-place"]
+        # Define here once and then reference using YAML anchor
+        exclude: &exclude_dirs ^muse/(data|extern)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.15.20"
+    rev: "v0.15.22"
     hooks:
       - id: ruff-check
         args: ["--fix", "--unsafe-fixes"]
         types: [python]
-        # Define here once and then reference using YAML anchor
-        exclude: &exclude_dirs ^muse/(data|extern)/
+        exclude: *exclude_dirs
       - id: ruff-format
         exclude: *exclude_dirs
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: "v0.0.56"
+    rev: "v0.0.60"
     hooks:
       - id: ty
         stages: [manual]
   - repo: https://github.com/PyCQA/isort
-    rev: 9.0.0a3
+    rev: 9.0.0b1
     hooks:
       - id: isort
         types: [python]

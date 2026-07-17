@@ -32,7 +32,8 @@ dependencies = [
   "numpy>=2.4.0",
   "xarray[io,parallel]>=2026.4.0",
 ]
-optional-dependencies.all = ["muse[jax,torch]"]
+optional-dependencies.all = ["muse[chianti,jax,torch]"]
+optional-dependencies.chianti = ["ChiantiPy>=0.15.0"]
 optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",

@@ -139,7 +139,8 @@ def _jax_device(cuda_device: int | None):
 
 def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> str:
     """
-    Validate and resolve the array backend, returning ``"numpy"``, ``"jax"``, or ``"torch"``.
+    Validate and resolve the array backend, returning ``"numpy"``, ``"jax"``, or
+    ``"torch"``.
 
     JAX and Torch are opt-in: ``backend`` defaults to ``"numpy"`` (also for `None`), so
     the array library never changes with what happens to be installed in the environment
@@ -274,12 +275,13 @@ def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
 
 def _attr_safe(value):
     """
-    Coerce ``value`` to a form serializable by both netCDF4 and Zarr v3, or `None` to skip it.
+    Coerce ``value`` to a form serializable by both netCDF4 and Zarr v3, or `None` to
+    skip it.
 
-    The safe intersection of the two backends is ``str``, ``int``, ``float`` and
-    (small) lists of those; ``Quantity`` becomes a ``"<value> <unit>"`` string,
-    ``bool`` is cast to ``int``, and anything else (arrays larger than 8 elements,
-    datasets, ``None``, custom objects) is dropped.
+    The safe intersection of the two backends is ``str``, ``int``, ``float`` and (small)
+    lists of those; ``Quantity`` becomes a ``"<value> <unit>"`` string, ``bool`` is cast
+    to ``int``, and anything else (arrays larger than 8 elements, datasets, ``None``,
+    custom objects) is dropped.
     """
     if isinstance(value, u.Quantity):
         return f"{value.value} {value.unit}" if value.isscalar else None

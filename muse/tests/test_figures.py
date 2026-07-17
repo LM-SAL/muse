@@ -6,7 +6,9 @@ from muse.tests.helpers import figure_test
 
 @figure_test
 def test_vdem_intensity_map(vdem):
-    """VDEM integrated over logT and vdop -> (y, x) intensity map."""
+    """
+    VDEM integrated over logT and vdop -> (y, x) intensity map.
+    """
     fig, ax = plt.subplots()
     vdem.vdem.sum(dim=["logT", "vdop"]).plot(ax=ax)
     return fig
@@ -14,7 +16,9 @@ def test_vdem_intensity_map(vdem):
 
 @figure_test
 def test_response_logt_profile(response):
-    """SG_resp temperature response for each line at vdop=0, mid-slit, summed over pixel."""
+    """
+    SG_resp temperature response for each line at vdop=0, mid-slit, summed over pixel.
+    """
     fig, ax = plt.subplots()
     response.SG_resp.sel(vdop=0.0).isel(slit=17).sum(dim="SG_xpixel").plot.line(x="logT", ax=ax)
     return fig
@@ -22,7 +26,9 @@ def test_response_logt_profile(response):
 
 @figure_test
 def test_response_line_profiles(response):
-    """Spectral line profile vs wavelength per channel, with peak wavelength marked."""
+    """
+    Spectral line profile vs wavelength per channel, with peak wavelength marked.
+    """
     channels = [108, 171, 284]
     fig, axes = plt.subplots(1, len(channels), figsize=(12, 4), constrained_layout=True)
     # vdop=0 rest frame, mid-slit, integrated over temperature -> spectral profile vs pixel.
