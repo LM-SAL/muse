@@ -207,6 +207,7 @@ def _chianti_bunch_to_dataset(
 
     line_list.attrs["Chiantipy"] = chiantipy_version
     line_list.attrs["Chianti"] = chio.versionRead()
+    line_list.wavelength.attrs["units"] = str(u.AA)
     line_list.gofnt.attrs["units"] = "erg cm3 / (s sr)"
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
