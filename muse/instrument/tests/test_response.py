@@ -88,6 +88,30 @@ def test_map_response_to_sg_detector_geometry_and_units():
     xr.testing.assert_identical(response, original)
 
 
+def test_map_response_to_sg_detector_preserves_constant_photon_density_integral():
+    response = _spectral_response()
+    solid_angle = (1 * u.arcsec).to_value(u.rad) ** 2
+    photon_energy = (const.h * const.c / (response.wavelength_grid.values * u.AA)).to_value(u.erg)
+    response["spectral_response"] = (
+        response.spectral_response.dims,
+        np.broadcast_to(photon_energy / solid_angle, response.spectral_response.shape),
+        response.spectral_response.attrs,
+    )
+
+    mapped = map_response_to_sg_detector(
+        response,
+        171,
+        number_of_slits=1,
+        dispersion=0.01 * u.AA / u.pix,
+        detector_pixels=100,
+        wavelength_start=170 * u.AA,
+        pixel_width=1 * u.arcsec,
+        pixel_height=1 * u.arcsec,
+    )
+
+    np.testing.assert_allclose(mapped.SG_resp.sum("SG_xpixel"), 1.0, rtol=1e-12)
+
+
 def test_map_response_to_sg_detector_uses_muse_defaults():
     mapped = map_response_to_sg_detector(_spectral_response(), 171)
 
@@ -127,6 +151,39 @@ def test_map_response_to_sg_detector_requires_effective_area():
         map_response_to_sg_detector(response, 171)
 
 
+@pytest.mark.parametrize(
+    ("case", "error", "match"),
+    [
+        ("response_type", TypeError, "xarray.Dataset"),
+        ("channel", ValueError, "unsupported MUSE SG channel"),
+        ("schema", ValueError, "missing required variables"),
+        ("normalization", ValueError, "normalization"),
+        ("wavelength_grid", ValueError, "strictly increasing"),
+        ("geometry", ValueError, "number_of_slits"),
+    ],
+)
+def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
+    response = _spectral_response()
+    channel = 171
+    kwargs = {}
+    if case == "response_type":
+        response = None
+    elif case == "channel":
+        channel = 195
+    elif case == "schema":
+        response = response.drop_vars("line_wavelength")
+    elif case == "normalization":
+        response.attrs["normalization"] = 0
+    elif case == "wavelength_grid":
+        response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
+    else:
+        kwargs["number_of_slits"] = 0
+
+    with pytest.raises(error, match=match):
+        map_response_to_sg_detector(response, channel, **kwargs)
+
+
+@pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
 def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_path):
     generated_line_list = xr.Dataset(
         {
@@ -190,8 +247,8 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
         },
         coords={"logT": response.logT, "vdop": response.vdop, "slit": response.slit},
     )
-    path = tmp_path / "response.zarr"
-    response.to_zarr(path, zarr_format=2)
+    path = tmp_path / "response.nc"
+    response.to_netcdf(path)
     loaded_response = read_response(path).load()
     loaded_response.close()
 

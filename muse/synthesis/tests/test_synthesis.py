@@ -77,6 +77,16 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     np.testing.assert_allclose(got, expected, rtol=1e-5)
 
 
+def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> None:
+    component_kind = ["line", "line", "contaminants", "line", "contaminants", "line", "contaminants"]
+    response = response.assign_coords(component_kind=("line", component_kind))
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+
+    result = vdem_synthesis(reshaped_vdem, response)
+
+    np.testing.assert_array_equal(result.component_kind, component_kind)
+
+
 @pytest.mark.parametrize("backend", ["jax", "torch"])
 def test_vdem_synthesis_accelerator_backend_matches_numpy(response, vdem, backend) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)

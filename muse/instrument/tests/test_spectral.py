@@ -70,7 +70,7 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     )
 
     assert response.line.values.tolist() == [main_line]
-    assert response.component_kind.values.tolist() == ["line"]
+    assert "component_kind" not in response.coords
     assert response.attrs["HISTORY"][0].startswith("create_spectral_response(")
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 

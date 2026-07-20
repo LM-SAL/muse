@@ -71,6 +71,7 @@ def create_spectral_response(
         effective_area=effective_area,
         main_lines=main_lines,
     )
+    response = response.drop_vars("component_kind")
     add_history(response, call_inputs, create_spectral_response)
     return response
 

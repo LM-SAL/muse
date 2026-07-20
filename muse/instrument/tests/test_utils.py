@@ -181,11 +181,19 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
                 line=("line", ["Fe XIX 108.355"]),
                 line_wvl=("line", [108.355]),
                 channel=("line", [108]),
+                component_kind=("line", ["line"]),
             ),
             fake_response_file().assign_coords(
                 line=("line", ["Fe XXI 108.117"]),
                 line_wvl=("line", [108.117]),
                 channel=("line", [108]),
+                component_kind=("line", ["line"]),
+            ),
+            fake_response_file().assign_coords(
+                line=("line", ["contaminants"]),
+                line_wvl=("line", [108.355]),
+                channel=("line", [108]),
+                component_kind=("line", ["contaminants"]),
             ),
         ],
         dim="line",
@@ -194,13 +202,14 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         line=("line", ["Fe XV 284.163"]),
         line_wvl=("line", [284.163]),
         channel=("line", [284]),
+        component_kind=("line", ["line"]),
     )
-    _write(first, tmp_path / "a.zarr", "zarr")
-    _write(second, tmp_path / "b.zarr", "zarr")
+    _write(first, tmp_path / "a.nc", "nc")
+    _write(second, tmp_path / "b.nc", "nc")
 
     resp = load_and_concat_responses(
         response_directory=tmp_path,
-        response_files=["a.zarr", "b.zarr"],
+        response_files=["a.nc", "b.nc"],
         logT=_axis(np.linspace(5.2, 6.6, 4), "logT"),
         vdop=_axis([-100.0, 0.0, 100.0], "vdop"),
         slit=_slit(3),
@@ -208,9 +217,12 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         channels=[108, 284],
     )
 
-    assert resp.sizes["line"] == 3
-    np.testing.assert_array_equal(resp.channel.values, [108, 108, 284])
-    np.testing.assert_array_equal(resp.gain.values, np.full(3, DEFAULTS_MUSE.ccd_gain.value))
+    assert resp.sizes["line"] == 4
+    np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
+    np.testing.assert_array_equal(resp.component_kind, ["line", "line", "contaminants", "line"])
+    np.testing.assert_allclose(resp.line_wvl, [108.355, 108.117, 108.355, 284.163])
+    np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
+    np.testing.assert_array_equal(resp.gain.values, np.full(4, DEFAULTS_MUSE.ccd_gain.value))
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "SG_resp" in resp.data_vars
