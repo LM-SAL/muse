@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -66,6 +68,17 @@ def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> No
     assert r.sizes["vdop"] == src.sizes["vdop"]
     assert r.line_wvl.attrs["units"] == str(u.AA)
     assert "gain" in r.coords
+
+
+def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
+    path = tmp_path / "response.zarr"
+    fake_response_file().to_zarr(path, zarr_format=3, consolidated=False)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        response = read_response(path)
+
+    assert "SG_resp" in response
 
 
 def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -> None:

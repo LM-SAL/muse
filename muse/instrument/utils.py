@@ -82,11 +82,12 @@ def read_response(
             msg = f"{name} must contain only finite values"
             raise ValueError(msg)
 
-    r = (
-        xr.open_zarr(response_file)
-        if response_file.is_dir() and ((response_file / "zarr.json").exists() or (response_file / ".zgroup").exists())
-        else xr.open_dataset(response_file)
-    )
+    if response_file.is_dir() and (response_file / "zarr.json").exists():
+        r = xr.open_zarr(response_file, consolidated=False)
+    elif response_file.is_dir() and (response_file / ".zgroup").exists():
+        r = xr.open_zarr(response_file)
+    else:
+        r = xr.open_dataset(response_file)
     if "SG_resp" not in r.data_vars:
         msg = "Response dataset must contain 'SG_resp' variable"
         raise ValueError(msg)
