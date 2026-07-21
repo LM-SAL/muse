@@ -225,7 +225,10 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         map_response_to_sg_detector(response, channel, **kwargs)
 
 
-@pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+    "ignore:Setting the shape on a NumPy array has been deprecated in NumPy:DeprecationWarning: ",
+)
 def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_path):
     generated_line_list = xr.Dataset(
         {

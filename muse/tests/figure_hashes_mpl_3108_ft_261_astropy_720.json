@@ -2,12 +2,12 @@
   "muse.instrument.tests.test_figures.test_spectral_response_doppler_profiles": "699b8e2612438b35511d887c44d79b0969fd389af0f42d066550615846412b84",
   "muse.instrument.tests.test_figures.test_spectral_response_broadening_profiles": "e9c712acaa5cb29ea62ed92f94529d128cc48bd87326e6731b9cb2c6ff91d009",
   "muse.instrument.tests.test_figures.test_spectral_response_effective_area_cutoff": "95c8b4b260df8bb7dd7d270519986666c00e2c4898af1f8b86c8e8a4aea82948",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "adf8cff0fef723eda6a3eabfb69c227a690460c2dbb62e1fe9bf2ae661e86bb0",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "747e50d626876afaf4e0211110f393258fd5d0e260c5cca9209df7d20cbe72bb",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "95c27a38291a9a2c5135b71dae3a5881128231092cf487739ac6d08d6181b995",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "9090f3b913a7c785ec038c6e6a01dde844e537bc47fbeeb53ee5750eec4646b4",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "f7d80fea9ef427894eb8547569454bdcc493d4ba519a4694a2ad1af5bd29b382",
   "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "060d58609d45660ed1f8955d34128c9dc2616042719b74c7b2e3afe0c772b60b",
   "muse.tests.test_figures.test_vdem_intensity_map": "0772526f8cee58e6bdd7d5651a9a30b283290b9c9ef57f4523b031cf75ebe45b",
-  "muse.tests.test_figures.test_response_logt_profile": "8079e322cea505b5e69d8c0f2cf69f56d477d2e053668963ed409de58164f9f0",
-  "muse.tests.test_figures.test_response_line_profiles": "dbe404fd497d0b3f448ccd9cdf5da72b247d5f22e988056ae47a1437024c0123",
+  "muse.tests.test_figures.test_response_logt_profile": "f095e50a8f6ceceb9d12c5b8c3160c39ada0176e78f96006c7c19e881c45fbca",
+  "muse.tests.test_figures.test_response_line_profiles": "58ea39a302807bf53c9fa695bac1f17a688ed906fd6120279514e1a4e08cdb99",
   "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "e310f2c8bb82813638f2b73e387e07a6e20bf7225513a73be5b38b23399dcedd"
 }
