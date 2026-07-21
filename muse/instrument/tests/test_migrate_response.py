@@ -49,3 +49,15 @@ def test_migrate_response_leaves_no_destination_when_verification_fails(tmp_path
 
     assert not destination.exists()
     assert list(tmp_path.iterdir()) == [source]
+
+
+def test_verify_values_rejects_metadata_and_coordinate_role_changes() -> None:
+    expected = xr.Dataset(
+        {"detector_response": ("line", [1.0])},
+        coords={"line_wavelength": ("line", [171.073], {"units": "Angstrom"})},
+        attrs={"normalization": 1e-27},
+    )
+
+    for actual in (expected.assign_attrs(normalization=1.0), expected.reset_coords("line_wavelength")):
+        with pytest.raises(ValueError, match="does not match"):
+            migrate_response._verify_values(expected, actual)

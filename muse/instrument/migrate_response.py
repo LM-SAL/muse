@@ -4,8 +4,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from collections.abc import Sequence
 
-import dask.array as da
-import numpy as np
 import xarray as xr
 
 from muse.instrument import utils as response_utils
@@ -70,24 +68,11 @@ def _schema(response: xr.Dataset) -> str:
 
 
 def _verify_values(expected: xr.Dataset, actual: xr.Dataset) -> None:
-    if dict(expected.sizes) != dict(actual.sizes) or set(expected.variables) != set(actual.variables):
-        msg = "Migrated response schema does not match the canonical source schema"
-        raise ValueError(msg)
-    for name in expected.variables:
-        left = expected[name]
-        right = actual[name]
-        if left.dims != right.dims or left.shape != right.shape:
-            msg = f"Migrated variable schema does not match for {name!r}"
-            raise ValueError(msg)
-        left_data = da.asarray(left.data)
-        right_data = da.asarray(right.data)
-        if np.issubdtype(left.dtype, np.inexact) and np.issubdtype(right.dtype, np.inexact):
-            equal = da.allclose(left_data, right_data, rtol=0, atol=0, equal_nan=True)
-        else:
-            equal = da.all(left_data == right_data)
-        if not bool(equal.compute()):
-            msg = f"Migrated values differ for {name!r}"
-            raise ValueError(msg)
+    try:
+        xr.testing.assert_identical(expected, actual)
+    except AssertionError as exc:
+        msg = "Migrated response does not match the canonical source"
+        raise ValueError(msg) from exc
 
 
 def main(argv: Sequence[str] | None = None) -> int:
