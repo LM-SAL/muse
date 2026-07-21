@@ -162,6 +162,7 @@ def test_map_response_to_sg_detector_requires_effective_area():
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
         ("wavelength_grid", ValueError, "strictly increasing"),
+        ("slit_spacing", ValueError, "slit_spacing"),
         ("geometry", ValueError, "number_of_slits"),
     ],
 )
@@ -179,6 +180,8 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         response.attrs["normalization"] = 0
     elif case == "wavelength_grid":
         response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
+    elif case == "slit_spacing":
+        kwargs["slit_spacing"] = 0 * u.pix
     else:
         kwargs["number_of_slits"] = 0
 
