@@ -1,9 +1,10 @@
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import dask
 import numpy as np
 import xarray as xr
+from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
 
 import astropy.units as u
 
@@ -12,7 +13,127 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["load_and_concat_responses", "read_response"]
+__all__ = ["load_and_concat_responses", "read_response", "save_response"]
+
+_DEFAULT_RESPONSE_CHUNKS = {"line": 1, "vdop": 20, "logT": 1, "pressure": 1, "abundance": 1}
+_LEGACY_RESPONSE_NAMES = {
+    "SG_xpixel": "detector_x_pixel",
+    "SG_wvl": "detector_wavelength",
+    "SG_resp": "detector_response",
+    "line_wvl": "line_wavelength",
+}
+_NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
+
+
+def save_response(
+    response: xr.Dataset,
+    response_file: str | Path,
+    *,
+    chunks: Mapping[str, int] | None = None,
+) -> None:
+    """
+    Save a detector response as Zarr or NetCDF.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Dataset containing ``detector_response``.
+    response_file : `str` or `pathlib.Path`
+        Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``.
+        Existing destinations are not overwritten.
+    chunks : mapping of `str` to `int`, optional
+        Per-dimension overrides for the benchmark-backed defaults:
+        ``line=1``, ``vdop=20``, ``logT=1``, ``pressure=1``,
+        ``abundance=1``, and complete ``slit``/``detector_x_pixel`` planes.
+        Unspecified dimensions retain the defaults. Values larger than a
+        dimension use the full dimension.
+
+    Notes
+    -----
+    Zarr responses use Blosc/Zstd level 3 with bit-shuffle. NetCDF responses
+    use zlib level 1 with shuffle. These defaults were selected independently
+    using the full 171 response.
+    """
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
+    if "detector_response" not in response.data_vars:
+        msg = "response must contain detector_response"
+        raise ValueError(msg)
+    response_file = Path(response_file)
+    if response_file.exists():
+        msg = f"Refusing to overwrite existing response: {response_file}"
+        raise ValueError(msg)
+    suffix = response_file.suffix.lower()
+    if suffix != ".zarr" and suffix not in _NETCDF_SUFFIXES:
+        msg = "response_file must end in .zarr, .nc, .ncdf, or .netcdf"
+        raise ValueError(msg)
+
+    chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
+    if suffix == ".zarr":
+        compressor = BloscCodec(cname=BloscCname.zstd, clevel=3, shuffle=BloscShuffle.bitshuffle)
+        chunked.to_zarr(
+            response_file,
+            mode="w",
+            zarr_format=3,
+            consolidated=False,
+            encoding={"detector_response": {"compressors": (compressor,)}},
+        )
+        return
+    chunksizes = tuple(axis[0] for axis in chunked.detector_response.chunks)
+    chunked.to_netcdf(
+        response_file,
+        encoding={
+            "detector_response": {
+                "chunksizes": chunksizes,
+                "zlib": True,
+                "complevel": 1,
+                "shuffle": True,
+            }
+        },
+    )
+
+
+def _response_chunks(response: xr.Dataset, overrides: Mapping[str, int] | None) -> dict[str, int]:
+    chunks = {
+        name: min(size, response.sizes[name])
+        for name, size in _DEFAULT_RESPONSE_CHUNKS.items()
+        if name in response.dims
+    }
+    for name in ("slit", "detector_x_pixel"):
+        if name in response.dims:
+            chunks[name] = response.sizes[name]
+    if overrides is None:
+        return chunks
+    if not isinstance(overrides, Mapping):
+        msg = "chunks must be a mapping of dimension names to positive integers"
+        raise TypeError(msg)
+    for name, size in overrides.items():
+        if name not in response.dims:
+            msg = f"chunks contains unknown dimension: {name}"
+            raise ValueError(msg)
+        if isinstance(size, bool) or not isinstance(size, int | np.integer) or size <= 0:
+            msg = f"chunks[{name!r}] must be a positive integer"
+            raise ValueError(msg)
+        chunks[name] = min(int(size), response.sizes[name])
+    return chunks
+
+
+def _open_response_file(response_file: Path, *, chunked: bool = False) -> xr.Dataset:
+    kwargs = {"chunks": {}} if chunked else {}
+    if response_file.is_dir() and (response_file / "zarr.json").exists():
+        return xr.open_zarr(response_file, consolidated=False, **kwargs)
+    if response_file.is_dir() and (response_file / ".zgroup").exists():
+        return xr.open_zarr(response_file, **kwargs)
+    return xr.open_dataset(response_file, **kwargs)
+
+
+def _canonicalize_response_names(response: xr.Dataset) -> xr.Dataset:
+    for old_name, new_name in _LEGACY_RESPONSE_NAMES.items():
+        if old_name not in response.variables and old_name not in response.dims:
+            continue
+        response = response.drop_vars(new_name, errors="ignore").rename({old_name: new_name})
+    return response
 
 
 @format_docstring("DEFAULTS_MUSE", gain="ccd_gain")
@@ -74,23 +195,7 @@ def read_response(
             msg = f"{name} must contain only finite values"
             raise ValueError(msg)
 
-    if response_file.is_dir() and (response_file / "zarr.json").exists():
-        r = xr.open_zarr(response_file, consolidated=False)
-    elif response_file.is_dir() and (response_file / ".zgroup").exists():
-        r = xr.open_zarr(response_file)
-    else:
-        r = xr.open_dataset(response_file)
-
-    legacy_names = {
-        "SG_xpixel": "detector_x_pixel",
-        "SG_wvl": "detector_wavelength",
-        "SG_resp": "detector_response",
-        "line_wvl": "line_wavelength",
-    }
-    for old_name, new_name in legacy_names.items():
-        if old_name not in r.variables and old_name not in r.dims:
-            continue
-        r = r.drop_vars(new_name, errors="ignore").rename({old_name: new_name})
+    r = _canonicalize_response_names(_open_response_file(response_file))
 
     if "detector_response" not in r.data_vars:
         msg = "Response dataset must contain 'detector_response' variable"
