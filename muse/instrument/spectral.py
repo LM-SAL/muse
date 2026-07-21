@@ -6,15 +6,19 @@ from collections.abc import Sequence
 
 import numpy as np
 import xarray as xr
+from tqdm import tqdm
 
 import astropy.constants as const
 import astropy.units as u
 
-from muse.utils.utils import add_history, require_unit
+from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["create_spectral_response"]
 
 _RESPONSE_NORMALIZATION = 1e-27
+# The Gaussian is exactly zero beyond this point in float64.
+_GAUSSIAN_WINDOW_SIGMA = 40
+_GAUSSIAN_EXPRESSION = "scaled * exp(-0.5 * (shift / width) ** 2) / gaussian_norm / width"
 
 
 def create_spectral_response(
@@ -71,6 +75,7 @@ def create_spectral_response(
         effective_area=effective_area,
         main_lines=main_lines,
     )
+    response = response.drop_vars("component_kind")
     add_history(response, call_inputs, create_spectral_response)
     return response
 
@@ -91,6 +96,7 @@ def _create_wavelength_response(
     effective_area: xr.DataArray | None = None,
     main_lines: Sequence[str] | None = None,
     include_contaminants: bool = False,
+    progress: bool = True,
 ) -> xr.Dataset:
     """
     Build the wavelength-space response, optionally including contaminants.
@@ -108,6 +114,12 @@ def _create_wavelength_response(
     if not main_lines and not include_contaminants:
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)
+
+    try:
+        import numexpr as ne  # noqa: PLC0415
+    except ImportError:
+        msg = "numexpr is required for this function, install it with `pip install muse[chianti]`"
+        raise ImportError(msg) from None
 
     try:
         import periodictable as pt  # noqa: PLC0415
@@ -141,6 +153,7 @@ def _create_wavelength_response(
         if line_name not in main_response_parts:
             continue
         line_response, gofnt_scaled = _evaluate_gaussian_response(
+            ne,
             wavelength_grid,
             line_centers.isel(trans_index=i),
             doppler_widths.isel(trans_index=i),
@@ -160,12 +173,14 @@ def _create_wavelength_response(
     if include_contaminants:
         contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
         contaminant_response = _create_contaminant_response(
+            ne,
             line_list,
             contaminant_indices,
             wavelength_grid,
             line_centers,
             doppler_widths,
             gaussian_norm,
+            progress=progress,
         )
     else:
         contaminant_response = None
@@ -216,22 +231,11 @@ def _effective_area_in_canonical_units(effective_area):
         raise ValueError(msg)
     dataset = xr.Dataset({"effective_area": effective_area})
     area_unit = require_unit(dataset, "effective_area", "effective_area", convertible_to=u.cm**2)
-    wavelength_unit = require_unit(
-        dataset,
-        "wavelength",
-        "effective_area wavelength coordinate",
-        coord_only=True,
-        convertible_to=u.AA,
-    )
+    wavelength = coord_as_unit(dataset, "wavelength", u.AA, "effective_area wavelength coordinate")
     converted = (effective_area * area_unit.to(u.cm**2)).assign_attrs({**effective_area.attrs, "units": str(u.cm**2)})
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):
         msg = "effective_area must contain finite, non-negative values"
         raise ValueError(msg)
-    wavelength = xr.DataArray(
-        effective_area.wavelength.data * wavelength_unit.to(u.AA),
-        dims=effective_area.wavelength.dims,
-        attrs={**effective_area.wavelength.attrs, "units": str(u.AA)},
-    )
     wavelength_values = np.asarray(wavelength)
     if (
         wavelength_values.ndim != 1
@@ -274,18 +278,23 @@ def _wavelength_grid_in_angstrom(wavelength_grid):
 
 
 def _create_contaminant_response(
+    numexpr,
     line_list,
     contaminant_indices,
     wavelength_grid,
     line_centers,
     doppler_widths,
     gaussian_norm,
+    *,
+    progress,
 ):
     if not contaminant_indices:
         return None
     accumulator = None
-    for i in contaminant_indices:
+    iterator = tqdm(contaminant_indices, desc="Spectral contaminants", unit="line") if progress else contaminant_indices
+    for i in iterator:
         accumulator, gofnt_scaled = _evaluate_gaussian_response(
+            numexpr,
             wavelength_grid,
             line_centers.isel(trans_index=i),
             doppler_widths.isel(trans_index=i),
@@ -399,6 +408,7 @@ def _atomic_mass_from_atomic_number(atomic_number, elements, proton_mass):
 
 
 def _evaluate_gaussian_response(
+    numexpr,
     wavelength_grid,
     line_center,
     doppler_width,
@@ -407,11 +417,24 @@ def _evaluate_gaussian_response(
     *,
     accumulator=None,
 ):
+    center, width_for_bounds = xr.broadcast(line_center, doppler_width)
+    half_window = _GAUSSIAN_WINDOW_SIGMA * width_for_bounds
+    start = np.searchsorted(wavelength_grid.data, np.min((center - half_window).data), side="left")
+    stop = np.searchsorted(wavelength_grid.data, np.max((center + half_window).data), side="right")
+
     shift = (wavelength_grid - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(doppler_width, shift)
-    gofnt_scaled = gofnt.broadcast_like(width) / _RESPONSE_NORMALIZATION
+    gofnt_scaled = (gofnt / _RESPONSE_NORMALIZATION).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
-    response = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
-    if accumulator is not None:
-        response = response + accumulator
+    response = np.zeros_like(gofnt_scaled.data) if accumulator is None else accumulator
+    index = [slice(None)] * response.ndim
+    index[gofnt_scaled.get_axis_num("wavelength_bin")] = slice(start, stop)
+    index = tuple(index)
+    scaled = gofnt_scaled.isel(wavelength_bin=slice(start, stop)).data
+    shift = shift.isel(wavelength_bin=slice(start, stop)).data
+    width = width.isel(wavelength_bin=slice(start, stop)).data
+    response[index] += numexpr.evaluate(
+        _GAUSSIAN_EXPRESSION,
+        local_dict={"scaled": scaled, "shift": shift, "width": width, "gaussian_norm": gaussian_norm},
+    )
     return response, gofnt_scaled

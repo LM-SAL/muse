@@ -10,14 +10,14 @@ from muse.transforms.transforms import reshape_x_to_slit_step
 @figure_test
 def test_vdem_synthesis_detector_spectrum(response, vdem):
     """
-    Synthesized detector spectrum (flux vs SG_xpixel) per line at the brightest y/step.
+    Synthesized detector spectrum per line at the brightest y/step.
     """
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     flux = vdem_synthesis(reshaped_vdem, response).flux
-    brightest = flux.sum(dim=["line", "SG_xpixel"])
+    brightest = flux.sum(dim=["line", "detector_x_pixel"])
     it, istep = (int(i) for i in np.unravel_index(int(brightest.values.argmax()), brightest.shape))
     fig, ax = plt.subplots()
-    flux.isel(y=it, step=istep).plot.line(x="SG_xpixel", hue="line", ax=ax)
+    flux.isel(y=it, step=istep).plot.line(x="detector_x_pixel", hue="line", ax=ax)
     ax.set_title(f"synthesized spectrum at y={it}, step={istep}")
     return fig
 
@@ -29,9 +29,9 @@ def test_vdem_synthesis_fov(response, vdem):
     """
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     # Default sum_over collapses slit -> coarse (y, step) field.
-    collapsed = vdem_synthesis(reshaped_vdem, response).flux.sum(dim=["line", "SG_xpixel"])
+    collapsed = vdem_synthesis(reshaped_vdem, response).flux.sum(dim=["line", "detector_x_pixel"])
     # Keep slit, then restack (slit, step) -> x to recover the full spatial resolution.
-    kept = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop")).flux.sum(dim=["line", "SG_xpixel"])
+    kept = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop")).flux.sum(dim=["line", "detector_x_pixel"])
     # reset_index drops the (slit, step) MultiIndex, leaving a plain 0..384 x axis to plot.
     full = kept.stack(x=("slit", "step")).transpose("y", "x").reset_index("x", drop=True)
     fig, (ax_coarse, ax_full) = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
@@ -53,11 +53,11 @@ def test_vdem_synthesis_doppler_shift(response):
         reshaped_vdem = reshape_x_to_slit_step(fake_vdem_single_vdop(vdop_kms), nslits=35, nraster=11)
         flux = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop")).flux
         spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"])
-        wavelength = flux.SG_wvl.isel(line=0, slit=17).values
+        wavelength = flux.detector_wavelength.isel(line=0, slit=17).values
         ax.plot(wavelength, spectrum.values, label=f"vdop={vdop_kms:+.0f} km/s")
     ax.axvline(108.355, ls="--", color="k", alpha=0.4, label="rest 108.355 A")
     ax.set_xlim(107.0, 109.5)  # zoom on the line so the ~0.1 A shift is visible
-    ax.set_xlabel("SG_wvl [Angstrom]")
+    ax.set_xlabel("detector wavelength [Angstrom]")
     ax.set_ylabel("flux [ph / s]")
     ax.legend()
     return fig

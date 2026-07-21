@@ -4,6 +4,7 @@ Tests for CHIANTI-line Gaussian spectral responses.
 
 from functools import partial
 
+import numexpr as ne
 import numpy as np
 import pytest
 import xarray as xr
@@ -11,7 +12,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.spectral import _create_wavelength_response as _create_wavelength_response_impl
-from muse.instrument.spectral import create_spectral_response
+from muse.instrument.spectral import _evaluate_gaussian_response, create_spectral_response
 
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
@@ -70,7 +71,7 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     )
 
     assert response.line.values.tolist() == [main_line]
-    assert response.component_kind.values.tolist() == ["line"]
+    assert "component_kind" not in response.coords
     assert response.attrs["HISTORY"][0].startswith("create_spectral_response(")
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 
@@ -87,6 +88,32 @@ def test_integral_matches_gofnt():
     expected = ll.gofnt.isel(trans_index=0) / RESPONSE_NORMALIZATION
     np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
     assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("1e-27 erg cm3 / (Angstrom s sr)")
+
+
+def test_gaussian_window_matches_full_grid():
+    wavelength_grid = xr.DataArray(np.arange(160.0, 182.002, 0.002), dims="wavelength_bin")
+    line_center = xr.DataArray([170.8, 171.2], dims="doppler_velocity")
+    doppler_width = xr.DataArray([[0.02, 0.04], [0.03, 0.05]], dims=("doppler_velocity", "logT"))
+    gofnt = xr.DataArray([1e-25, 2e-25], dims="logT")
+    gaussian_norm = np.sqrt(2 * np.pi)
+    shift = (wavelength_grid - line_center).broadcast_like(gofnt)
+    width, shift = xr.broadcast(doppler_width, shift)
+    gofnt_scaled, width, shift = xr.broadcast(gofnt.broadcast_like(width) / RESPONSE_NORMALIZATION, width, shift)
+    expected = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
+
+    response, _ = _evaluate_gaussian_response(ne, wavelength_grid, line_center, doppler_width, gofnt, gaussian_norm)
+    np.testing.assert_allclose(response, expected, rtol=1e-15, atol=0)
+
+    response, _ = _evaluate_gaussian_response(
+        ne,
+        wavelength_grid,
+        line_center,
+        doppler_width,
+        gofnt,
+        gaussian_norm,
+        accumulator=np.ones_like(expected),
+    )
+    np.testing.assert_allclose(response, expected + 1, rtol=1e-15, atol=0)
 
 
 def test_peak_follows_doppler_shift():
@@ -466,6 +493,18 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
         with_contaminants.spectral_response.sum("line"),
         all_summed.spectral_response.isel(line=0, drop=True),
     )
+
+
+def test_contaminant_progress(capsys):
+    line_list = synthetic_line_list(2)
+
+    _create_wavelength_response(
+        line_list,
+        main_lines=[line_list.full_name[0].item()],
+        include_contaminants=True,
+    )
+
+    assert "Spectral contaminants" in capsys.readouterr().err
 
 
 def test_empty_main_lines_require_contaminant_opt_in():

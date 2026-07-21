@@ -11,19 +11,22 @@ from muse.transforms.transforms import reshape_x_to_slit_step
 
 
 def _spectrum(response, vdem):
-    # Keep slit so SG_wvl survives, then add the dopp_vel coordinate moments require.
+    # Keep slit so detector_wavelength survives, then add the Doppler coordinate moments require.
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))
     return synthesis_utils.wavelength_to_doppler(spectrum)
 
 
 def _tiny_response():
-    line_wvl = np.array([108.355, 171.073])
-    sg_wvl = np.array([[108.0, 108.355, 108.7], [170.6, 171.073, 171.5]])
+    line_wavelength = np.array([108.355, 171.073])
+    detector_wavelength = np.array([[108.0, 108.355, 108.7], [170.6, 171.073, 171.5]])
     ds = xr.Dataset()
-    ds = ds.assign_coords(line_wvl=("line", line_wvl), SG_wvl=(("line", "SG_xpixel"), sg_wvl))
-    ds.line_wvl.attrs["units"] = "Angstrom"
-    ds.SG_wvl.attrs["units"] = "Angstrom"
+    ds = ds.assign_coords(
+        line_wavelength=("line", line_wavelength),
+        detector_wavelength=(("line", "detector_x_pixel"), detector_wavelength),
+    )
+    ds.line_wavelength.attrs["units"] = "Angstrom"
+    ds.detector_wavelength.attrs["units"] = "Angstrom"
     return ds
 
 
@@ -31,14 +34,18 @@ def _tiny_moment_spectrum():
     return xr.Dataset(
         data_vars={
             "flux": (
-                ("SG_xpixel",),
+                ("detector_x_pixel",),
                 [1.0, 2.0, 10.0, 2.0, 1.0],
                 {"units": "ph / s"},
             ),
         },
         coords={
-            "SG_xpixel": [0, 1, 2, 3, 4],
-            "dopp_vel": (("SG_xpixel",), [-200.0, -100.0, 0.0, 100.0, 200.0], {"units": "km/s"}),
+            "detector_x_pixel": [0, 1, 2, 3, 4],
+            "doppler_velocity": (
+                ("detector_x_pixel",),
+                [-200.0, -100.0, 0.0, 100.0, 200.0],
+                {"units": "km/s"},
+            ),
         },
     )
 
@@ -47,29 +54,34 @@ def test_wavelength_doppler_round_trip() -> None:
     resp = _tiny_response()
     with_vel = synthesis_utils.wavelength_to_doppler(resp)
 
-    assert u.Unit(with_vel.dopp_vel.attrs["units"]) == u.km / u.s
-    assert "dopp_vel" not in resp.coords  # input must not be mutated
+    assert u.Unit(with_vel.doppler_velocity.attrs["units"]) == u.km / u.s
+    assert "doppler_velocity" not in resp.coords  # input must not be mutated
 
     back = synthesis_utils.doppler_to_wavelength(with_vel)
-    np.testing.assert_allclose(back.SG_wvl.values, resp.SG_wvl.values, rtol=1e-10)
-    assert u.Unit(back.SG_wvl.attrs["units"]) == u.AA
+    np.testing.assert_allclose(back.detector_wavelength.values, resp.detector_wavelength.values, rtol=1e-10)
+    assert u.Unit(back.detector_wavelength.attrs["units"]) == u.AA
 
 
 def test_wavelength_to_doppler_normalizes_units() -> None:
     # Same physical wavelengths expressed in nm must give the same Doppler shift.
     resp = _tiny_response()
-    resp_nm = resp.assign_coords(SG_wvl=resp.SG_wvl / 10.0)
-    resp_nm.SG_wvl.attrs["units"] = "nm"
+    resp_nm = resp.assign_coords(detector_wavelength=resp.detector_wavelength / 10.0)
+    resp_nm.detector_wavelength.attrs["units"] = "nm"
 
     angstrom = synthesis_utils.wavelength_to_doppler(resp)
     nanometer = synthesis_utils.wavelength_to_doppler(resp_nm)
-    np.testing.assert_allclose(angstrom.dopp_vel.values, nanometer.dopp_vel.values, rtol=1e-9, atol=1e-6)
+    np.testing.assert_allclose(
+        angstrom.doppler_velocity.values,
+        nanometer.doppler_velocity.values,
+        rtol=1e-9,
+        atol=1e-6,
+    )
 
 
 def test_wavelength_to_doppler_requires_units() -> None:
     resp = _tiny_response()
-    del resp.SG_wvl.attrs["units"]
-    with pytest.raises(ValueError, match=r"response\.SG_wvl must define units"):
+    del resp.detector_wavelength.attrs["units"]
+    with pytest.raises(ValueError, match=r"response\.detector_wavelength must define units"):
         synthesis_utils.wavelength_to_doppler(resp)
 
 
@@ -109,11 +121,11 @@ def test_calculate_moments_vmask_keeps_peak_window() -> None:
 def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
     spectrum = _spectrum(response, vdem)
     before_attrs = dict(spectrum.attrs)
-    before_dopp = spectrum.dopp_vel.values.copy()
+    before_dopp = spectrum.doppler_velocity.values.copy()
     synthesis_utils.calculate_moments(spectrum)
     # provenance/normalization must land on the result, not leak back into the caller
     assert dict(spectrum.attrs) == before_attrs
-    np.testing.assert_array_equal(spectrum.dopp_vel.values, before_dopp)
+    np.testing.assert_array_equal(spectrum.doppler_velocity.values, before_dopp)
 
 
 def test_calculate_moments_rejects_bad_moment_dim(response, vdem) -> None:
@@ -122,9 +134,9 @@ def test_calculate_moments_rejects_bad_moment_dim(response, vdem) -> None:
         synthesis_utils.calculate_moments(spectrum, moment_dim="nope")
 
 
-def test_calculate_moments_requires_dopp_vel(response, vdem) -> None:
+def test_calculate_moments_requires_doppler_velocity(response, vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))  # no dopp_vel coordinate
+    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))  # no Doppler coordinate
     with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
         synthesis_utils.calculate_moments(spectrum)
 

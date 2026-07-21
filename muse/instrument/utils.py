@@ -43,34 +43,26 @@ def read_response(
         Number of slits array of integers.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN, by default {gain}.
 
     Returns
     -------
     `xarray.Dataset`
-        The combined response function dataset.
+        The response dataset using the canonical ``detector_response``,
+        ``detector_wavelength``, ``detector_x_pixel``, and ``line_wavelength``
+        names. Existing files that use the legacy MUSE names are normalized on
+        load.
 
     Raises
     ------
     ValueError
-        If ``response_file`` does not exist, an interpolation method is invalid, the
-        ``logT``/``vdop`` axes are malformed, or the loaded dataset is
-        missing the ``SG_resp`` variable or the ``logT``/``vdop`` coordinates.
+        If the ``logT``/``vdop`` axes are malformed, or the loaded dataset is
+        missing the ``detector_response`` variable or the ``logT``/``vdop`` coordinates.
     """
-    _INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
     response_file = Path(response_file)
-    if not response_file.exists():
-        msg = f"Response does not exist: {response_file}"
-        raise ValueError(msg)
-    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
-        if method not in _INTERP_METHODS:
-            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
-            raise ValueError(msg)
 
     for name, axis in (("logT", logT), ("vdop", vdop)):
         if axis is None:
@@ -82,13 +74,26 @@ def read_response(
             msg = f"{name} must contain only finite values"
             raise ValueError(msg)
 
-    r = (
-        xr.open_zarr(response_file)
-        if response_file.is_dir() and ((response_file / "zarr.json").exists() or (response_file / ".zgroup").exists())
-        else xr.open_dataset(response_file)
-    )
-    if "SG_resp" not in r.data_vars:
-        msg = "Response dataset must contain 'SG_resp' variable"
+    if response_file.is_dir() and (response_file / "zarr.json").exists():
+        r = xr.open_zarr(response_file, consolidated=False)
+    elif response_file.is_dir() and (response_file / ".zgroup").exists():
+        r = xr.open_zarr(response_file)
+    else:
+        r = xr.open_dataset(response_file)
+
+    legacy_names = {
+        "SG_xpixel": "detector_x_pixel",
+        "SG_wvl": "detector_wavelength",
+        "SG_resp": "detector_response",
+        "line_wvl": "line_wavelength",
+    }
+    for old_name, new_name in legacy_names.items():
+        if old_name not in r.variables and old_name not in r.dims:
+            continue
+        r = r.drop_vars(new_name, errors="ignore").rename({old_name: new_name})
+
+    if "detector_response" not in r.data_vars:
+        msg = "Response dataset must contain 'detector_response' variable"
         raise ValueError(msg)
     for name in ("logT", "vdop"):
         if name not in r.coords and name not in r.dims:
@@ -104,25 +109,26 @@ def read_response(
     if "channel" not in r.dims and "line" not in r.dims:
         r = r.expand_dims("line")
 
-    if "line_wvl" not in r:
+    if "line_wavelength" not in r:
         fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
         if fallback is not None:
-            r = r.assign_coords(line_wvl=fallback)
+            r = r.assign_coords(line_wavelength=fallback)
         elif "channel" in r.coords:
-            r = r.assign_coords(line_wvl=r.channel)
+            r = r.assign_coords(line_wavelength=r.channel)
         else:
-            msg = "Response must define line_wvl or LINE_WVL/MAIN_LINE_WVL metadata"
+            msg = "Response must define line_wavelength or LINE_WVL/MAIN_LINE_WVL metadata"
             raise ValueError(msg)
 
     gain_unit = u.electron / u.DN
     gain = gain.to(gain_unit)
     gain_dim = "channel" if "channel" in r.dims else "line"
-    r = r.assign_coords(gain=(gain_dim, np.atleast_1d(gain.value)))
+    gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
+    r = r.assign_coords(gain=(gain_dim, gain_values))
     r.gain.attrs["units"] = str(gain_unit)
 
     # The current response files carry no wavelength units; warn and assume Angstrom for now.
-    _require_wavelength_units(r, "SG_wvl")
-    _require_wavelength_units(r, "line_wvl")
+    _require_wavelength_units(r, "detector_wavelength")
+    _require_wavelength_units(r, "line_wavelength")
 
     add_history(r, locals(), read_response)
     return r
@@ -172,7 +178,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     else:
         r = r.interp({name: axis}, method=method)
     # Clamp on every path so nearest and interpolated responses behave consistently.
-    r["SG_resp"] = r.SG_resp.fillna(0).clip(min=0)
+    r["detector_response"] = r.detector_response.fillna(0).clip(min=0)
     return r.assign_coords({name: axis})
 
 
@@ -197,7 +203,8 @@ def load_and_concat_responses(
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
     channels : `Sequence` of `int`
-        Channel values to assign; length must equal ``len(response_files)``.
+        One channel value per response file. The value is repeated for every
+        line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
     vdop : `xarray.DataArray`, optional
@@ -206,11 +213,9 @@ def load_and_concat_responses(
         Number of slits array of integers. Passed to `muse.instrument.utils.read_response`.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
         Passed to `muse.instrument.utils.read_response`.
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "linear".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
         Passed to `muse.instrument.utils.read_response`.
 
     Returns
@@ -228,16 +233,20 @@ def load_and_concat_responses(
         raise ValueError(msg)
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
-        datasets = [
-            read_response(
-                Path(response_directory) / f,
+        datasets = []
+        for filename in response_files:
+            dataset = read_response(
+                Path(response_directory) / filename,
                 logT=logT,
                 vdop=vdop,
                 slit=slit,
                 logT_method=logT_method,
                 vdop_method=vdop_method,
             ).drop_vars("effective_area", errors="ignore")
-            for f in response_files
-        ]
+            unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
+            datasets.append(dataset.drop_dims(unused_dims))
         response = xr.concat(datasets, dim="line", coords="different", compat="equals")
-    return response.assign_coords(channel=("line", list(channels)))
+    line_channels = [
+        channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
+    ]
+    return response.assign_coords(channel=("line", line_channels))
