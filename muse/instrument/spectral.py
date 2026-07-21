@@ -435,7 +435,7 @@ def _evaluate_gaussian_response(
 
     shift = (wavelength_grid - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(doppler_width, shift)
-    gofnt_scaled = gofnt.broadcast_like(width) / _RESPONSE_NORMALIZATION
+    gofnt_scaled = (gofnt / _RESPONSE_NORMALIZATION).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     response = np.zeros_like(gofnt_scaled.data) if accumulator is None else accumulator
     index = [slice(None)] * response.ndim
