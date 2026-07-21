@@ -11,7 +11,7 @@ from tqdm import tqdm
 import astropy.constants as const
 import astropy.units as u
 
-from muse.utils.utils import add_history, require_unit
+from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["create_spectral_response"]
 
@@ -231,22 +231,11 @@ def _effective_area_in_canonical_units(effective_area):
         raise ValueError(msg)
     dataset = xr.Dataset({"effective_area": effective_area})
     area_unit = require_unit(dataset, "effective_area", "effective_area", convertible_to=u.cm**2)
-    wavelength_unit = require_unit(
-        dataset,
-        "wavelength",
-        "effective_area wavelength coordinate",
-        coord_only=True,
-        convertible_to=u.AA,
-    )
+    wavelength = coord_as_unit(dataset, "wavelength", u.AA, "effective_area wavelength coordinate")
     converted = (effective_area * area_unit.to(u.cm**2)).assign_attrs({**effective_area.attrs, "units": str(u.cm**2)})
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):
         msg = "effective_area must contain finite, non-negative values"
         raise ValueError(msg)
-    wavelength = xr.DataArray(
-        effective_area.wavelength.data * wavelength_unit.to(u.AA),
-        dims=effective_area.wavelength.dims,
-        attrs={**effective_area.wavelength.attrs, "units": str(u.AA)},
-    )
     wavelength_values = np.asarray(wavelength)
     if (
         wavelength_values.ndim != 1
