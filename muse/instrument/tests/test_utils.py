@@ -6,8 +6,8 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument.utils import load_and_concat_responses, read_response
-from muse.tests.helpers import fake_response_file
+from muse.instrument.utils import load_and_concat_responses, read_response, save_response
+from muse.tests.helpers import fake_response, fake_response_file
 from muse.variables import DEFAULTS_MUSE
 
 pytestmark = [
@@ -33,6 +33,85 @@ def _axis(values, name: str) -> xr.DataArray:
 
 def _slit(n: int) -> xr.DataArray:
     return xr.DataArray(np.arange(n), dims="slit", coords={"slit": np.arange(n)})
+
+
+def _open(path, fmt: str) -> xr.Dataset:
+    if fmt == "zarr":
+        return xr.open_zarr(path, consolidated=False)
+    return xr.open_dataset(path)
+
+
+def _small_response() -> xr.Dataset:
+    response = fake_response().isel(line=slice(0, 2), logT=slice(0, 3), slit=slice(0, 4))
+    response = response.assign_coords(component_kind=("line", ["line"] * response.sizes["line"]))
+    return response.assign_attrs(normalization=1e-27, HISTORY=["create response", "map response"])
+
+
+@pytest.mark.parametrize("fmt", ["nc", "zarr"])
+def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
+    response = _small_response()
+    before = response.copy(deep=True)
+    path = tmp_path / f"response.{fmt}"
+
+    save_response(response, path)
+
+    with _open(path, fmt) as source:
+        encoding = source.detector_response.encoding
+        chunks = encoding["chunks" if fmt == "zarr" else "chunksizes"]
+        if fmt == "zarr":
+            assert encoding["compressors"][0].to_dict() == {
+                "name": "blosc",
+                "configuration": {
+                    "typesize": 8,
+                    "cname": "zstd",
+                    "clevel": 3,
+                    "shuffle": "bitshuffle",
+                    "blocksize": 0,
+                },
+            }
+        else:
+            assert {name: encoding[name] for name in ("zlib", "complevel", "shuffle")} == {
+                "zlib": True,
+                "complevel": 1,
+                "shuffle": True,
+            }
+        loaded = source.load()
+    assert chunks == (1, min(20, response.sizes["vdop"]), 1, 4, response.sizes["detector_x_pixel"])
+    xr.testing.assert_identical(loaded, before)
+    xr.testing.assert_identical(response, before)
+
+
+@pytest.mark.parametrize("fmt", ["nc", "zarr"])
+def test_save_response_accepts_chunk_overrides(tmp_path, fmt) -> None:
+    response = _small_response()
+    path = tmp_path / f"response.{fmt}"
+
+    save_response(response, path, chunks={"line": 2, "vdop": 3, "logT": 2, "slit": 2, "detector_x_pixel": 4})
+
+    with _open(path, fmt) as source:
+        chunks = source.detector_response.encoding["chunks" if fmt == "zarr" else "chunksizes"]
+    assert chunks == (2, 3, 2, 2, 4)
+
+
+def test_save_response_refuses_to_overwrite(tmp_path) -> None:
+    path = tmp_path / "response.nc"
+    path.touch()
+
+    with pytest.raises(ValueError, match="Refusing to overwrite"):
+        save_response(fake_response(), path)
+
+
+@pytest.mark.parametrize(
+    ("chunks", "error", "match"),
+    [
+        ([], TypeError, "mapping"),
+        ({"missing": 1}, ValueError, "unknown dimension"),
+        ({"vdop": 0}, ValueError, "positive integer"),
+    ],
+)
+def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match) -> None:
+    with pytest.raises(error, match=match):
+        save_response(_small_response(), tmp_path / "response.zarr", chunks=chunks)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
