@@ -139,9 +139,7 @@ def _validate_inputs(
     Validate ``raster``/``response`` structure and units for synthesis.
 
     Checks slit-dimension consistency, that every ``sum_over`` dimension exists on
-    the response, and that ``vdem``/``detector_response`` define valid units
-    while ``line_wavelength``/``detector_wavelength`` are coordinates with
-    wavelength units.
+    the response, and that arrays used by the synthesis define valid units.
 
     Returns
     -------
@@ -162,13 +160,14 @@ def _validate_inputs(
     raster_vdem_unit = require_unit(raster, "vdem", "raster.vdem")
     response_unit = require_unit(response, "detector_response", "response.detector_response")
     require_unit(response, "line_wavelength", "response.line_wavelength", coord_only=True, convertible_to=u.AA)
-    require_unit(
-        response,
-        "detector_wavelength",
-        "response.detector_wavelength",
-        coord_only=True,
-        convertible_to=u.AA,
-    )
+    if "slit" not in response.detector_response.dims or "slit" not in sum_over:
+        require_unit(
+            response,
+            "detector_wavelength",
+            "response.detector_wavelength",
+            coord_only=True,
+            convertible_to=u.AA,
+        )
     return raster_vdem_unit, response_unit
 
 
@@ -190,8 +189,9 @@ def vdem_synthesis(
     raster : `xarray.Dataset`
         VDEM raster. ``vdem`` must define units in the attrs.
     response : `xarray.Dataset`
-        Response functions. ``detector_response``, ``line_wavelength``, and
-        ``detector_wavelength`` must define units in the attrs.
+        Response functions. ``detector_response`` and ``line_wavelength`` must
+        define units in the attrs. ``detector_wavelength`` must define units when
+        its slit dimension is retained in the output.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional

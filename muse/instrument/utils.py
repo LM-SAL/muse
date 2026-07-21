@@ -43,10 +43,8 @@ def read_response(
         Number of slits array of integers.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN, by default {gain}.
 
@@ -61,20 +59,10 @@ def read_response(
     Raises
     ------
     ValueError
-        If ``response_file`` does not exist, an interpolation method is invalid, the
-        ``logT``/``vdop`` axes are malformed, or the loaded dataset is
-        missing the ``detector_response`` variable or the ``logT``/``vdop``
-        coordinates.
+        If the ``logT``/``vdop`` axes are malformed, or the loaded dataset is
+        missing the ``detector_response`` variable or the ``logT``/``vdop`` coordinates.
     """
-    _INTERP_METHODS = ("nearest", "linear", "cubic", "quadratic")
     response_file = Path(response_file)
-    if not response_file.exists():
-        msg = f"Response does not exist: {response_file}"
-        raise ValueError(msg)
-    for method_name, method in (("logT_method", logT_method), ("vdop_method", vdop_method)):
-        if method not in _INTERP_METHODS:
-            msg = f"Invalid {method_name}: {method}, allowed values are {_INTERP_METHODS}"
-            raise ValueError(msg)
 
     for name, axis in (("logT", logT), ("vdop", vdop)):
         if axis is None:
@@ -225,11 +213,9 @@ def load_and_concat_responses(
         Number of slits array of integers. Passed to `muse.instrument.utils.read_response`.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
         Passed to `muse.instrument.utils.read_response`.
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "linear".
-        Allowed values are "nearest", "linear", "cubic" and "quadratic".
         Passed to `muse.instrument.utils.read_response`.
 
     Returns

@@ -42,8 +42,7 @@ Treat every input :class:`~xarray.Dataset` as read-only.
 Produce results with ``assign`` / ``assign_coords`` / arithmetic, which return a *new* dataset that **shares** the underlying arrays.
 So adding a coordinate or attr is cheap and never duplicates the large data variables.
 
-**Why.** We will have large data arrays (e.g., ``vdem``, ``detector_response``,
-``flux``) whereas the coordinates and attrs are tiny.
+**Why.** We will have large data arrays (e.g., ``vdem``, ``detector_response``, ``flux``) whereas the coordinates and attrs are tiny.
 Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, which does not scale. In-place mutation (``ds.coords[...] = ...``) silently changes the caller's object, this is something we want to avoid.
 
 **Rules.**

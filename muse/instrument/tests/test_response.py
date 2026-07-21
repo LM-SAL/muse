@@ -146,6 +146,36 @@ def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():
     np.testing.assert_array_equal(mapped.component_kind, ["line", "contaminants"])
 
 
+@pytest.mark.parametrize("component_kind", [None, ["line", "line"]])
+def test_map_response_to_sg_detector_preserves_invalid_physical_line_wavelength(component_kind):
+    response = _spectral_response(contaminants=True)
+    if component_kind is None:
+        response = response.drop_vars("component_kind")
+    else:
+        response = response.assign_coords(component_kind=("line", component_kind))
+
+    mapped = map_response_to_sg_detector(response, 171, number_of_slits=1, detector_pixels=1)
+
+    np.testing.assert_allclose(mapped.line_wavelength, [171.073, np.nan])
+
+
+def test_map_response_to_sg_detector_preserves_input_nan():
+    response = _spectral_response()
+    response.spectral_response.data[..., response.sizes["wavelength_bin"] // 2] = np.nan
+
+    mapped = map_response_to_sg_detector(
+        response,
+        171,
+        number_of_slits=1,
+        dispersion=0.01 * u.AA / u.pix,
+        detector_pixels=response.sizes["wavelength_bin"],
+        wavelength_start=response.wavelength_grid[0].item() * u.AA,
+    )
+
+    assert bool(mapped.detector_response.isnull().any())
+    assert mapped.detector_response.isel(detector_x_pixel=-1).item() == 0
+
+
 def test_map_response_to_sg_detector_requires_effective_area():
     response = _spectral_response()
     response.spectral_response.attrs["units"] = "1e-27 erg cm3 / (Angstrom s sr)"
@@ -162,6 +192,8 @@ def test_map_response_to_sg_detector_requires_effective_area():
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
         ("wavelength_grid", ValueError, "strictly increasing"),
+        ("wavelength_grid_empty", ValueError, "wavelength_grid"),
+        ("wavelength_grid_positive", ValueError, "positive"),
         ("slit_spacing", ValueError, "slit_spacing"),
         ("geometry", ValueError, "number_of_slits"),
     ],
@@ -180,6 +212,10 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         response.attrs["normalization"] = 0
     elif case == "wavelength_grid":
         response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
+    elif case == "wavelength_grid_empty":
+        response = response.isel(wavelength_bin=slice(0, 0))
+    elif case == "wavelength_grid_positive":
+        response = response.assign_coords(wavelength_grid=response.wavelength_grid - 200)
     elif case == "slit_spacing":
         kwargs["slit_spacing"] = 0 * u.pix
     else:

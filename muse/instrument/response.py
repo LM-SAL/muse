@@ -10,12 +10,21 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
+from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["map_response_to_sg_detector"]
 
 
+@format_docstring(
+    "DEFAULTS_MUSE",
+    number_of_slits="number_of_slits_SG",
+    slit_spacing="pixels_between_slits",
+    detector_pixels="pixels_SG",
+    pixel_width="dx_pixel_SG",
+    pixel_height="dy_pixel_SG",
+)
 @u.quantity_input(
     dispersion=u.AA / u.pix,
     slit_spacing=u.pix,
@@ -27,10 +36,10 @@ def map_response_to_sg_detector(
     response: xr.Dataset,
     channel: int,
     *,
-    number_of_slits: int | None = None,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     dispersion: u.Quantity | None = None,
-    slit_spacing: u.Quantity | None = None,
-    detector_pixels: int | None = None,
+    slit_spacing: u.Quantity = DEFAULTS_MUSE.pixels_between_slits,
+    detector_pixels: int = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix)),
     wavelength_start: u.Quantity | None = None,
     pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
     pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
@@ -50,7 +59,7 @@ def map_response_to_sg_detector(
     channel : `int`
         MUSE SG channel: 108, 171, or 284 Angstrom.
     number_of_slits : `int`, optional
-        Number of simultaneous slits. If `None`, use the MUSE default.
+        Number of simultaneous slits, by default {number_of_slits}.
     dispersion : `astropy.units.Quantity`, optional
         Nominal wavelength width per detector pixel, also used for detector-bin
         integration. If `None`, derive it from the channel's spectral order and
@@ -58,16 +67,15 @@ def map_response_to_sg_detector(
         response products, the detector grid spans ``detector_pixels *
         dispersion`` across ``detector_pixels`` samples.
     slit_spacing : `astropy.units.Quantity`, optional
-        Detector pixels between adjacent slits. If `None`, use the MUSE
-        default.
+        Detector pixels between adjacent slits, by default {slit_spacing}.
     detector_pixels : `int`, optional
-        Number of spectral detector pixels. If `None`, use the MUSE default.
+        Number of spectral detector pixels, by default {detector_pixels}.
     wavelength_start : `astropy.units.Quantity`, optional
         Wavelength at detector pixel zero for slit zero. If `None`, use the
         channel calibration from `~muse.variables.DEFAULTS_MUSE`.
     pixel_width, pixel_height : `astropy.units.Quantity`, optional
         SG pixel angular size used to convert steradians to detector pixels,
-        by default the MUSE SG pixel dimensions.
+        by default {pixel_width} and {pixel_height}, respectively.
 
     Returns
     -------
@@ -123,22 +131,33 @@ def map_response_to_sg_detector(
     )
     wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
     line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
+    line_wavelength = np.asarray(line_wavelength)
+    if "component_kind" in response.coords:
+        component_kind = np.asarray(response.component_kind)
+        valid_lines = np.isfinite(line_wavelength) & (line_wavelength > 0)
+        missing_contaminants = ~valid_lines & (component_kind == "contaminants")
+        physical_lines = valid_lines & (component_kind == "line")
+        if missing_contaminants.any() and physical_lines.any():
+            line_wavelength = np.where(
+                missing_contaminants,
+                line_wavelength[physical_lines][0],
+                line_wavelength,
+            )
     wavelength_values = np.asarray(wavelength_grid)
-    if not np.all(np.isfinite(wavelength_values)) or np.any(np.diff(wavelength_values) <= 0):
-        msg = "response.wavelength_grid must be finite and strictly increasing"
+    if (
+        wavelength_values.size == 0
+        or not np.all(np.isfinite(wavelength_values))
+        or np.any(wavelength_values <= 0)
+        or np.any(np.diff(wavelength_values) <= 0)
+    ):
+        msg = "response.wavelength_grid must contain finite, positive, strictly increasing values"
         raise ValueError(msg)
 
-    if number_of_slits is None:
-        number_of_slits = DEFAULTS_MUSE.number_of_slits_SG
-    if detector_pixels is None:
-        detector_pixels = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix))
     for name, value in (("number_of_slits", number_of_slits), ("detector_pixels", detector_pixels)):
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:
             msg = f"{name} must be a positive integer"
             raise ValueError(msg)
 
-    if slit_spacing is None:
-        slit_spacing = DEFAULTS_MUSE.pixels_between_slits
     if wavelength_start is None:
         wavelength_start = default_wavelength_start
     for name, value in (
@@ -181,8 +200,7 @@ def map_response_to_sg_detector(
     spectral_response = spectral_response.assign_coords(wavelength_grid=wavelength_grid)
     mapped = (
         spectral_response.swap_dims(wavelength_bin="wavelength_grid")
-        .interp(wavelength_grid=detector_wavelength)
-        .fillna(0)
+        .interp(wavelength_grid=detector_wavelength, kwargs={"fill_value": 0})
         .rename(wavelength_grid="detector_wavelength")
     )
     mapped = mapped * dispersion_value
@@ -192,17 +210,6 @@ def map_response_to_sg_detector(
     )
     mapped.attrs["units"] = str(normalization * u.ph * u.cm**5 / u.s)
     mapped.detector_wavelength.attrs["units"] = str(u.AA)
-
-    line_wavelength = np.asarray(line_wavelength)
-    finite_lines = np.isfinite(line_wavelength)
-    if not finite_lines.all():
-        physical_lines = finite_lines
-        if "component_kind" in response.coords:
-            physical_lines = finite_lines & (np.asarray(response.component_kind) == "line")
-        if not physical_lines.any():
-            msg = "response must contain a physical line wavelength"
-            raise ValueError(msg)
-        line_wavelength = np.where(physical_lines, line_wavelength, line_wavelength[physical_lines][0])
 
     result = response.drop_dims("wavelength_bin")
     result = result.assign(detector_response=mapped).assign_coords(

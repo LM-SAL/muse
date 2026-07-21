@@ -177,9 +177,19 @@ def test_vdem_synthesis_rejects_non_length_wavelength_units(response, vdem) -> N
 def test_vdem_synthesis_requires_response_wavelength_coords(response, vdem, name) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.reset_coords(name)
+    kwargs = {"sum_over": ("logT", "vdop")} if name == "detector_wavelength" else {}
 
     with pytest.raises(ValueError, match=rf"response\.{name} is missing"):
-        vdem_synthesis(reshaped_vdem, bad_response)
+        vdem_synthesis(reshaped_vdem, bad_response, **kwargs)
+
+
+def test_vdem_synthesis_does_not_require_discarded_detector_wavelength(response, vdem) -> None:
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response = response.reset_coords("detector_wavelength")
+
+    result = vdem_synthesis(reshaped_vdem, response)
+
+    assert "detector_wavelength" not in result.coords
 
 
 def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
@@ -243,6 +253,7 @@ def test_vdem_synthesis_requires_response_units(response, vdem, name) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.copy(deep=True)
     del bad_response[name].attrs["units"]
+    kwargs = {"sum_over": ("logT", "vdop")} if name == "detector_wavelength" else {}
 
     with pytest.raises(ValueError, match=rf"response\.{name} must define units"):
-        vdem_synthesis(reshaped_vdem, bad_response)
+        vdem_synthesis(reshaped_vdem, bad_response, **kwargs)

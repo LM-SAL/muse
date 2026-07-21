@@ -157,17 +157,6 @@ def test_read_response_gain_rejects_wrong_units(tmp_path) -> None:
         read_response(path, gain=5.0 * u.second)
 
 
-def test_read_response_missing_file_raises(tmp_path) -> None:
-    with pytest.raises(ValueError, match="does not exist"):
-        read_response(str(tmp_path / "absent.nc"))
-
-
-def test_read_response_invalid_method_raises(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="Invalid logT_method"):
-        read_response(path, logT_method="sinc")
-
-
 def test_read_response_empty_logT_raises(tmp_path) -> None:
     path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="must not be empty"):
