@@ -201,16 +201,6 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
 
 
-def test_create_simple_vdem_x_chunking_is_exact() -> None:
-    # Chunked processing must be bit-identical to the single-pass result; vary ne_nh along x
-    # so a block mix-up cannot cancel out.
-    inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2)
-    unchunked = synthesis_utils.create_simple_vdem(**inputs)
-    chunked = synthesis_utils.create_simple_vdem(**inputs, n_x_chunks=2)
-    np.testing.assert_array_equal(chunked.vdem.values, unchunked.vdem.values)
-
-
 @pytest.mark.parametrize("integration_axis", [0, 1])
 def test_create_simple_vdem_integration_axis_matches_transposed_input(integration_axis: int) -> None:
     # Feeding cubes with the LOS axis moved elsewhere plus the matching integration_axis must

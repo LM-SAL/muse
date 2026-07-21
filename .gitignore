@@ -79,6 +79,7 @@ docs/api
 docs/sg_execution_times.rst
 # generated API docs
 docs/generated/
+examples/synthesis_tutorial/artifacts/
 
 # PyBuilder
 .pybuilder/

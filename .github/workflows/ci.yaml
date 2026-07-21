@@ -4,14 +4,14 @@ name: CI
 on:
   push:
     branches:
-      - 'main'
-      - '*.*'
-      - '!*backport*'
+      - "main"
+      - "*.*"
+      - "!*backport*"
     tags:
-      - 'v*'
-      - '!*dev*'
-      - '!*pre*'
-      - '!*post*'
+      - "v*"
+      - "!*dev*"
+      - "!*pre*"
+      - "!*post*"
   pull_request:
   # Allow manual runs through the web UI
   workflow_dispatch:
@@ -21,7 +21,7 @@ on:
     #        │ │ ┌───────── day of the month (1 - 31)
     #        │ │ │ ┌───────── month (1 - 12 or JAN-DEC)
     #        │ │ │ │ ┌───────── day of the week (0 - 6 or SUN-SAT)
-    - cron: '0 7 * * 3'  # Every Wed at 07:00 UTC
+    - cron: "0 7 * * 3" # Every Wed at 07:00 UTC
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,7 +31,7 @@ permissions: {}
 
 jobs:
   core:
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
       submodules: false
       coverage: codecov
@@ -42,21 +42,21 @@ jobs:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   chianti:
-    name: CHIANTI line-list integration test
+    name: CHIANTI and synthesis tutorial integration
     if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
     env:
       XUVTOP: ${{ github.workspace }}/.chianti/CHIANTI_11.0.2_database
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: '3.13'
+          python-version: "3.13"
       - name: Restore CHIANTI 11.0.2 database
         id: cache-chianti
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .chianti/CHIANTI_11.0.2_database
           key: chianti-database-${{ runner.os }}-11.0.2
@@ -71,20 +71,39 @@ jobs:
             --file "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
             --directory "${XUVTOP}"
           test -f "${XUVTOP}/ip/chianti.ip"
-      - name: Install line-list test dependencies
+      - name: Install integration dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install --editable '.[chianti]' \
-            pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
+            'plasmacalcs[most]' pooch pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
       - name: Test live CHIANTI line-list generation
         run: python -m pytest muse/instrument/tests/test_linelist.py --remote-data=any -q
+      - name: Run synthesis tutorial and report peak memory
+        env:
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+          SUNPY_CONFIGDIR: ${{ runner.temp }}/sunpy
+        run: |
+          run_example() {
+            local name="$1" status=0 time_file="${RUNNER_TEMP}/gallery-time.txt"
+            shift
+            /usr/bin/time --format="%M" --output="${time_file}" "$@" || status=$?
+            awk -v name="${name}" '{printf "- %s peak RAM: %.1f MB\n", name, $1 / 1024}' "${time_file}" | tee -a "${GITHUB_STEP_SUMMARY}"
+            return "${status}"
+          }
+          run_example example-01 env XDG_CACHE_HOME="${RUNNER_TEMP}/create-vdem" python examples/synthesis_tutorial/skip_01_create_vdem.py
+          run_example example-02 env XDG_CACHE_HOME="${RUNNER_TEMP}/match-fov" python examples/synthesis_tutorial/skip_02_vdem_to_muse_fov.py
+          run_example example-03 env XDG_CACHE_HOME="${RUNNER_TEMP}/line-list-prep" python examples/synthesis_tutorial/skip_03_prepare_chianti_line_lists.py
+          run_example example-04 env XDG_CACHE_HOME="${RUNNER_TEMP}/response-build" XUVTOP= python examples/synthesis_tutorial/skip_04_create_sg_responses.py
+          run_example example-05 env XDG_CACHE_HOME="${RUNNER_TEMP}/synthesis" XUVTOP= python examples/synthesis_tutorial/skip_05_synthesize_muse_observation.py
+          run_example example-06 env XDG_CACHE_HOME="${RUNNER_TEMP}/analysis" XUVTOP= python examples/synthesis_tutorial/skip_06_analyze_synthetic_spectra.py
       - name: Save CHIANTI 11.0.2 database
         if: |
           steps.cache-chianti.outputs.cache-hit != 'true' &&
           (github.ref == 'refs/heads/main' ||
            github.event_name == 'schedule' ||
            github.event_name == 'workflow_dispatch')
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .chianti/CHIANTI_11.0.2_database
           key: ${{ steps.cache-chianti.outputs.cache-primary-key }}
@@ -92,12 +111,12 @@ jobs:
   sdist_verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: '3.13'
+          python-version: "3.13"
       - run: python -m pip install -U --user build
       - run: python -m build . --sdist
       - run: python -m pip install -U --user twine
@@ -105,7 +124,7 @@ jobs:
 
   test:
     needs: [core, sdist_verify]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
       submodules: false
       coverage: codecov
@@ -119,9 +138,9 @@ jobs:
 
   docs:
     needs: [core]
-    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174  # v3.0.1
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
-      default_python: '3.13'
+      default_python: "3.13"
       submodules: false
       pytest: false
       toxdeps: tox-pypi-filter
@@ -143,8 +162,8 @@ jobs:
     needs: [test, docs]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
-      python-version: '3.13'
-      test_extras: 'all,tests'
+      python-version: "3.13"
+      test_extras: "all,tests"
       test_command: 'pytest -p no:warnings --doctest-rst --pyargs muse -m "not mpl_image_compare and not cuda"'
       submodules: false
       save_artifacts: true
@@ -168,4 +187,4 @@ jobs:
           path: dist
       - run: ls -lha dist/
       - name: Run upload
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
