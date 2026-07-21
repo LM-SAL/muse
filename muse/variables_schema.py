@@ -510,7 +510,7 @@ class InstrumentDefaults:
 
     initial_wavelength_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
-    Wavelength at SG_xpixel=0 for slit=0, in Angstroms.
+    Wavelength at detector pixel zero for slit zero, in Angstroms.
 
     Values normalized to Angstroms.
     """

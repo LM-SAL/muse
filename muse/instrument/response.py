@@ -72,8 +72,9 @@ def map_response_to_sg_detector(
     Returns
     -------
     `xarray.Dataset`
-        Detector response containing ``SG_resp`` in photon-response units and
-        ``SG_wvl`` and ``line_wvl`` coordinates in Angstrom. The generic
+        Detector response containing ``detector_response`` in photon-response
+        units and ``detector_wavelength`` and ``line_wavelength`` coordinates
+        in Angstrom. The generic
         ``doppler_velocity`` dimension is renamed to the legacy ``vdop`` name
         required by MUSE synthesis.
     """
@@ -170,15 +171,15 @@ def map_response_to_sg_detector(
     dispersion_value = dispersion.to_value(u.AA / u.pix)
     slit_offset = slit_spacing.to_value(u.pix) * dispersion_value
     detector_start = wavelength_start.to_value(u.AA)
-    detector_wavelength = np.linspace(
+    detector_wavelength_values = np.linspace(
         detector_start,
         detector_start + detector_pixels * dispersion_value,
         detector_pixels,
     )
-    sg_wavelength = xr.DataArray(
-        detector_wavelength[:, np.newaxis] - np.arange(number_of_slits)[np.newaxis, :] * slit_offset,
-        dims=("SG_xpixel", "slit"),
-        coords={"slit": np.arange(number_of_slits), "SG_xpixel": np.arange(detector_pixels)},
+    detector_wavelength = xr.DataArray(
+        detector_wavelength_values[:, np.newaxis] - np.arange(number_of_slits)[np.newaxis, :] * slit_offset,
+        dims=("detector_x_pixel", "slit"),
+        coords={"slit": np.arange(number_of_slits), "detector_x_pixel": np.arange(detector_pixels)},
         attrs={"units": str(u.AA)},
     )
 
@@ -193,15 +194,17 @@ def map_response_to_sg_detector(
     spectral_response = spectral_response.assign_coords(wavelength_grid=wavelength_grid)
     mapped = (
         spectral_response.swap_dims(wavelength_bin="wavelength_grid")
-        .interp(wavelength_grid=sg_wavelength)
+        .interp(wavelength_grid=detector_wavelength)
         .fillna(0)
-        .rename(wavelength_grid="SG_wvl")
+        .rename(wavelength_grid="detector_wavelength")
     )
     mapped = mapped * dispersion_value
-    leading_dims = [dim for dim in mapped.dims if dim not in ("slit", "SG_xpixel")]
-    mapped = mapped.transpose(*leading_dims, "slit", "SG_xpixel").assign_coords(SG_wvl=sg_wavelength)
+    leading_dims = [dim for dim in mapped.dims if dim not in ("slit", "detector_x_pixel")]
+    mapped = mapped.transpose(*leading_dims, "slit", "detector_x_pixel").assign_coords(
+        detector_wavelength=detector_wavelength
+    )
     mapped.attrs["units"] = str(normalization * u.ph * u.cm**5 / u.s)
-    mapped.SG_wvl.attrs["units"] = str(u.AA)
+    mapped.detector_wavelength.attrs["units"] = str(u.AA)
 
     line_wavelength = np.asarray(response.line_wavelength) * line_wavelength_unit.to(u.AA)
     finite_lines = np.isfinite(line_wavelength)
@@ -214,12 +217,12 @@ def map_response_to_sg_detector(
             raise ValueError(msg)
         line_wavelength = np.where(finite_lines, line_wavelength, line_wavelength[physical_lines][0])
 
-    detector_response = response.drop_dims("wavelength_bin").drop_vars("line_wavelength")
-    detector_response = detector_response.assign(SG_resp=mapped).assign_coords(
-        line_wvl=("line", line_wavelength, {"units": str(u.AA)}),
+    result = response.drop_dims("wavelength_bin")
+    result = result.assign(detector_response=mapped).assign_coords(
+        line_wavelength=("line", line_wavelength, {"units": str(u.AA)}),
         channel=("line", np.full(response.sizes["line"], channel)),
     )
-    if "doppler_velocity" in detector_response.dims:
-        detector_response = detector_response.rename(doppler_velocity="vdop")
-    add_history(detector_response, locals(), map_response_to_sg_detector)
-    return detector_response
+    if "doppler_velocity" in result.dims:
+        result = result.rename(doppler_velocity="vdop")
+    add_history(result, locals(), map_response_to_sg_detector)
+    return result

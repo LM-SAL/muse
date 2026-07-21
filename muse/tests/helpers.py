@@ -104,7 +104,7 @@ line = np.asarray(
 
 nline = np.size(line)
 channel = np.asarray([108, 108, 108, 171, 171, 284, 284])
-line_wvl = np.asarray(
+line_wavelength = np.asarray(
     [
         DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XIX 108.355"].to_value(u.AA),
         DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XXI 108.117"].to_value(u.AA),
@@ -255,10 +255,15 @@ def fake_response():
     slit_throughput = 1.0 + 0.08 * np.cos(np.pi * slit / nslit)
 
     for line_index in range(nline):
-        shifted_line_wvl = line_wvl[line_index] * (1.0 + dopaxis[:, np.newaxis, np.newaxis] / speed_of_light_kms)
+        shifted_line_wavelength = line_wavelength[line_index] * (
+            1.0 + dopaxis[:, np.newaxis, np.newaxis] / speed_of_light_kms
+        )
         spectral_profile = np.exp(
             -(
-                ((table_sgwvl[line_index][np.newaxis, :, :] - shifted_line_wvl) / response_spectral_width[line_index])
+                (
+                    (table_sgwvl[line_index][np.newaxis, :, :] - shifted_line_wavelength)
+                    / response_spectral_width[line_index]
+                )
                 ** 2
             )
         )
@@ -274,19 +279,22 @@ def fake_response():
 
     response = xr.Dataset(
         data_vars={
-            "SG_resp": (["line", "vdop", "logT", "slit", "SG_xpixel"], table_resp),
+            "detector_response": (["line", "vdop", "logT", "slit", "detector_x_pixel"], table_resp),
         },
-        coords={"logT": lgtaxis, "vdop": dopaxis, "line": line, "slit": slit, "SG_xpixel": SG_XPIXEL},
+        coords={"logT": lgtaxis, "vdop": dopaxis, "line": line, "slit": slit, "detector_x_pixel": SG_XPIXEL},
         attrs={"description": "No attributes"},
     )
-    response = response.assign_coords(line_wvl=("line", line_wvl), SG_wvl=(["line", "slit", "SG_xpixel"], table_sgwvl))
-    response.line_wvl.attrs["units"] = "Angstrom"
+    response = response.assign_coords(
+        line_wavelength=("line", line_wavelength),
+        detector_wavelength=(["line", "slit", "detector_x_pixel"], table_sgwvl),
+    )
+    response.line_wavelength.attrs["units"] = "Angstrom"
     response.logT.attrs["long_name"] = "log$_{10}$(T)"
     response.logT.attrs["units"] = "log$_{10}$ (K)"
     response.vdop.attrs["long_name"] = "v$_{Doppler}$"
     response.vdop.attrs["units"] = "km/s"
-    response.SG_resp.attrs["units"] = "1e-27 ph cm5 / s"
-    response.SG_wvl.attrs["units"] = "Angstrom"
+    response.detector_response.attrs["units"] = "1e-27 ph cm5 / s"
+    response.detector_wavelength.attrs["units"] = "Angstrom"
     return response.assign_coords(channel=("line", channel))
 
 

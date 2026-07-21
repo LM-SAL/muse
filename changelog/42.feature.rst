@@ -1,3 +1,4 @@
 Add :func:`~muse.instrument.response.map_response_to_sg_detector` to convert
 unit-bearing spectral responses into MUSE slit and detector geometry ready for
-synthesis.
+synthesis, using the descriptive ``detector_response``,
+``detector_wavelength``, ``detector_x_pixel``, and ``line_wavelength`` names.

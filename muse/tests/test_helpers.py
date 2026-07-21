@@ -5,8 +5,14 @@ from muse.tests.helpers import assert_dataset_structure
 
 
 def test_fake_response_matches_response_zarr_contract(response) -> None:
-    assert response.SG_resp.dims == ("line", "vdop", "logT", "slit", "SG_xpixel")
-    assert response.SG_resp.sizes == {"line": 7, "vdop": 9, "logT": 7, "slit": 35, "SG_xpixel": 32}
+    assert response.detector_response.dims == ("line", "vdop", "logT", "slit", "detector_x_pixel")
+    assert response.detector_response.sizes == {
+        "line": 7,
+        "vdop": 9,
+        "logT": 7,
+        "slit": 35,
+        "detector_x_pixel": 32,
+    }
     np.testing.assert_array_equal(response.channel.values, [108, 108, 108, 171, 171, 284, 284])
     np.testing.assert_array_equal(
         response.line.values,
@@ -20,9 +26,9 @@ def test_fake_response_matches_response_zarr_contract(response) -> None:
             "284 remaining 10000 lines",
         ],
     )
-    assert response.SG_wvl.dims == ("line", "slit", "SG_xpixel")
-    assert response.SG_wvl.attrs["units"] == "Angstrom"
-    assert response.SG_resp.attrs["units"] == "1e-27 ph cm5 / s"
+    assert response.detector_wavelength.dims == ("line", "slit", "detector_x_pixel")
+    assert response.detector_wavelength.attrs["units"] == "Angstrom"
+    assert response.detector_response.attrs["units"] == "1e-27 ph cm5 / s"
 
 
 def test_fake_vdem_has_expected_axes(vdem) -> None:

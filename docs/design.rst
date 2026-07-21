@@ -19,8 +19,14 @@ Validate input units with :func:`muse.utils.require_unit`, which checks presence
 
 .. code-block:: python
 
-    sg_unit = require_unit(response, "SG_wvl", "response.SG_wvl", coord_only=True, convertible_to=u.AA)
-    sg_wvl = response.coords["SG_wvl"] * sg_unit.to(u.AA)  # now it is guaranteed to be Angstrom
+    wavelength_unit = require_unit(
+        response,
+        "detector_wavelength",
+        "response.detector_wavelength",
+        coord_only=True,
+        convertible_to=u.AA,
+    )
+    detector_wavelength = response.coords["detector_wavelength"] * wavelength_unit.to(u.AA)
 
 Input Validation
 ================
@@ -36,7 +42,8 @@ Treat every input :class:`~xarray.Dataset` as read-only.
 Produce results with ``assign`` / ``assign_coords`` / arithmetic, which return a *new* dataset that **shares** the underlying arrays.
 So adding a coordinate or attr is cheap and never duplicates the large data variables.
 
-**Why.** We will have large data arrays (e.g., ``vdem``, ``SG_resp``, ``flux``) whereas the coordinates and attrs are tiny.
+**Why.** We will have large data arrays (e.g., ``vdem``, ``detector_response``,
+``flux``) whereas the coordinates and attrs are tiny.
 Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, which does not scale. In-place mutation (``ds.coords[...] = ...``) silently changes the caller's object, this is something we want to avoid.
 
 **Rules.**
@@ -47,7 +54,7 @@ Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, whi
 
   .. code-block:: python
 
-      ds = ds.assign(SG_resp=ds.SG_resp.copy(deep=True))
+      ds = ds.assign(detector_response=ds.detector_response.copy(deep=True))
 
   not the whole dataset.
 

@@ -65,7 +65,7 @@ def _calc_einsum(
             torch.einsum(
                 f"{einsum_str}->{out_str}",
                 numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
-                numpy_to_torch(response.SG_resp.data, cuda_device=cuda_device),
+                numpy_to_torch(response.detector_response.data, cuda_device=cuda_device),
             )
         )
     if backend == "jax":
@@ -76,14 +76,14 @@ def _calc_einsum(
             jnp.einsum(
                 f"{einsum_str}->{out_str}",
                 numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
-                numpy_to_jax(response.SG_resp.data, cuda_device=cuda_device),
+                numpy_to_jax(response.detector_response.data, cuda_device=cuda_device),
                 precision=jax.lax.Precision.HIGHEST,
             )
         )
     return np.einsum(
         f"{einsum_str}->{out_str}",
         np.asarray(raster.vdem.data),
-        np.asarray(response.SG_resp.data),
+        np.asarray(response.detector_response.data),
     )
 
 
@@ -102,7 +102,7 @@ def _build_einsum_indices(
     Parameters
     ----------
     raster_dims, response_dims : `tuple` of `str`
-        Dimension names of ``raster.vdem`` and ``response.SG_resp``.
+        Dimension names of ``raster.vdem`` and ``response.detector_response``.
     sum_over : `tuple` of `str`
         Dimension names to contract over.
 
@@ -139,13 +139,15 @@ def _validate_inputs(
     Validate ``raster``/``response`` structure and units for synthesis.
 
     Checks slit-dimension consistency, that every ``sum_over`` dimension exists on
-    the response, and that ``vdem``/``SG_resp`` define valid units while
-    ``line_wvl``/``SG_wvl`` are coordinates with wavelength units.
+    the response, and that ``vdem``/``detector_response`` define valid units
+    while ``line_wavelength``/``detector_wavelength`` are coordinates with
+    wavelength units.
 
     Returns
     -------
     `tuple` of `astropy.units.Unit`
-        ``(raster.vdem unit, response.SG_resp unit)``, reused for the flux unit.
+        ``(raster.vdem unit, response.detector_response unit)``, reused for the
+        flux unit.
     """
     if "slit" in response.dims and "slit" not in raster.dims and response.slit.size > 1:
         msg = "response has a slit dimension and number of slits are greater than one, but raster does not"
@@ -158,10 +160,16 @@ def _validate_inputs(
             msg = f"{dim!r} is not a response dimension"
             raise ValueError(msg)
     raster_vdem_unit = require_unit(raster, "vdem", "raster.vdem")
-    response_sg_resp_unit = require_unit(response, "SG_resp", "response.SG_resp")
-    require_unit(response, "line_wvl", "response.line_wvl", coord_only=True, convertible_to=u.AA)
-    require_unit(response, "SG_wvl", "response.SG_wvl", coord_only=True, convertible_to=u.AA)
-    return raster_vdem_unit, response_sg_resp_unit
+    response_unit = require_unit(response, "detector_response", "response.detector_response")
+    require_unit(response, "line_wavelength", "response.line_wavelength", coord_only=True, convertible_to=u.AA)
+    require_unit(
+        response,
+        "detector_wavelength",
+        "response.detector_wavelength",
+        coord_only=True,
+        convertible_to=u.AA,
+    )
+    return raster_vdem_unit, response_unit
 
 
 @format_docstring("DEFAULTS_MUSE", sum_over="sum_over_dims_synthesis")
@@ -182,8 +190,8 @@ def vdem_synthesis(
     raster : `xarray.Dataset`
         VDEM raster. ``vdem`` must define units in the attrs.
     response : `xarray.Dataset`
-        Response functions. ``SG_resp``, ``line_wvl``,
-        and ``SG_wvl`` must define units in the attrs.
+        Response functions. ``detector_response``, ``line_wavelength``, and
+        ``detector_wavelength`` must define units in the attrs.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
@@ -199,10 +207,11 @@ def vdem_synthesis(
     `xarray.Dataset`
         Dataset of the spectrum on the detector.
     """
-    raster_vdem_unit, response_sg_resp_unit = _validate_inputs(raster, response, sum_over)
-    einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.SG_resp.dims, sum_over)
+    raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
+    einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.detector_response.dims, sum_over)
     logger.debug(
-        f"einsum {einsum_str}->{out_str}: vdem{np.shape(raster.vdem.data)} x SG_resp{np.shape(response.SG_resp.data)}"
+        f"einsum {einsum_str}->{out_str}: "
+        f"vdem{np.shape(raster.vdem.data)} x detector_response{np.shape(response.detector_response.data)}"
     )
     einsum_result = _calc_einsum(
         raster=raster,
@@ -219,17 +228,27 @@ def vdem_synthesis(
         ds[key] = raster[key] if key in raster.vdem.dims else response[key]
     out_dims = set(dims)
     coords = {name: coord for name, coord in raster.coords.items() if set(coord.dims) <= out_dims}
-    coords.update({name: coord for name, coord in response.SG_resp.coords.items() if set(coord.dims) <= out_dims})
+    coords.update(
+        {name: coord for name, coord in response.detector_response.coords.items() if set(coord.dims) <= out_dims}
+    )
 
     logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
     da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
     ds["flux"] = da
-    ds = ds.assign_coords(line_wvl=coord_as_unit(response, "line_wvl", u.AA, "response.line_wvl"))
-    ds.flux.attrs.update({"units": str(raster_vdem_unit * response_sg_resp_unit)})
-    # SG_wvl carries a slit dimension, so only attach it when slit survives in the
-    # output (or the response never had one); otherwise it would re-introduce slit.
-    slit_preserved = "slit" not in response.SG_resp.dims or "slit" in ds.flux.dims
-    if slit_preserved and "SG_wvl" in response.coords:
-        ds = ds.assign_coords(SG_wvl=coord_as_unit(response, "SG_wvl", u.AA, "response.SG_wvl"))
+    ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
+    ds.flux.attrs.update({"units": str(raster_vdem_unit * response_unit)})
+    # detector_wavelength carries a slit dimension, so only attach it when slit
+    # survives in the output (or the response never had one); otherwise it would
+    # re-introduce slit.
+    slit_preserved = "slit" not in response.detector_response.dims or "slit" in ds.flux.dims
+    if slit_preserved and "detector_wavelength" in response.coords:
+        ds = ds.assign_coords(
+            detector_wavelength=coord_as_unit(
+                response,
+                "detector_wavelength",
+                u.AA,
+                "response.detector_wavelength",
+            )
+        )
     add_history(ds, locals(), vdem_synthesis)
     return ds

@@ -73,14 +73,17 @@ def test_map_response_to_sg_detector_geometry_and_units():
     photon_response = wavelength * solid_angle / photon_energy
     expected_response = np.stack([np.interp(row, wavelength, photon_response) for row in expected_wavelength]) * 0.1
 
-    assert mapped.SG_resp.dims == ("line", "logT", "vdop", "slit", "SG_xpixel")
-    assert mapped.SG_wvl.dims == ("SG_xpixel", "slit")
-    np.testing.assert_allclose(mapped.SG_wvl.transpose("slit", "SG_xpixel"), expected_wavelength)
-    np.testing.assert_allclose(mapped.SG_resp.isel(line=0, logT=0, vdop=0), expected_response)
-    assert u.Unit(mapped.SG_resp.attrs["units"]) == u.Unit("1e-27 ph cm5 / s")
-    assert mapped.SG_wvl.attrs["units"] == "Angstrom"
-    assert mapped.line_wvl.attrs["units"] == "Angstrom"
-    assert mapped.line_wvl.item() == pytest.approx(171.073)
+    assert mapped.detector_response.dims == ("line", "logT", "vdop", "slit", "detector_x_pixel")
+    assert mapped.detector_wavelength.dims == ("detector_x_pixel", "slit")
+    np.testing.assert_allclose(
+        mapped.detector_wavelength.transpose("slit", "detector_x_pixel"),
+        expected_wavelength,
+    )
+    np.testing.assert_allclose(mapped.detector_response.isel(line=0, logT=0, vdop=0), expected_response)
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 ph cm5 / s")
+    assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
+    assert mapped.line_wavelength.attrs["units"] == "Angstrom"
+    assert mapped.line_wavelength.item() == pytest.approx(171.073)
     assert mapped.channel.item() == 171
     assert "spectral_response" not in mapped
     assert "wavelength_bin" not in mapped.dims
@@ -109,23 +112,23 @@ def test_map_response_to_sg_detector_preserves_constant_photon_density_integral(
         pixel_height=1 * u.arcsec,
     )
 
-    np.testing.assert_allclose(mapped.SG_resp.sum("SG_xpixel"), 1.0, rtol=1e-12)
+    np.testing.assert_allclose(mapped.detector_response.sum("detector_x_pixel"), 1.0, rtol=1e-12)
 
 
 def test_map_response_to_sg_detector_uses_muse_defaults():
     mapped = map_response_to_sg_detector(_spectral_response(), 171)
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert mapped.sizes["SG_xpixel"] == DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
+    assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
     expected_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=171).data).to_value(u.AA)
-    assert mapped.SG_wvl.isel(slit=0, SG_xpixel=0).item() == pytest.approx(expected_start)
+    assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=0).item() == pytest.approx(expected_start)
     dispersion = (
         2
         * DEFAULTS_MUSE.spectral_slit_separation_SG
         / DEFAULTS_MUSE.pixels_between_slits
         / DEFAULTS_MUSE.channel_spectral_order.sel(channel=171).item()
     ).to_value(u.AA / u.pix)
-    assert mapped.SG_wvl.isel(slit=0, SG_xpixel=-1).item() == pytest.approx(
+    assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
         expected_start + DEFAULTS_MUSE.pixels_SG.to_value(u.pix) * dispersion
     )
 
@@ -139,7 +142,7 @@ def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():
         wavelength_start=171 * u.AA,
     )
 
-    np.testing.assert_allclose(mapped.line_wvl, [171.073, 171.073])
+    np.testing.assert_allclose(mapped.line_wavelength, [171.073, 171.073])
     np.testing.assert_array_equal(mapped.component_kind, ["line", "contaminants"])
 
 
@@ -254,7 +257,7 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
 
     synthesized = vdem_synthesis(raster, loaded_response)
 
-    assert synthesized.flux.dims == ("line", "SG_xpixel")
+    assert synthesized.flux.dims == ("line", "detector_x_pixel")
     assert np.isfinite(synthesized.flux).all()
     assert bool((synthesized.flux > 0).any())
-    assert synthesized.line_wvl.item() == pytest.approx(171.073)
+    assert synthesized.line_wavelength.item() == pytest.approx(171.073)

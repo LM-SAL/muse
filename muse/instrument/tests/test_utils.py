@@ -44,15 +44,16 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     r = read_response(path, logT=logT, vdop=vdop, slit=_slit(3), logT_method="nearest")
 
     assert isinstance(r, xr.Dataset)
-    assert "SG_resp" in r.data_vars
+    assert "detector_response" in r.data_vars
     assert r.sizes["logT"] == logT.size
     assert r.sizes["vdop"] == vdop.size
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.vdop.values, vdop.values)
     # The reader injects Angstrom because the on-disk files carry no wavelength units (for now).
-    assert r.line_wvl.attrs["units"] == str(u.AA)
-    assert r.SG_wvl.attrs["units"] == str(u.AA)
+    assert r.line_wavelength.attrs["units"] == str(u.AA)
+    assert r.detector_wavelength.attrs["units"] == str(u.AA)
+    assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl"} & set(r.variables)
     np.testing.assert_array_equal(r.gain.values, [DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)])
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
@@ -66,7 +67,7 @@ def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> No
 
     assert r.sizes["logT"] == src.sizes["logT"]
     assert r.sizes["vdop"] == src.sizes["vdop"]
-    assert r.line_wvl.attrs["units"] == str(u.AA)
+    assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert "gain" in r.coords
 
 
@@ -78,7 +79,7 @@ def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_
         warnings.simplefilter("error", RuntimeWarning)
         response = read_response(path)
 
-    assert "SG_resp" in response
+    assert "detector_response" in response
 
 
 def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -> None:
@@ -89,10 +90,10 @@ def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -
     r = read_response(path, logT=logT, logT_method="linear")
 
     np.testing.assert_allclose(r.logT.values, logT.values)
-    assert bool((r.SG_resp >= 0).all())  # interp path clamps negatives to zero
+    assert bool((r.detector_response >= 0).all())  # interp path clamps negatives to zero
 
 
-def test_read_response_expands_line_dim_and_fills_line_wvl_from_attr(tmp_path) -> None:
+def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_path) -> None:
     # Drop the line dimension and line_wvl to hit the expand_dims + attribute-fallback branches.
     src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
     src.attrs["MAIN_LINE_WVL"] = 171.073
@@ -101,8 +102,8 @@ def test_read_response_expands_line_dim_and_fills_line_wvl_from_attr(tmp_path) -
     r = read_response(path)
 
     assert "line" in r.dims
-    assert float(r.line_wvl) == pytest.approx(171.073)
-    assert r.line_wvl.attrs["units"] == str(u.AA)
+    assert float(r.line_wavelength) == pytest.approx(171.073)
+    assert r.line_wavelength.attrs["units"] == str(u.AA)
 
 
 def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> None:
@@ -112,8 +113,8 @@ def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> No
     r = read_response(path)
 
     assert "missing the 'units' attribute" in caplog.text
-    assert r.line_wvl.attrs["units"] == str(u.AA)  # Angstrom assumed for now
-    assert r.SG_wvl.attrs["units"] == str(u.AA)
+    assert r.line_wavelength.attrs["units"] == str(u.AA)  # Angstrom assumed for now
+    assert r.detector_wavelength.attrs["units"] == str(u.AA)
 
 
 def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None:
@@ -125,8 +126,20 @@ def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None
     r = read_response(path)
 
     assert "missing the 'units' attribute" not in caplog.text
-    assert r.line_wvl.attrs["units"] == "nm"  # present units left untouched
-    assert r.SG_wvl.attrs["units"] == "nm"
+    assert r.line_wavelength.attrs["units"] == "nm"  # present units left untouched
+    assert r.detector_wavelength.attrs["units"] == "nm"
+
+
+def test_read_response_prefers_legacy_line_wvl_when_both_names_exist(tmp_path) -> None:
+    src = fake_response_file().assign_coords(
+        line_wavelength=("line", [999.0], {"units": "Angstrom"}),
+    )
+    path = _write(src, tmp_path / "resp.nc", "nc")
+
+    r = read_response(path)
+
+    np.testing.assert_allclose(r.line_wavelength, [171.073])
+    assert "line_wvl" not in r
 
 
 def test_read_response_gain_accepts_quantity(tmp_path) -> None:
@@ -173,9 +186,9 @@ def test_read_response_out_of_range_logT_raises(tmp_path) -> None:
         read_response(path, logT=xr.DataArray(np.array([8.0, 8.5]), dims="logT"))
 
 
-def test_read_response_requires_sg_resp(tmp_path) -> None:
+def test_read_response_requires_detector_response(tmp_path) -> None:
     path = _write(fake_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="SG_resp"):
+    with pytest.raises(ValueError, match="detector_response"):
         read_response(path)
 
 
@@ -183,7 +196,7 @@ def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
     src = fake_response_file().drop_vars(["line_wvl", "channel"])
     path = _write(src, tmp_path / "resp.nc", "nc")
 
-    with pytest.raises(ValueError, match="line_wvl"):
+    with pytest.raises(ValueError, match="line_wavelength"):
         read_response(path)
 
 
@@ -233,12 +246,12 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     assert resp.sizes["line"] == 4
     np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
     np.testing.assert_array_equal(resp.component_kind, ["line", "line", "contaminants", "line"])
-    np.testing.assert_allclose(resp.line_wvl, [108.355, 108.117, 108.355, 284.163])
+    np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
     np.testing.assert_array_equal(resp.gain.values, np.full(4, DEFAULTS_MUSE.ccd_gain.value))
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
-    assert "SG_resp" in resp.data_vars
+    assert "detector_response" in resp.data_vars
 
 
 def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
