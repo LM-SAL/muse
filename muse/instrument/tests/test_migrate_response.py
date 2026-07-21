@@ -1,7 +1,7 @@
 import pytest
 import xarray as xr
 
-from muse._dev import migrate_response
+from muse.instrument import migrate_response
 from muse.tests.helpers import fake_response_file
 
 pytestmark = [
