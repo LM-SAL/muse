@@ -8,24 +8,22 @@ pytestmark = [
     pytest.mark.filterwarnings("ignore::zarr.errors.UnstableSpecificationWarning"),
     pytest.mark.filterwarnings("ignore::zarr.errors.ZarrUserWarning"),
     pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning"),
+    # NumPy 2.5 warns inside the NetCDF backend while writing the legacy fixture.
+    pytest.mark.filterwarnings("ignore:Setting the shape on a NumPy array:DeprecationWarning"),
 ]
 
 
 @pytest.mark.parametrize("suffix", [".nc", ".zarr"])
-def test_migrate_response_reports_and_verifies_schema(tmp_path, capsys, suffix) -> None:
+def test_migrate_response_returns_and_verifies_schema(tmp_path, suffix) -> None:
     source_response = fake_response_file()
     source = tmp_path / "legacy.nc"
     destination = tmp_path / f"canonical{suffix}"
     source_response.to_netcdf(source)
 
-    assert migrate_response.main([str(source), str(destination)]) == 0
+    before, after = migrate_response.migrate_response(source, destination)
 
-    output = capsys.readouterr().out
-    assert "Before migration" in output
-    assert "SG_resp" in output
-    assert "After migration" in output
-    assert "detector_response" in output
-    assert "Numerical verification passed" in output
+    assert "SG_resp" in before
+    assert "detector_response" in after
     with migrate_response.response_utils._open_response_file(destination) as migrated:
         expected = migrate_response.response_utils._canonicalize_response_names(source_response)
         xr.testing.assert_identical(migrated.load(), expected)

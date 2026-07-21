@@ -45,7 +45,8 @@ def save_response(
         Per-dimension overrides for the benchmark-backed defaults:
         ``line=1``, ``vdop=20``, ``logT=1``, ``pressure=1``,
         ``abundance=1``, and complete ``slit``/``detector_x_pixel`` planes.
-        Unspecified dimensions retain the defaults.
+        Unspecified dimensions retain the defaults. Values larger than a
+        dimension use the full dimension.
 
     Notes
     -----

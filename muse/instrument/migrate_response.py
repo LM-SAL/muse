@@ -1,14 +1,11 @@
-import sys
-import argparse
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from collections.abc import Sequence
 
 import xarray as xr
 
 from muse.instrument import utils as response_utils
 
-__all__ = ["main", "migrate_response"]
+__all__ = ["migrate_response"]
 
 
 def migrate_response(source: str | Path, destination: str | Path) -> tuple[str, str]:
@@ -73,21 +70,3 @@ def _verify_values(expected: xr.Dataset, actual: xr.Dataset) -> None:
     except AssertionError as exc:
         msg = "Migrated response does not match the canonical source"
         raise ValueError(msg) from exc
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """
-    Run the response migration command.
-    """
-    parser = argparse.ArgumentParser(description="Migrate a MUSE response to the canonical schema.")
-    parser.add_argument("source", type=Path)
-    parser.add_argument("destination", type=Path)
-    args = parser.parse_args(argv)
-
-    before, after = migrate_response(args.source, args.destination)
-    sys.stdout.write(f"Before migration\n{before}\n\nAfter migration\n{after}\n\nNumerical verification passed.\n")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
