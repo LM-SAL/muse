@@ -7,7 +7,9 @@ This tutorial demonstrates how to create the main-line responses for
 the 108, 171, and 284 Angstrom bands and map them onto all
 35 MUSE spectrograph slits.
 
-We will use unity effective areas and CHIANTI line lists from the previous step.
+We will use the default per-channel effective areas
+(``DEFAULTS_MUSE.main_line_effective_area``) and CHIANTI line lists from the
+previous step.
 """
 
 import os
@@ -103,19 +105,13 @@ for band, config in bands.items():
     lower = band - 35 / spectral_order
     upper = band + 35 / spectral_order
     wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
-    effective_area = xr.DataArray(
-        [1.0, 1.0],
-        dims="wavelength",
-        coords={"wavelength": ("wavelength", [lower, upper], {"units": str(u.AA)})},
-        attrs={"units": str(u.cm**2)},
-    )
     waveband_response = create_spectral_response(
         line_list,
         wavelength_grid,
         main_lines=config["main_lines"],
         instrumental_width=u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data),
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
-        effective_area=effective_area,
+        effective_area=DEFAULTS_MUSE.main_line_effective_area.sel(channel=band),
     )
     response = map_response_to_sg_detector(waveband_response, band)
 
@@ -126,7 +122,7 @@ for band, config in bands.items():
         integrated_response.plot(x="detector_x_pixel")
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 
-    output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_unity.nc"
+    output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.nc"
     save_response(response, output)
     print(f"Saved {output}")
 

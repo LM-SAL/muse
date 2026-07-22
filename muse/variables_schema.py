@@ -337,6 +337,15 @@ class InstrumentDefaults:
     Number of steps per raster for the SG.
     """
 
+    main_line_effective_area: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
+    )
+    """
+    Effective area of the main line for the SG.
+
+    Normalized to square centimeters.
+    """
+
     # Diffraction parameters
     mesh_transmission: Mapping | None = field(default=None, converter=converters.optional(_immutable_mapping))
     """
