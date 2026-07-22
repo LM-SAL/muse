@@ -1,0 +1,4 @@
+Low-level modules no longer import the ``muse`` package root:
+``muse.utils`` reads the version from ``muse.version`` and
+``muse.variables`` imports ``InstrumentDefaults`` directly from
+``muse.variables_schema``.

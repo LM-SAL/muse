@@ -246,7 +246,7 @@ class InstrumentDefaults:
     library; not a general-purpose instrument defaults class.
 
     Every parameter is optional and defaults to `None`; populate the ones a given
-    instrument needs (see `muse.variables` for the MUSE and AIA instances). Each field
+    instrument needs (see `muse.variables` for the MUSE instance). Each field
     documents its meaning and the unit it is normalized to.
 
     Fields are validated and normalized on construction. Instances prevent top-level

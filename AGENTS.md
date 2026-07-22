@@ -32,7 +32,7 @@ Current layout; new code should follow it.
 
 ```
 muse/                  package
-  variables.py         instrument defaults as InstrumentDefaults instances (DEFAULTS_MUSE, DEFAULTS_AIA)
+  variables.py         instrument defaults as InstrumentDefaults instances (DEFAULTS_MUSE)
   variables_schema.py  attrs schema + immutability/units machinery (InstrumentDefaults, FrozenDict)
   log.py               loguru logger; import-time torch-free
   utils/               cross-cutting helpers (documentation.py = format_docstring, ...)

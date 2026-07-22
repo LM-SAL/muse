@@ -13,8 +13,8 @@ import xarray as xr
 
 import astropy.units as u
 
-import muse
 from muse.log import logger
+from muse.version import version as _version
 
 __all__ = [
     "add_history",
@@ -273,21 +273,26 @@ def _history_entries(history) -> list:
 
 def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.DataArray) -> None:
     """
-    Append ``source`` history to ``ds``, unless ``ds`` already starts with it.
+    Append ``source`` history to ``ds``, skipping any shared-ancestry prefix so that
+    merging sources with nested histories never duplicates entries, whatever their
+    order.
     """
     source_history = _history_entries(source.attrs.get("HISTORY"))
     if not source_history:
         return
     history = _history_entries(ds.attrs.get("HISTORY"))
-    if history[: len(source_history)] != source_history:
-        history = [*history, *source_history]
-    ds.attrs["HISTORY"] = history
+    shared = 0
+    for ours, theirs in zip(history, source_history, strict=False):
+        if ours != theirs:
+            break
+        shared += 1
+    ds.attrs["HISTORY"] = [*history, *source_history[shared:]]
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
     today = datetime.datetime.now(tz=datetime.UTC).strftime("%d-%b-%Y")
     ds.attrs["date modified" if "date created" in ds.attrs else "date created"] = today
-    ds.attrs["version"] = muse.__version__
+    ds.attrs["version"] = _version
 
 
 def _attr_safe(value):
@@ -403,8 +408,8 @@ def update_attrs(
     constructed output that the calling function owns, never a caller-owned
     input. The provenance attributes (``HISTORY``, ``date created``,
     ``date modified``, ``version``) are owned by `add_history` and never copied
-    here; pass the inputs to ``add_history(..., sources=...)`` to inherit their
-    lineage.
+    here; passing one as an explicit update raises `ValueError`. Pass the
+    inputs to ``add_history(..., sources=...)`` to inherit their lineage.
 
     Parameters
     ----------
@@ -415,6 +420,9 @@ def update_attrs(
     **attrs
         Attributes to add or update after source attributes are copied.
     """
+    if forbidden := [key for key in attrs if key in _PROVENANCE_ATTRS]:
+        msg = f"update_attrs cannot set provenance attributes {forbidden}; they are owned by add_history"
+        raise ValueError(msg)
     if source is not None:
         ds.attrs.update({key: value for key, value in source.attrs.items() if key not in _PROVENANCE_ATTRS})
     ds.attrs.update(attrs)

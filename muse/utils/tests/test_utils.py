@@ -202,6 +202,21 @@ def test_add_history_does_not_duplicate_inherited_history() -> None:
     assert ds.attrs["HISTORY"] == ["load", "demo"]
 
 
+def test_add_history_nested_source_histories_merge_in_any_order() -> None:
+    loaded = xr.Dataset(attrs={"HISTORY": ["load"]})
+    transformed = xr.Dataset(attrs={"HISTORY": ["load", "transform"]})
+    for sources in [(loaded, transformed), (transformed, loaded)]:
+        ds = xr.Dataset()
+        add_history(ds, "demo", sources=sources)
+        assert ds.attrs["HISTORY"] == ["load", "transform", "demo"]
+
+
+def test_update_attrs_rejects_provenance_updates() -> None:
+    ds = xr.Dataset()
+    with pytest.raises(ValueError, match="owned by add_history"):
+        update_attrs(ds, HISTORY=["fake"])
+
+
 def test_jax_numpy_round_trip() -> None:
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(jax_to_numpy(numpy_to_jax(array)), array)
