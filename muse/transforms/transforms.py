@@ -225,7 +225,7 @@ def match_fov(
         vdem_xr[var].attrs.update(vdem[var].attrs)
 
     update_attrs(vdem_xr, vdem)
-    add_history(vdem_xr, locals(), match_fov)
+    add_history(vdem_xr, locals(), match_fov, sources=(vdem,))
 
     return vdem_xr
 
@@ -272,7 +272,7 @@ def reshape_x_to_slit_step(
         reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
         attrs = {"step_size": step_size.values, "step_size units": str(x_unit)}
     update_attrs(reshaped, ds, **attrs)
-    add_history(reshaped, locals(), reshape_x_to_slit_step)
+    add_history(reshaped, locals(), reshape_x_to_slit_step, sources=(ds,))
     return reshaped
 
 
@@ -319,5 +319,5 @@ def reshape_slit_step_to_x(
     reshaped = reshaped.assign_coords(x=np.arange(reshaped.x.size) * step_size)
     reshaped.x.attrs["units"] = step_units
     update_attrs(reshaped, ds)
-    add_history(reshaped, locals(), reshape_slit_step_to_x)
+    add_history(reshaped, locals(), reshape_slit_step_to_x, sources=(ds,))
     return reshaped

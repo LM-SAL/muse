@@ -60,6 +60,11 @@ Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, whi
 - ``.attrs`` are shared on a shallow copy.
   Set attrs on a freshly computed ``DataArray`` *before* ``assign_coords``, or use ``.assign_attrs(...)``; mutating ``ds.var.attrs[...]`` on a shared object leaks back to the original.
 
+**Exception: finalizers.**
+:func:`muse.utils.add_history` and :func:`muse.utils.update_attrs` mutate the object they receive in place and return `None`.
+They must only ever be called on a newly constructed output that the calling function owns, never on a caller-owned input.
+Name the result before calling a finalizer so the ownership is visible at the call site.
+
 Importing ``muse`` must not configure the host
 ==============================================
 
@@ -82,4 +87,5 @@ Lineage
 
 Functions that return a dataset record the call that produced it via :func:`muse.utils.add_history`.
 This keeps a human-readable trail of the operations on the data itself.
-There is a similar one for ``attrs``, :func:`muse.utils.update_attrs`.
+``add_history`` alone owns the provenance attributes (``HISTORY``, ``date created``, ``date modified``, ``version``); a multi-input result inherits its inputs' histories by passing them as ``add_history(..., sources=...)``.
+:func:`muse.utils.update_attrs` copies the remaining (non-provenance) attributes from a source dataset.

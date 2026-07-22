@@ -8,7 +8,7 @@ import xarray as xr
 import astropy.units as u
 from astropy.units import imperial
 
-from muse import variables_schema as _schema
+from muse.variables_schema import InstrumentDefaults
 
 __all__ = [
     "DEFAULTS_MUSE",
@@ -97,4 +97,4 @@ MUSE_DEFAULTS_DICT = {
     },
 }
 
-DEFAULTS_MUSE = _schema.InstrumentDefaults(**MUSE_DEFAULTS_DICT)
+DEFAULTS_MUSE = InstrumentDefaults(**MUSE_DEFAULTS_DICT)
