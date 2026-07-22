@@ -256,6 +256,31 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input(integratio
     np.testing.assert_array_equal(result.vdem.values, default.vdem.values)
 
 
+def test_create_simple_vdem_temperature_outside_axis_range() -> None:
+    # A cube entirely below the temperature axis contributes nothing; one entirely
+    # above spans every bin through the boundary-cell gradient (prev = 100 K), so
+    # each bin integrates the full log-T overlap of its column.
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.full((2, 3, 2), 10.0)  # logT = 1, below the lowest bin edge
+    assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
+
+    inputs["temperature"] = np.full((2, 3, 2), 1e9)  # logT = 9, above the highest bin edge
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    # Six (x, y) columns whose boundary cell (cell_length 2, ne_nh 1) fully overlaps each bin.
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), np.full(3, 1.2e-26), rtol=1e-12)
+
+
+def test_create_simple_vdem_temperature_on_bin_edge_lands_in_lower_bin() -> None:
+    # Bin centers [4.5, 5.0, 5.5] have edges at 4.75/5.25; an isothermal cube exactly on
+    # the 4.5|5.0 edge is reached from below (boundary prev = 100 K), so the whole
+    # log-T overlap sits in the lower bin and the upper bins stay empty.
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.full((2, 3, 2), 10**4.75)
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), [1.2e-26, 0.0, 0.0], rtol=1e-12)
+
+
 def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:
     # Dense voxels: ne_nh = 1e39 exceeds float32 max (~3.4e38); the float64 pipeline must
     # carry it through the 1e27 units normalization and the per-voxel LOS product intact.

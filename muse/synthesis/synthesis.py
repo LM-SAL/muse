@@ -25,6 +25,20 @@ from muse.variables import DEFAULTS_MUSE
 __all__ = ["vdem_synthesis"]
 
 
+def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray:
+    """
+    Rechunk ``dims`` of a dask-backed array to a single chunk; return numpy-backed
+    arrays unchanged.
+
+    Contracted dims must be single-chunk before ``da.einsum``: it otherwise pairs every
+    chunk of one operand with every chunk of the other and tree-reduces the partial
+    products, exploding the task graph, runtime, and peak memory.
+    """
+    if not isinstance(array.data, da.Array):
+        return array
+    return array.chunk({dim: -1 for dim in dims if dim in array.dims})
+
+
 def _calc_einsum(
     *,
     raster: xr.Dataset,
@@ -218,14 +232,8 @@ def vdem_synthesis(
         backends always compute their inputs eagerly.
     """
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
-    # Contracted dims must be single-chunk: da.einsum otherwise pairs every chunk
-    # of one operand with every chunk of the other and tree-reduces the partial
-    # products, exploding the task graph, runtime, and peak memory.
-    if isinstance(raster.vdem.data, da.Array):
-        raster = raster.assign(vdem=raster.vdem.chunk({dim: -1 for dim in sum_over if dim in raster.vdem.dims}))
-    if isinstance(response.detector_response.data, da.Array):
-        contracted = {dim: -1 for dim in sum_over if dim in response.detector_response.dims}
-        response = response.assign(detector_response=response.detector_response.chunk(contracted))
+    raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
+    response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))
     einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.detector_response.dims, sum_over)
     logger.debug(
         f"einsum {einsum_str}->{out_str}: "
