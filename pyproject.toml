@@ -32,7 +32,7 @@ dependencies = [
   "tqdm>=4.67",
   "xarray[io,parallel]>=2026.4.0",
 ]
-optional-dependencies.all = ["muse[chianti,jax,torch]"]
+optional-dependencies.all = ["muse[chianti,torch]"]
 optional-dependencies.chianti = [
   "ChiantiPy>=0.15.0",
   "numexpr>=2.14",
@@ -56,7 +56,6 @@ optional-dependencies.docs = [
   "memory_profiler", # for sphinx-gallery memory usage
   "sphinxext-opengraph",
 ]
-optional-dependencies.jax = ["jax>=0.10.2"]
 optional-dependencies.tests = [
   "muse[all]",
   "matplotlib>=3.10.0",

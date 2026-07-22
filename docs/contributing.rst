@@ -55,7 +55,7 @@ With a conda/micromamba environment named ``muse``:
     $ python -m pytest muse
     $ pre-commit run --all-files
 
-Re-run the ``pip install`` whenever the extras in ``pyproject.toml`` change; if an optional backend (e.g. JAX) is missing, the corresponding tests will fail rather than silently skip.
+Re-run the ``pip install`` whenever the extras in ``pyproject.toml`` change; if an optional backend (e.g. Torch) is missing, the corresponding tests will fail rather than silently skip.
 Alternatively, ``tox -e py314`` builds a complete, locked environment (from ``uv.lock``) and is the canonical way to reproduce CI results.
 
 Continuous integration
