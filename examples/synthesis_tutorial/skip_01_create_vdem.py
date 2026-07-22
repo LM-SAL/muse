@@ -5,7 +5,7 @@
 
 This tutorial demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
 
-A VDEM contains the physical properties of the solar atmosphere (temperature, velocity, spatial structure).
+A VDEM is the emission measure of the solar atmosphere as a function of temperature, velocity, and spatial structure.
 """
 
 import contextlib
@@ -23,7 +23,7 @@ from muse.synthesis import calculate_moments, create_simple_vdem
 # Creating a VDEM
 #
 # The MUSE library includes a simple function to create VDEMs.
-# But we will use PlasmaCalcs to derive the VDEM properties from a MURaM simulation snapshot.
+# But we will use `PlasmaCalcs <https://plasmacalcs.readthedocs.io/>`__ to derive the VDEM properties from a MURaM simulation snapshot.
 #
 # PlasmaCalcs includes the possibility to create VDEMs with many more options: absorption, other interpolation methods, TRAC if applies, limb view options, etc.
 #
@@ -47,8 +47,10 @@ pooch.retrieve(
 with contextlib.chdir(simulation_path):
     muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
     temperature = muram_calc("T")  # Temperature array in K
-    r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
+    # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
+    r_per_nH_tot = 2.383931923587366e-24
     ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
+    ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0)  # Zero out non-finite voxels so they cannot poison the VDEM
     velocity = muram_calc("u", component="z") * 1e-5  # LOS velocity in km/s
     cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # Grid spacing along the line of sight in cm
     x_coord = muram_calc("maindims_x_coord")

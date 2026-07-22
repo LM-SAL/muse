@@ -1,11 +1,12 @@
 .. _muse-index:
 
-**********************
-``muse`` documentation
-**********************
+******************
+MUSE documentation
+******************
 
-``muse`` is an open-source Python package that provides tools to read, manipulate, and visualize `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ data.
-`The data is publicly available and provides access to co-aligned SDO/AIA data and more. <https://muse.lmsal.com/search/>`__
+``muse`` is an open-source Python package for the `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ mission.
+MUSE has not launched yet, so there are no observations to read; for now the package focuses on synthesizing MUSE observations of the main spectral lines from simulations.
+Once MUSE data become available, `they will be publicly accessible together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__, and this package will provide the tools to read, manipulate, and visualize them.
 
 What ``muse`` can do today
 ==========================

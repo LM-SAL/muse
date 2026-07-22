@@ -1,0 +1,1 @@
+`muse.transforms.match_fov` now sources its ``restype``, ``mode``, and ``sub_interpolation`` defaults from ``DEFAULTS_MUSE`` (``fov_restype``, ``fov_mode``, ``fov_sub_interpolation``) instead of hardcoded literals; the values are unchanged.

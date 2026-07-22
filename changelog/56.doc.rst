@@ -1,0 +1,1 @@
+Corrected the MUSE mission overview (35 slits, payload wording, Fe XXI 108 Å in the main line list, Decadal Survey link), reframed the landing page around synthesis since no MUSE data exists yet, fixed the density-dependent VDEM equation in `muse.synthesis.create_simple_vdem`, and refreshed the synthesis tutorial descriptions of VDEMs and response functions.

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
-from attrs import Converter, cmp_using, converters, define, field, validators
+from attrs import Converter, cmp_using, converters, define, field, fields, validators
 
 import astropy.units as u
 from astropy.stats import gaussian_sigma_to_fwhm
@@ -528,6 +528,16 @@ class InstrumentDefaults:
     """
     Spectral order of main line for each band (channel)
     """
+
+    def __repr__(self) -> str:
+        lines = []
+        for attribute in fields(type(self)):
+            value = getattr(self, attribute.name)
+            if value is None:
+                continue
+            text = "\n        ".join(repr(value).splitlines())
+            lines.append(f"    {attribute.name}={text},")
+        return f"{type(self).__name__}(\n" + "\n".join(lines) + "\n)"
 
     def __attrs_post_init__(self):
         self._validate_channel_fields()

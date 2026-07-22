@@ -111,7 +111,7 @@ def create_simple_vdem(
 
     .. math::
 
-        VDEM = \sum_l n_e(T, v_{los})^2 / \Delta l / (\Delta T\, \Delta v_{los}\, \Delta n_e)
+        VDEM = \sum_l n_e(T, v_{los}, n_e)^2\, \Delta l / (\Delta T\, \Delta v_{los}\, \Delta n_e)
 
     or abundances.
 

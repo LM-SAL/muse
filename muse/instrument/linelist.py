@@ -209,6 +209,9 @@ def _chianti_bunch_to_dataset(
     line_list.attrs["Chianti"] = chio.versionRead()
     line_list.wavelength.attrs["units"] = str(u.AA)
     line_list.gofnt.attrs["units"] = "erg cm3 / (s sr)"
+    line_list.logT.attrs["units"] = str(u.dex(u.K))
+    if "log_density" in line_list.coords:
+        line_list.log_density.attrs["units"] = str(u.dex(u.cm**-3))
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
     return line_list.isel(trans_index=in_range)
