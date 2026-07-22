@@ -283,7 +283,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     else:
         r = r.interp({name: axis}, method=method)
     # Clamp on every path so nearest and interpolated responses behave consistently.
-    r["detector_response"] = r.detector_response.fillna(0).clip(min=0)
+    r["detector_response"] = r.detector_response.fillna(0).clip(min=0).assign_attrs(r.detector_response.attrs)
     return r.assign_coords({name: axis})
 
 
@@ -350,7 +350,7 @@ def load_and_concat_responses(
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
-        response = xr.concat(datasets, dim="line", coords="different", compat="equals")
+        response = xr.concat(datasets, dim="line", data_vars="all", coords="different", compat="equals", join="exact")
     line_channels = [
         channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
     ]

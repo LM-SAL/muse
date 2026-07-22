@@ -168,7 +168,10 @@ def _create_wavelength_response(
         )
         main_response_parts[line_name].append(line_response)
 
-    responses = [xr.concat(parts, dim="_transition").sum("_transition") for parts in main_response_parts.values()]
+    responses = [
+        xr.concat(parts, dim="_transition", join="exact").sum("_transition", keep_attrs=True)
+        for parts in main_response_parts.values()
+    ]
 
     if include_contaminants:
         contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
@@ -192,7 +195,7 @@ def _create_wavelength_response(
         )
         responses.append(contaminant_response)
 
-    responses = xr.concat(responses, dim="line", coords="different", compat="equals")
+    responses = xr.concat(responses, dim="line", coords="different", compat="equals", join="exact")
     ds = xr.Dataset({"spectral_response": responses})
 
     if effective_area is not None:

@@ -291,6 +291,8 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
             ),
         ],
         dim="line",
+        data_vars="all",
+        join="exact",
     )
     second = fake_response_file().assign_coords(
         line=("line", ["Fe XV 284.163"]),
@@ -320,6 +322,22 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "detector_response" in resp.data_vars
+
+
+def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
+    # join="exact" in the line concat must refuse responses on different
+    # logT/vdop grids (when no target grid is given) instead of silently
+    # outer-joining them with NaN fill.
+    _write(fake_response_file(), tmp_path / "a.nc", "nc")
+    shifted = fake_response_file()
+    _write(shifted.assign_coords(vdop=shifted.vdop + 5.0), tmp_path / "b.nc", "nc")
+
+    with pytest.raises(ValueError, match=r"align|exact"):
+        load_and_concat_responses(
+            response_directory=tmp_path,
+            response_files=["a.nc", "b.nc"],
+            channels=[108, 284],
+        )
 
 
 def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
