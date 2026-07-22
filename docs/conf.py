@@ -170,15 +170,15 @@ autoclass_content = "both"
 
 # -- Other options ----------------------------------------------------------
 
-# Configuration for sphinx-gallery
+gallery_mode = os.environ.get("MUSE_GALLERY_MODE", "unskipped")
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
-    "filename_pattern": ".*" if os.environ.get("MUSE_RUN_SKIPPED_GALLERY") == "True" else "^((?!skip_).)*$",
+    "filename_pattern": ".*" if gallery_mode == "all" else "^((?!skip_).)*$",
     "examples_dirs": str(Path("..") / "examples"),
     "within_subsection_order": "ExampleTitleSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),
     "abort_on_example_error": False,
-    "plot_gallery": "True",
+    "plot_gallery": gallery_mode != "none",
     "remove_config_comments": True,
     "doc_module": ("muse"),
     "only_warn_on_example_error": True,

@@ -127,6 +127,8 @@ for band, config in bands.items():
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 
     output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.nc"
+    # save_response refuses to overwrite, so clear the artifact of a previous run.
+    output.unlink(missing_ok=True)
     save_response(response, output)
     print(f"Saved {output}")
 
