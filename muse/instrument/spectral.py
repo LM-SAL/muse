@@ -38,7 +38,7 @@ def create_spectral_response(
     ----------
     line_list : `xarray.Dataset`
         CHIANTI line list, e.g. from
-        `muse.instrument.linelist.create_chianti_line_list`.
+        `muse.instrument.create_chianti_line_list`.
     wavelength_grid : `astropy.units.Quantity`
         One-dimensional wavelength samples for one channel and spectral order.
     main_lines : sequence of `str`
