@@ -13,4 +13,11 @@ The method involves:
 
 This approach can be adapted to other instruments (e.g., AIA, EIS, EUVST) by using their respective response functions.
 
-Please note that these are skipped on the formal documentation as it is too RAM heavy to run.
+These examples are skipped during formal documentation builds because the full workflow exceeds Read the Docs' 7 GB memory limit.
+
+Paths and caches
+================
+
+Downloaded inputs use Pooch's standard ``muse`` cache.
+Set ``XDG_CACHE_HOME`` before running the tutorials to relocate it.
+Examples that generate line lists, responses, or spectra write to ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR`` when it is set, otherwise they use ``examples/synthesis_tutorial/artifacts``.
