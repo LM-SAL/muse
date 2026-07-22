@@ -211,10 +211,20 @@ def test_add_history_nested_source_histories_merge_in_any_order() -> None:
         assert ds.attrs["HISTORY"] == ["load", "transform", "demo"]
 
 
-def test_update_attrs_rejects_provenance_updates() -> None:
+def test_add_history_initializes_history_from_sources() -> None:
     ds = xr.Dataset()
+    raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
+    response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
+    add_history(ds, "demo", sources=(raster, response))
+    assert ds.attrs["HISTORY"] == ["make_raster()", "make_response()", "demo"]
+
+
+@pytest.mark.parametrize("key", ["HISTORY", "date created", "date modified", "version"])
+def test_update_attrs_rejects_provenance_updates(key: str) -> None:
+    ds = xr.Dataset()
+    value = ["fake"] if key == "HISTORY" else "fake"
     with pytest.raises(ValueError, match="owned by add_history"):
-        update_attrs(ds, HISTORY=["fake"])
+        update_attrs(ds, **{key: value})
 
 
 def test_jax_numpy_round_trip() -> None:
