@@ -311,17 +311,17 @@ def load_and_concat_responses(
         One channel value per response file. The value is repeated for every
         line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
-        Temperature axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
+        Temperature axis to (re)sample onto. Passed to `muse.instrument.`.
     vdop : `xarray.DataArray`, optional
-        Velocity axis to (re)sample onto. Passed to `muse.instrument.utils.read_response`.
+        Velocity axis to (re)sample onto. Passed to `muse.instrument.read_response`.
     slit : `xarray.DataArray`, optional
-        Number of slits array of integers. Passed to `muse.instrument.utils.read_response`.
+        Number of slits array of integers. Passed to `muse.instrument.read_response`.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-        Passed to `muse.instrument.utils.read_response`.
+        Passed to `muse.instrument.read_response`.
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "linear".
-        Passed to `muse.instrument.utils.read_response`.
+        Passed to `muse.instrument.read_response`.
 
     Returns
     -------

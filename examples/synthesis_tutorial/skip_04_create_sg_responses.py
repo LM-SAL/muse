@@ -22,9 +22,7 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument.response import map_response_to_sg_detector
-from muse.instrument.spectral import create_spectral_response
-from muse.instrument.utils import save_response
+from muse.instrument import create_spectral_response, map_response_to_sg_detector, save_response
 from muse.variables import DEFAULTS_MUSE
 
 ##############################################################################
@@ -82,10 +80,10 @@ bands = {
 # - **Spectral broadening**: Instrumental and thermal line broadening
 # - **Wavelength calibration**: Mapping from detector pixels to wavelengths
 #
-# :func:`muse.instrument.spectral.create_spectral_response` produces an response in
+# :func:`muse.instrument.create_spectral_response` produces an response in
 # ``1e-27 erg cm5 / (Angstrom s sr)``.
 #
-# :func:`muse.instrument.response.map_response_to_sg_detector` then
+# :func:`muse.instrument.map_response_to_sg_detector` then
 # converts energy to photons, applies the detector-pixel solid angle, and
 # integrates over each pixel's wavelength width. The mapped response is
 # therefore in ``1e-27 cm5 ph / s`` rather than per Angstrom.

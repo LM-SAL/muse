@@ -12,7 +12,7 @@ from pathlib import Path
 import pooch
 import xarray as xr
 
-from muse.instrument.utils import load_and_concat_responses
+from muse.instrument import load_and_concat_responses
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_x_to_slit_step
 
@@ -38,7 +38,7 @@ vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 # lines and concatenate them. Each response function is interpolated to
 # match the VDEM's ``logT`` and ``vdop`` grids.
 #
-# To do this, we will use :func:`muse.instrument.utils.load_and_concat_responses`
+# To do this, we will use :func:`muse.instrument.load_and_concat_responses`
 # This ensures that the VDEM and response function share the same temperature
 # and velocity grids.
 

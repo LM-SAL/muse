@@ -21,7 +21,7 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument.linelist import create_chianti_line_list
+from muse.instrument import create_chianti_line_list
 
 ##############################################################################
 # We first confirm that the local environment is working.

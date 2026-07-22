@@ -1,0 +1,4 @@
+Each user-facing subpackage now exposes an explicit public facade:
+``muse.instrument``, ``muse.synthesis``, and ``muse.utils`` re-export their
+intentional public entry points in ``__all__``, the API reference is generated
+from the facades, and the examples import through them.
