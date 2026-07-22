@@ -1,2 +1,2 @@
-Correct the wavelength registration produced by :func:`~muse.instrument.response.map_response_to_sg_detector`
+Correct the wavelength registration produced by :func:`~muse.instrument.map_response_to_sg_detector`
 so adjacent detector-pixel centers are separated by exactly the requested dispersion.

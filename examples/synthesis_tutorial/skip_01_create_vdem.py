@@ -17,7 +17,7 @@ import pooch
 from matplotlib import colors
 from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
-from muse.synthesis.utils import calculate_moments, create_simple_vdem
+from muse.synthesis import calculate_moments, create_simple_vdem
 
 ##############################################################################
 # Creating a VDEM

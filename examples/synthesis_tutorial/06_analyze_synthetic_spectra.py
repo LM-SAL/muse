@@ -14,7 +14,7 @@ import pooch
 import xarray as xr
 from matplotlib import colors
 
-from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
+from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
 
 ##############################################################################
@@ -98,8 +98,8 @@ ax.set_title("Synthesized 171 Angstrom intensity")
 # - **1st moment**: Line-of-sight velocity (Doppler shift)
 # - **2nd moment**: Line width (thermal + non-thermal broadening)
 #
-# :func:`muse.synthesis.utils.wavelength_to_doppler` adds the velocity coordinate
-# required by :func:`muse.synthesis.utils.calculate_moments`.
+# :func:`muse.synthesis.wavelength_to_doppler` adds the velocity coordinate
+# required by :func:`muse.synthesis.calculate_moments`.
 
 velocity_spectrum = wavelength_to_doppler(spectrum)
 moments = calculate_moments(velocity_spectrum)

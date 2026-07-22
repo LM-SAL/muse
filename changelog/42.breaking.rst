@@ -1,6 +1,6 @@
 Rename the in-memory MUSE response fields ``SG_resp``, ``SG_wvl``,
 ``SG_xpixel``, and ``line_wvl`` to ``detector_response``,
 ``detector_wavelength``, ``detector_x_pixel``, and ``line_wavelength``.
-:func:`~muse.instrument.utils.read_response` continues to load existing
+:func:`~muse.instrument.read_response` continues to load existing
 response files that use the legacy names. The derived ``dopp_vel`` coordinate
 is now named ``doppler_velocity``.

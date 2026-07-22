@@ -48,7 +48,7 @@ def map_response_to_sg_detector(
     Map one wavelength-space response onto the MUSE SG detector.
 
     One call maps one MUSE channel and spectral order. The input should come
-    from `muse.instrument.spectral.create_spectral_response` with effective
+    from `muse.instrument.create_spectral_response` with effective
     area already applied.
 
     Parameters
