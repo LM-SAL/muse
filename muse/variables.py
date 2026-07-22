@@ -75,6 +75,11 @@ MUSE_DEFAULTS_DICT = {
         dims="channel",
     ),
     "channel_spectral_order": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
+    "main_line_effective_area": xr.DataArray(
+        np.array([2.6, 4.3, 0.87]) * u.cm**2,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
+    ),
     # Exposures
     "exposure_times_SG": {
         "QS": (2, 6, 18, 60.0) * u.s,

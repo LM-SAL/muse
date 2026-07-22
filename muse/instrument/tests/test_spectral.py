@@ -303,6 +303,37 @@ def test_effective_area_units_convert_without_mutating_input():
     xr.testing.assert_identical(alternate, before)
 
 
+def test_scalar_effective_area_matches_flat_curve():
+    # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...))
+    # must scale the response exactly like a flat curve.
+    line_list = synthetic_line_list(1)
+    flat = synthetic_effective_area(values=np.full(3, 4.3))
+
+    from_curve = _create_wavelength_response(line_list, effective_area=flat)
+    from_selection = _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3 * u.cm**2))
+    # Plain data with units declared in attrs (the units-are-attrs convention), incl. conversion.
+    from_attrs = _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3, attrs={"units": "cm2"}))
+    from_attrs_m2 = _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3e-4, attrs={"units": "m2"}))
+
+    xr.testing.assert_allclose(from_selection, from_curve)
+    xr.testing.assert_allclose(from_attrs, from_curve)
+    xr.testing.assert_allclose(from_attrs_m2, from_curve)
+
+
+def test_scalar_effective_area_is_validated():
+    line_list = synthetic_line_list(1)
+    with pytest.raises(TypeError, match=r"effective_area must be an xarray\.DataArray"):
+        _create_wavelength_response(line_list, effective_area=4.3 * u.cm**2)
+    with pytest.raises(ValueError, match="effective_area must be convertible to cm2"):
+        _create_wavelength_response(line_list, effective_area=xr.DataArray(3.0 * u.s))
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        _create_wavelength_response(line_list, effective_area=xr.DataArray(-1.0 * u.cm**2))
+    with pytest.raises(ValueError, match="valid astropy unit"):
+        _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3, attrs={"units": "bogus"}))
+    with pytest.raises(ValueError, match="effective_area must be convertible to cm2"):
+        _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3))  # no units anywhere
+
+
 @pytest.mark.parametrize(
     ("area_units", "wavelength_units"),
     [

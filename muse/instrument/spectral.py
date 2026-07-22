@@ -55,8 +55,11 @@ def create_spectral_response(
         Scalar or one-dimensional nonthermal-velocity axis. If `None`, no
         nonthermal broadening or ``nonthermal_velocity`` dimension is added.
     effective_area : `xarray.DataArray`, optional
-        One-dimensional effective area with a unit-bearing ``wavelength``
-        coordinate. If `None`, the response is not scaled by effective area.
+        Either a one-dimensional effective-area curve with a unit-bearing
+        ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
+        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area.sel(channel=171)``)
+        applied uniformly across the wavelength grid. If `None`, the response
+        is not scaled by effective area.
 
     Returns
     -------
@@ -107,7 +110,7 @@ def _create_wavelength_response(
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
     if nonthermal_velocity is not None:
         nonthermal_velocity = _velocity_axis(nonthermal_velocity, "nonthermal_velocity")
-    effective_area = _effective_area_in_canonical_units(effective_area)
+    effective_area = _effective_area_in_canonical_units(effective_area, wavelength_grid)
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
     main_lines = _validate_main_lines(line_names, main_lines)
@@ -223,12 +226,38 @@ def _instrumental_width_in_angstrom(instrumental_width):
     return converted
 
 
-def _effective_area_in_canonical_units(effective_area):
+def _effective_area_in_canonical_units(effective_area, wavelength_grid):
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
-        msg = "effective_area must be an xarray.DataArray"
+        msg = "effective_area must be an xarray.DataArray, e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...)"
         raise TypeError(msg)
+    if effective_area.ndim == 0:
+        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...))
+        # is applied uniformly: unwrap to a Quantity, honoring attrs["units"] when the
+        # data does not already carry a unit, and expand to a flat curve over the grid.
+        data = effective_area.data
+        if not isinstance(data, u.Quantity) and "units" in effective_area.attrs:
+            try:
+                data = u.Quantity(data, effective_area.attrs["units"])
+            except (TypeError, ValueError) as exc:
+                msg = "effective_area units must be a valid astropy unit"
+                raise ValueError(msg) from exc
+        try:
+            value = u.Quantity(data).to_value(u.cm**2)
+        except u.UnitConversionError as exc:
+            msg = "effective_area must be convertible to cm2"
+            raise ValueError(msg) from exc
+        if not np.isfinite(value) or value < 0:
+            msg = "effective_area must contain finite, non-negative values"
+            raise ValueError(msg)
+        span = np.unique(wavelength_grid.data[[0, -1]])
+        return xr.DataArray(
+            np.full(span.size, value),
+            dims="wavelength",
+            coords={"wavelength": ("wavelength", span, {"units": str(u.AA)})},
+            attrs={"units": str(u.cm**2)},
+        )
     if effective_area.dims != ("wavelength",):
         msg = "effective_area must be one-dimensional with wavelength as its only dimension"
         raise ValueError(msg)
