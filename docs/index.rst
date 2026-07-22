@@ -4,13 +4,29 @@
 ``muse`` documentation
 **********************
 
-``muse`` is an open-source Python package that provides tools to read, manipulate, and visualize `ulti-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ data.
+``muse`` is an open-source Python package that provides tools to read, manipulate, and visualize `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ data.
 `The data is publicly available and provides access to co-aligned SDO/AIA data and more. <https://muse.lmsal.com/search/>`__
 
-The goal of ``muse`` is to provide a set of classes for handling both imaging (slit-jaw) and spectral observations (spectrograph).
-The classes link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
-These classes also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units, referred to as radiometric calibration.
-Furthermore, it allows you to plug in your own custom calibration routines and apply them to the level 2 data to generate level 3 data.
+What ``muse`` can do today
+==========================
+
+The package is pre-alpha and currently focuses on synthesizing MUSE observations from simulations:
+
+* Build a Velocity-Differential Emission Measure (VDEM) from a simulation cube with :func:`muse.synthesis.create_simple_vdem`.
+* Match a VDEM to the MUSE field of view and raster geometry with :func:`muse.transforms.match_fov`, :func:`muse.transforms.reshape_x_to_slit_step`, and :func:`muse.transforms.reshape_slit_step_to_x`.
+* Create CHIANTI line lists (:func:`muse.instrument.create_chianti_line_list`) and build, save, and load spectrograph response functions (:func:`muse.instrument.create_spectral_response`, :func:`muse.instrument.save_response`, :func:`muse.instrument.read_response`, :func:`muse.instrument.load_and_concat_responses`).
+* Synthesize detector spectra with :func:`muse.synthesis.vdem_synthesis` and analyze them with :func:`muse.synthesis.calculate_moments`.
+
+The :doc:`example gallery <generated/gallery/index>` walks through this pipeline end to end.
+
+Roadmap (not yet implemented)
+=============================
+
+The longer-term goal of ``muse`` is to provide a set of classes for handling both imaging (context imager) and spectral observations (spectrograph).
+The classes will link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
+These classes will also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units, referred to as radiometric calibration.
+Furthermore, it will allow you to plug in your own custom calibration routines and apply them to the level 2 data to generate level 3 data.
+None of this observation-handling functionality exists yet.
 
 .. grid:: 1 2 2 2
     :gutter: 3

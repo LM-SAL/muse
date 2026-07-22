@@ -28,7 +28,6 @@ dependencies = [
   "astropy>=7.2",
   "attrs>=26.1.0",
   "loguru>=0.7.3",
-  "matplotlib>=3.10.0",
   "numpy>=2.4.0",
   "tqdm>=4.67",
   "xarray[io,parallel]>=2026.4.0",
@@ -42,6 +41,7 @@ optional-dependencies.chianti = [
 optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
+  "matplotlib>=3.10.0",
   "packaging",
   "plasmacalcs[most]",
   "pydata-sphinx-theme",
@@ -58,6 +58,7 @@ optional-dependencies.docs = [
 optional-dependencies.jax = ["jax>=0.10.2"]
 optional-dependencies.tests = [
   "muse[all]",
+  "matplotlib>=3.10.0",
   "pytest-doctestplus",
   "pytest-loguru",
   "pytest-mpl",

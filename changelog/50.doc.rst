@@ -1,0 +1,3 @@
+The documentation landing page now separates implemented capabilities from
+the mission roadmap, and the contributor guide documents the development
+environment contract and which CI system owns which jobs.
