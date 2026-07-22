@@ -136,4 +136,44 @@ This checks if ``muse`` was installed correctly.
 
 If you want to install another package later, you can run ``conda install <package_name>``.
 
+.. _muse-tutorial-installing-torch:
+
+Installing Torch (optional)
+===========================
+
+``muse`` synthesizes spectra with NumPy by default; `PyTorch <https://pytorch.org/>`__ is an optional accelerator backend (``vdem_synthesis(..., backend="torch")``).
+Torch is never selected implicitly and results do not change with what is installed, so you only need this section if you want the speed-up.
+
+The right Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Apple Silicon), and the generic PyPI wheel is not always the one you want: on Linux it bundles the multi-gigabyte CUDA stack even on machines without a GPU.
+
+.. tab-set::
+
+    .. tab-item:: conda
+
+        conda-forge picks the right variant for your platform:
+
+        .. code-block:: bash
+
+            $ conda install pytorch
+
+    .. tab-item:: pip
+
+        Install Torch first, following the selector on the `PyTorch install page <https://pytorch.org/get-started/locally/>`__ for your hardware, then install muse's extra; pip sees Torch is already satisfied and leaves it alone:
+
+        .. code-block:: bash
+
+            $ pip install torch --index-url https://download.pytorch.org/whl/cpu  # CPU-only example
+            $ pip install "muse[torch]"
+
+        On macOS and Windows the default ``pip install "muse[torch]"`` already gives a CPU (and Apple-Silicon ``mps``) build, so the two-step is only needed on Linux or for a specific CUDA version.
+
+    .. tab-item:: uv
+
+        uv can detect your hardware and pick the matching build:
+
+        .. code-block:: bash
+
+            $ uv pip install torch --torch-backend=auto
+            $ uv pip install "muse[torch]"
+
 Now we've got a working installation of ``muse``, in the next few chapters we'll look at some of the basic data structures ``muse`` uses for representing SG and context imager data.

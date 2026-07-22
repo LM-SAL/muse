@@ -46,7 +46,11 @@ def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> 
         msg = f"CUDA device {cuda_device} is not valid"
         raise ValueError(msg)
     if importlib.util.find_spec(backend) is None:
-        msg = f"backend={backend!r} requested but Torch is not installed"
+        msg = (
+            f"backend={backend!r} requested but Torch is not installed. Install the build "
+            "matching your hardware (https://pytorch.org/get-started/locally/, or "
+            "`conda install pytorch`), then retry."
+        )
         raise ValueError(msg)
     return backend
 
