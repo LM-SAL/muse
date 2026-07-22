@@ -42,19 +42,20 @@ optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
   "matplotlib>=3.10.0",
+  "memory_profiler", # for sphinx-gallery memory usage
   "packaging",
   "plasmacalcs[most]",
   "pooch",
   "pydata-sphinx-theme",
-  "sphinx",
   "sphinx-autodoc-typehints",
   "sphinx-automodapi",
   "sphinx-changelog",
   "sphinx-copybutton",
   "sphinx-design",
   "sphinx-gallery",
-  "memory_profiler", # for sphinx-gallery memory usage
+  "sphinx",
   "sphinxext-opengraph",
+  "tabulate",
 ]
 optional-dependencies.tests = [
   "muse[all]",

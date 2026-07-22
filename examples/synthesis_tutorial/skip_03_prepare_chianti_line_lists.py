@@ -55,7 +55,7 @@ logT = np.arange(4.5, 8.0, 0.1)
 temperature = xr.DataArray(10**logT * u.K, dims="logT")
 pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 # You can use density too and pass this instead into create_chianti_line_list
-# eDensity = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5), dims="log_density")
+# eDensity = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5), dims="logD")
 line_list_directory = Path(
     os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts")
 )

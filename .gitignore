@@ -266,6 +266,7 @@ package.json
 
 # Benchmarking:
 *.png
+!docs/_static/muse_logo.png
 *.log
 *.nc
 *.zarr

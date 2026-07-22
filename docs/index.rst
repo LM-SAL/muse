@@ -1,8 +1,8 @@
 .. _muse-index:
 
-******************
-MUSE documentation
-******************
+**********************
+``muse`` documentation
+**********************
 
 ``muse`` is an open-source Python package for the `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ mission.
 MUSE has not launched yet, so there are no observations to read; for now the package focuses on synthesizing MUSE observations of the main spectral lines from simulations.
@@ -52,10 +52,10 @@ None of this observation-handling functionality exists yet.
         .. toctree::
           :maxdepth: 1
 
+          reference/index
           known_issues
           contributing
           design
-          reference/index
           changelog
 
 Getting help

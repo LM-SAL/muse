@@ -41,7 +41,7 @@ def create_chianti_line_list(
     density : `xarray.DataArray`, optional
         Electron density array with an `astropy.units.Quantity` payload
         convertible to cm^-3. Mutually exclusive with ``pressure``. The output
-        carries this grid on a ``log_density`` dimension whose coordinate is
+        carries this grid on a ``logD`` dimension whose coordinate is
         ``log10(density)``.
     pressure : `xarray.DataArray`, optional
         Electron pressure array with an `astropy.units.Quantity` payload
@@ -82,9 +82,9 @@ def create_chianti_line_list(
     chiantipy_version, ch = _initialize_chianti()
 
     if density is not None:
-        plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "log_density"})
+        plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})
         temperature_bc, density_bc = xr.broadcast(temperature, plasma_grid)
-        extra_coord_name = "log_density"
+        extra_coord_name = "logD"
         extra_coord = np.log10(plasma_grid.data)
     else:
         density_bc = plasma_grid / temperature
@@ -210,8 +210,8 @@ def _chianti_bunch_to_dataset(
     line_list.wavelength.attrs["units"] = str(u.AA)
     line_list.gofnt.attrs["units"] = "erg cm3 / (s sr)"
     line_list.logT.attrs["units"] = str(u.dex(u.K))
-    if "log_density" in line_list.coords:
-        line_list.log_density.attrs["units"] = str(u.dex(u.cm**-3))
+    if "logD" in line_list.coords:
+        line_list.logD.attrs["units"] = str(u.dex(u.cm**-3))
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
     return line_list.isel(trans_index=in_range)
