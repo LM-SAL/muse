@@ -42,6 +42,30 @@ If you are a more seasoned developer and would like to get further information, 
 
 Before you can contribute code to muse, you first need to install the development version of ``muse``.
 
+Development environment
+=======================
+
+The full test suite intentionally exercises every optional backend, so your development environment must match the ``tests`` (or ``dev``) extra.
+With a conda/micromamba environment named ``muse``:
+
+.. code-block:: bash
+
+    $ micromamba activate muse
+    $ pip install -e ".[dev]"
+    $ python -m pytest muse
+    $ pre-commit run --all-files
+
+Re-run the ``pip install`` whenever the extras in ``pyproject.toml`` change; if an optional backend (e.g. JAX) is missing, the corresponding tests will fail rather than silently skip.
+Alternatively, ``tox -e py314`` builds a complete, locked environment (from ``uv.lock``) and is the canonical way to reproduce CI results.
+
+Continuous integration
+======================
+
+Two CI systems share the work:
+
+* **GitHub Actions** (``.github/workflows/ci.yaml``) owns platform tests (the ``py312``/``py313``/``py314`` tox environments), packaging, documentation builds (``tox -e build_docs``), and the CHIANTI integration job, which downloads and caches the CHIANTI database to run the ``remote_data``-gated tests.
+* **CircleCI** (``.circleci/config.yml``) owns the deterministic figure-comparison tests and publishes the reference images used as baselines.
+
 .. _issue tracker: https://github.com/LM-SAL/muse/issues
 .. _SunPy Newcomers Guide: http://docs.sunpy.org/en/latest/dev_guide/newcomers.html
 .. _GitHub: https://github.com/

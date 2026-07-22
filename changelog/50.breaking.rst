@@ -1,0 +1,2 @@
+Matplotlib is no longer a runtime dependency of ``muse``; it moved to the
+``docs`` and ``tests`` extras since no library module imports it.
