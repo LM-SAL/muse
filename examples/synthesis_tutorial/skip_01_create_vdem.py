@@ -1,14 +1,13 @@
 """
 ==================
-00 - Create a VDEM
+01 - Create a VDEM
 ==================
 
-This how-to demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
+This tutorial demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
 
 A VDEM contains the physical properties of the solar atmosphere (temperature, velocity, spatial structure).
 """
 
-import gc
 import contextlib
 from pathlib import Path
 
@@ -18,7 +17,7 @@ import pooch
 from matplotlib import colors
 from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
-from muse.synthesis.utils import create_simple_vdem
+from muse.synthesis.utils import calculate_moments, create_simple_vdem
 
 ##############################################################################
 # Creating a VDEM
@@ -46,21 +45,12 @@ pooch.retrieve(
 
 # Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
 with contextlib.chdir(simulation_path):
-    # In your case, you may need to change the snapshot number if you have your own simulation.
     muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
-    #
-    # The float32 downcasts halve the memory held by the large simulation cubes.
-    # They are only needed for the memory-constrained online documentation build
-    # You do not need them and this will introduce NaN values into the output
-    #
-    temperature = muram_calc("T").astype(np.float32)  # Temperature array in K
+    temperature = muram_calc("T")  # Temperature array in K
     r_per_nH_tot = (muram_calc.elements.n_per_nH() * muram_calc.elements.m * muram_calc.u("amu")).sum()
-    # ne_nh must stay float64 because the dense voxels exceed the float32 maximum (~3.4e38 1/cm^6)
-    # But due to memory constraints, we must use float32, which will introduce NaN values into the
-    #  output
-    ne_nh = ((muram_calc("r") / r_per_nH_tot) ** 2).astype(np.float32)  # Emission measure 1/cm^6
-    velocity = (muram_calc("u", component="z") * 1e-5).astype(np.float32)  # LOS velocity in km/s
-    cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # grid spacing along the line of sight in cm
+    ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
+    velocity = muram_calc("u", component="z") * 1e-5  # LOS velocity in km/s
+    cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # Grid spacing along the line of sight in cm
     x_coord = muram_calc("maindims_x_coord")
     y_coord = muram_calc("maindims_y_coord")
 velocity_axis = np.arange(-500, 510, 10)  # Velocity axis in km/s
@@ -75,27 +65,11 @@ vdem = create_simple_vdem(
     y_coord,
     velocity_axis,
     log_temperature_axis,
-    # Used to split the x axis into this many contiguous blocks and process them one at a time.
-    # Required for the online documentation build.
-    n_x_chunks=16,
 )
-# Due to tight memory constraints, the online documentation build requires deleting a few large variables.
-del (
-    temperature,
-    velocity,
-    ne_nh,
-    cell_length,
-    x_coord,
-    y_coord,
-    velocity_axis,
-    log_temperature_axis,
-    MuramCalculator,
-    muram_calc,
-)
-gc.collect()
 
 ##############################################################################
 # The VDEM contains information about:
+#
 # - Temperature distribution (logT dimension)
 # - Doppler velocity distribution (vdop dimension)
 # - Spatial distribution (x, y dimensions)
@@ -104,10 +78,31 @@ gc.collect()
 # We can now print and plot the VDEM we created.
 
 print(vdem)
-# We can now plot the first moment of the VDEM
-vdem.vdem.sum(dim=["logT", "vdop"], skipna=False).plot(norm=colors.LogNorm(vmin=1))
 
-plt.show()
+# Calculate the VDEM moments
+#
+# The velocity moments can be calculated directly from the VDEM without first
+# synthesizing spectra. ``calculate_moments`` integrates one spectral axis, so
+# we first sum over temperature and then calculate the moments along ``vdop``.
+
+velocity_distribution = vdem[["vdem"]].sum(dim="logT", skipna=False)
+vdem_moments = calculate_moments(
+    velocity_distribution,
+    integration_name="vdem",
+    doppler_name="vdop",
+    moment_dim="vdop",
+)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 7), constrained_layout=True)
+vdem_moments["0th"].plot.imshow(ax=axes[0], norm=colors.LogNorm(vmin=1))
+vdem_moments["1st"].plot.imshow(ax=axes[1], vmin=-100, vmax=100, cmap="bwr")
+vdem_moments["2nd"].plot.imshow(ax=axes[2], vmin=0, vmax=100)
+axes[0].set_title("VDEM 0th moment")
+axes[1].set_title("VDEM 1st moment")
+axes[2].set_title("VDEM 2nd moment")
+
 
 ##############################################################################
 # Now that you have a VDEM, you can use it to create a synthetic MUSE observation.
+
+plt.show()

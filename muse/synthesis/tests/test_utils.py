@@ -201,14 +201,20 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
 
 
-def test_create_simple_vdem_x_chunking_is_exact() -> None:
-    # Chunked processing must be bit-identical to the single-pass result; vary ne_nh along x
-    # so a block mix-up cannot cancel out.
+def test_create_simple_vdem_internal_x_blocks_are_exact() -> None:
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2)
-    unchunked = synthesis_utils.create_simple_vdem(**inputs)
-    chunked = synthesis_utils.create_simple_vdem(**inputs, n_x_chunks=2)
-    np.testing.assert_array_equal(chunked.vdem.values, unchunked.vdem.values)
+    n_x = synthesis_utils._VDEM_X_BLOCK_SIZE + 1
+    shape = (n_x, 3, 2)
+    inputs["temperature"] = np.broadcast_to(inputs["temperature"][:1], shape).copy()
+    inputs["velocity"] = np.broadcast_to(inputs["velocity"][:1], shape).copy()
+    x_scale = np.arange(1.0, n_x + 1)
+    inputs["ne_nh"] = np.broadcast_to(x_scale[:, np.newaxis, np.newaxis], shape).copy()
+    inputs["x"] = np.arange(n_x)
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+
+    expected = _expected_tiny_vdem()[:, :, :1, :] * x_scale[np.newaxis, np.newaxis, :, np.newaxis]
+    np.testing.assert_allclose(result.vdem.values, expected, rtol=1e-12)
 
 
 @pytest.mark.parametrize("integration_axis", [0, 1])

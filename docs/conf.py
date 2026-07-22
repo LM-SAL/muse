@@ -173,7 +173,7 @@ autoclass_content = "both"
 # Configuration for sphinx-gallery
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
-    "filename_pattern": "^((?!skip_).)*$",
+    "filename_pattern": ".*" if os.environ.get("MUSE_RUN_SKIPPED_GALLERY") == "True" else "^((?!skip_).)*$",
     "examples_dirs": str(Path("..") / "examples"),
     "within_subsection_order": "ExampleTitleSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),

@@ -1,0 +1,3 @@
+Add a staged synthesis tutorial that prepares reusable CHIANTI line lists
+separately, creates MUSE detector responses, synthesizes observations, and
+analyzes moments from downloadable NetCDF artifacts.

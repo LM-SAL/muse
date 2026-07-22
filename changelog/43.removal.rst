@@ -1,0 +1,1 @@
+Remove the RTD-only ``n_x_chunks`` argument from ``create_simple_vdem``.
