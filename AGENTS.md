@@ -53,7 +53,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
   msg = f"Unsupported restype {restype!r}"
   raise ValueError(msg)
   ```
-- **Logging:** `from muse.log import logger` (loguru). No `print` in library code.
+- **Logging:** `from muse.log import logger` (loguru). No `print` in library code. `change_logging_level` is an app-level convenience that replaces all Loguru sinks — for user scripts/notebooks only; never call it from library code or at import.
 - **Immutable config:** instrument parameters live on frozen attrs class `InstrumentDefaults`; create variants with `attrs.evolve`, never by mutation.
 - **mixedCase allowed for science names** (`logT`, `SG_resp`, `dx_pixel_CI`, `vdop`) — ruff `N8xx` intentionally relaxed. Follow existing names; don't "fix" to snake_case.
 - **Line length 120**, double quotes, ruff-format owns formatting (don't hand-format).
@@ -67,6 +67,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 - **Treat datasets as immutable; never mutate inputs in place.** Build new objects with `assign`/`assign_coords` — these share underlying arrays (cheap, no large copy). Don't `ds.copy(deep=True)` whole dataset just to add/tweak a coord or attr.
 - **Deep-copy only the one array you overwrite** (`ds.assign(SG_resp=ds.SG_resp.copy(deep=True))`), never entire dataset.
 - **Attrs shared on shallow copies.** Set attrs on freshly computed `DataArray` before `assign_coords`, or use `.assign_attrs(...)`; don't mutate `ds.var.attrs[...]` on shared object — leaks back to caller.
+- **Never rely on host xarray options.** `import muse` must not call `xr.set_options`, so code runs under whatever options the host set. Consequences: (1) don't assume attrs survive reductions/arithmetic — set attrs explicitly on outputs (or pass `keep_attrs=True` to that one call); (2) pass combine kwargs (`data_vars`, `coords`, `compat`, `join`) explicitly to every `xr.concat`/`xr.merge` — ambiguous defaults raise `FutureWarning` = CI failure.
 - **For large data, stay lazy** (dask-backed chunked zarr): operations build lazy graph, memory stays bounded, originals untouched until `.compute()`/write.
 - **Validate units at trust boundaries** with `require_unit` (`muse.utils.utils`); compose domain checks on top (see `synthesis._validate_inputs`).
 

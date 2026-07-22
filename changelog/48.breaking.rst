@@ -1,0 +1,11 @@
+Importing ``muse`` no longer configures the host process: the import-time
+``xarray.set_options(keep_attrs=True, use_new_combine_kwarg_defaults=True)``
+call and the Loguru handler replacement were removed.
+``muse.log.change_logging_level`` remains available as an explicit,
+user-callable way to set the overall logging level (it replaces all Loguru
+sinks and is intended for scripts and notebooks); it is simply never called
+at import time, and the ``MUSE_DEBUG`` environment variable no longer does
+anything.
+Operations inside ``muse`` now pass the required ``xarray`` keyword arguments
+explicitly and set attributes on their outputs directly, so results no longer
+depend on host-level ``xarray`` options.

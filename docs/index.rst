@@ -10,7 +10,7 @@
 The goal of ``muse`` is to provide a set of classes for handling both imaging (slit-jaw) and spectral observations (spectrograph).
 The classes link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
 These classes also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units, referred to as radiometric calibration.
-Furthermore, it allows you to create your own custom calibration routines and apply them to the level 2 data to generate level 3 data.
+Furthermore, it allows you to plug in your own custom calibration routines and apply them to the level 2 data to generate level 3 data.
 
 .. grid:: 1 2 2 2
     :gutter: 3

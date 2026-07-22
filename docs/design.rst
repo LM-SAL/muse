@@ -60,6 +60,23 @@ Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, whi
 - ``.attrs`` are shared on a shallow copy.
   Set attrs on a freshly computed ``DataArray`` *before* ``assign_coords``, or use ``.assign_attrs(...)``; mutating ``ds.var.attrs[...]`` on a shared object leaks back to the original.
 
+Importing ``muse`` must not configure the host
+==============================================
+
+``import muse`` leaves the host process untouched: no ``xarray.set_options`` call and no Loguru handler replacement.
+A library import that silently reconfigures process-wide state changes the behavior of the host application and of every other imported library.
+
+**Consequences for contributors.** ``muse`` code runs under whatever xarray options the host application set, so:
+
+- Never assume attrs survive a reduction or arithmetic operation (the host may run with ``keep_attrs=False``, and the test suite does).
+  Set the attrs you need explicitly on the object you return, or pass ``keep_attrs=True`` to that one call.
+  Units are the load-bearing attrs and are re-validated at every trust boundary by :func:`muse.utils.require_unit`.
+- Pass the combine keyword arguments (``data_vars``, ``coords``, ``compat``, ``join``) explicitly to every ``xarray.concat`` / ``xarray.merge`` call.
+  With no explicit values, the behavior depends on the host's ``use_new_combine_kwarg_defaults`` setting, and ambiguous calls raise a ``FutureWarning``, which the test suite treats as an error.
+- Logging configuration is the application's job.
+  For scripts and notebooks, :func:`muse.log.change_logging_level` sets the overall level explicitly at call time; it replaces every Loguru sink, so applications that manage their own Loguru configuration should configure Loguru directly instead.
+  Library code must never call it.
+
 Lineage
 =======
 

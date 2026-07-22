@@ -2,7 +2,6 @@
 Project-wide logger configuration.
 """
 
-import os
 import sys
 
 from loguru import logger
@@ -12,18 +11,23 @@ __all__ = ["change_logging_level", "log_gpu_status", "logger"]
 
 def change_logging_level(level: str) -> None:
     """
-    Change the logging level of the logger.
+    Reconfigure the process-global Loguru logger to show ``level`` and above.
+
+    This is an application-level convenience for scripts and notebooks. Loguru
+    uses one global logger, so this removes **every** existing Loguru sink
+    (including any the host application added) and installs a single
+    ``sys.stderr`` sink at ``level``. Applications that manage their own Loguru
+    configuration should configure Loguru directly instead of calling this.
+    Importing ``muse`` never calls it.
 
     Parameters
     ----------
     level : str
-        The level to change the logger to. Must be one of the following:
+        The minimum level to show. Must be one of the following:
         "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"
     """
-    if os.environ.get("MUSE_DEBUG"):
-        return
     logger.remove()
-    logger.add(sys.stdout, level=level)
+    logger.add(sys.stderr, level=level)
 
 
 def log_gpu_status() -> None:
