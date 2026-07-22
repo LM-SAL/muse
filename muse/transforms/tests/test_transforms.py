@@ -1,3 +1,4 @@
+import dask.array as da
 import numpy as np
 import pytest
 
@@ -59,6 +60,23 @@ def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     assert float(out.x[0]) == 0.0
     assert float(out.x[1] - out.x[0]) == pytest.approx(0.4)
     assert float(out.y[1] - out.y[0]) == pytest.approx(0.167)
+
+
+def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
+    # Large VDEMs arrive dask-backed (open_zarr); the FOV/reshape transforms must
+    # extend the graph, not silently compute, and match the eager results.
+    lazy_fov = match_fov(vdem_offgrid.chunk({"logT": 4, "x": 32}))
+    assert isinstance(lazy_fov.vdem.data, da.Array)
+    np.testing.assert_allclose(lazy_fov.vdem.compute().values, match_fov(vdem_offgrid).vdem.values, rtol=1e-12)
+
+    lazy_raster = reshape_x_to_slit_step(vdem.chunk({"logT": 4, "x": 64}), nslits=35, nraster=11)
+    assert isinstance(lazy_raster.vdem.data, da.Array)
+    eager_raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    np.testing.assert_array_equal(lazy_raster.vdem.compute().values, eager_raster.vdem.values)
+
+    lazy_x = reshape_slit_step_to_x(lazy_raster)
+    assert isinstance(lazy_x.vdem.data, da.Array)
+    np.testing.assert_array_equal(lazy_x.vdem.compute().values, reshape_slit_step_to_x(eager_raster).vdem.values)
 
 
 def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:

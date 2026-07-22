@@ -1,3 +1,4 @@
+import dask.array as dask_array
 import numpy as np
 import pytest
 import xarray as xr
@@ -98,6 +99,29 @@ def test_calculate_moments_structure(response, vdem) -> None:
     )
     assert u.Unit(moments["1st"].attrs["units"]) == u.km / u.s
     assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
+
+
+def test_moments_pipeline_keeps_dask_inputs_lazy(response, vdem) -> None:
+    # Spectra opened with chunks="auto" (see example 06) must stay lazy through
+    # wavelength_to_doppler and calculate_moments and match the eager results.
+    eager_spectrum = _spectrum(response, vdem)
+    lazy_spectrum = synthesis_utils.wavelength_to_doppler(
+        vdem_synthesis(
+            reshape_x_to_slit_step(vdem, nslits=35, nraster=11).chunk({"logT": 4}),
+            response,
+            sum_over=("logT", "vdop"),
+        )
+    )
+    assert isinstance(lazy_spectrum.flux.data, dask_array.Array)
+
+    lazy_moments = synthesis_utils.calculate_moments(lazy_spectrum)
+    eager_moments = synthesis_utils.calculate_moments(eager_spectrum)
+    for name in ("0th", "1st", "2nd"):
+        assert isinstance(lazy_moments[name].data, dask_array.Array)
+        # atol absorbs chunk-summation float noise where a moment is itself ~0 km/s.
+        np.testing.assert_allclose(
+            lazy_moments[name].compute().values, eager_moments[name].values, rtol=1e-9, atol=1e-9, equal_nan=True
+        )
 
 
 def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
