@@ -63,9 +63,8 @@ def map_response_to_sg_detector(
     dispersion : `astropy.units.Quantity`, optional
         Nominal wavelength width per detector pixel, also used for detector-bin
         integration. If `None`, derive it from the channel's spectral order and
-        the MUSE slit calibration. For compatibility with existing MUSE
-        response products, the detector grid spans ``detector_pixels *
-        dispersion`` across ``detector_pixels`` samples.
+        the MUSE slit calibration. Adjacent detector-pixel centers are separated
+        by exactly ``dispersion``.
     slit_spacing : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits, by default {slit_spacing}.
     detector_pixels : `int`, optional
@@ -178,11 +177,7 @@ def map_response_to_sg_detector(
     dispersion_value = dispersion.to_value(u.AA / u.pix)
     slit_offset = slit_spacing.to_value(u.pix) * dispersion_value
     detector_start = wavelength_start.to_value(u.AA)
-    detector_wavelength_values = np.linspace(
-        detector_start,
-        detector_start + detector_pixels * dispersion_value,
-        detector_pixels,
-    )
+    detector_wavelength_values = detector_start + np.arange(detector_pixels) * dispersion_value
     detector_wavelength = xr.DataArray(
         detector_wavelength_values[:, np.newaxis] - np.arange(number_of_slits)[np.newaxis, :] * slit_offset,
         dims=("detector_x_pixel", "slit"),

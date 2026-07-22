@@ -66,7 +66,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
         pixel_height=2 * u.arcsec,
     )
 
-    expected_wavelength = np.linspace(170.0, 170.4, 4)[np.newaxis, :] - np.array([[0.0], [0.2]])
+    expected_wavelength = (170.0 + np.arange(4) * 0.1)[np.newaxis, :] - np.array([[0.0], [0.2]])
     solid_angle = (1 * u.arcsec).to_value(u.rad) * (2 * u.arcsec).to_value(u.rad)
     wavelength = response.wavelength_grid.values
     photon_energy = (const.h * const.c / (wavelength * u.AA)).to_value(u.erg)
@@ -79,6 +79,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
         mapped.detector_wavelength.transpose("slit", "detector_x_pixel"),
         expected_wavelength,
     )
+    np.testing.assert_allclose(np.diff(mapped.detector_wavelength.isel(slit=0)), 0.1)
     np.testing.assert_allclose(mapped.detector_response.isel(line=0, logT=0, vdop=0), expected_response)
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 ph cm5 / s")
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
@@ -129,7 +130,7 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
         / DEFAULTS_MUSE.channel_spectral_order.sel(channel=171).item()
     ).to_value(u.AA / u.pix)
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
-        expected_start + DEFAULTS_MUSE.pixels_SG.to_value(u.pix) * dispersion
+        expected_start + (DEFAULTS_MUSE.pixels_SG.to_value(u.pix) - 1) * dispersion
     )
 
 
