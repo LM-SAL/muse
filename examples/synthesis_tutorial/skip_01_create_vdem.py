@@ -8,6 +8,7 @@ This tutorial demonstrates how to create a Velocity-Differential Emission Measur
 A VDEM is the emission measure of the solar atmosphere as a function of temperature, velocity, and spatial structure.
 """
 
+import os
 import contextlib
 from pathlib import Path
 
@@ -103,6 +104,14 @@ axes[0].set_title("VDEM 0th moment")
 axes[1].set_title("VDEM 1st moment")
 axes[2].set_title("VDEM 2nd moment")
 
+
+##############################################################################
+# Finally we save the VDEM so the later tutorials can reuse it.
+# This is the artifact hosted online for examples 02 and 05.
+
+output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
+output_dir.mkdir(parents=True, exist_ok=True)
+vdem.to_zarr(output_dir / "muse_example_vdem.zarr", mode="w", zarr_format=3)
 
 ##############################################################################
 # Now that you have a VDEM, you can use it to create a synthetic MUSE observation.

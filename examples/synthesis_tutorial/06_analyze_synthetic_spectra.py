@@ -29,7 +29,7 @@ spectrum_path = Path(
             "https://www.dropbox.com/scl/fi/jekc9ol4tjmaazbs0zii5/muse_synthetic_spectra.nc"
             "?rlkey=rqe45g5f82mrkgyg5l3fy4ssg&st=lxupqq0h&dl=1"
         ),
-        known_hash="sha256:68bc96aa3300eaa4e60b12cf4c09808f3781c52a61d7cecafef844f272c5f168",
+        known_hash="sha256:cb0a2b4ad3f496a1b1bc5c224c5d84b0f268299efca964252e590befd6339009",
         fname="muse_synthetic_spectra.nc",
         path=tutorial_dir,
     )
