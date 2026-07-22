@@ -168,23 +168,38 @@ def test_add_history_records_function_name_without_locals() -> None:
     assert "date modified" in ds.attrs
 
 
-def test_update_attrs_copies_source_attrs_and_applies_updates() -> None:
-    source = xr.Dataset({"a": ("x", [1])}, attrs={"HISTORY": ["load"], "instrument": "MUSE"})
+def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
+    source = xr.Dataset(
+        {"a": ("x", [1])},
+        attrs={"HISTORY": ["load"], "instrument": "MUSE", "date created": "01-Jan-2026", "version": "0.1"},
+    )
     ds = xr.Dataset({"b": ("x", [2])})
 
     update_attrs(ds, source, level=2)
-    add_history(ds, "demo")
-    assert ds.attrs["HISTORY"] == ["load", "demo"]
-    assert ds.attrs["instrument"] == "MUSE"
-    assert ds.attrs["level"] == 2
+    assert ds.attrs == {"instrument": "MUSE", "level": 2}
 
 
-def test_update_attrs_merges_history_from_multiple_sources() -> None:
+def test_update_attrs_does_not_mutate_source_attrs() -> None:
+    source = xr.Dataset(attrs={"HISTORY": ["load"], "instrument": "MUSE"})
+    ds = xr.Dataset()
+    update_attrs(ds, source, instrument="other")
+    assert source.attrs == {"HISTORY": ["load"], "instrument": "MUSE"}
+
+
+def test_add_history_inherits_history_from_sources() -> None:
     ds = xr.Dataset(attrs={"HISTORY": ["start"]})
-    source = xr.Dataset(attrs={"HISTORY": ["source"], "instrument": "MUSE"})
-    update_attrs(ds, source)
-    assert ds.attrs["HISTORY"] == ["start", "source"]
-    assert ds.attrs["instrument"] == "MUSE"
+    raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
+    response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
+    add_history(ds, "demo", sources=(raster, response))
+    assert ds.attrs["HISTORY"] == ["start", "make_raster()", "make_response()", "demo"]
+
+
+def test_add_history_does_not_duplicate_inherited_history() -> None:
+    source = xr.Dataset(attrs={"HISTORY": ["load"]})
+    # A result derived through xarray operations may already carry its source history.
+    ds = xr.Dataset(attrs={"HISTORY": ["load"]})
+    add_history(ds, "demo", sources=(source,))
+    assert ds.attrs["HISTORY"] == ["load", "demo"]
 
 
 def test_jax_numpy_round_trip() -> None:

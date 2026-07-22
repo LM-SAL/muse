@@ -63,7 +63,8 @@ examples/              sphinx-gallery scripts (looser lint rules)
 
 - Quantities use `astropy.units`; converters normalize to canonical unit on construction (e.g. arcsec, Angstrom, km/s). Don't strip units mid-pipeline.
 - Primary containers = `xarray.Dataset`/`DataArray`. Spatial/spectral axes have conventional names: `x`, `y`, `slit`, `step`, `logT`, `vdop`, `channel`, `line`, `SG_xpixel`, `SG_wvl`, `trans_index`, `log_density`.
-- Functions returning dataset record provenance via `add_history(ds, locals(), func)`; preserve when editing pipeline functions — recorded call string asserted in some tests.
+- Functions returning dataset record provenance via `add_history(ds, locals(), func)`; preserve when editing pipeline functions — recorded call string asserted in some tests. `add_history` alone owns `HISTORY`/`date created`/`date modified`/`version`; multi-input results inherit lineage via `add_history(..., sources=(a, b))`. `update_attrs` copies only non-provenance attrs.
+- **Finalizer exception to immutability:** `add_history` and `update_attrs` mutate in place and return `None`; call them only on newly constructed outputs the function owns (name the result first), never on caller-owned inputs.
 - **Treat datasets as immutable; never mutate inputs in place.** Build new objects with `assign`/`assign_coords` — these share underlying arrays (cheap, no large copy). Don't `ds.copy(deep=True)` whole dataset just to add/tweak a coord or attr.
 - **Deep-copy only the one array you overwrite** (`ds.assign(SG_resp=ds.SG_resp.copy(deep=True))`), never entire dataset.
 - **Attrs shared on shallow copies.** Set attrs on freshly computed `DataArray` before `assign_coords`, or use `.assign_attrs(...)`; don't mutate `ds.var.attrs[...]` on shared object — leaks back to caller.

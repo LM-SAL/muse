@@ -5,7 +5,7 @@ Functions whose scope is not limited to one part of the muse package.
 import inspect
 import datetime
 import importlib.util
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import dask.array as da
 import numpy as np
@@ -259,12 +259,29 @@ def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
     return tensor
 
 
+# Provenance is owned by add_history alone; update_attrs never copies these keys.
+_PROVENANCE_ATTRS = ("HISTORY", "date created", "date modified", "version")
+
+
 def _history_entries(history) -> list:
     if history is None:
         return []
     if isinstance(history, list):
         return history.copy()
     return [history]
+
+
+def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.DataArray) -> None:
+    """
+    Append ``source`` history to ``ds``, unless ``ds`` already starts with it.
+    """
+    source_history = _history_entries(source.attrs.get("HISTORY"))
+    if not source_history:
+        return
+    history = _history_entries(ds.attrs.get("HISTORY"))
+    if history[: len(source_history)] != source_history:
+        history = [*history, *source_history]
+    ds.attrs["HISTORY"] = history
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
@@ -300,9 +317,16 @@ def add_history(
     ds: xr.Dataset | xr.DataArray,
     func_or_local_vars: Callable | str | dict,
     func: Callable | str | None = None,
+    *,
+    sources: Sequence[xr.Dataset | xr.DataArray] = (),
 ) -> None:
     """
     Record a call in the dataset history and store its keyword inputs as attributes.
+
+    This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
+    constructed output that the calling function owns, never a caller-owned
+    input. It is the sole owner of the provenance attributes ``HISTORY``,
+    ``date created``, ``date modified``, and ``version``.
 
     When ``locals()`` and ``func`` are passed, every keyword input (a parameter
     of ``func`` that has a default) is stored on ``ds.attrs`` after being coerced
@@ -319,6 +343,9 @@ def add_history(
         the third argument.
     func : `Callable` or `str`, optional
         Function being recorded with its input values.
+    sources : sequence of `xarray.Dataset` or `xarray.DataArray`, optional
+        Inputs whose ``HISTORY`` the result inherits, in order, before the new
+        entry is appended. Omit it for a result that starts a new lineage.
     """
     if func is None:
         if isinstance(func_or_local_vars, dict):
@@ -358,6 +385,8 @@ def add_history(
         name = func if isinstance(func, str) else func.__name__
         history_entry = f"{name}({', '.join(string_vals)})"
 
+    for source in sources:
+        _inherit_history(ds, source)
     ds.attrs["HISTORY"] = [*_history_entries(ds.attrs.get("HISTORY")), history_entry]
     _touch_attrs(ds)
 
@@ -368,7 +397,14 @@ def update_attrs(
     **attrs,
 ) -> None:
     """
-    Copy source attributes and apply explicit updates.
+    Copy non-provenance source attributes and apply explicit updates.
+
+    This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
+    constructed output that the calling function owns, never a caller-owned
+    input. The provenance attributes (``HISTORY``, ``date created``,
+    ``date modified``, ``version``) are owned by `add_history` and never copied
+    here; pass the inputs to ``add_history(..., sources=...)`` to inherit their
+    lineage.
 
     Parameters
     ----------
@@ -380,14 +416,5 @@ def update_attrs(
         Attributes to add or update after source attributes are copied.
     """
     if source is not None:
-        history = _history_entries(ds.attrs.get("HISTORY"))
-        source_history = _history_entries(source.attrs.get("HISTORY"))
-        ds.attrs.update({key: value for key, value in source.attrs.items() if key != "HISTORY"})
-        if source_history:
-            if history[: len(source_history)] == source_history:
-                ds.attrs["HISTORY"] = history
-            else:
-                ds.attrs["HISTORY"] = [*history, *source_history]
-        elif history:
-            ds.attrs["HISTORY"] = history
+        ds.attrs.update({key: value for key, value in source.attrs.items() if key not in _PROVENANCE_ATTRS})
     ds.attrs.update(attrs)

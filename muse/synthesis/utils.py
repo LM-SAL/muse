@@ -6,7 +6,7 @@ import astropy.units as u
 from astropy.constants import c as speed_of_light
 
 from muse.log import logger
-from muse.utils.utils import add_history, coord_as_unit, require_unit
+from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
 
@@ -307,11 +307,12 @@ def calculate_moments(
     variance = (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
     second = np.sqrt(variance.clip(min=0))
     # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
-    moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second}, attrs=dict(spectrum.attrs))
+    moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second})
+    update_attrs(moments, spectrum)
     moments["0th"].attrs = dict(masked_spectrum[integration_name].attrs)
     moments["1st"].attrs["units"] = str(u.km / u.s)
     moments["2nd"].attrs["units"] = str(u.km / u.s)
-    add_history(moments, locals(), calculate_moments)
+    add_history(moments, locals(), calculate_moments, sources=(spectrum,))
     return moments
 
 

@@ -1,0 +1,6 @@
+``add_history`` now solely owns the provenance attributes (``HISTORY``,
+``date created``, ``date modified``, ``version``) and gained a ``sources``
+keyword so multi-input results inherit their inputs' histories explicitly;
+``update_attrs`` copies only non-provenance attributes. Both helpers are
+documented as finalizers that must only be applied to newly constructed
+outputs.

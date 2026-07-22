@@ -250,5 +250,5 @@ def vdem_synthesis(
                 "response.detector_wavelength",
             )
         )
-    add_history(ds, locals(), vdem_synthesis)
+    add_history(ds, locals(), vdem_synthesis, sources=(raster, response))
     return ds
