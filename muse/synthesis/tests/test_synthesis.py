@@ -75,6 +75,23 @@ def test_vdem_synthesis_keeps_dask_inputs_lazy(response, vdem) -> None:
     np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
 
 
+def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, vdem) -> None:
+    # Operands chunked along the contracted dims (e.g. a response read with
+    # chunked=True, whose files store logT chunks of 1) must be rechunked before
+    # the einsum: da.einsum otherwise pairs every chunk of one operand with
+    # every chunk of the other, exploding the task graph and peak memory.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    eager = vdem_synthesis(reshaped_vdem, response)
+    lazy = vdem_synthesis(
+        reshaped_vdem.chunk({"logT": 1, "vdop": 2}),
+        response.chunk({"line": 1, "logT": 1, "vdop": 2}),
+    )
+
+    assert isinstance(lazy.flux.data, da.Array)
+    assert lazy.flux.data.npartitions <= reshaped_vdem.sizes["y"] * response.sizes["line"]
+    np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
+
+
 def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     # Independently recompute one flux value with a plain xarray multiply + sum over
     # the shared logT/vdop/slit dims, and compare to the einsum result. This

@@ -75,28 +75,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --editable '.[chianti]' \
-            'plasmacalcs[most]' pooch pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
+            pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
+          python -m pip install tox tox-pypi-filter
       - name: Test live CHIANTI line-list generation
         run: python -m pytest muse/instrument/tests/test_linelist.py --remote-data=any -q
-      - name: Run synthesis tutorial and report peak memory
-        env:
-          MPLBACKEND: Agg
-          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
-          SUNPY_CONFIGDIR: ${{ runner.temp }}/sunpy
-        run: |
-          run_example() {
-            local name="$1" status=0 time_file="${RUNNER_TEMP}/gallery-time.txt"
-            shift
-            /usr/bin/time --format="%M" --output="${time_file}" "$@" || status=$?
-            awk -v name="${name}" '{printf "- %s peak RAM: %.1f MB\n", name, $1 / 1024}' "${time_file}" | tee -a "${GITHUB_STEP_SUMMARY}"
-            return "${status}"
-          }
-          run_example example-01 env XDG_CACHE_HOME="${RUNNER_TEMP}/create-vdem" python examples/synthesis_tutorial/skip_01_create_vdem.py
-          run_example example-02 env XDG_CACHE_HOME="${RUNNER_TEMP}/match-fov" python examples/synthesis_tutorial/02_vdem_to_muse_fov.py
-          run_example example-03 env XDG_CACHE_HOME="${RUNNER_TEMP}/line-list-prep" python examples/synthesis_tutorial/skip_03_prepare_chianti_line_lists.py
-          run_example example-04 env XDG_CACHE_HOME="${RUNNER_TEMP}/response-build" XUVTOP= python examples/synthesis_tutorial/skip_04_create_sg_responses.py
-          run_example example-05 env XDG_CACHE_HOME="${RUNNER_TEMP}/synthesis" XUVTOP= python examples/synthesis_tutorial/skip_05_synthesize_muse_observation.py
-          run_example example-06 env XDG_CACHE_HOME="${RUNNER_TEMP}/analysis" XUVTOP= python examples/synthesis_tutorial/06_analyze_synthetic_spectra.py
+      - name: Build docs with the full synthesis tutorial gallery
+        run: tox -e build_docs-gallery
       - name: Save CHIANTI 11.0.2 database
         if: |
           steps.cache-chianti.outputs.cache-hit != 'true' &&

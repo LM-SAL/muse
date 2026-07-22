@@ -1,0 +1,8 @@
+``read_response`` and ``load_and_concat_responses`` gained a ``chunked``
+keyword that opens response files dask-backed, so resampling and synthesis
+stay lazy and peak memory stays bounded by the on-disk chunks.
+``map_response_to_sg_detector`` now preserves a dask-backed spectral response,
+letting ``save_response`` stream the detector response to disk; the synthesis
+tutorial uses both to cut its peak memory. ``vdem_synthesis`` rechunks
+dask-backed operands so the contracted dims are single-chunk, keeping the
+task graph and peak memory bounded.

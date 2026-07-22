@@ -111,6 +111,12 @@ for band, config in bands.items():
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
         effective_area=DEFAULTS_MUSE.main_line_effective_area.sel(channel=band),
     )
+    # Chunk over Doppler velocity so the detector mapping stays lazy (dask):
+    # save_response then streams it to disk chunk by chunk instead of
+    # materializing the full detector response (~18 GB for the 108 band) in
+    # memory. Peak memory is roughly one chunk's interpolation temporaries per
+    # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
+    waveband_response = waveband_response.chunk({"doppler_velocity": 20})
     response = map_response_to_sg_detector(waveband_response, band)
 
     print(response)

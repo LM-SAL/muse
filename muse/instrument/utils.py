@@ -147,6 +147,7 @@ def read_response(
     logT_method: str = "nearest",
     vdop_method: str = "nearest",
     gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
+    chunked: bool = False,
 ) -> xr.Dataset:
     """
     Reads a response function into an `xarray.Dataset` interpolating if needed in vdop,
@@ -168,6 +169,10 @@ def read_response(
         Interpolation method for vdop, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN, by default {gain}.
+    chunked : `bool`, optional
+        When `True`, open the file dask-backed using its on-disk chunking, so
+        the response stays lazy through resampling and downstream synthesis and
+        peak memory stays bounded by the chunks. By default `False` (eager).
 
     Returns
     -------
@@ -195,7 +200,7 @@ def read_response(
             msg = f"{name} must contain only finite values"
             raise ValueError(msg)
 
-    r = _canonicalize_response_names(_open_response_file(response_file))
+    r = _canonicalize_response_names(_open_response_file(response_file, chunked=chunked))
 
     if "detector_response" not in r.data_vars:
         msg = "Response dataset must contain 'detector_response' variable"
@@ -297,6 +302,7 @@ def load_and_concat_responses(
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
     vdop_method: str = "linear",
+    chunked: bool = False,
 ) -> xr.Dataset:
     """
     Load multiple response functions and concatenate them along ``line``.
@@ -322,6 +328,10 @@ def load_and_concat_responses(
     vdop_method : `str`, optional
         Interpolation method for vdop, by default "linear".
         Passed to `muse.instrument.read_response`.
+    chunked : `bool`, optional
+        When `True`, load each response dask-backed so the concatenated
+        response stays lazy and synthesis peak memory stays bounded by the
+        chunks. Passed to `muse.instrument.read_response`. By default `False`.
 
     Returns
     -------
@@ -347,6 +357,7 @@ def load_and_concat_responses(
                 slit=slit,
                 logT_method=logT_method,
                 vdop_method=vdop_method,
+                chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))

@@ -1,5 +1,6 @@
 import warnings
 
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
@@ -148,6 +149,29 @@ def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> No
     assert r.sizes["vdop"] == src.sizes["vdop"]
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert "gain" in r.coords
+
+
+@pytest.mark.parametrize("fmt", ["nc", "zarr"])
+def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> None:
+    path = _write(fake_response_file(), tmp_path / f"resp.{fmt}", fmt)
+    logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
+    vdop = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "vdop")
+    kwargs = {"logT": logT, "vdop": vdop, "slit": _slit(3), "logT_method": "nearest", "vdop_method": "linear"}
+
+    lazy = read_response(path, chunked=True, **kwargs)
+    eager = read_response(path, chunked=False, **kwargs)
+
+    assert isinstance(lazy.detector_response.data, da.Array)
+    xr.testing.assert_allclose(lazy.compute(), eager)
+
+
+def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
+    for name in ("a.nc", "b.nc"):
+        fake_response_file().to_netcdf(tmp_path / name)
+
+    response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171], chunked=True)
+
+    assert isinstance(response.detector_response.data, da.Array)
 
 
 def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
