@@ -1,0 +1,5 @@
+With the default NumPy backend, ``vdem_synthesis`` now keeps dask-backed
+inputs lazy by contracting through ``dask.array.einsum``, so synthesizing
+from a chunked zarr VDEM stays memory-bounded and writing the flux streams
+chunk by chunk. ``create_simple_vdem`` also computes its temperature-bin
+overlap in log space, avoiding two full-cube ``log10`` passes per bin.

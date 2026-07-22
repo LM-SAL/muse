@@ -6,8 +6,10 @@ muse
 A Python library focused on interfacing with data (real or synthetic) for
 NASA's Medium-Class Explorers (MIDEX) Multi-slit Solar Explorer (MUSE).
 
-* Homepage: One day
-* Documentation: One day
+* `Homepage <https://muse.lmsal.com/>`__
+* `NASA Homepage <https://science.nasa.gov/mission/muse/>`__
+* `Documentation <https://muse-lmsal.readthedocs.io/>`__
+
 """
 
 from .version import version as __version__

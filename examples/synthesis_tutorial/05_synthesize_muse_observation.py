@@ -77,6 +77,9 @@ response = load_and_concat_responses(
     slit=vdem_raster.slit,
     logT_method="nearest",
     vdop_method="nearest",
+    # Keep the responses dask-backed so the synthesis below stays lazy and the
+    # spectrum streams to disk instead of being materialized in memory at once.
+    chunked=True,
 )
 
 print(response)
@@ -107,6 +110,9 @@ print(response)
 # This includes VDEM with original resolution, MUSE resolution or
 # with raster/step instead of x-axis.
 
+# With dask-backed inputs the contraction stays lazy; peak memory is roughly
+# one chunk's temporaries per dask worker; if you run out of RAM, cap
+# dask.config.set(num_workers=...).
 spectrum = vdem_synthesis(
     vdem_raster,
     response,

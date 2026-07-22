@@ -1,3 +1,4 @@
+import dask.array as dask_array
 import numpy as np
 import pytest
 import xarray as xr
@@ -98,6 +99,29 @@ def test_calculate_moments_structure(response, vdem) -> None:
     )
     assert u.Unit(moments["1st"].attrs["units"]) == u.km / u.s
     assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
+
+
+def test_moments_pipeline_keeps_dask_inputs_lazy(response, vdem) -> None:
+    # Spectra opened with chunks="auto" (see example 06) must stay lazy through
+    # wavelength_to_doppler and calculate_moments and match the eager results.
+    eager_spectrum = _spectrum(response, vdem)
+    lazy_spectrum = synthesis_utils.wavelength_to_doppler(
+        vdem_synthesis(
+            reshape_x_to_slit_step(vdem, nslits=35, nraster=11).chunk({"logT": 4}),
+            response,
+            sum_over=("logT", "vdop"),
+        )
+    )
+    assert isinstance(lazy_spectrum.flux.data, dask_array.Array)
+
+    lazy_moments = synthesis_utils.calculate_moments(lazy_spectrum)
+    eager_moments = synthesis_utils.calculate_moments(eager_spectrum)
+    for name in ("0th", "1st", "2nd"):
+        assert isinstance(lazy_moments[name].data, dask_array.Array)
+        # atol absorbs chunk-summation float noise where a moment is itself ~0 km/s.
+        np.testing.assert_allclose(
+            lazy_moments[name].compute().values, eager_moments[name].values, rtol=1e-9, atol=1e-9, equal_nan=True
+        )
 
 
 def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
@@ -230,6 +254,31 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input(integratio
         moved[cube] = np.moveaxis(inputs[cube], 2, integration_axis)
     result = synthesis_utils.create_simple_vdem(**moved, integration_axis=integration_axis)
     np.testing.assert_array_equal(result.vdem.values, default.vdem.values)
+
+
+def test_create_simple_vdem_temperature_outside_axis_range() -> None:
+    # A cube entirely below the temperature axis contributes nothing; one entirely
+    # above spans every bin through the boundary-cell gradient (prev = 100 K), so
+    # each bin integrates the full log-T overlap of its column.
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.full((2, 3, 2), 10.0)  # logT = 1, below the lowest bin edge
+    assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
+
+    inputs["temperature"] = np.full((2, 3, 2), 1e9)  # logT = 9, above the highest bin edge
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    # Six (x, y) columns whose boundary cell (cell_length 2, ne_nh 1) fully overlaps each bin.
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), np.full(3, 1.2e-26), rtol=1e-12)
+
+
+def test_create_simple_vdem_temperature_on_bin_edge_lands_in_lower_bin() -> None:
+    # Bin centers [4.5, 5.0, 5.5] have edges at 4.75/5.25; an isothermal cube exactly on
+    # the 4.5|5.0 edge is reached from below (boundary prev = 100 K), so the whole
+    # log-T overlap sits in the lower bin and the upper bins stay empty.
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.full((2, 3, 2), 10**4.75)
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), [1.2e-26, 0.0, 0.0], rtol=1e-12)
 
 
 def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:

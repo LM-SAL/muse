@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
@@ -90,6 +91,25 @@ def test_map_response_to_sg_detector_geometry_and_units():
     assert "wavelength_bin" not in mapped.dims
     assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_sg_detector(")
     xr.testing.assert_identical(response, original)
+
+
+def test_map_response_to_sg_detector_keeps_chunked_input_lazy():
+    response = _spectral_response()
+    kwargs = {
+        "number_of_slits": 2,
+        "dispersion": 0.1 * u.AA / u.pix,
+        "slit_spacing": 2 * u.pix,
+        "detector_pixels": 4,
+        "wavelength_start": 170 * u.AA,
+        "pixel_width": 1 * u.arcsec,
+        "pixel_height": 2 * u.arcsec,
+    }
+
+    lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), 171, **kwargs)
+    eager = map_response_to_sg_detector(response, 171, **kwargs)
+
+    assert isinstance(lazy.detector_response.data, da.Array)
+    xr.testing.assert_allclose(lazy.compute(), eager)
 
 
 def test_map_response_to_sg_detector_preserves_constant_photon_density_integral():

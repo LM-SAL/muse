@@ -1,6 +1,7 @@
 import string
 from collections.abc import Hashable, Sequence
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -22,6 +23,20 @@ from muse.utils.utils import (
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
+
+
+def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray:
+    """
+    Rechunk ``dims`` of a dask-backed array to a single chunk; return numpy-backed
+    arrays unchanged.
+
+    Contracted dims must be single-chunk before ``da.einsum``: it otherwise pairs every
+    chunk of one operand with every chunk of the other and tree-reduces the partial
+    products, exploding the task graph, runtime, and peak memory.
+    """
+    if not isinstance(array.data, da.Array):
+        return array
+    return array.chunk({dim: -1 for dim in dims if dim in array.dims})
 
 
 def _calc_einsum(
@@ -80,10 +95,16 @@ def _calc_einsum(
                 precision=jax.lax.Precision.HIGHEST,
             )
         )
+    vdem_data = raster.vdem.data
+    response_data = response.detector_response.data
+    if isinstance(vdem_data, da.Array) or isinstance(response_data, da.Array):
+        # Keep dask-backed inputs lazy: the contraction becomes part of the graph, so
+        # peak memory stays bounded by the chunks and the flux computes/writes streamed.
+        return da.einsum(f"{einsum_str}->{out_str}", vdem_data, response_data)
     return np.einsum(
         f"{einsum_str}->{out_str}",
-        np.asarray(raster.vdem.data),
-        np.asarray(response.detector_response.data),
+        np.asarray(vdem_data),
+        np.asarray(response_data),
     )
 
 
@@ -205,9 +226,14 @@ def vdem_synthesis(
     Returns
     -------
     `xarray.Dataset`
-        Dataset of the spectrum on the detector.
+        Dataset of the spectrum on the detector. With the default NumPy backend,
+        dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
+        stays bounded and writing streams chunk by chunk; the JAX and Torch
+        backends always compute their inputs eagerly.
     """
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
+    raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
+    response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))
     einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.detector_response.dims, sum_over)
     logger.debug(
         f"einsum {einsum_str}->{out_str}: "
@@ -233,8 +259,8 @@ def vdem_synthesis(
     )
 
     logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
-    da = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
-    ds["flux"] = da
+    flux = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
+    ds["flux"] = flux
     ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
     ds.flux.attrs.update({"units": str(raster_vdem_unit * response_unit)})
     # detector_wavelength carries a slit dimension, so only attach it when slit
