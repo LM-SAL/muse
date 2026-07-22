@@ -57,7 +57,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 - **Immutable config:** instrument parameters live on frozen attrs class `InstrumentDefaults`; create variants with `attrs.evolve`, never by mutation.
 - **mixedCase allowed for science names** (`logT`, `SG_resp`, `dx_pixel_CI`, `vdop`) — ruff `N8xx` intentionally relaxed. Follow existing names; don't "fix" to snake_case.
 - **Line length 120**, double quotes, ruff-format owns formatting (don't hand-format).
-- Keep module import cheap: **lazy-import heavy optional deps** (`torch`, `jax`, `ChiantiPy`) inside functions where module imported at package init (see `log.py:log_gpu_status`). Leaf submodule not imported by `muse/__init__` may import them at top level. On `ImportError`, point at the extra (e.g. `pip install muse[chianti]`).
+- Keep module import cheap: **lazy-import heavy optional deps** (`torch`, `ChiantiPy`) inside functions where module imported at package init (see `log.py:log_gpu_status`). Leaf submodule not imported by `muse/__init__` may import them at top level. On `ImportError`, point at the extra (e.g. `pip install muse[chianti]`).
 
 ## Units & data model
 

@@ -8,18 +8,9 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
+from muse.synthesis._backends import _resolve_backend, numpy_to_torch, torch_to_numpy
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import (
-    _resolve_backend,
-    add_history,
-    coord_as_unit,
-    jax_to_numpy,
-    numpy_to_jax,
-    numpy_to_torch,
-    require_unit,
-    torch_to_numpy,
-    update_attrs,
-)
+from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
@@ -62,9 +53,9 @@ def _calc_einsum(
     out_str : `str`
         Einsum output string.
     cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), or None for CPU.
+        CUDA device index for GPU use (requires ``backend="torch"``), or None for CPU.
     backend : `str`, optional
-        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are opt-in.
+        ``"numpy"`` (default) or ``"torch"``. Torch is opt-in.
 
     Returns
     -------
@@ -81,18 +72,6 @@ def _calc_einsum(
                 f"{einsum_str}->{out_str}",
                 numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
                 numpy_to_torch(response.detector_response.data, cuda_device=cuda_device),
-            )
-        )
-    if backend == "jax":
-        import jax  # NOQA: PLC0415
-        import jax.numpy as jnp  # NOQA: PLC0415
-
-        return jax_to_numpy(
-            jnp.einsum(
-                f"{einsum_str}->{out_str}",
-                numpy_to_jax(raster.vdem.data, cuda_device=cuda_device),
-                numpy_to_jax(response.detector_response.data, cuda_device=cuda_device),
-                precision=jax.lax.Precision.HIGHEST,
             )
         )
     vdem_data = raster.vdem.data
@@ -216,20 +195,20 @@ def vdem_synthesis(
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
     cuda_device : `int`, optional
-        CUDA device index for GPU use (requires ``backend="jax"`` or ``"torch"``), defaults to None (CPU).
+        CUDA device index for GPU use (requires ``backend="torch"``), defaults to None (CPU).
     backend : `str`, optional
-        ``"numpy"`` (default), ``"jax"``, or ``"torch"``. JAX and Torch are
-        opt-in: neither is selected implicitly, so results do not change with
-        what is installed. The JAX and Torch paths downcast float64 inputs to
-        float32; the NumPy path keeps the input dtype.
+        ``"numpy"`` (default) or ``"torch"``. Torch is opt-in: it is never
+        selected implicitly, so results do not change with what is installed.
+        The Torch path downcasts float64 inputs to float32; the NumPy path
+        keeps the input dtype.
 
     Returns
     -------
     `xarray.Dataset`
         Dataset of the spectrum on the detector. With the default NumPy backend,
         dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
-        stays bounded and writing streams chunk by chunk; the JAX and Torch
-        backends always compute their inputs eagerly.
+        stays bounded and writing streams chunk by chunk; the Torch backend
+        always computes its inputs eagerly.
     """
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
     raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))

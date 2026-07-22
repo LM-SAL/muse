@@ -100,9 +100,8 @@ print(response)
 # - **detector_x_pixel**: spectral detector pixels
 # - **detector_wavelength**: wavelength at each detector pixel and slit
 #
-# If you find numpy too slow, we have two optional backends for speeding up
-# the calculation - JAX and Torch. Please install either one and change
-# the ``backend`` keyword to your choice.
+# If you find numpy too slow, we have an optional Torch backend for speeding
+# up the calculation. Please install it and set ``backend="torch"``.
 #
 # Note that :func:`muse.synthesis.vdem_synthesis` will work
 # for any response function (MUSE, EIS, EUVST etc).

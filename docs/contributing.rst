@@ -55,7 +55,8 @@ With a conda/micromamba environment named ``muse``:
     $ python -m pytest muse
     $ pre-commit run --all-files
 
-Re-run the ``pip install`` whenever the extras in ``pyproject.toml`` change; if an optional backend (e.g. JAX) is missing, the corresponding tests will fail rather than silently skip.
+Re-run the ``pip install`` whenever the extras in ``pyproject.toml`` change; if an optional backend (e.g. Torch) is missing, the corresponding tests will fail rather than silently skip.
+On Linux without an NVIDIA GPU, install the slim CPU Torch build first (see :ref:`muse-tutorial-installing-torch`) so the ``dev`` extra does not pull the multi-gigabyte CUDA stack; tox environments and CI already do this via ``UV_TORCH_BACKEND=cpu``.
 Alternatively, ``tox -e py314`` builds a complete, locked environment (from ``uv.lock``) and is the canonical way to reproduce CI results.
 
 Continuous integration

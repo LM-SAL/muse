@@ -1,0 +1,3 @@
+The JAX synthesis backend was removed along with the ``jax`` extra; future
+accelerator-specific solvers will target Torch only. ``vdem_synthesis`` now
+accepts ``backend="numpy"`` (default) or ``"torch"``.

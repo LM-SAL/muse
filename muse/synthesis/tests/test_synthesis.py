@@ -119,11 +119,10 @@ def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> Non
     np.testing.assert_array_equal(result.component_kind, component_kind)
 
 
-@pytest.mark.parametrize("backend", ["jax", "torch"])
-def test_vdem_synthesis_accelerator_backend_matches_numpy(response, vdem, backend) -> None:
+def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
-    accel_flux = vdem_synthesis(reshaped_vdem, response, backend=backend).flux
+    accel_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
 
     assert isinstance(accel_flux.data, np.ndarray)
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
@@ -258,7 +257,7 @@ def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, vdem) -
 def test_vdem_synthesis_cuda_matches_cpu(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     cpu = vdem_synthesis(reshaped_vdem, response)
-    gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0, backend="jax")
+    gpu = vdem_synthesis(reshaped_vdem, response, cuda_device=0, backend="torch")
     assert_dataset_structure(
         gpu,
         data_vars=("flux",),
