@@ -1,3 +1,4 @@
+import dask.array as da
 import numpy as np
 import pytest
 
@@ -61,6 +62,17 @@ def test_vdem_synthesis(response, vdem) -> None:
         detector_response.line_wavelength.values,
         [108.355, 108.117, 108.355, 171.073, 171.073, 284.163, 284.163],
     )
+
+
+def test_vdem_synthesis_keeps_dask_inputs_lazy(response, vdem) -> None:
+    # A dask-backed raster (e.g. from open_zarr) must produce a lazy flux whose
+    # computed values match the eager numpy path.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    eager = vdem_synthesis(reshaped_vdem, response)
+    lazy = vdem_synthesis(reshaped_vdem.chunk({"logT": 5, "step": 4}), response)
+
+    assert isinstance(lazy.flux.data, da.Array)
+    np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
 
 
 def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:

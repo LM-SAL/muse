@@ -1,6 +1,7 @@
 import string
 from collections.abc import Hashable, Sequence
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -80,10 +81,16 @@ def _calc_einsum(
                 precision=jax.lax.Precision.HIGHEST,
             )
         )
+    vdem_data = raster.vdem.data
+    response_data = response.detector_response.data
+    if isinstance(vdem_data, da.Array) or isinstance(response_data, da.Array):
+        # Keep dask-backed inputs lazy: the contraction becomes part of the graph, so
+        # peak memory stays bounded by the chunks and the flux computes/writes streamed.
+        return da.einsum(f"{einsum_str}->{out_str}", vdem_data, response_data)
     return np.einsum(
         f"{einsum_str}->{out_str}",
-        np.asarray(raster.vdem.data),
-        np.asarray(response.detector_response.data),
+        np.asarray(vdem_data),
+        np.asarray(response_data),
     )
 
 
@@ -205,7 +212,10 @@ def vdem_synthesis(
     Returns
     -------
     `xarray.Dataset`
-        Dataset of the spectrum on the detector.
+        Dataset of the spectrum on the detector. With the default NumPy backend,
+        dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
+        stays bounded and writing streams chunk by chunk; the JAX and Torch
+        backends always compute their inputs eagerly.
     """
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
     einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.detector_response.dims, sum_over)

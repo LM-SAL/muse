@@ -171,13 +171,19 @@ def create_simple_vdem(
         block = slice(block_start, min(block_start + _VDEM_X_BLOCK_SIZE, n_x))
         n_x_block = block.stop - block.start
         ne_nh_block = ne_nh[block] / 1e27  # normalize to the 1e27 / cm^5 output units
+        # n_e * n_H * cell_length does not depend on the temperature bin; compute it once per block.
+        emission_block = ne_nh_block * cell_length_los
         temperature_block = temperature[block]
         # Each line-of-sight cell spans the temperatures between it and its neighbour; its
         # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
         temperature_prev = np.roll(temperature_block, 1, axis=2)
         temperature_prev[:, :, 0] = 100.0
-        max_temperature = np.maximum(temperature_block, temperature_prev)
-        min_temperature = np.minimum(temperature_block, temperature_prev)
+        # Work in log space: clipping the precomputed logs per bin is equivalent to
+        # log10(clip(T, 10**lo, 10**hi)) but avoids two full log10 passes per bin.
+        log_temperature_block = np.log10(temperature_block)
+        log_temperature_prev = np.log10(temperature_prev)
+        max_log_temperature = np.maximum(log_temperature_block, log_temperature_prev)
+        min_log_temperature = np.minimum(log_temperature_block, log_temperature_prev)
         # Every voxel falls in exactly one velocity bin, so scatter each voxel onto a flat
         # (velocity_bin, x, y) index; that index has no z axis, so np.bincount's accumulation
         # is the line-of-sight sum. Out-of-range voxels get invalid indices but are masked out below.
@@ -186,14 +192,14 @@ def create_simple_vdem(
         scatter_index = velocity_bin * (n_x_block * n_y) + np.arange(n_x_block * n_y).reshape(n_x_block, n_y, 1)
 
         for i_temperature in range(n_temperature_bins):
-            bin_lo = 10.0 ** (log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0)
-            bin_hi = 10.0 ** (log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0)
-            log_temperature_clipped = np.log10(np.clip(temperature_block, bin_lo, bin_hi))
-            log_temperature_prev_clipped = np.log10(np.clip(temperature_prev, bin_lo, bin_hi))
+            bin_lo = log_temperature_axis[i_temperature] - log_temperature_bin_width / 2.0
+            bin_hi = log_temperature_axis[i_temperature] + log_temperature_bin_width / 2.0
+            log_temperature_clipped = np.clip(log_temperature_block, bin_lo, bin_hi)
+            log_temperature_prev_clipped = np.clip(log_temperature_prev, bin_lo, bin_hi)
             bin_fraction = np.abs(log_temperature_prev_clipped - log_temperature_clipped) / log_temperature_bin_width
-            voxel_mask = in_velocity_range & (max_temperature >= bin_lo) & (min_temperature < bin_hi)
+            voxel_mask = in_velocity_range & (max_log_temperature >= bin_lo) & (min_log_temperature < bin_hi)
             # n_e * n_H * bin_fraction * cell_length, scattered into its velocity bin and summed along z.
-            los_integrand = ne_nh_block * bin_fraction * cell_length_los
+            los_integrand = emission_block * bin_fraction
             vdem[i_temperature, :, block, :] = np.bincount(
                 scatter_index[voxel_mask],
                 weights=los_integrand[voxel_mask],
