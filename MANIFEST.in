@@ -1,6 +1,6 @@
 # Exclude specific files
 # All files which are tracked by git and not explicitly excluded here are included by setuptools_scm
-exclude .codecov.yaml
+exclude codecov.yml
 exclude .coveragerc
 exclude .cruft.json
 exclude .gitignore
@@ -9,9 +9,17 @@ exclude .pre-commit-config.yaml
 exclude .readthedocs.yaml
 exclude .rtd-environment.yaml
 exclude .ruff.toml
+exclude .flake8
+exclude .gitattributes
+exclude .sourcery.yaml
+exclude _typos.toml
+exclude AGENTS.md
+exclude CLAUDE.md
+exclude CODE_OF_CONDUCT.md
 
 # Prune folders
 prune .github
+prune .circleci
 prune build
 prune changelog
 global-exclude *.pyc *.o
