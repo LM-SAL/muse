@@ -184,6 +184,7 @@ autoclass_content = "both"
 # -- Other options ----------------------------------------------------------
 
 gallery_mode = os.environ.get("MUSE_GALLERY_MODE", "unskipped")
+gallery_parallel = int(os.environ.get("MUSE_GALLERY_PARALLEL", "1"))
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
     "filename_pattern": ".*" if gallery_mode == "all" else "^((?!skip_).)*$",
@@ -196,7 +197,11 @@ sphinx_gallery_conf = {
     "doc_module": ("muse"),
     "only_warn_on_example_error": True,
     "matplotlib_animations": True,
-    "show_memory": True,
+    # sphinx-gallery cannot measure memory in parallel mode and warns if asked
+    # to; with sphinx-build -W that warning fails the build, so disable it
+    # ourselves. Keep parallel=1 (serial) on RAM-limited builders like RTD.
+    "show_memory": gallery_parallel == 1,
+    "parallel": gallery_parallel,
 }
 
 

@@ -94,7 +94,9 @@ effective_area = DEFAULTS_MUSE.main_line_effective_area.sel(channel=band)
 doppler_velocity = [0] * u.km / u.s
 
 ##############################################################################
-# **Density-dependent response.** The ``logD`` dimension of the line list
+# **Density-dependent response**
+#
+# The ``logD`` dimension of the line list
 # flows through the spectral response and the detector mapping unchanged.
 
 waveband_response = create_spectral_response(
@@ -109,12 +111,13 @@ response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 
 plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
-integrated.plot.line(x="detector_x_pixel", hue="logD")
+integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
 plt.title("171 Angstrom response with electron density")
 
 ##############################################################################
-# **Nonthermal broadening.** We go back to the fixed-pressure line list, we add a
+# **Nonthermal broadening**
+#
+# We go back to the fixed-pressure line list, we add a
 # ``nonthermal_velocity`` axis via the keyword. Each value adds in
 # quadrature to the thermal width, mimicking unresolved motions
 # such as Alfvén-wave turbulence.
@@ -132,8 +135,7 @@ response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 
 plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
-integrated.plot.line(x="detector_x_pixel", hue="nonthermal_velocity")
+integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
 plt.title("171 Angstrom response per nonthermal velocity")
 
 plt.show()
