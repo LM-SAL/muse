@@ -209,11 +209,11 @@ def _append_defaults_repr(app, what, name, obj, options, lines):  # NOQA: ARG001
 
     # Sphinx collapses newlines in ``autodata`` value annotations, so we append
     # the itemized repr as a readable code block instead.
-    if name == "muse.variables.DEFAULTS_MUSE":
-        from muse.variables import DEFAULTS_MUSE  # NOQA: PLC0415
+    from muse.variables_schema import InstrumentDefaults  # NOQA: PLC0415
 
+    if isinstance(obj, InstrumentDefaults):
         lines.extend(["", ".. code-block:: text", ""])
-        lines.extend(f"    {line}" for line in repr(DEFAULTS_MUSE).splitlines())
+        lines.extend(f"    {line}" for line in repr(obj).splitlines())
         lines.append("")
 
 
