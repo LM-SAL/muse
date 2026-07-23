@@ -23,7 +23,8 @@ change_logging_level("INFO")
 ##############################################################################
 # Loading a VDEM
 #
-# In the previous tutorial, we created a simple VDEM using ``create_simple_vdem``.
+# In the :ref:`previous tutorial <sphx_glr_generated_gallery_synthesis_tutorial_skip_01_create_vdem.py>`,
+# we created a simple VDEM using ``create_simple_vdem``.
 # We will download this VDEM (from a personal data archive) and then load it using xarray.
 #
 # To download the data, we will use `pooch <https://www.fatiando.org/pooch/latest/>`__.

@@ -42,6 +42,7 @@ optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
   "muse",
   "matplotlib>=3.10.0",
+  "joblib", # for parallel sphinx-gallery builds (MUSE_GALLERY_PARALLEL)
   "memory_profiler", # for sphinx-gallery memory usage
   "packaging",
   "plasmacalcs[most]",

@@ -3,7 +3,8 @@
 06 - Analyze synthetic MUSE spectra
 ===================================
 
-This tutorial demonstrates how to visualize the detector spectra created by example 05.
+This tutorial demonstrates how to visualize the detector spectra created by
+:ref:`example 05 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
 In addition to calculating the spectral moments as well.
 """
 
@@ -22,7 +23,8 @@ from muse.transforms import reshape_slit_step_to_x
 change_logging_level("INFO")
 
 ##############################################################################
-# Download the saved MUSE spectrum from the previous example.
+# Download the saved MUSE spectrum from the
+# :ref:`previous example <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
 #
 # If you have your own version locally, you need to change the ``spectrum_path``.
 

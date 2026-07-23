@@ -9,7 +9,12 @@ the 108, 171, and 284 Angstrom bands and map them onto all
 
 We will use the default per-channel effective areas
 (``DEFAULTS_MUSE.main_line_effective_area``) and CHIANTI line lists from the
-previous step.
+:ref:`previous step <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`.
+
+To see how the response changes with other parameters — an electron-density
+grid instead of a fixed pressure, or nonthermal broadening from unresolved
+motions such as Alfven-wave turbulence — see
+:ref:`sphx_glr_generated_gallery_synthesis_tutorial_07_density_and_nonthermal_responses.py`.
 """
 
 import os
@@ -30,7 +35,8 @@ from muse.variables import DEFAULTS_MUSE
 change_logging_level("INFO")
 
 ##############################################################################
-# We will fetch the line lists saved from the previous step.
+# We will fetch the line lists saved from the
+# :ref:`previous step <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`.
 # If you generate them locally, you can update the code to point to those instead.
 
 abundance = "sun_coronal_2021_chianti"
