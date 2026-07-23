@@ -53,6 +53,9 @@ if not os.environ.get("XUVTOP"):
 # - LOS velocity in km/s (min, max and step)
 # - Abundances, e.g., "sun_coronal_2021_chianti"
 # - Pressure or density (see below).
+#
+# For a worked example of a line list computed on an electron-density grid,
+# see :ref:`sphx_glr_generated_gallery_synthesis_tutorial_07_density_and_nonthermal_responses.py`.
 
 abundance = "sun_coronal_2021_chianti"
 logT = np.arange(4.5, 8.0, 0.1)

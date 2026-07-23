@@ -10,7 +10,9 @@ turbulence) is added to the spectral response.
 
 Both line lists are downloaded precomputed, so no CHIANTI database is needed
 to run this example. The density-grid list was generated with the same
-workflow as tutorial 03, passing ``density`` instead of ``pressure``:
+workflow as
+:ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`,
+passing ``density`` instead of ``pressure``:
 
 .. code-block:: python
 
@@ -29,7 +31,8 @@ dimension whose coordinate is ``log10(density)``.
 
 Every plot below is at ``vdop=0``, so we pass a single Doppler-velocity
 point; this keeps the detector responses roughly 200 times smaller than the
-tutorial-04 velocity grid and the whole example comfortably in memory.
+:ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`
+velocity grid and the whole example comfortably in memory.
 """
 
 from pathlib import Path
@@ -50,8 +53,9 @@ change_logging_level("INFO")
 
 ##############################################################################
 # We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band:
-# the fixed-pressure one already used in tutorial 04, and the density-grid
-# one generated with the snippet above.
+# the fixed-pressure one already used in
+# :ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`,
+# and the density-grid one generated with the snippet above.
 
 abundance = "sun_coronal_2021_chianti"
 cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
