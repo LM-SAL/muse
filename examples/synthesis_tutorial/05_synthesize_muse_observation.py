@@ -13,8 +13,12 @@ import pooch
 import xarray as xr
 
 from muse.instrument import load_and_concat_responses
+from muse.log import change_logging_level
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_x_to_slit_step
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # First we will load and reshape the VDEM. This is the used in Example 02.
@@ -22,7 +26,7 @@ from muse.transforms import match_fov, reshape_x_to_slit_step
 extract_path = Path(pooch.os_cache("muse")) / "muse_example_vdem"
 pooch.retrieve(
     "https://www.dropbox.com/scl/fi/xb2f6pvs4cn1yg54n0pdg/muse_example_vdem.zarr.tar.gz?rlkey=u5y19c5lydrw9kur9bzahkvsv&st=t5vltlk8&dl=1",
-    known_hash="dc7d0b8af5360fb3458cb7e180eb7709170ecdecee2e3797bfa2a7816f00c9ea",
+    known_hash="ab6c8a3fe4f30de6906f75165f19ccc8730040527f6b9b0cccbdd9a09c28a71c",
     fname="muse_example_vdem.zarr.tar.gz",
     path=extract_path.parent,
     processor=pooch.Untar(extract_dir=extract_path.name),
@@ -48,19 +52,19 @@ output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples
 output_dir.mkdir(parents=True, exist_ok=True)
 response_artifacts = [
     (
-        f"muse_sg_response_108_FeXIX108.355_FeXXI108.117_{abundance}_unity.nc",
-        "https://www.dropbox.com/scl/fi/h3v1vh7yo252v67uxcrw2/muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_unity.nc?rlkey=hszu6tuenyslco3befeyidspe&st=6usaqz5o&dl=1",
-        "sha256:313ae50cef443a52751f2dfd28c1ce36cbc82252781899c1a362fa9723fa5cc6",
+        f"muse_sg_response_108_FeXIX108.355_FeXXI108.117_{abundance}_effarea.nc",
+        "https://www.dropbox.com/scl/fi/j9a783mb7cgfgvv32dvyg/muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc?rlkey=6l10a72999tunxabjmaj6todk&st=j25qujz2&dl=1",
+        "sha256:7cc72056ff8f5da547a8ebab649742b3463b0c1598bb1956826f73b0db893090",
     ),
     (
-        f"muse_sg_response_171_FeIX171.073_{abundance}_unity.nc",
-        "https://www.dropbox.com/scl/fi/31i6prscujsyfs39xihwf/muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_unity.nc?rlkey=vkhamo2pimxdwi3l9ivenhzji&st=k85jp0xh&dl=1",
-        "sha256:bd143cf58fb5f948b84dde0bc6d54c757be7220a770489af80626d8b047a8367",
+        f"muse_sg_response_171_FeIX171.073_{abundance}_effarea.nc",
+        "https://www.dropbox.com/scl/fi/kyc9fisbxl8hxxl1um4ok/muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc?rlkey=h8coyvfvi35yzefqn9r0atgbl&st=3pelvukg&dl=1",
+        "sha256:caa78779b27e9a0d1e1b71ccd81c0d15403053ae551d5d4013d58b7a2a4680d1",
     ),
     (
-        f"muse_sg_response_284_FeXV284.163_{abundance}_unity.nc",
-        "https://www.dropbox.com/scl/fi/uehhq07ifdo3bmwal8omd/muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_unity.nc?rlkey=j3cxhfs4l91b7rnnnsuji4twt&st=nby8knzr&dl=1",
-        "sha256:f32b3d857214895a9fb0cb2fe25db9f2465018156097254355b67fd8c1e7fefc",
+        f"muse_sg_response_284_FeXV284.163_{abundance}_effarea.nc",
+        "https://www.dropbox.com/scl/fi/7urj1qr4csm92apusgik6/muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc?rlkey=qer5d0hw94rpvk7l4bemignmv&st=kcue7mqi&dl=1",
+        "sha256:753b9bd0472d102431dc0ab9637ff9e2626098ac093a276634d0ad4025336839",
     ),
 ]
 response_files = [

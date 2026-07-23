@@ -210,7 +210,9 @@ def test_create_chianti_line_list_live_density():
         wavelength_range=[170, 172] * u.AA,
         ion_list=["fe_9"],
     )
-    assert line_list.gofnt.dims == ("logT", "log_density", "trans_index")
-    np.testing.assert_allclose(line_list.log_density.values, [8.0, 9.0])
+    assert line_list.gofnt.dims == ("logT", "logD", "trans_index")
+    np.testing.assert_allclose(line_list.logD.values, [8.0, 9.0])
+    assert line_list.logT.attrs["units"] == "dex(K)"
+    assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
     assert line_list.sizes["trans_index"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values

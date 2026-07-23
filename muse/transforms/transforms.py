@@ -85,6 +85,9 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     dy_pix="dy_pixel_SG",
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
+    restype="fov_restype",
+    mode="fov_mode",
+    sub_interpolation="fov_sub_interpolation",
 )
 def match_fov(
     vdem: xr.Dataset,
@@ -92,9 +95,9 @@ def match_fov(
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
     nslits=DEFAULTS_MUSE.number_of_slits_SG,
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-    restype: str = "match_res_tile",
-    mode: str = "wrap",
-    sub_interpolation: int = 2,
+    restype: str = DEFAULTS_MUSE.fov_restype,
+    mode: str = DEFAULTS_MUSE.fov_mode,
+    sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate=False,  # NOQA: FBT002
 ):
     """
@@ -118,12 +121,12 @@ def match_fov(
     nraster : `int`
         Number of raster steps, by default is {nraster}.
     restype : `str`, optional
-        Type of tiling and resolution matching, by default is "match_res_tile".
+        Type of tiling and resolution matching, by default is {restype}.
     mode : `str`, optional
-        This is the pad method used by `xarray.DataArray.pad`, by default is "wrap".
+        This is the pad method used by `xarray.DataArray.pad`, by default is {mode}.
         Please check the the `xarray.DataArray.pad` documentation for all possible values.
     sub_interpolation: `int`
-        Does a subgrid interpolation, by default 2,
+        Does a subgrid interpolation, by default {sub_interpolation},
     rotate: `bool`
         Rotates 90 degrees the FOV, by default False.
 
@@ -203,6 +206,9 @@ def match_fov(
 
     vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
     vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
+    # The unstack inside the resampling moves the resampled axis last; restore each
+    # variable's original dimension order so downstream plots keep their orientation.
+    vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     nx = vdem_xr.x.size
     if nx > 1:

@@ -62,6 +62,13 @@ def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     assert float(out.y[1] - out.y[0]) == pytest.approx(0.167)
 
 
+def test_match_fov_preserves_dimension_order(vdem_offgrid) -> None:
+    # The resampling unstack moves the resampled axis last; match_fov must restore
+    # the caller's dimension order so 2D plots keep their orientation.
+    out = match_fov(vdem_offgrid)
+    assert out.vdem.dims == vdem_offgrid.vdem.dims
+
+
 def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
     # Large VDEMs arrive dask-backed (open_zarr); the FOV/reshape transforms must
     # extend the graph, not silently compute, and match the eager results.

@@ -1,0 +1,1 @@
+The density dimension on line lists from `muse.instrument.create_chianti_line_list` was renamed from ``log_density`` to ``logD``, matching the ``logT`` naming convention.

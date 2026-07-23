@@ -1,8 +1,8 @@
 .. _muse-tutorial-index:
 
-***********************
-The ``muse`` tutorial
-***********************
+********
+Tutorial
+********
 
 Welcome to the tutorial for ``muse``.
 The goal of this tutorial is to provide a gentle introduction to using ``muse`` to analyze MUSE data.

@@ -1,6 +1,6 @@
-**************************
-Contributing to ``muse``
-**************************
+************
+Contributing
+************
 
 ``muse`` is open-source and community-developed, and we are always glad to welcome new contributors and users.
 You can contribute in several ways: by providing feedback, reporting bugs, contributing code, and reviewing pull requests.

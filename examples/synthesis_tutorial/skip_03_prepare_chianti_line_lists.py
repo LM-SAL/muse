@@ -22,6 +22,11 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import create_chianti_line_list
+from muse.log import change_logging_level
+from muse.variables import DEFAULTS_MUSE
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # We first confirm that the local environment is working.
@@ -60,13 +65,9 @@ line_list_directory = Path(
 )
 line_list_directory.mkdir(parents=True, exist_ok=True)
 bands = {
-    108: {
-        "ions": ["fe_19", "fe_21"],
-        "label": "FeXIX108.355_FeXXI108.117",
-        "spectral_order": 2,
-    },
-    171: {"ions": ["fe_9"], "label": "FeIX171.073", "spectral_order": 2},
-    284: {"ions": ["fe_15"], "label": "FeXV284.163", "spectral_order": 1},
+    108: {"ions": ["fe_19", "fe_21"], "label": "FeXIX108.355_FeXXI108.117"},
+    171: {"ions": ["fe_9"], "label": "FeIX171.073"},
+    284: {"ions": ["fe_15"], "label": "FeXV284.163"},
 }
 
 ##############################################################################
@@ -79,7 +80,7 @@ bands = {
 # ``muse[chianti]`` such that the dependencies required for this function are installed.
 
 for band, config in bands.items():
-    spectral_order = config["spectral_order"]
+    spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=band).item()
     wavelength_range = [band - 35 / spectral_order, band + 35 / spectral_order] * u.AA
     line_list = create_chianti_line_list(
         temperature=temperature,

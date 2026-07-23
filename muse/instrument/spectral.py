@@ -11,6 +11,7 @@ from tqdm import tqdm
 import astropy.constants as const
 import astropy.units as u
 
+from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 
 __all__ = ["create_spectral_response"]
@@ -111,6 +112,12 @@ def _create_wavelength_response(
     if nonthermal_velocity is not None:
         nonthermal_velocity = _velocity_axis(nonthermal_velocity, "nonthermal_velocity")
     effective_area = _effective_area_in_canonical_units(effective_area, wavelength_grid)
+    if include_contaminants and effective_area is not None and np.unique(effective_area.data).size == 1:
+        logger.warning(
+            "A flat (wavelength-independent) effective area is only representative near the main lines; "
+            "applying it to contaminant lines across the band will produce wrong contaminant counts. "
+            "Provide a wavelength-dependent effective_area curve for quantitative work with contaminants."
+        )
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
     main_lines = _validate_main_lines(line_names, main_lines)
@@ -171,8 +178,11 @@ def _create_wavelength_response(
         )
         main_response_parts[line_name].append(line_response)
 
+    # Most main lines map to a single transition; skip the concat + reduce copies there.
     responses = [
-        xr.concat(parts, dim="_transition", join="exact").sum("_transition", keep_attrs=True)
+        parts[0]
+        if len(parts) == 1
+        else xr.concat(parts, dim="_transition", join="exact").sum("_transition", keep_attrs=True)
         for parts in main_response_parts.values()
     ]
 

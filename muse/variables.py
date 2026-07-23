@@ -98,3 +98,11 @@ MUSE_DEFAULTS_DICT = {
 }
 
 DEFAULTS_MUSE = InstrumentDefaults(**MUSE_DEFAULTS_DICT)
+"""
+Default MUSE instrument parameters.
+
+``print(DEFAULTS_MUSE)`` lists every configured value, one field per line; see
+`~muse.variables_schema.InstrumentDefaults` for what each field means.
+
+:meta hide-value:
+"""
