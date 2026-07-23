@@ -130,7 +130,7 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.vdop.values, vdop.values)
-    # The reader injects Angstrom because the on-disk files carry no wavelength units (for now).
+    # The reader injects Å because the on-disk files carry no wavelength units (for now).
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
     assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl"} & set(r.variables)
@@ -216,7 +216,7 @@ def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> No
     r = read_response(path)
 
     assert "missing the 'units' attribute" in caplog.text
-    assert r.line_wavelength.attrs["units"] == str(u.AA)  # Angstrom assumed for now
+    assert r.line_wavelength.attrs["units"] == str(u.AA)  # Å assumed for now
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
 
 

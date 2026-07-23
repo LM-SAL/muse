@@ -1,6 +1,7 @@
 import dask.array as da
 import numpy as np
 import pytest
+import xarray as xr
 
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
@@ -170,6 +171,25 @@ def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
     # ~10%; assert direction and magnitude, not an exact match.
     np.testing.assert_allclose(red - zero, expected_shift, rtol=0.15)
     np.testing.assert_allclose(zero - blue, expected_shift, rtol=0.15)
+
+
+def test_vdem_synthesis_accepts_generic_wavelength_space_names(response, vdem) -> None:
+    # A slit-less response with the create_spectral_response vocabulary synthesizes
+    # with default arguments: names are renamed and slit is dropped from sum_over.
+    single_slit = response.isel(slit=0, drop=True)
+    generic = single_slit.rename(
+        {
+            "detector_response": "spectral_response",
+            "vdop": "doppler_velocity",
+            "detector_wavelength": "wavelength_grid",
+        }
+    )
+
+    canonical = vdem_synthesis(vdem, single_slit, sum_over=("logT", "vdop"))
+    accepted = vdem_synthesis(vdem, generic)
+
+    xr.testing.assert_identical(accepted.flux, canonical.flux)
+    assert accepted.attrs["sum_over"] == ["logT", "vdop"]
 
 
 def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, vdem) -> None:

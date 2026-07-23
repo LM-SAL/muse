@@ -15,12 +15,8 @@ import pooch
 import xarray as xr
 from matplotlib import colors
 
-from muse.log import change_logging_level
 from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # Download the saved MUSE spectrum from the
@@ -61,7 +57,7 @@ spectrogram = spectrum.flux.sel(line="Fe IX 171.073").isel(step=2, slit=15, pres
 spectrogram_plot = spectrogram.plot.imshow(
     x="detector_wavelength",
     y="y",
-    norm=colors.PowerNorm(0.3),
+    norm=colors.LogNorm(0.3),
     cmap="jet",
     figsize=(12, 6),
 )
@@ -83,7 +79,7 @@ ax.set_title("Fe IX 171.073 at one spatial location")
 ##############################################################################
 # **Spatial map**
 #
-# Integrating over the detector pixels produces the 171 Angstrom intensity.
+# Integrating over the detector pixels produces the 171 Å intensity.
 # Restacking the slit and raster-step dimensions reconstructs the full spatial
 # field of view.
 
@@ -93,7 +89,7 @@ intensity = (
 image = reshape_slit_step_to_x(intensity).flux.isel(pressure=0)
 fig, ax = plt.subplots(figsize=(8, 5))
 image.plot(ax=ax, norm=colors.LogNorm())
-ax.set_title("Synthesized 171 Angstrom intensity")
+ax.set_title("Synthesized 171 Å intensity")
 
 ##############################################################################
 # Finally we can calculate the spectral moments.

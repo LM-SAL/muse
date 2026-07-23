@@ -4,7 +4,7 @@
 =============================
 
 This tutorial demonstrates how to create the main-line responses for
-the 108, 171, and 284 Angstrom bands and map them onto all
+the 108, 171, and 284 Å bands and map them onto all
 35 MUSE spectrograph slits.
 
 We will use the default per-channel effective areas
@@ -28,11 +28,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import create_spectral_response, map_response_to_sg_detector, save_response
-from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # We will fetch the line lists saved from the
@@ -91,12 +87,12 @@ bands = {
 # - **Wavelength calibration**: Mapping from detector pixels to wavelengths
 #
 # :func:`muse.instrument.create_spectral_response` produces an response in
-# ``1e-27 erg cm5 / (Angstrom s sr)``.
+# ``1e-27 erg cm5 / (Å s sr)``.
 #
 # :func:`muse.instrument.map_response_to_sg_detector` then
 # converts energy to photons, applies the detector-pixel solid angle, and
 # integrates over each pixel's wavelength width. The mapped response is
-# therefore in ``1e-27 cm5 ph / s`` rather than per Angstrom.
+# therefore in ``1e-27 cm5 ph / s`` rather than per Å.
 
 for band, config in bands.items():
     line_list_file = Path(
@@ -134,7 +130,7 @@ for band, config in bands.items():
     if band == 171:
         integrated_response = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
         integrated_response.plot(x="detector_x_pixel")
-        plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
+        plt.title("Integrated 171 Å response at zero Doppler velocity")
 
     output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.nc"
     # save_response refuses to overwrite, so clear the artifact of a previous run.

@@ -47,7 +47,7 @@ def create_spectral_response(
         transitions with the same name are summed. Unselected lines are not
         returned.
     instrumental_width : `astropy.units.Quantity`, optional
-        Scalar instrumental-width sigma, by default 0 Angstrom.
+        Scalar instrumental-width sigma, by default 0 Å.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional Doppler-velocity axis. If `None`, line
         centers remain at their rest wavelengths and no ``doppler_velocity``

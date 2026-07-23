@@ -354,7 +354,7 @@ def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
 
 def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     """
-    Add a wavelength coordinate in Angstrom derived from a Doppler shift.
+    Add a wavelength coordinate in Å derived from a Doppler shift.
 
     Parameters
     ----------
@@ -365,7 +365,7 @@ def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     -------
     `xarray.Dataset`
         A new dataset with an added ``detector_wavelength`` coordinate in
-        Angstrom.
+        Å.
     """
     c_kms = speed_of_light.to_value(u.km / u.s)
     line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")

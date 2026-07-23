@@ -3,7 +3,7 @@
 07 - Density and nonthermal-velocity response variants
 ======================================================
 
-This tutorial shows how the 171 Angstrom SG response changes when the
+This tutorial shows how the 171 Å SG response changes when the
 CHIANTI line list is computed on an electron-density grid instead of
 at a fixed pressure, and when nonthermal broadening
 (e.g., from unresolved Alfvén-wave turbulence) is added to the spectral response.
@@ -19,14 +19,10 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import create_spectral_response, map_response_to_sg_detector
-from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
-
 ##############################################################################
-# We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band:
+# We fetch the two precomputed CHIANTI line lists for the 171 Å band:
 # the fixed-pressure one already used in
 # :ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`,
 # and the density-grid one generated with the snippet below.
@@ -78,7 +74,7 @@ for config in line_lists.values():
     config["line_list"] = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 
 ##############################################################################
-# Since both variants share the 171 Angstrom band configuration we can use the
+# Since both variants share the 171 Å band configuration we can use the
 # same wavelength grid, instrumental width, and effective area.
 
 band = 171
@@ -112,7 +108,7 @@ print(response)
 
 plt.figure()
 integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
-plt.title("171 Angstrom response with electron density")
+plt.title("171 Å response with electron density")
 
 ##############################################################################
 # **Nonthermal broadening**
@@ -136,6 +132,6 @@ print(response)
 
 plt.figure()
 integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
-plt.title("171 Angstrom response per nonthermal velocity")
+plt.title("171 Å response per nonthermal velocity")
 
 plt.show()

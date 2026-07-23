@@ -236,7 +236,7 @@ def read_response(
     r = r.assign_coords(gain=(gain_dim, gain_values))
     r.gain.attrs["units"] = str(gain_unit)
 
-    # The current response files carry no wavelength units; warn and assume Angstrom for now.
+    # The current response files carry no wavelength units; warn and assume Å for now.
     _require_wavelength_units(r, "detector_wavelength")
     _require_wavelength_units(r, "line_wavelength")
 
@@ -246,11 +246,11 @@ def read_response(
 
 def _require_wavelength_units(r: xr.Dataset, name: str) -> None:
     """
-    Ensure ``r[name]`` carries wavelength units, assuming Angstrom when missing.
+    Ensure ``r[name]`` carries wavelength units, assuming Å when missing.
 
     Older response files store no units on ``SG_wvl``/``line_wvl``. For now a missing
-    ``units`` attribute logs a warning and Angstrom is assumed; this is intended to
-    become a hard error once all response files carry units.
+    ``units`` attribute logs a warning and Å is assumed; this is intended to become a
+    hard error once all response files carry units.
     """
     if name not in r:
         return

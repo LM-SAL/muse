@@ -120,6 +120,8 @@ intersphinx_mapping = {
     ),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
+    "aiapy": ("https://aiapy.readthedocs.io/en/stable/", None),
+    "xrtpy": ("https://xrtpy.readthedocs.io/en/stable/", None),
 }
 
 # -- Options for sphinxext-opengraph ------------------------------------------

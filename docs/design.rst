@@ -8,10 +8,10 @@ Units are attrs
 ===============
 
 Every physical quantity carries an ``astropy.units`` unit, stored as a string in the relevant ``.attrs["units"]``.
-We have converters which normalize to a canonical unit on construction (arcsec, Angstrom, km/s, etc), so downstream code can assume the canonical unit without re-checking.
+We have converters which normalize to a canonical unit on construction (arcsec, Å, km/s, etc), so downstream code can assume the canonical unit without re-checking.
 
 **Why** For now, ``astropy.units`` does not play well with xarray, and MUSE mixes wavelengths, Doppler velocities, and spatial scales.
-A silent unit mismatch (nm vs Angstrom, km/s vs m/s) will produce incorrect numbers that we can not catch.
+A silent unit mismatch (nm vs Å, km/s vs m/s) will produce incorrect numbers that we can not catch.
 I hope by adding the units to the ``attrs``, we can at least catch these errors at a boundary.
 
 **Consequence** Don't strip units from the ``attrs`` and don't do unit arithmetic on raw arrays without first normalizing.

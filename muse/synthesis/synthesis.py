@@ -15,6 +15,14 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["vdem_synthesis"]
 
+# Wavelength-space names from create_spectral_response, accepted as aliases for
+# the detector-style names the synthesis contract uses.
+_GENERIC_RESPONSE_NAMES = {
+    "spectral_response": "detector_response",
+    "doppler_velocity": "vdop",
+    "wavelength_grid": "detector_wavelength",
+}
+
 
 def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray:
     """
@@ -192,8 +200,16 @@ def vdem_synthesis(
         Response functions. ``detector_response`` and ``line_wavelength`` must
         define units in the attrs. ``detector_wavelength`` must define units when
         its slit dimension is retained in the output.
+        The wavelength-space names produced by
+        `muse.instrument.create_spectral_response` (``spectral_response``,
+        ``doppler_velocity``, ``wavelength_grid``) are accepted and renamed to
+        the detector-style names. Note that such a response is still per
+        Å per steradian: no detector-pixel integration or photon
+        conversion has been applied.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
+        ``"slit"`` is dropped from this when neither input has a slit
+        dimension, so the MUSE default works for single-slit responses.
     cuda_device : `int`, optional
         CUDA device index for GPU use (requires ``backend="torch"``), defaults to None (CPU).
     backend : `str`, optional
@@ -210,6 +226,16 @@ def vdem_synthesis(
         stays bounded and writing streams chunk by chunk; the Torch backend
         always computes its inputs eagerly.
     """
+    renames = {
+        old: new
+        for old, new in _GENERIC_RESPONSE_NAMES.items()
+        if (old in response.variables or old in response.dims) and new not in response.variables
+    }
+    if renames:
+        logger.info(f"Accepting wavelength-space response names, renaming: {renames}")
+        response = response.rename(renames)
+    if "slit" in sum_over and "slit" not in response.dims and "slit" not in raster.dims:
+        sum_over = tuple(dim for dim in sum_over if dim != "slit")
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
     raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
     response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))

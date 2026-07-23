@@ -9,16 +9,14 @@ This tutorial demonstrates how to synthesize the MUSE detector spectra.
 import os
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pooch
 import xarray as xr
+from matplotlib import colors
 
 from muse.instrument import load_and_concat_responses
-from muse.log import change_logging_level
 from muse.synthesis import vdem_synthesis
-from muse.transforms import match_fov, reshape_x_to_slit_step
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
+from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
 ##############################################################################
 # First we will load and reshape the VDEM. This is the used in Example 02.
@@ -129,3 +127,23 @@ spectrum.to_netcdf(output, engine="h5netcdf", encoding=encoding)
 
 print(spectrum)
 print(f"Saved {output}")
+
+##############################################################################
+# Finally, a quick look at the synthesized field of view: the spectrally
+# integrated Fe IX 171.073 intensity, with the slit and raster-step axes
+# collapsed back onto the x axis by
+# :func:`muse.transforms.reshape_slit_step_to_x`.
+# We read the spectrum back from the file we just saved rather than
+# recomputing the lazy synthesis graph a second time.
+
+saved_spectrum = xr.open_dataset(output, engine="h5netcdf")
+intensity = reshape_slit_step_to_x(saved_spectrum.sum(dim="detector_x_pixel"))
+plt.figure(figsize=(10, 4))
+intensity.flux.sel(line="Fe IX 171.073").isel(pressure=0).plot(
+    x="x",
+    y="y",
+    norm=colors.LogNorm(0.3),
+    cmap="inferno",
+)
+plt.title("Synthesized Fe IX 171.073 intensity over the full FOV")
+plt.show()

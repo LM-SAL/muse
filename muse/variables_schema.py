@@ -329,7 +329,7 @@ class InstrumentDefaults:
     """
     Spectral slit separation for the SG.
 
-    Normalized to Angstroms.
+    Normalized to Å.
     """
 
     steps_per_raster_SG: int | None = field(default=None, converter=_int_converter)
@@ -421,14 +421,14 @@ class InstrumentDefaults:
     """
     Center of the main spectral lines in angstrom, keyed by line name.
 
-    Values normalized to Angstroms.
+    Values normalized to Å.
     """
 
     bands_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA), eq=_array_eq)
     """
     Wavelength bands for the SG.
 
-    Normalized to Angstroms.
+    Normalized to Å.
     """
 
     fov_mode: str | None = field(default=None, validator=_instance(str))
@@ -519,9 +519,9 @@ class InstrumentDefaults:
 
     initial_wavelength_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
-    Wavelength at detector pixel zero for slit zero, in Angstroms.
+    Wavelength at detector pixel zero for slit zero, in Å.
 
-    Values normalized to Angstroms.
+    Values normalized to Å.
     """
 
     channel_spectral_order: xr.DataArray | None = field(default=None, converter=_data_array(), eq=_data_array_eq)
@@ -587,11 +587,11 @@ class InstrumentDefaults:
     @property
     def instrumental_width_sg(self):
         """
-        Instrumental width sigma in Angstroms.
+        Instrumental width sigma in Å.
 
-        FWHM in pixels converted to 1 sigma in Angstroms. Value, .0815, provided by Paul
-        B. Value has spectral plate scale baked in and should be calculated using a
-        future property.
+        FWHM in pixels converted to 1 sigma in Å. Value, .0815, provided by Paul B.
+        Value has spectral plate scale baked in and should be calculated using a future
+        property.
         """
         if self.channel_spectral_order is None:
             msg = "instrumental_width_sg requires channel_spectral_order"

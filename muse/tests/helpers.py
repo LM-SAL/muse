@@ -346,6 +346,6 @@ def fake_response_file():
         channel=("line", [171]),
         SG_wvl=(["SG_xpixel", "slit"], sg_wvl),
     )
-    # Real files carry no units on line_wvl/SG_wvl; the reader is expected to inject Angstrom.
+    # Real files carry no units on line_wvl/SG_wvl; the reader is expected to inject Å.
     response.SG_resp.attrs["units"] = "1e-27 cm5 ph / s"
     return response

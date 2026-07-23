@@ -14,11 +14,7 @@ import pooch
 import xarray as xr
 from matplotlib import colors
 
-from muse.log import change_logging_level
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # Loading a VDEM

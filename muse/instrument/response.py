@@ -57,7 +57,7 @@ def map_response_to_sg_detector(
         Wavelength-space response containing ``spectral_response``,
         ``wavelength_grid``, and ``line_wavelength``.
     channel : `int`
-        MUSE SG channel: 108, 171, or 284 Angstrom.
+        MUSE SG channel: 108, 171, or 284 Å.
     number_of_slits : `int`, optional
         Number of simultaneous slits, by default {number_of_slits}.
     dispersion : `astropy.units.Quantity`, optional
@@ -81,7 +81,7 @@ def map_response_to_sg_detector(
     `xarray.Dataset`
         Detector response containing ``detector_response`` in photon-response
         units and ``detector_wavelength`` and ``line_wavelength`` coordinates
-        in Angstrom. The generic
+        in Å. The generic
         ``doppler_velocity`` dimension is renamed to the legacy ``vdop`` name
         required by MUSE synthesis.
     """

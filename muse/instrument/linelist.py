@@ -52,7 +52,7 @@ def create_chianti_line_list(
         (``sun_photospheric_2021_asplund`` unless a ``chiantirc`` file overrides
         it); the resolved name is recorded in the ``abundance`` attribute.
     wavelength_range : `astropy.units.Quantity`
-        Two-element wavelength range convertible to Angstroms.
+        Two-element wavelength range convertible to Å.
     minimum_abundance : `float`, optional
         Finite positive minimum elemental abundance to keep. Mutually exclusive
         with ``element_list`` and ``ion_list``.
