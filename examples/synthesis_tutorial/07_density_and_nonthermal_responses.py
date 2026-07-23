@@ -114,7 +114,7 @@ integrated.plot.line(x="detector_x_pixel", hue="logD")
 plt.title("171 Angstrom response with electron density")
 
 ##############################################################################
-# **Nonthermal broadening.** We go bact to the fixed-pressure line list, we add a
+# **Nonthermal broadening.** We go back to the fixed-pressure line list, we add a
 # ``nonthermal_velocity`` axis via the keyword. Each value adds in
 # quadrature to the thermal width, mimicking unresolved motions
 # such as Alfvén-wave turbulence.
