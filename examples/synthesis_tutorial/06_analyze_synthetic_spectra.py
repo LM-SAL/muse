@@ -14,8 +14,12 @@ import pooch
 import xarray as xr
 from matplotlib import colors
 
+from muse.log import change_logging_level
 from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # Download the saved MUSE spectrum from the previous example.

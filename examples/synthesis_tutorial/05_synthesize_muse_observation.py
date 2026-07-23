@@ -13,8 +13,12 @@ import pooch
 import xarray as xr
 
 from muse.instrument import load_and_concat_responses
+from muse.log import change_logging_level
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_x_to_slit_step
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # First we will load and reshape the VDEM. This is the used in Example 02.

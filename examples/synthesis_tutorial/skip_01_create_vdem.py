@@ -18,7 +18,11 @@ import pooch
 from matplotlib import colors
 from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
+from muse.log import change_logging_level
 from muse.synthesis import calculate_moments, create_simple_vdem
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # Creating a VDEM

@@ -23,7 +23,11 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import create_spectral_response, map_response_to_sg_detector, save_response
+from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
+
+# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+change_logging_level("INFO")
 
 ##############################################################################
 # We will fetch the line lists saved from the previous step.
