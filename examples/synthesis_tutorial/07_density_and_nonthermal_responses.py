@@ -1,38 +1,12 @@
 """
-=======================================================
+======================================================
 07 - Density and nonthermal-velocity response variants
-=======================================================
+======================================================
 
-This aside shows how the 171 Angstrom SG response changes when the CHIANTI
-line list is computed on an electron-density grid instead of at a fixed
-pressure, and when nonthermal broadening (e.g. from unresolved Alfven-wave
-turbulence) is added to the spectral response.
-
-Both line lists are downloaded precomputed, so no CHIANTI database is needed
-to run this example. The density-grid list was generated with the same
-workflow as
-:ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`,
-passing ``density`` instead of ``pressure``:
-
-.. code-block:: python
-
-    temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
-    density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
-    line_list = create_chianti_line_list(
-        temperature=temperature,
-        density=density,
-        abundance="sun_coronal_2021_chianti",
-        wavelength_range=wavelength_range,
-        ion_list=["fe_9"],
-    )
-
-The line list, and everything derived from it, then carries a ``logD``
-dimension whose coordinate is ``log10(density)``.
-
-Every plot below is at ``vdop=0``, so we pass a single Doppler-velocity
-point; this keeps the detector responses roughly 200 times smaller than the
-:ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`
-velocity grid and the whole example comfortably in memory.
+This tutorial shows how the 171 Angstrom SG response changes when the
+CHIANTI line list is computed on an electron-density grid instead of
+at a fixed pressure, and when nonthermal broadening
+(e.g., from unresolved Alfvén-wave turbulence) is added to the spectral response.
 """
 
 from pathlib import Path
@@ -55,7 +29,26 @@ change_logging_level("INFO")
 # We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band:
 # the fixed-pressure one already used in
 # :ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`,
-# and the density-grid one generated with the snippet above.
+# and the density-grid one generated with the snippet below.
+#
+# The density-grid list was generated with the same workflow as
+# :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`,
+# passing ``density`` instead of ``pressure``:
+#
+# .. code-block:: python
+#
+#     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+#     density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
+#     line_list = create_chianti_line_list(
+#         temperature=temperature,
+#         density=density,
+#         abundance="sun_coronal_2021_chianti",
+#         wavelength_range=wavelength_range,
+#         ion_list=["fe_9"],
+#     )
+#
+# The line list, and everything derived from it, then carries a ``logD``
+# dimension whose coordinate is ``log10(density)``.
 
 abundance = "sun_coronal_2021_chianti"
 cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
@@ -85,8 +78,8 @@ for config in line_lists.values():
     config["line_list"] = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 
 ##############################################################################
-# Both variants share the 171 Angstrom band configuration: wavelength grid,
-# instrumental width, and effective area.
+# Since both variants share the 171 Angstrom band configuration we can use the
+# same wavelength grid, instrumental width, and effective area.
 
 band = 171
 main_lines = ["Fe IX 171.073"]
@@ -96,6 +89,8 @@ upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
 instrumental_width = u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data)
 effective_area = DEFAULTS_MUSE.main_line_effective_area.sel(channel=band)
+# Since we will only plot at ``vdop=0``, we pass a single
+# Doppler-velocity point. This makes the code faster and use less RAM.
 doppler_velocity = [0] * u.km / u.s
 
 ##############################################################################
@@ -116,12 +111,13 @@ print(response)
 plt.figure()
 integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
 integrated.plot.line(x="detector_x_pixel", hue="logD")
-plt.title("171 Angstrom response at zero Doppler velocity per electron density")
+plt.title("171 Angstrom response with electron density")
 
 ##############################################################################
-# **Nonthermal broadening.** Back on the fixed-pressure line list, we add a
-# ``nonthermal_velocity`` axis. Each value adds in quadrature to the thermal
-# width, mimicking unresolved motions such as Alfven-wave turbulence.
+# **Nonthermal broadening.** We go bact to the fixed-pressure line list, we add a
+# ``nonthermal_velocity`` axis via the keyword. Each value adds in
+# quadrature to the thermal width, mimicking unresolved motions
+# such as Alfvén-wave turbulence.
 
 waveband_response = create_spectral_response(
     line_lists["pressure"]["line_list"],
@@ -138,6 +134,6 @@ print(response)
 plt.figure()
 integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
 integrated.plot.line(x="detector_x_pixel", hue="nonthermal_velocity")
-plt.title("171 Angstrom response at zero Doppler velocity per nonthermal velocity")
+plt.title("171 Angstrom response per nonthermal velocity")
 
 plt.show()
