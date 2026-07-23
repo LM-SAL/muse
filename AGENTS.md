@@ -19,10 +19,10 @@ tox -e build_docs                                                         # buil
 ```
 
 - `.venv/` in repo is **not** dev env — transient venv created by `tox-uv` when running `tox`. Don't rely on it for ad-hoc commands.
-- Python ≥ 3.12 (CI runs 3.12, 3.13, 3.14). `tox` deps resolve via `uv.lock`.
+- Python ≥ 3.12 (CI runs 3.12, 3.13, 3.14). `tox` deps resolve via `uv.lock` (generated on first tox run, gitignored).
 - Lint/format = **ruff** (config in `.ruff.toml`), run via pre-commit:
   ```bash
-  pre-commit run --all-files          # docformatter + ruff + ruff-format + isort + typos + checks
+  pre-commit run --all-files          # full hook list in .pre-commit-config.yaml
   ```
   Ruff may not be on `PATH` outside pre-commit; prefer hook. docformatter owns docstring wrapping (multi-line summary style) — don't hand-wrap docstrings, let the hook reflow them.
 
