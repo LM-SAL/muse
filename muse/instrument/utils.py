@@ -221,13 +221,13 @@ def read_response(
 
     if "line_wavelength" not in r:
         fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
-        if fallback is not None:
-            r = r.assign_coords(line_wavelength=fallback)
-        elif "channel" in r.coords:
-            r = r.assign_coords(line_wavelength=r.channel)
-        else:
-            msg = "Response must define line_wavelength or LINE_WVL/MAIN_LINE_WVL metadata"
+        if fallback is None:
+            hint = ""
+            if "channel" in r.coords:
+                hint = f"; channel is {r.channel.values.tolist()}, a band label, not a line wavelength"
+            msg = f"Response must define line_wavelength or LINE_WVL/MAIN_LINE_WVL metadata{hint}"
             raise ValueError(msg)
+        r = r.assign_coords(line_wavelength=fallback)
 
     gain_unit = u.electron / u.DN
     gain = gain.to(gain_unit)

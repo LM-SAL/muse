@@ -1,0 +1,2 @@
+`muse.instrument.read_response` no longer falls back to the ``channel`` coordinate when a
+response defines no ``line_wavelength``.
