@@ -138,8 +138,9 @@ def _validate_inputs(
     """
     Validate ``raster``/``response`` structure and units for synthesis.
 
-    Checks slit-dimension consistency, that every ``sum_over`` dimension exists on
-    the response, and that arrays used by the synthesis define valid units.
+    Checks slit-dimension consistency, that neither input still uses the legacy
+    ``vdop`` axis name, that every ``sum_over`` dimension exists on the response,
+    and that arrays used by the synthesis define valid units.
 
     Returns
     -------
@@ -153,6 +154,15 @@ def _validate_inputs(
     if "slit" not in response.dims and "slit" in raster.dims:
         msg = "raster has a slit dimension but response does not"
         raise ValueError(msg)
+    # A legacy 'vdop' axis is not in sum_over, so einsum would keep it in the output and
+    # contract the other input's doppler_velocity on its own: no error, wrong flux.
+    for name, dataset in (("raster", raster), ("response", response)):
+        if "vdop" in dataset.dims:
+            msg = (
+                f"{name} uses the legacy 'vdop' dimension; rename it to 'doppler_velocity' "
+                "(muse.instrument.read_response does this on load)"
+            )
+            raise ValueError(msg)
     for dim in sum_over:
         if dim not in response.dims:
             msg = f"{dim!r} is not a response dimension"

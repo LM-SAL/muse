@@ -180,6 +180,20 @@ def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, vdem) -> None:
         vdem_synthesis(reshaped_vdem, response, sum_over=("bogus",))
 
 
+@pytest.mark.parametrize("legacy_input", ["raster", "response"])
+def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, vdem, legacy_input) -> None:
+    # A stray vdop is not in sum_over, so einsum would carry it into the output and contract
+    # the other input's doppler_velocity alone: no error, wrong flux. It must fail loudly.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    if legacy_input == "raster":
+        reshaped_vdem = reshaped_vdem.rename(doppler_velocity="vdop")
+    else:
+        response = response.rename(doppler_velocity="vdop")
+
+    with pytest.raises(ValueError, match=rf"{legacy_input} uses the legacy 'vdop' dimension"):
+        vdem_synthesis(reshaped_vdem, response)
+
+
 def test_vdem_synthesis_requires_present_arrays(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.drop_vars("detector_response")

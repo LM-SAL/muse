@@ -1,0 +1,4 @@
+`muse.synthesis.vdem_synthesis` now rejects a raster or response that still uses the legacy
+``vdop`` dimension.
+A stray ``vdop`` is not in ``sum_over``, so the contraction would keep it in the output and sum
+the other input's ``doppler_velocity`` on its own, silently producing wrong flux.

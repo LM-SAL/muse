@@ -4,10 +4,10 @@
   "muse.instrument.tests.test_figures.test_spectral_response_effective_area_cutoff": "95c8b4b260df8bb7dd7d270519986666c00e2c4898af1f8b86c8e8a4aea82948",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "747e50d626876afaf4e0211110f393258fd5d0e260c5cca9209df7d20cbe72bb",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "95c27a38291a9a2c5135b71dae3a5881128231092cf487739ac6d08d6181b995",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "f7d80fea9ef427894eb8547569454bdcc493d4ba519a4694a2ad1af5bd29b382",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "201f325b67d241375d7f5f536f73ae96f7577a847a8dcce2fbec1bf579f2eb43",
   "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "060d58609d45660ed1f8955d34128c9dc2616042719b74c7b2e3afe0c772b60b",
   "muse.tests.test_figures.test_vdem_intensity_map": "0772526f8cee58e6bdd7d5651a9a30b283290b9c9ef57f4523b031cf75ebe45b",
-  "muse.tests.test_figures.test_response_logt_profile": "f095e50a8f6ceceb9d12c5b8c3160c39ada0176e78f96006c7c19e881c45fbca",
+  "muse.tests.test_figures.test_response_logt_profile": "013bbf3f7dcb31f5c3d146a7fd117c6a6819c71cf6d38e942dba9e5c642e13f5",
   "muse.tests.test_figures.test_response_line_profiles": "58ea39a302807bf53c9fa695bac1f17a688ed906fd6120279514e1a4e08cdb99",
   "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "e310f2c8bb82813638f2b73e387e07a6e20bf7225513a73be5b38b23399dcedd"
 }
