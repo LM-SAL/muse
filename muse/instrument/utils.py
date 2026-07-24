@@ -54,6 +54,12 @@ def save_response(
     use zlib level 1 with shuffle. These defaults were selected independently
     using the full 171 response.
     """
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
+    if "detector_response" not in response.data_vars:
+        msg = "response must contain detector_response"
+        raise ValueError(msg)
     response_file = Path(response_file)
     if response_file.exists():
         msg = f"Refusing to overwrite existing response: {response_file}"

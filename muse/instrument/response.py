@@ -85,6 +85,9 @@ def map_response_to_sg_detector(
         ``doppler_velocity`` dimension is renamed to the legacy ``vdop`` name
         required by MUSE synthesis.
     """
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
     try:
         spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel).item()
         default_wavelength_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel).data)

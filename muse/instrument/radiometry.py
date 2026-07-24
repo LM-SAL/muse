@@ -85,6 +85,9 @@ def transform_response_units(
         Copy of ``response`` whose ``spectral_response`` is scaled to
         ``new_units``.
     """
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
     old_unit = require_unit(response, "spectral_response", "response.spectral_response")
     target_unit = u.Unit(new_units)
     if pair_energy is None:
@@ -98,6 +101,10 @@ def transform_response_units(
     photon_energy = (const.h * const.c / (np.asarray(wavelength) * u.AA)).to(u.erg) / u.ph
     electrons_per_photon = (photon_energy * u.ph / pair_energy).to(u.electron) / u.ph
     solid_angle = (pixel_width * pixel_height).to(u.sr)
+    # Each `+` below is load-bearing: the chain is energy -> photon -> electron -> DN,
+    # so a step carries the steps downstream of it. Asking for DN from a photon
+    # response needs the electron step too, which independent per-base deltas
+    # would skip, leaving an erg/electron residue that cannot reach the target.
     to_dn = _unit_power(target_unit, u.DN) - _unit_power(old_unit, u.DN)
     to_electron = _unit_power(target_unit, u.electron) - _unit_power(old_unit, u.electron) + to_dn
     to_photon = _unit_power(target_unit, u.ph) - _unit_power(old_unit, u.ph) + to_electron

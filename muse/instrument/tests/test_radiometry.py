@@ -89,6 +89,33 @@ def test_transform_response_units_rejects_unknown_channel():
         transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 195)
 
 
+@pytest.mark.parametrize(
+    ("case", "error", "match"),
+    [
+        ("response_type", TypeError, "xarray.Dataset"),
+        ("missing_variable", ValueError, r"response\.spectral_response is missing"),
+        ("missing_units", ValueError, r"response\.spectral_response must define units"),
+        ("invalid_units", ValueError, r"response\.spectral_response units must be a valid astropy unit"),
+        ("missing_wavelength_units", ValueError, r"response\.wavelength_grid must define units"),
+    ],
+)
+def test_transform_response_units_rejects_invalid_inputs(case, error, match):
+    response = _spectral_response()
+    if case == "response_type":
+        response = None
+    elif case == "missing_variable":
+        response = response.drop_vars("spectral_response")
+    elif case == "missing_units":
+        response = response.assign(spectral_response=response.spectral_response.drop_attrs())
+    elif case == "invalid_units":
+        response = response.assign(spectral_response=response.spectral_response.assign_attrs(units="not-a-unit"))
+    else:
+        response = response.assign_coords(wavelength_grid=response.wavelength_grid.drop_attrs())
+
+    with pytest.raises(error, match=match):
+        transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", 171)
+
+
 def test_transform_response_units_uses_the_channel_pair_energy():
     channel = 171
     pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy.sel(channel=channel).data)

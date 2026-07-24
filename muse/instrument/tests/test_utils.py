@@ -103,6 +103,20 @@ def test_save_response_refuses_to_overwrite(tmp_path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("case", "error", "match"),
+    [
+        ("response_type", TypeError, "xarray.Dataset"),
+        ("missing_variable", ValueError, "must contain detector_response"),
+    ],
+)
+def test_save_response_validates_the_response(tmp_path, case, error, match) -> None:
+    response = None if case == "response_type" else fake_response().drop_vars("detector_response")
+
+    with pytest.raises(error, match=match):
+        save_response(response, tmp_path / "response.nc")
+
+
+@pytest.mark.parametrize(
     ("chunks", "error", "match"),
     [
         ([], TypeError, "mapping"),
