@@ -1,0 +1,4 @@
+Add :func:`~muse.instrument.transform_response_units`, which converts the
+radiometric units of a wavelength-space response along the detector chain
+energy -> photon -> electron -> data number, and between per steradian and per
+detector pixel.

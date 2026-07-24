@@ -172,6 +172,11 @@ def test_instrument_defaults_validate_spectral_channels():
     with pytest.raises(ValueError, match="bands_SG unique channels"):
         InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order=order, bands_SG=[108, 284] * u.AA)
 
+    # Every per-channel DataArray field is checked, not just the two spectral ones.
+    mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
+    with pytest.raises(ValueError, match="matching channel coordinates"):
+        InstrumentDefaults(initial_wavelength_SG=initial, pair_creation_energy=mismatched_pair_energy)
+
 
 def test_instrument_defaults_validate_spectral_lines():
     with pytest.raises(ValueError, match="one entry for each line"):

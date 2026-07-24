@@ -5,11 +5,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-import astropy.constants as const
 import astropy.units as u
 
 from muse.instrument import linelist as linelist_module
 from muse.instrument.linelist import create_chianti_line_list
+from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response import map_response_to_sg_detector
 from muse.instrument.spectral import create_spectral_response
 from muse.instrument.utils import read_response
@@ -63,16 +63,11 @@ def test_map_response_to_sg_detector_geometry_and_units():
         slit_spacing=2 * u.pix,
         detector_pixels=4,
         wavelength_start=170 * u.AA,
-        pixel_width=1 * u.arcsec,
-        pixel_height=2 * u.arcsec,
     )
 
     expected_wavelength = (170.0 + np.arange(4) * 0.1)[np.newaxis, :] - np.array([[0.0], [0.2]])
-    solid_angle = (1 * u.arcsec).to_value(u.rad) * (2 * u.arcsec).to_value(u.rad)
     wavelength = response.wavelength_grid.values
-    photon_energy = (const.h * const.c / (wavelength * u.AA)).to_value(u.erg)
-    photon_response = wavelength * solid_angle / photon_energy
-    expected_response = np.stack([np.interp(row, wavelength, photon_response) for row in expected_wavelength]) * 0.1
+    expected_response = np.stack([np.interp(row, wavelength, wavelength) for row in expected_wavelength]) * 0.1
 
     assert mapped.detector_response.dims == ("line", "logT", "vdop", "slit", "detector_x_pixel")
     assert mapped.detector_wavelength.dims == ("detector_x_pixel", "slit")
@@ -82,7 +77,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
     )
     np.testing.assert_allclose(np.diff(mapped.detector_wavelength.isel(slit=0)), 0.1)
     np.testing.assert_allclose(mapped.detector_response.isel(line=0, logT=0, vdop=0), expected_response)
-    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 ph cm5 / s")
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.item() == pytest.approx(171.073)
@@ -101,8 +96,6 @@ def test_map_response_to_sg_detector_keeps_chunked_input_lazy():
         "slit_spacing": 2 * u.pix,
         "detector_pixels": 4,
         "wavelength_start": 170 * u.AA,
-        "pixel_width": 1 * u.arcsec,
-        "pixel_height": 2 * u.arcsec,
     }
 
     lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), 171, **kwargs)
@@ -112,13 +105,11 @@ def test_map_response_to_sg_detector_keeps_chunked_input_lazy():
     xr.testing.assert_allclose(lazy.compute(), eager)
 
 
-def test_map_response_to_sg_detector_preserves_constant_photon_density_integral():
+def test_map_response_to_sg_detector_integrates_over_detector_pixels():
     response = _spectral_response()
-    solid_angle = (1 * u.arcsec).to_value(u.rad) ** 2
-    photon_energy = (const.h * const.c / (response.wavelength_grid.values * u.AA)).to_value(u.erg)
     response["spectral_response"] = (
         response.spectral_response.dims,
-        np.broadcast_to(photon_energy / solid_angle, response.spectral_response.shape),
+        np.ones(response.spectral_response.shape),
         response.spectral_response.attrs,
     )
 
@@ -129,10 +120,9 @@ def test_map_response_to_sg_detector_preserves_constant_photon_density_integral(
         dispersion=0.01 * u.AA / u.pix,
         detector_pixels=100,
         wavelength_start=170 * u.AA,
-        pixel_width=1 * u.arcsec,
-        pixel_height=1 * u.arcsec,
     )
 
+    # A flat response of 1 per Angstrom over 100 pixels of 0.01 Angstrom each.
     np.testing.assert_allclose(mapped.detector_response.sum("detector_x_pixel"), 1.0, rtol=1e-12)
 
 
@@ -294,6 +284,7 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
         effective_area=effective_area,
     )
     assert "slit" not in spectral.dims
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 171)
     response = map_response_to_sg_detector(
         spectral,
         171,
@@ -320,6 +311,8 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
 
     synthesized = vdem_synthesis(raster, loaded_response)
 
+    assert u.Unit(response.detector_response.attrs["units"]) == u.Unit("1e-27 ph cm5 / s")
+    assert u.Unit(synthesized.flux.attrs["units"]) == u.Unit("ph / s")
     assert synthesized.flux.dims == ("line", "detector_x_pixel")
     assert np.isfinite(synthesized.flux).all()
     assert bool((synthesized.flux > 0).any())

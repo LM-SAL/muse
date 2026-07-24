@@ -406,6 +406,13 @@ class InstrumentDefaults:
     CCD gain in electrons per DN.
     """
 
+    pair_creation_energy: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
+    )
+    """
+    Mean energy that frees one electron-hole pair in silicon, per band (channel).
+    """
+
     # Synthesis/inversions
     sum_over_dims_synthesis: tuple | None = field(default=None, converter=converters.optional(tuple))
     """
@@ -549,13 +556,17 @@ class InstrumentDefaults:
         _validate_matching_keys(self.lpi, "lpi", self.mesh_transmission, "mesh_transmission")
 
     def _validate_channel_fields(self):
-        initial_channels = _channel_coordinates(self.initial_wavelength_SG, "initial_wavelength_SG")
-        order_channels = _channel_coordinates(self.channel_spectral_order, "channel_spectral_order")
-        if initial_channels is not None and order_channels is not None and initial_channels != order_channels:
-            msg = "initial_wavelength_SG and channel_spectral_order must have matching channel coordinates"
-            raise ValueError(msg)
+        channels_by_field = {
+            name: _channel_coordinates(value, name)
+            for name, value in ((a.name, getattr(self, a.name)) for a in fields(type(self)))
+            if isinstance(value, xr.DataArray) and "channel" in value.dims
+        }
+        reference, channels = next(iter(channels_by_field.items()), (None, None))
+        for name, field_channels in channels_by_field.items():
+            if field_channels != channels:
+                msg = f"{name} and {reference} must have matching channel coordinates"
+                raise ValueError(msg)
 
-        channels = initial_channels or order_channels
         if channels is None:
             return
         channel_set = set(channels)

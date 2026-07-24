@@ -42,6 +42,11 @@ MUSE_DEFAULTS_DICT = {
     # Other
     "data_compression": 1,
     "ccd_gain": 10 * u.electron / u.DN,
+    "pair_creation_energy": xr.DataArray(
+        np.array([3.65, 3.65, 3.65]) * u.eV / u.electron,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
+    ),
     # Synthesis/inversions
     "sum_over_dims_synthesis": ("logT", "vdop", "slit"),
     "main_lines_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],

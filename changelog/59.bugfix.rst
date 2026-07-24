@@ -1,0 +1,2 @@
+``InstrumentDefaults`` now checks the channel coordinate of every per-channel
+``DataArray`` field.

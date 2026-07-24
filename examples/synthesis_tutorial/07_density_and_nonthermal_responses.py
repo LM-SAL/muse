@@ -18,7 +18,7 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import create_spectral_response, map_response_to_sg_detector
+from muse.instrument import create_spectral_response, map_response_to_sg_detector, transform_response_units
 from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
@@ -107,6 +107,7 @@ waveband_response = create_spectral_response(
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
 response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 
@@ -131,6 +132,7 @@ waveband_response = create_spectral_response(
     nonthermal_velocity=np.arange(0, 100, 20) * u.km / u.s,
     effective_area=effective_area,
 )
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
 response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 

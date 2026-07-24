@@ -1,0 +1,2 @@
+:func:`~muse.instrument.map_response_to_sg_detector` no longer converts energy
+to photons or steradians to detector pixels.
