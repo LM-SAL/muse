@@ -106,25 +106,17 @@ intersphinx_mapping = {
         "https://numpy.org/doc/stable/",
         (None, "https://www.astropy.org/astropy-data/intersphinx/numpy.inv"),
     ),
-    "scipy": (
-        "https://docs.scipy.org/doc/scipy/reference/",
-        (None, "https://www.astropy.org/astropy-data/intersphinx/scipy.inv"),
-    ),
     "torch": ("https://pytorch.org/docs/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "sunpy": ("https://docs.sunpy.org/en/stable/", None),
-    "sunkit_instruments": (
-        "https://docs.sunpy.org/projects/sunkit-instruments/en/stable/",
-        None,
-    ),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
 }
 
 # -- Options for sphinxext-opengraph ------------------------------------------
 
-ogp_image = "https://raw.githubusercontent.com/sunpy/sunpy-logo/master/generated/sunpy_logo_word.png"
+ogp_image = "https://raw.githubusercontent.com/LM-SAL/muse/main/docs/_static/muse_logo.png"
 ogp_use_first_image = True
 ogp_description_length = 160
 ogp_custom_meta_tags = ('<meta property="og:ignore_canonical" content="true" />',)

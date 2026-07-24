@@ -66,14 +66,10 @@ extend-exclude = [
   "ERA001",  # Found commented-out code
 ]
 "test_*.py" = [
-  "N806",  # in function should be lowercase
   "S101",  # Use of `assert` detected
 ]
 "muse/variables_schema.py" = [
   "N815",  # science/default field names such as dx_pixel_SG are public attrs
-]
-"**/io/**" = [
-  "A005",  # Module `io` shadows a Python standard-library module
 ]
 
 [lint.pydocstyle]

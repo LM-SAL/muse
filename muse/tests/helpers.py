@@ -1,4 +1,3 @@
-import warnings
 from pathlib import Path
 from functools import wraps
 
@@ -20,15 +19,7 @@ __all__ = [
     "fake_vdem",
     "fake_vdem_offgrid",
     "fake_vdem_single_doppler_velocity",
-    "warnings_as_errors",
 ]
-
-
-@pytest.fixture
-def warnings_as_errors():
-    warnings.simplefilter("error")
-    yield
-    warnings.resetwarnings()
 
 
 def _clean_version(version: str) -> str:
