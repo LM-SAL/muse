@@ -77,7 +77,7 @@ def transform_response_units(
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon. If `None`,
         use the channel's value from
-        `~muse.variables.DEFAULTS_MUSE.pair_creation_energy`.
+        `~muse.variables_schema.InstrumentDefaults.pair_creation_energy`.
 
     Returns
     -------

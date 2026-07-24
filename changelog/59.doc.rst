@@ -1,0 +1,2 @@
+Default values injected into docstrings by ``format_docstring`` now link to the
+matching field on :class:`~muse.variables_schema.InstrumentDefaults`.
