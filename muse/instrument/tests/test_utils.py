@@ -223,6 +223,16 @@ def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_
     assert r.line_wavelength.attrs["units"] == str(u.AA)
 
 
+def test_read_response_rejects_missing_line_wavelength_even_with_a_channel(tmp_path) -> None:
+    # The channel label (171) is not the line wavelength (171.073)
+    src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl"])
+    assert "channel" in src.coords
+    path = _write(src, tmp_path / "resp.zarr", "zarr")
+
+    with pytest.raises(ValueError, match="must define line_wavelength"):
+        read_response(path)
+
+
 def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> None:
     # The fixture mirrors the real files, which carry no units on line_wvl/SG_wvl.
     path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
