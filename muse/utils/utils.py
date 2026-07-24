@@ -100,6 +100,28 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
     )
 
 
+def _require_increasing_axis(values, label: str, *, positive: bool = False) -> None:
+    """
+    Validate that ``values`` form a usable one-dimensional axis.
+
+    Raises `ValueError` unless the values are one-dimensional, non-empty, finite,
+    strictly increasing and, when ``positive``, greater than zero. The conditions are
+    checked in one short-circuiting expression so ``numpy.diff`` never sees a zero-
+    dimensional input.
+    """
+    values = np.asarray(values)
+    if (
+        values.ndim != 1
+        or values.size == 0
+        or not np.all(np.isfinite(values))
+        or (positive and np.any(values <= 0))
+        or np.any(np.diff(values) <= 0)
+    ):
+        qualifier = "positive, " if positive else ""
+        msg = f"{label} must be one-dimensional, finite, {qualifier}and strictly increasing"
+        raise ValueError(msg)
+
+
 # Provenance is owned by add_history alone; update_attrs never copies these keys.
 _PROVENANCE_ATTRS = ("HISTORY", "date created", "date modified", "version")
 
@@ -161,8 +183,8 @@ def _attr_safe(value):
 
 def add_history(
     ds: xr.Dataset | xr.DataArray,
-    func_or_local_vars: Callable | str | dict,
-    func: Callable | str | None = None,
+    local_vars: dict,
+    func: Callable | str,
     *,
     sources: Sequence[xr.Dataset | xr.DataArray] = (),
 ) -> None:
@@ -174,62 +196,55 @@ def add_history(
     input. It is the sole owner of the provenance attributes ``HISTORY``,
     ``date created``, ``date modified``, and ``version``.
 
-    When ``locals()`` and ``func`` are passed, every keyword input (a parameter
-    of ``func`` that has a default) is stored on ``ds.attrs`` after being coerced
-    to a netCDF/zarr-serializable form (see `_attr_safe`); required positional
-    parameters such as the data itself are skipped.
+    Every keyword input (a parameter of ``func`` that has a default) is stored on
+    ``ds.attrs`` after being coerced to a netCDF/zarr-serializable form (see
+    `_attr_safe`); required positional parameters such as the data itself are
+    skipped.
 
     Parameters
     ----------
     ds : `xarray.Dataset` or `xarray.DataArray`
         Dataset to update.
-    func_or_local_vars : `Callable`, `str`, or `dict`
-        Function being recorded in the history.
-        For the full-call record, pass ``locals()`` here and ``func`` as
-        the third argument.
-    func : `Callable` or `str`, optional
-        Function being recorded with its input values.
+    local_vars : `dict`
+        Inputs of the call being recorded, normally ``locals()``. Pass an empty
+        mapping to record the name alone.
+    func : `Callable` or `str`
+        Function being recorded. A plain string is used as the label as-is and
+        records no inputs.
     sources : sequence of `xarray.Dataset` or `xarray.DataArray`, optional
         Inputs whose ``HISTORY`` the result inherits, in order, before the new
         entry is appended. Omit it for a result that starts a new lineage.
     """
-    if func is None:
-        if isinstance(func_or_local_vars, dict):
-            msg = "func must be provided when local variables are passed"
-            raise TypeError(msg)
-        # A bare string label or a function passed alone both record just the name, no attrs.
-        history_entry = func_or_local_vars if isinstance(func_or_local_vars, str) else func_or_local_vars.__name__
-    else:
-        local_vars = func_or_local_vars
-        params = inspect.signature(func).parameters
-        string_vals = []
-        for arg, value in local_vars.items():
-            if arg not in params:
-                continue
-            if isinstance(value, u.Quantity):
-                string_vals.append(f"{arg}={value.value}")
-            elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):
-                if isinstance(value, np.ndarray) and value.shape in [(), (1,)]:
-                    string_vals.append(f"{arg}={value.tolist()}")
-                elif isinstance(value, xr.DataArray) and value.size == 1 and isinstance(value.data, np.ndarray):
-                    string_vals.append(f"{arg}={value.values.tolist()}")
-                else:
-                    string_vals.append(f"{arg}={arg}")
+    # A string label has no signature to inspect, so it records no inputs.
+    params = inspect.signature(func).parameters if callable(func) else {}
+    string_vals = []
+    for arg, value in local_vars.items():
+        if arg not in params:
+            continue
+        if isinstance(value, u.Quantity):
+            string_vals.append(f"{arg}={value.value}")
+        elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):
+            if isinstance(value, np.ndarray) and value.shape in [(), (1,)]:
+                string_vals.append(f"{arg}={value.tolist()}")
+            elif isinstance(value, xr.DataArray) and value.size == 1 and isinstance(value.data, np.ndarray):
+                string_vals.append(f"{arg}={value.values.tolist()}")
             else:
-                string_vals.append(f"{arg}={value}")
-            if params[arg].default is not inspect.Parameter.empty:  # keyword input
-                safe = _attr_safe(value)
-                if safe is not None:
-                    ds.attrs[arg] = safe
-                elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
-                    # Drop Arrays/datasets silently; only warn for other types.
-                    logger.warning(
-                        f"Not storing keyword input {arg!r} as an attribute: a "
-                        f"{type(value).__name__} is not netCDF/zarr serializable.",
-                    )
+                string_vals.append(f"{arg}={arg}")
+        else:
+            string_vals.append(f"{arg}={value}")
+        if params[arg].default is not inspect.Parameter.empty:  # keyword input
+            safe = _attr_safe(value)
+            if safe is not None:
+                ds.attrs[arg] = safe
+            elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
+                # Drop Arrays/datasets silently; only warn for other types.
+                logger.warning(
+                    f"Not storing keyword input {arg!r} as an attribute: a "
+                    f"{type(value).__name__} is not netCDF/zarr serializable.",
+                )
 
-        name = func if isinstance(func, str) else func.__name__
-        history_entry = f"{name}({', '.join(string_vals)})"
+    name = func if isinstance(func, str) else func.__name__
+    history_entry = f"{name}({', '.join(string_vals)})"
 
     for source in sources:
         _inherit_history(ds, source)

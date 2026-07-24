@@ -76,8 +76,7 @@ def create_chianti_line_list(
     temperature, plasma_grid, wavelength_range = _validate_line_list_inputs(
         temperature, density, pressure, wavelength_range
     )
-    element_list, ion_list = _normalize_species_selection(element_list, ion_list)
-    minimum_abundance = _validate_species_selection(minimum_abundance, element_list, ion_list)
+    minimum_abundance, element_list, ion_list = _validate_species_selection(minimum_abundance, element_list, ion_list)
 
     chiantipy_version, ch = _initialize_chianti()
 
@@ -295,18 +294,6 @@ def _validate_positive_data_array(values, name: str, unit, *, dimension: str | N
     return values.copy(data=data)
 
 
-def _normalize_species_selection(element_list, ion_list):
-    if element_list is not None and ion_list is not None:
-        msg = "element_list and ion_list are mutually exclusive"
-        raise ValueError(msg)
-
-    if element_list is not None:
-        return _normalize_species_names(element_list, "element_list", r"[a-z]{1,2}"), None
-    if ion_list is not None:
-        return None, _normalize_species_names(ion_list, "ion_list", r"[a-z]{1,2}_[1-9][0-9]*d?")
-    return None, None
-
-
 def _normalize_species_names(values, name, pattern):
     if isinstance(values, str) or not isinstance(values, list | tuple):
         msg = f"{name} must be a list of strings"
@@ -326,15 +313,34 @@ def _normalize_species_names(values, name, pattern):
     return normalized
 
 
-def _validate_species_selection(minimum_abundance, element_list, ion_list) -> float | None:
-    if minimum_abundance is None and element_list is None and ion_list is None:
+def _validate_species_selection(
+    minimum_abundance, element_list, ion_list
+) -> tuple[float | None, list | None, list | None]:
+    """
+    Require exactly one species selection and normalize it.
+
+    Returns the ``(minimum_abundance, element_list, ion_list)`` triple with the two
+    unselected entries set to `None`.
+    """
+    given = [
+        name
+        for name, value in (
+            ("minimum_abundance", minimum_abundance),
+            ("element_list", element_list),
+            ("ion_list", ion_list),
+        )
+        if value is not None
+    ]
+    if not given:
         msg = "Specify minimum_abundance, element_list, or ion_list"
         raise ValueError(msg)
-    if minimum_abundance is not None and (element_list is not None or ion_list is not None):
-        msg = "minimum_abundance is mutually exclusive with element_list and ion_list"
+    if len(given) > 1:
+        msg = f"{', '.join(given)} are mutually exclusive; give only one"
         raise ValueError(msg)
-    if minimum_abundance is None:
-        return None
+    if element_list is not None:
+        return None, _normalize_species_names(element_list, "element_list", r"[a-z]{1,2}"), None
+    if ion_list is not None:
+        return None, None, _normalize_species_names(ion_list, "ion_list", r"[a-z]{1,2}_[1-9][0-9]*d?")
     if isinstance(minimum_abundance, bool) or not isinstance(minimum_abundance, Real):
         msg = "minimum_abundance must be a real number"
         raise TypeError(msg)
@@ -342,4 +348,4 @@ def _validate_species_selection(minimum_abundance, element_list, ion_list) -> fl
     if not np.isfinite(minimum_abundance) or minimum_abundance <= 0:
         msg = "minimum_abundance must be finite and positive"
         raise ValueError(msg)
-    return minimum_abundance
+    return minimum_abundance, None, None
