@@ -223,13 +223,15 @@ def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_
     assert r.line_wavelength.attrs["units"] == str(u.AA)
 
 
-def test_read_response_rejects_missing_line_wavelength_even_with_a_channel(tmp_path) -> None:
-    # The channel label (171) is not the line wavelength (171.073)
-    src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl"])
-    assert "channel" in src.coords
+@pytest.mark.parametrize(("dropped", "match"), [(["channel"], "metadata$"), ([], "a band label")])
+def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match) -> None:
+    # The channel label (171) is not the line wavelength (171.073), so a response carrying one
+    # still fails, and says so; without a channel the plain error stands.
+    src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl", *dropped])
+    assert ("channel" in src.coords) == (not dropped)
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
-    with pytest.raises(ValueError, match="must define line_wavelength"):
+    with pytest.raises(ValueError, match=match):
         read_response(path)
 
 

@@ -220,11 +220,12 @@ def read_response(
         r = r.expand_dims("line")
 
     if "line_wavelength" not in r:
-        # No fallback to the channel label: 171 is a band name, not the 171.073 Angstrom line,
-        # and wavelength_to_doppler would turn that 0.073 Angstrom gap into ~128 km/s of shift.
         fallback = r.attrs.get("LINE_WVL", r.attrs.get("MAIN_LINE_WVL"))
         if fallback is None:
-            msg = "Response must define line_wavelength or LINE_WVL/MAIN_LINE_WVL metadata"
+            hint = ""
+            if "channel" in r.coords:
+                hint = f"; channel is {r.channel.values.tolist()}, a band label, not a line wavelength"
+            msg = f"Response must define line_wavelength or LINE_WVL/MAIN_LINE_WVL metadata{hint}"
             raise ValueError(msg)
         r = r.assign_coords(line_wavelength=fallback)
 
