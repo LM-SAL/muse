@@ -102,6 +102,18 @@ def test_add_history_records_bare_name_without_inputs() -> None:
     add_history(ds, {}, demo)
     add_history(ds, {}, "calibrate")
     assert ds.attrs["HISTORY"] == ["demo()", "calibrate()"]
+    # An empty local_vars records no inputs, so the defaulted parameter never reaches attrs.
+    assert "n" not in ds.attrs
+
+
+def test_add_history_ignores_inputs_for_a_string_label() -> None:
+    # A string label has no signature to inspect, so inputs are skipped even when passed.
+    ds = xr.Dataset()
+
+    add_history(ds, {"x": 1, "gain": 10.0}, "calibrate")
+
+    assert ds.attrs["HISTORY"] == ["calibrate()"]
+    assert not {"x", "gain"} & set(ds.attrs)
 
 
 def test_add_history_appends_to_existing() -> None:
