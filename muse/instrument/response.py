@@ -7,7 +7,6 @@ import numbers
 import numpy as np
 import xarray as xr
 
-import astropy.constants as const
 import astropy.units as u
 
 from muse.utils.documentation import format_docstring
@@ -16,21 +15,20 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["map_response_to_sg_detector"]
 
+# Wavelength-space response units this mapping accepts.
+_ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
+
 
 @format_docstring(
     "DEFAULTS_MUSE",
     number_of_slits="number_of_slits_SG",
     slit_spacing="pixels_between_slits",
     detector_pixels="pixels_SG",
-    pixel_width="dx_pixel_SG",
-    pixel_height="dy_pixel_SG",
 )
 @u.quantity_input(
     dispersion=u.AA / u.pix,
     slit_spacing=u.pix,
     wavelength_start=u.AA,
-    pixel_width=u.arcsec,
-    pixel_height=u.arcsec,
 )
 def map_response_to_sg_detector(
     response: xr.Dataset,
@@ -41,15 +39,18 @@ def map_response_to_sg_detector(
     slit_spacing: u.Quantity = DEFAULTS_MUSE.pixels_between_slits,
     detector_pixels: int = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix)),
     wavelength_start: u.Quantity | None = None,
-    pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
-    pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
 ) -> xr.Dataset:
     """
     Map one wavelength-space response onto the MUSE SG detector.
 
     One call maps one MUSE channel and spectral order. The input should come
     from `muse.instrument.create_spectral_response` with effective
-    area already applied.
+    area(s) already applied.
+
+    .. warning::
+
+        Radiometric units pass through, so convert them first
+        with `muse.instrument.transform_response_units`.
 
     Parameters
     ----------
@@ -72,26 +73,18 @@ def map_response_to_sg_detector(
     wavelength_start : `astropy.units.Quantity`, optional
         Wavelength at detector pixel zero for slit zero. If `None`, use the
         channel calibration from `~muse.variables.DEFAULTS_MUSE`.
-    pixel_width, pixel_height : `astropy.units.Quantity`, optional
-        SG pixel angular size used to convert steradians to detector pixels,
-        by default {pixel_width} and {pixel_height}, respectively.
 
     Returns
     -------
     `xarray.Dataset`
-        Detector response containing ``detector_response`` in photon-response
-        units and ``detector_wavelength`` and ``line_wavelength`` coordinates
+        Detector response containing ``detector_response`` in the units of
+        ``response.spectral_response`` integrated over the detector pixel
+        width, so per Angstrom becomes per pixel, and
+        ``detector_wavelength`` and ``line_wavelength`` coordinates
         in Angstrom. The generic
         ``doppler_velocity`` dimension is renamed to the legacy ``vdop`` name
         required by MUSE synthesis.
     """
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
-    if not isinstance(channel, numbers.Integral) or isinstance(channel, (bool, np.bool_)):
-        msg = "channel must be an integer"
-        raise TypeError(msg)
-    channel = int(channel)
     try:
         spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel).item()
         default_wavelength_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel).data)
@@ -121,13 +114,11 @@ def map_response_to_sg_detector(
     if not isinstance(normalization, numbers.Real) or not np.isfinite(normalization) or normalization <= 0:
         msg = "response normalization must be a finite, positive number"
         raise ValueError(msg)
-    density_unit = normalization * u.erg * u.cm**5 / (u.AA * u.s * u.sr)
-    response_unit = require_unit(
-        response,
-        "spectral_response",
-        "response.spectral_response",
-        convertible_to=density_unit,
-    )
+    response_unit = require_unit(response, "spectral_response", "response.spectral_response")
+    if not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
+        accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
+        msg = f"response.spectral_response units must be convertible to one of {accepted}"
+        raise ValueError(msg)
     wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
     line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
     line_wavelength = np.asarray(line_wavelength)
@@ -162,8 +153,6 @@ def map_response_to_sg_detector(
     for name, value in (
         ("slit_spacing", slit_spacing),
         ("wavelength_start", wavelength_start),
-        ("pixel_width", pixel_width),
-        ("pixel_height", pixel_height),
     ):
         if not value.isscalar or not np.isfinite(value.value) or value.value <= 0:
             msg = f"{name} must be a finite, positive scalar"
@@ -185,14 +174,7 @@ def map_response_to_sg_detector(
         attrs={"units": str(u.AA)},
     )
 
-    spectral_response = response.spectral_response * response_unit.to(density_unit)
-    photon_energy = xr.DataArray(
-        (const.h * const.c / (wavelength_values * u.AA)).to_value(u.erg),
-        dims="wavelength_bin",
-    )
-    pixel_solid_angle = pixel_width.to_value(u.rad) * pixel_height.to_value(u.rad)
-    spectral_response = spectral_response * pixel_solid_angle / photon_energy
-    spectral_response = spectral_response.assign_coords(wavelength_grid=wavelength_grid)
+    spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
     mapped = (
         spectral_response.swap_dims(wavelength_bin="wavelength_grid")
         .interp(wavelength_grid=detector_wavelength, kwargs={"fill_value": 0})
@@ -203,7 +185,7 @@ def map_response_to_sg_detector(
     mapped = mapped.transpose(*leading_dims, "slit", "detector_x_pixel").assign_coords(
         detector_wavelength=detector_wavelength
     )
-    mapped.attrs["units"] = str(normalization * u.ph * u.cm**5 / u.s)
+    mapped.attrs["units"] = str(response_unit * u.AA)
     mapped.detector_wavelength.attrs["units"] = str(u.AA)
 
     result = response.drop_dims("wavelength_bin")

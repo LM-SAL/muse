@@ -27,7 +27,12 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import create_spectral_response, map_response_to_sg_detector, save_response
+from muse.instrument import (
+    create_spectral_response,
+    map_response_to_sg_detector,
+    save_response,
+    transform_response_units,
+)
 from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
@@ -93,10 +98,15 @@ bands = {
 # :func:`muse.instrument.create_spectral_response` produces an response in
 # ``1e-27 erg cm5 / (Angstrom s sr)``.
 #
-# :func:`muse.instrument.map_response_to_sg_detector` then
-# converts energy to photons, applies the detector-pixel solid angle, and
-# integrates over each pixel's wavelength width. The mapped response is
-# therefore in ``1e-27 cm5 ph / s`` rather than per Angstrom.
+# :func:`muse.instrument.transform_response_units` then converts energy to
+# photons and the detector-pixel solid angle to steradians, giving
+# ``1e-27 cm5 ph / (Angstrom s)``. Ask it for ``DN`` instead of ``ph`` if you
+# want a response in data numbers.
+#
+# :func:`muse.instrument.map_response_to_sg_detector` is pure geometry: it
+# integrates over each detector pixel's wavelength width and passes the units
+# through, so the mapped response is in ``1e-27 cm5 ph / s`` rather than per
+# Angstrom.
 
 for band, config in bands.items():
     line_list_file = Path(
@@ -127,6 +137,7 @@ for band, config in bands.items():
     # memory. Peak memory is roughly one chunk's interpolation temporaries per
     # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
     waveband_response = waveband_response.chunk({"doppler_velocity": 20})
+    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
     response = map_response_to_sg_detector(waveband_response, band)
 
     print(response)
