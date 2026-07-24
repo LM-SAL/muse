@@ -143,7 +143,7 @@ for band, config in bands.items():
     print(response)
 
     if band == 171:
-        integrated_response = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze()
+        integrated_response = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze()
         integrated_response.plot(x="detector_x_pixel")
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 

@@ -15,11 +15,11 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
     "assert_dataset_structure",
+    "fake_legacy_response_file",
     "fake_response",
-    "fake_response_file",
     "fake_vdem",
     "fake_vdem_offgrid",
-    "fake_vdem_single_vdop",
+    "fake_vdem_single_doppler_velocity",
     "warnings_as_errors",
 ]
 
@@ -118,7 +118,7 @@ line_wavelength = np.asarray(
 slit = np.arange(0, nslit, 1)
 # The real response functions have 1024 detector pixels. The fixture samples 32
 # of them for speed, so line peaks land on the nearest sampled pixel. At slit=17
-# and vdop=0 km/s, sampled peak offsets are about -0.021 A (Fe XIX/108 rem.),
+# and doppler_velocity=0 km/s, sampled peak offsets are about -0.021 A (Fe XIX/108 rem.),
 # +0.217 A (Fe XXI), +0.204 A (Fe IX/171 rem.), and +0.161 A (Fe XV/284 rem.).
 SG_XPIXEL = np.linspace(0, 1023, npixel, dtype=int)
 initial_wavelength_sg = {108: 107.68034, 171: 170.62314, 284: 283.01608}
@@ -174,7 +174,7 @@ def calculate_sgwvl(line_index):
 
 def fake_vdem():
     logt_grid = lgtaxis[:, np.newaxis, np.newaxis, np.newaxis]
-    vdop_grid = dopaxis[np.newaxis, :, np.newaxis, np.newaxis]
+    doppler_velocity_grid = dopaxis[np.newaxis, :, np.newaxis, np.newaxis]
     y_grid = y_axis[np.newaxis, np.newaxis, :, np.newaxis]
     x_grid = x_axis[np.newaxis, np.newaxis, np.newaxis, :]
 
@@ -183,13 +183,15 @@ def fake_vdem():
     flare_core = (
         480.0
         * np.exp(
-            -(((logt_grid - 6.8) / 0.22) ** 2) - ((vdop_grid + 90.0) / 85.0) ** 2 - ((y_grid - y_ridge) / 0.48) ** 2
+            -(((logt_grid - 6.8) / 0.22) ** 2)
+            - ((doppler_velocity_grid + 90.0) / 85.0) ** 2
+            - ((y_grid - y_ridge) / 0.48) ** 2
         )
         * x_window
     )
     warm_arcade = 18.0 * np.exp(
         -(((logt_grid - 6.1) / 0.35) ** 2)
-        - (vdop_grid / 220.0) ** 2
+        - (doppler_velocity_grid / 220.0) ** 2
         - ((x_grid - 78.0) / 48.0) ** 2
         - ((y_grid - 2.2) / 2.6) ** 2
     )
@@ -199,8 +201,8 @@ def fake_vdem():
     table = flare_core + warm_arcade + transition_region
     table = np.where(table < 1e-6, 0.0, table)
     ds = xr.Dataset(
-        data_vars={"vdem": (["logT", "vdop", "y", "x"], table)},
-        coords={"logT": lgtaxis, "vdop": dopaxis, "y": y_axis, "x": x_axis},
+        data_vars={"vdem": (["logT", "doppler_velocity", "y", "x"], table)},
+        coords={"logT": lgtaxis, "doppler_velocity": dopaxis, "y": y_axis, "x": x_axis},
         attrs={
             "description": "DEM(T,vel,x,y)",
         },
@@ -210,8 +212,8 @@ def fake_vdem():
     ds.vdem.attrs["units"] = "1e27 / cm5"
     ds.logT.attrs["long_name"] = "log$_{10}$(T)"
     ds.logT.attrs["units"] = "log$_{10}$ (K)"
-    ds.vdop.attrs["long_name"] = "v$_{Doppler}$"
-    ds.vdop.attrs["units"] = "km/s"
+    ds.doppler_velocity.attrs["long_name"] = "v$_{Doppler}$"
+    ds.doppler_velocity.attrs["units"] = "km/s"
     ds.x.attrs["units"] = "arcsec"
     ds.y.attrs["units"] = "arcsec"
     return ds
@@ -232,18 +234,18 @@ def fake_vdem_offgrid():
     return ds
 
 
-def fake_vdem_single_vdop(vdop_kms=0.0):
+def fake_vdem_single_doppler_velocity(doppler_velocity_kms=0.0):
     """
-    Return `fake_vdem` with all emission collapsed into the vdop bin nearest
-    ``vdop_kms``.
+    Return `fake_vdem` with all emission collapsed into the doppler_velocity bin nearest
+    ``doppler_velocity_kms``.
 
     This isolates one Doppler velocity so synthesized line centroids shift by the
     classical ``lambda * v / c``.
     """
     ds = fake_vdem()
-    vdop_index = int(np.argmin(np.abs(ds.vdop.values - vdop_kms)))
+    doppler_velocity_index = int(np.argmin(np.abs(ds.doppler_velocity.values - doppler_velocity_kms)))
     collapsed = np.zeros_like(ds.vdem.values)
-    collapsed[:, vdop_index] = ds.vdem.values.sum(axis=1)  # all vdop emission -> one bin
+    collapsed[:, doppler_velocity_index] = ds.vdem.values.sum(axis=1)  # all doppler_velocity emission -> one bin
     ds["vdem"] = (ds.vdem.dims, collapsed, dict(ds.vdem.attrs))
     return ds
 
@@ -279,9 +281,15 @@ def fake_response():
 
     response = xr.Dataset(
         data_vars={
-            "detector_response": (["line", "vdop", "logT", "slit", "detector_x_pixel"], table_resp),
+            "detector_response": (["line", "doppler_velocity", "logT", "slit", "detector_x_pixel"], table_resp),
         },
-        coords={"logT": lgtaxis, "vdop": dopaxis, "line": line, "slit": slit, "detector_x_pixel": SG_XPIXEL},
+        coords={
+            "logT": lgtaxis,
+            "doppler_velocity": dopaxis,
+            "line": line,
+            "slit": slit,
+            "detector_x_pixel": SG_XPIXEL,
+        },
         attrs={"description": "No attributes"},
     )
     response = response.assign_coords(
@@ -291,16 +299,21 @@ def fake_response():
     response.line_wavelength.attrs["units"] = "Angstrom"
     response.logT.attrs["long_name"] = "log$_{10}$(T)"
     response.logT.attrs["units"] = "log$_{10}$ (K)"
-    response.vdop.attrs["long_name"] = "v$_{Doppler}$"
-    response.vdop.attrs["units"] = "km/s"
+    response.doppler_velocity.attrs["long_name"] = "v$_{Doppler}$"
+    response.doppler_velocity.attrs["units"] = "km/s"
     response.detector_response.attrs["units"] = "1e-27 ph cm5 / s"
     response.detector_wavelength.attrs["units"] = "Angstrom"
     return response.assign_coords(channel=("line", channel))
 
 
-def fake_response_file():
+def fake_legacy_response_file():
     """
     Response dataset shaped like the real on-disk MUSE response files, for IO tests.
+
+    Deliberately uses the pre-canonical names (``SG_resp``, ``SG_wvl``, ``SG_xpixel``,
+    ``line_wvl``, ``vdop``): reading it is what exercises
+    `muse.instrument.utils._canonicalize_response_names`, so do not modernize them here.
+    Build canonical files with ``save_response(fake_response(), path)`` instead.
     """
     n_logT, n_vdop, n_slit, n_pixel, n_wave = 5, 7, 4, 8, 6
     logT_axis = np.linspace(5.0, 7.0, n_logT)

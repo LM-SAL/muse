@@ -1,0 +1,2 @@
+The Doppler-velocity axis is now called ``doppler_velocity`` everywhere, replacing the legacy
+``vdop`` name.

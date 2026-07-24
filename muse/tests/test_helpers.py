@@ -5,10 +5,10 @@ from muse.tests.helpers import assert_dataset_structure
 
 
 def test_fake_response_matches_response_zarr_contract(response) -> None:
-    assert response.detector_response.dims == ("line", "vdop", "logT", "slit", "detector_x_pixel")
+    assert response.detector_response.dims == ("line", "doppler_velocity", "logT", "slit", "detector_x_pixel")
     assert response.detector_response.sizes == {
         "line": 7,
-        "vdop": 9,
+        "doppler_velocity": 9,
         "logT": 7,
         "slit": 35,
         "detector_x_pixel": 32,
@@ -35,8 +35,8 @@ def test_fake_vdem_has_expected_axes(vdem) -> None:
     assert_dataset_structure(
         vdem,
         data_vars=("vdem",),
-        coords=("logT", "vdop", "x", "y"),
-        sizes={"logT": 7, "vdop": 9, "y": 32, "x": 385},
+        coords=("logT", "doppler_velocity", "x", "y"),
+        sizes={"logT": 7, "doppler_velocity": 9, "y": 32, "x": 385},
         finite_vars=("vdem",),
     )
     assert vdem.x.attrs["units"] == "arcsec"

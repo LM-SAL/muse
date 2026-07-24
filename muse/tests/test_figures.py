@@ -7,20 +7,23 @@ from muse.tests.helpers import figure_test
 @figure_test
 def test_vdem_intensity_map(vdem):
     """
-    VDEM integrated over logT and vdop -> (y, x) intensity map.
+    VDEM integrated over logT and doppler_velocity -> (y, x) intensity map.
     """
     fig, ax = plt.subplots()
-    vdem.vdem.sum(dim=["logT", "vdop"]).plot(ax=ax)
+    vdem.vdem.sum(dim=["logT", "doppler_velocity"]).plot(ax=ax)
     return fig
 
 
 @figure_test
 def test_response_logt_profile(response):
     """
-    Detector response versus temperature for each line at vdop=0 and mid-slit.
+    Detector response versus temperature for each line at doppler_velocity=0 and mid-
+    slit.
     """
     fig, ax = plt.subplots()
-    response.detector_response.sel(vdop=0.0).isel(slit=17).sum(dim="detector_x_pixel").plot.line(x="logT", ax=ax)
+    response.detector_response.sel(doppler_velocity=0.0).isel(slit=17).sum(dim="detector_x_pixel").plot.line(
+        x="logT", ax=ax
+    )
     return fig
 
 
@@ -31,8 +34,8 @@ def test_response_line_profiles(response):
     """
     channels = [108, 171, 284]
     fig, axes = plt.subplots(1, len(channels), figsize=(12, 4), constrained_layout=True)
-    # vdop=0 rest frame, mid-slit, integrated over temperature -> spectral profile vs pixel.
-    profiles = response.detector_response.sel(vdop=0.0).isel(slit=17).sum(dim="logT")
+    # doppler_velocity=0 rest frame, mid-slit, integrated over temperature -> spectral profile vs pixel.
+    profiles = response.detector_response.sel(doppler_velocity=0.0).isel(slit=17).sum(dim="logT")
     wavelengths = response.detector_wavelength.isel(slit=17)
     for ax, channel in zip(axes, channels, strict=True):
         in_channel = response.channel == channel

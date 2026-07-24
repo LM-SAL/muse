@@ -89,7 +89,7 @@ upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
 instrumental_width = u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data)
 effective_area = DEFAULTS_MUSE.main_line_effective_area.sel(channel=band)
-# Since we will only plot at ``vdop=0``, we pass a single
+# Since we will only plot at ``doppler_velocity=0``, we pass a single
 # Doppler-velocity point. This makes the code faster and use less RAM.
 doppler_velocity = [0] * u.km / u.s
 
@@ -112,7 +112,7 @@ response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 
 plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
+integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot()
 plt.title("171 Angstrom response with electron density")
 
 ##############################################################################
@@ -137,7 +137,7 @@ response = map_response_to_sg_detector(waveband_response, band)
 print(response)
 
 plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(vdop=0).squeeze().plot()
+integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot()
 plt.title("171 Angstrom response per nonthermal velocity")
 
 plt.show()

@@ -40,7 +40,7 @@ vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 ##############################################################################
 # For multi-line analysis, we load the response functions for several spectral
 # lines and concatenate them. Each response function is interpolated to
-# match the VDEM's ``logT`` and ``vdop`` grids.
+# match the VDEM's ``logT`` and ``doppler_velocity`` grids.
 #
 # To do this, we will use :func:`muse.instrument.load_and_concat_responses`
 # This ensures that the VDEM and response function share the same temperature
@@ -77,10 +77,10 @@ response = load_and_concat_responses(
     response_files=response_files,
     channels=[108, 171, 284],
     logT=vdem_raster.logT,
-    vdop=vdem_raster.vdop,
+    doppler_velocity=vdem_raster.doppler_velocity,
     slit=vdem_raster.slit,
     logT_method="nearest",
-    vdop_method="nearest",
+    doppler_velocity_method="nearest",
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.
     chunked=True,
@@ -93,8 +93,8 @@ print(response)
 # It computes synthetic spectra by convolving the VDEM with the response
 # functions. The operation consists of:
 #
-# 1. Multiplies VDEM by response function at each (logT, vdop) point
-# 2. Sums over the specified dimensions (typically logT and vdop)
+# 1. Multiplies VDEM by response function at each (logT, doppler_velocity) point
+# 2. Sums over the specified dimensions (typically logT and doppler_velocity)
 # 3. Returns synthetic spectra with spatial, line, and detector-pixel dimensions
 #
 # Where:
@@ -120,7 +120,7 @@ spectrum = vdem_synthesis(
     vdem_raster,
     response,
     backend="numpy",
-    sum_over=("logT", "vdop"),
+    sum_over=("logT", "doppler_velocity"),
 )
 
 output = output_dir / "muse_synthetic_spectra.nc"

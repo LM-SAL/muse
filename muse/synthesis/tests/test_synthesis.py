@@ -3,20 +3,22 @@ import numpy as np
 import pytest
 
 from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
-from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_vdop
+from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_doppler_velocity
 from muse.transforms.transforms import reshape_x_to_slit_step
 
 SPEED_OF_LIGHT_KMS = 299792.458
 
 # Dimension names for the science contraction used across the einsum-index tests.
-RASTER_DIMS = ("logT", "vdop", "y", "slit", "step")
-RESPONSE_DIMS = ("line", "vdop", "logT", "slit", "detector_x_pixel")
+RASTER_DIMS = ("logT", "doppler_velocity", "y", "slit", "step")
+RESPONSE_DIMS = ("line", "doppler_velocity", "logT", "slit", "detector_x_pixel")
 
 
 def test_build_einsum_indices_contracts_shared_dims() -> None:
-    # Shared dims (logT, vdop, slit) reuse the raster letters; the default sum_over
+    # Shared dims (logT, doppler_velocity, slit) reuse the raster letters; the default sum_over
     # contracts them, leaving y/step from the raster and line/detector_x_pixel from the response.
-    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "vdop", "slit"))
+    einsum_str, out_str, out_dims = _build_einsum_indices(
+        RASTER_DIMS, RESPONSE_DIMS, ("logT", "doppler_velocity", "slit")
+    )
     assert einsum_str == "abcde,fbadg"
     assert out_str == "cefg"
     assert out_dims == ["y", "step", "line", "detector_x_pixel"]
@@ -24,7 +26,7 @@ def test_build_einsum_indices_contracts_shared_dims() -> None:
 
 def test_build_einsum_indices_keeps_unsummed_slit() -> None:
     # Dropping slit from sum_over keeps it as an output dimension.
-    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "vdop"))
+    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "doppler_velocity"))
     assert einsum_str == "abcde,fbadg"
     assert out_str == "cdefg"
     assert out_dims == ["y", "slit", "step", "line", "detector_x_pixel"]
@@ -55,7 +57,7 @@ def test_vdem_synthesis(response, vdem) -> None:
     assert detector_response.flux.attrs["units"] == "ph / s"
     assert detector_response.attrs["HISTORY"] == [
         "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'vdop', 'slit'), "
+        "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'doppler_velocity', 'slit'), "
         "cuda_device=None, backend=numpy)",
     ]
     np.testing.assert_array_equal(
@@ -83,8 +85,8 @@ def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, vdem)
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     eager = vdem_synthesis(reshaped_vdem, response)
     lazy = vdem_synthesis(
-        reshaped_vdem.chunk({"logT": 1, "vdop": 2}),
-        response.chunk({"line": 1, "logT": 1, "vdop": 2}),
+        reshaped_vdem.chunk({"logT": 1, "doppler_velocity": 2}),
+        response.chunk({"line": 1, "logT": 1, "doppler_velocity": 2}),
     )
 
     assert isinstance(lazy.flux.data, da.Array)
@@ -94,7 +96,7 @@ def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, vdem)
 
 def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
     # Independently recompute one flux value with a plain xarray multiply + sum over
-    # the shared logT/vdop/slit dims, and compare to the einsum result. This
+    # the shared logT/doppler_velocity/slit dims, and compare to the einsum result. This
     # guards the einsum index bookkeeping, not just the output shape.
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     result = vdem_synthesis(reshaped_vdem, response)
@@ -104,7 +106,7 @@ def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
         line=iline,
         detector_x_pixel=ipixel,
     )
-    expected = float(contribution.sum().values)  # sums over logT, vdop, slit
+    expected = float(contribution.sum().values)  # sums over logT, doppler_velocity, slit
     got = float(result.flux.isel(y=it, step=istep, line=iline, detector_x_pixel=ipixel).values)
     np.testing.assert_allclose(got, expected, rtol=1e-5)
 
@@ -153,11 +155,11 @@ def test_vdem_synthesis_zeroing_response_removes_only_that_line(response, vdem) 
 
 
 def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
-    # Emission at a single vdop must place the line at lambda * (1 + v/c): synthesis
+    # Emission at a single doppler_velocity must place the line at lambda * (1 + v/c): synthesis
     # encodes velocity as a wavelength shift, the core spectral behaviour.
     def centroid(vdop_kms):
-        reshaped = reshape_x_to_slit_step(fake_vdem_single_vdop(vdop_kms), nslits=35, nraster=11)
-        flux = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop")).flux
+        reshaped = reshape_x_to_slit_step(fake_vdem_single_doppler_velocity(vdop_kms), nslits=35, nraster=11)
+        flux = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity")).flux
         spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"]).values
         wavelength = flux.detector_wavelength.isel(line=0, slit=17).values
         return float((spectrum * wavelength).sum() / spectrum.sum())
@@ -176,6 +178,20 @@ def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     with pytest.raises(ValueError, match=r"'bogus' is not a response dimension"):
         vdem_synthesis(reshaped_vdem, response, sum_over=("bogus",))
+
+
+@pytest.mark.parametrize("legacy_input", ["raster", "response"])
+def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, vdem, legacy_input) -> None:
+    # A stray vdop is not in sum_over, so einsum would carry it into the output and contract
+    # the other input's doppler_velocity alone: no error, wrong flux. It must fail loudly.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    if legacy_input == "raster":
+        reshaped_vdem = reshaped_vdem.rename(doppler_velocity="vdop")
+    else:
+        response = response.rename(doppler_velocity="vdop")
+
+    with pytest.raises(ValueError, match=rf"{legacy_input} uses the legacy 'vdop' dimension"):
+        vdem_synthesis(reshaped_vdem, response)
 
 
 def test_vdem_synthesis_requires_present_arrays(response, vdem) -> None:
@@ -205,7 +221,7 @@ def test_vdem_synthesis_rejects_non_length_wavelength_units(response, vdem) -> N
 def test_vdem_synthesis_requires_response_wavelength_coords(response, vdem, name) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.reset_coords(name)
-    kwargs = {"sum_over": ("logT", "vdop")} if name == "detector_wavelength" else {}
+    kwargs = {"sum_over": ("logT", "doppler_velocity")} if name == "detector_wavelength" else {}
 
     with pytest.raises(ValueError, match=rf"response\.{name} is missing"):
         vdem_synthesis(reshaped_vdem, bad_response, **kwargs)
@@ -224,7 +240,7 @@ def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, vdem) -> None:
     # Not summing over slit leaves it as a flux dimension, which triggers the
     # detector_wavelength coordinate assignment branch.
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    detector_response = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "vdop"))
+    detector_response = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "doppler_velocity"))
     assert "slit" in detector_response.flux.dims
     assert_dataset_structure(
         detector_response,
@@ -245,7 +261,7 @@ def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, vdem) -
     response_nm.line_wavelength.attrs["units"] = "nm"
     response_nm.detector_wavelength.attrs["units"] = "nm"
 
-    detector_response = vdem_synthesis(reshaped_vdem, response_nm, sum_over=("logT", "vdop"))
+    detector_response = vdem_synthesis(reshaped_vdem, response_nm, sum_over=("logT", "doppler_velocity"))
 
     np.testing.assert_allclose(detector_response.line_wavelength.values, response.line_wavelength.values)
     np.testing.assert_allclose(detector_response.detector_wavelength.values, response.detector_wavelength.values)
@@ -281,7 +297,7 @@ def test_vdem_synthesis_requires_response_units(response, vdem, name) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.copy(deep=True)
     del bad_response[name].attrs["units"]
-    kwargs = {"sum_over": ("logT", "vdop")} if name == "detector_wavelength" else {}
+    kwargs = {"sum_over": ("logT", "doppler_velocity")} if name == "detector_wavelength" else {}
 
     with pytest.raises(ValueError, match=rf"response\.{name} must define units"):
         vdem_synthesis(reshaped_vdem, bad_response, **kwargs)

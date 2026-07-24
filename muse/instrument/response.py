@@ -81,9 +81,7 @@ def map_response_to_sg_detector(
         ``response.spectral_response`` integrated over the detector pixel
         width, so per Angstrom becomes per pixel, and
         ``detector_wavelength`` and ``line_wavelength`` coordinates
-        in Angstrom. The generic
-        ``doppler_velocity`` dimension is renamed to the legacy ``vdop`` name
-        required by MUSE synthesis.
+        in Angstrom.
     """
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
@@ -196,7 +194,5 @@ def map_response_to_sg_detector(
         line_wavelength=("line", line_wavelength, {"units": str(u.AA)}),
         channel=("line", np.full(response.sizes["line"], channel)),
     )
-    if "doppler_velocity" in result.dims:
-        result = result.rename(doppler_velocity="vdop")
     add_history(result, locals(), map_response_to_sg_detector)
     return result

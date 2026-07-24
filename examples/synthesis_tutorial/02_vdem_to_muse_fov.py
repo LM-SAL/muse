@@ -56,8 +56,8 @@ print(vdem)
 # the instrument pixel scale and required spatial extent.
 
 vdem_muse_fov = match_fov(vdem)
-original_intensity = vdem.vdem.sum(dim=["logT", "vdop"], skipna=False)
-full_intensity = vdem_muse_fov.vdem.sum(dim=["logT", "vdop"], skipna=False).compute()
+original_intensity = vdem.vdem.sum(dim=["logT", "doppler_velocity"], skipna=False)
+full_intensity = vdem_muse_fov.vdem.sum(dim=["logT", "doppler_velocity"], skipna=False).compute()
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 original_intensity.plot(norm=colors.LogNorm(vmin=1), ax=ax1)

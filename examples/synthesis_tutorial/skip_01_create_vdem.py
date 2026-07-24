@@ -78,7 +78,7 @@ vdem = create_simple_vdem(
 # The VDEM contains information about:
 #
 # - Temperature distribution (logT dimension)
-# - Doppler velocity distribution (vdop dimension)
+# - Doppler velocity distribution (doppler_velocity dimension)
 # - Spatial distribution (x, y dimensions)
 # - Temporal evolution (time dimension)
 #
@@ -90,14 +90,14 @@ print(vdem)
 #
 # The velocity moments can be calculated directly from the VDEM without first
 # synthesizing spectra. ``calculate_moments`` integrates one spectral axis, so
-# we first sum over temperature and then calculate the moments along ``vdop``.
+# we first sum over temperature and then calculate the moments along ``doppler_velocity``.
 
 velocity_distribution = vdem[["vdem"]].sum(dim="logT", skipna=False)
 vdem_moments = calculate_moments(
     velocity_distribution,
     integration_name="vdem",
-    doppler_name="vdop",
-    moment_dim="vdop",
+    doppler_name="doppler_velocity",
+    moment_dim="doppler_velocity",
 )
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 7), constrained_layout=True)

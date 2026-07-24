@@ -8,7 +8,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.utils import load_and_concat_responses, read_response, save_response
-from muse.tests.helpers import fake_response, fake_response_file
+from muse.tests.helpers import fake_legacy_response_file, fake_response
 from muse.variables import DEFAULTS_MUSE
 
 pytestmark = [
@@ -77,7 +77,7 @@ def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
                 "shuffle": True,
             }
         loaded = source.load()
-    assert chunks == (1, min(20, response.sizes["vdop"]), 1, 4, response.sizes["detector_x_pixel"])
+    assert chunks == (1, min(20, response.sizes["doppler_velocity"]), 1, 4, response.sizes["detector_x_pixel"])
     xr.testing.assert_identical(loaded, before)
     xr.testing.assert_identical(response, before)
 
@@ -87,7 +87,9 @@ def test_save_response_accepts_chunk_overrides(tmp_path, fmt) -> None:
     response = _small_response()
     path = tmp_path / f"response.{fmt}"
 
-    save_response(response, path, chunks={"line": 2, "vdop": 3, "logT": 2, "slit": 2, "detector_x_pixel": 4})
+    save_response(
+        response, path, chunks={"line": 2, "doppler_velocity": 3, "logT": 2, "slit": 2, "detector_x_pixel": 4}
+    )
 
     with _open(path, fmt) as source:
         chunks = source.detector_response.encoding["chunks" if fmt == "zarr" else "chunksizes"]
@@ -121,7 +123,7 @@ def test_save_response_validates_the_response(tmp_path, case, error, match) -> N
     [
         ([], TypeError, "mapping"),
         ({"missing": 1}, ValueError, "unknown dimension"),
-        ({"vdop": 0}, ValueError, "positive integer"),
+        ({"doppler_velocity": 0}, ValueError, "positive integer"),
     ],
 )
 def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match) -> None:
@@ -131,46 +133,52 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
-    path = _write(fake_response_file(), tmp_path / f"resp.{fmt}", fmt)
+    path = _write(fake_legacy_response_file(), tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
-    vdop = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "vdop")
+    doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity")
 
-    r = read_response(path, logT=logT, vdop=vdop, slit=_slit(3), logT_method="nearest")
+    r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, slit=_slit(3), logT_method="nearest")
 
     assert isinstance(r, xr.Dataset)
     assert "detector_response" in r.data_vars
     assert r.sizes["logT"] == logT.size
-    assert r.sizes["vdop"] == vdop.size
+    assert r.sizes["doppler_velocity"] == doppler_velocity.size
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
-    np.testing.assert_allclose(r.vdop.values, vdop.values)
+    np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
     # The reader injects Angstrom because the on-disk files carry no wavelength units (for now).
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
-    assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl"} & set(r.variables)
+    assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl", "vdop"} & set(r.variables)
     np.testing.assert_array_equal(r.gain.values, [DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)])
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> None:
-    src = fake_response_file()
+    src = fake_legacy_response_file()
     path = _write(src, tmp_path / f"resp.{fmt}", fmt)
 
     r = read_response(path)
 
     assert r.sizes["logT"] == src.sizes["logT"]
-    assert r.sizes["vdop"] == src.sizes["vdop"]
+    assert r.sizes["doppler_velocity"] == src.sizes["vdop"]
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert "gain" in r.coords
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> None:
-    path = _write(fake_response_file(), tmp_path / f"resp.{fmt}", fmt)
+    path = _write(fake_legacy_response_file(), tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
-    vdop = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "vdop")
-    kwargs = {"logT": logT, "vdop": vdop, "slit": _slit(3), "logT_method": "nearest", "vdop_method": "linear"}
+    doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity")
+    kwargs = {
+        "logT": logT,
+        "doppler_velocity": doppler_velocity,
+        "slit": _slit(3),
+        "logT_method": "nearest",
+        "doppler_velocity_method": "linear",
+    }
 
     lazy = read_response(path, chunked=True, **kwargs)
     eager = read_response(path, chunked=False, **kwargs)
@@ -181,7 +189,7 @@ def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> No
 
 def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
     for name in ("a.nc", "b.nc"):
-        fake_response_file().to_netcdf(tmp_path / name)
+        fake_legacy_response_file().to_netcdf(tmp_path / name)
 
     response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171], chunked=True)
 
@@ -190,7 +198,7 @@ def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
 
 def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
     path = tmp_path / "response.zarr"
-    fake_response_file().to_zarr(path, zarr_format=3, consolidated=False)
+    fake_legacy_response_file().to_zarr(path, zarr_format=3, consolidated=False)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -200,7 +208,7 @@ def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_
 
 
 def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
     # A grid offset from the source logT forces real interpolation rather than nearest selection.
     logT = _axis(np.linspace(5.1, 6.9, 9), "logT")
 
@@ -212,7 +220,7 @@ def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -
 
 def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_path) -> None:
     # Drop the line dimension and line_wvl to hit the expand_dims + attribute-fallback branches.
-    src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
+    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
     src.attrs["MAIN_LINE_WVL"] = 171.073
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
@@ -227,7 +235,7 @@ def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_
 def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match) -> None:
     # The channel label (171) is not the line wavelength (171.073), so a response carrying one
     # still fails, and says so; without a channel the plain error stands.
-    src = fake_response_file().isel(line=0).drop_vars(["line", "line_wvl", *dropped])
+    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", *dropped])
     assert ("channel" in src.coords) == (not dropped)
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
@@ -237,7 +245,7 @@ def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match)
 
 def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> None:
     # The fixture mirrors the real files, which carry no units on line_wvl/SG_wvl.
-    path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
 
     r = read_response(path)
 
@@ -247,7 +255,7 @@ def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> No
 
 
 def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None:
-    src = fake_response_file()
+    src = fake_legacy_response_file()
     src.line_wvl.attrs["units"] = "nm"
     src.SG_wvl.attrs["units"] = "nm"
     path = _write(src, tmp_path / "resp.zarr", "zarr")
@@ -260,7 +268,7 @@ def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None
 
 
 def test_read_response_prefers_legacy_line_wvl_when_both_names_exist(tmp_path) -> None:
-    src = fake_response_file().assign_coords(
+    src = fake_legacy_response_file().assign_coords(
         line_wavelength=("line", [999.0], {"units": "Angstrom"}),
     )
     path = _write(src, tmp_path / "resp.nc", "nc")
@@ -272,7 +280,7 @@ def test_read_response_prefers_legacy_line_wvl_when_both_names_exist(tmp_path) -
 
 
 def test_read_response_gain_accepts_quantity(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
 
     r = read_response(path, gain=5.0 * u.electron / u.DN)
 
@@ -281,37 +289,37 @@ def test_read_response_gain_accepts_quantity(tmp_path) -> None:
 
 
 def test_read_response_gain_rejects_wrong_units(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
     with pytest.raises(u.UnitsError):
         read_response(path, gain=5.0 * u.second)
 
 
 def test_read_response_empty_logT_raises(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="must not be empty"):
         read_response(path, logT=xr.DataArray(np.array([]), dims="logT"))
 
 
 def test_read_response_nonfinite_logT_raises(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="finite"):
         read_response(path, logT=xr.DataArray(np.array([5.0, np.nan]), dims="logT"))
 
 
 def test_read_response_out_of_range_logT_raises(tmp_path) -> None:
-    path = _write(fake_response_file(), tmp_path / "resp.nc", "nc")
+    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="no overlap"):
         read_response(path, logT=xr.DataArray(np.array([8.0, 8.5]), dims="logT"))
 
 
 def test_read_response_requires_detector_response(tmp_path) -> None:
-    path = _write(fake_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
+    path = _write(fake_legacy_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="detector_response"):
         read_response(path)
 
 
 def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
-    src = fake_response_file().drop_vars(["line_wvl", "channel"])
+    src = fake_legacy_response_file().drop_vars(["line_wvl", "channel"])
     path = _write(src, tmp_path / "resp.nc", "nc")
 
     with pytest.raises(ValueError, match="line_wavelength"):
@@ -321,19 +329,19 @@ def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
 def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     first = xr.concat(
         [
-            fake_response_file().assign_coords(
+            fake_legacy_response_file().assign_coords(
                 line=("line", ["Fe XIX 108.355"]),
                 line_wvl=("line", [108.355]),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
-            fake_response_file().assign_coords(
+            fake_legacy_response_file().assign_coords(
                 line=("line", ["Fe XXI 108.117"]),
                 line_wvl=("line", [108.117]),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
-            fake_response_file().assign_coords(
+            fake_legacy_response_file().assign_coords(
                 line=("line", ["contaminants"]),
                 line_wvl=("line", [108.355]),
                 channel=("line", [108]),
@@ -344,7 +352,7 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         data_vars="all",
         join="exact",
     )
-    second = fake_response_file().assign_coords(
+    second = fake_legacy_response_file().assign_coords(
         line=("line", ["Fe XV 284.163"]),
         line_wvl=("line", [284.163]),
         channel=("line", [284]),
@@ -357,7 +365,7 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         response_directory=tmp_path,
         response_files=["a.nc", "b.nc"],
         logT=_axis(np.linspace(5.2, 6.6, 4), "logT"),
-        vdop=_axis([-100.0, 0.0, 100.0], "vdop"),
+        doppler_velocity=_axis([-100.0, 0.0, 100.0], "doppler_velocity"),
         slit=_slit(3),
         logT_method="nearest",
         channels=[108, 284],
@@ -376,10 +384,10 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
 
 def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
     # join="exact" in the line concat must refuse responses on different
-    # logT/vdop grids (when no target grid is given) instead of silently
+    # logT/doppler_velocity grids (when no target grid is given) instead of silently
     # outer-joining them with NaN fill.
-    _write(fake_response_file(), tmp_path / "a.nc", "nc")
-    shifted = fake_response_file()
+    _write(fake_legacy_response_file(), tmp_path / "a.nc", "nc")
+    shifted = fake_legacy_response_file()
     _write(shifted.assign_coords(vdop=shifted.vdop + 5.0), tmp_path / "b.nc", "nc")
 
     with pytest.raises(ValueError, match=r"align|exact"):
@@ -391,7 +399,7 @@ def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
 
 
 def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
-    _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
+    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
     with pytest.raises(ValueError, match=r"channels .* must match the number of response_files"):
         load_and_concat_responses(
             response_directory=tmp_path,

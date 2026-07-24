@@ -15,12 +15,13 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_and_concat_responses", "read_response", "save_response"]
 
-_DEFAULT_RESPONSE_CHUNKS = {"line": 1, "vdop": 20, "logT": 1, "pressure": 1, "abundance": 1}
+_DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _LEGACY_RESPONSE_NAMES = {
     "SG_xpixel": "detector_x_pixel",
     "SG_wvl": "detector_wavelength",
     "SG_resp": "detector_response",
     "line_wvl": "line_wavelength",
+    "vdop": "doppler_velocity",
 }
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
 
@@ -43,7 +44,7 @@ def save_response(
         Existing destinations are not overwritten.
     chunks : mapping of `str` to `int`, optional
         Per-dimension overrides for the benchmark-backed defaults:
-        ``line=1``, ``vdop=20``, ``logT=1``, ``pressure=1``,
+        ``line=1``, ``doppler_velocity=20``, ``logT=1``, ``pressure=1``,
         ``abundance=1``, and complete ``slit``/``detector_x_pixel`` planes.
         Unspecified dimensions retain the defaults. Values larger than a
         dimension use the full dimension.
@@ -142,16 +143,16 @@ def read_response(
     response_file: str | Path,
     *,
     logT: xr.DataArray | None = None,
-    vdop: xr.DataArray | None = None,
+    doppler_velocity: xr.DataArray | None = None,
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
-    vdop_method: str = "nearest",
+    doppler_velocity_method: str = "nearest",
     gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
     chunked: bool = False,
 ) -> xr.Dataset:
     """
-    Reads a response function into an `xarray.Dataset` interpolating if needed in vdop,
-    and logT.
+    Reads a response function into an `xarray.Dataset` interpolating if needed in
+    doppler_velocity, and logT.
 
     Parameters
     ----------
@@ -159,14 +160,14 @@ def read_response(
         Response function in Xarray readable format (netCDF file or Zarr store).
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto.
-    vdop : `xarray.DataArray`, optional
+    doppler_velocity : `xarray.DataArray`, optional
         Velocity axis to (re)sample onto.
     slit : `xarray.DataArray`, optional
         Number of slits array of integers.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
-    vdop_method : `str`, optional
-        Interpolation method for vdop, by default "nearest".
+    doppler_velocity_method : `str`, optional
+        Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN, by default {gain}.
     chunked : `bool`, optional
@@ -185,12 +186,12 @@ def read_response(
     Raises
     ------
     ValueError
-        If the ``logT``/``vdop`` axes are malformed, or the loaded dataset is
-        missing the ``detector_response`` variable or the ``logT``/``vdop`` coordinates.
+        If the ``logT``/``doppler_velocity`` axes are malformed, or the loaded dataset is
+        missing the ``detector_response`` variable or the ``logT``/``doppler_velocity`` coordinates.
     """
     response_file = Path(response_file)
 
-    for name, axis in (("logT", logT), ("vdop", vdop)):
+    for name, axis in (("logT", logT), ("doppler_velocity", doppler_velocity)):
         if axis is None:
             continue
         if len(axis.data) == 0:
@@ -205,13 +206,13 @@ def read_response(
     if "detector_response" not in r.data_vars:
         msg = "Response dataset must contain 'detector_response' variable"
         raise ValueError(msg)
-    for name in ("logT", "vdop"):
+    for name in ("logT", "doppler_velocity"):
         if name not in r.coords and name not in r.dims:
             msg = f"Response must have {name} coordinate"
             raise ValueError(msg)
 
     r = _resample_axis(r, "logT", logT, logT_method)
-    r = _resample_axis(r, "vdop", vdop, vdop_method)
+    r = _resample_axis(r, "doppler_velocity", doppler_velocity, doppler_velocity_method)
 
     if slit is not None:
         r = r.sel(slit=np.arange(slit.max() + 1), drop=True, method="nearest")
@@ -265,7 +266,7 @@ def _require_wavelength_units(r: xr.Dataset, name: str) -> None:
 def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
     """
     Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or
-    ``vdop``).
+    ``doppler_velocity``).
 
     Out-of-range requested points are trimmed to the response grid first. The
     ``"nearest"`` method selects existing samples; any other method interpolates and
@@ -277,7 +278,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     if not bool(in_range.all()):
         logger.info(
             f"Requested {name} extends beyond the response range; trimming to the response grid. "
-            f"Run vdem.sel(logT=response.logT, vdop=response.vdop, drop=True, method='nearest') to match."
+            f"Run vdem.sel(logT=response.logT, doppler_velocity=response.doppler_velocity, drop=True, method='nearest') to match."
         )
         axis = axis.where(in_range, drop=True)
         if axis.size == 0:
@@ -298,10 +299,10 @@ def load_and_concat_responses(
     *,
     channels: Sequence[int],
     logT: xr.DataArray | None = None,
-    vdop: xr.DataArray | None = None,
+    doppler_velocity: xr.DataArray | None = None,
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
-    vdop_method: str = "linear",
+    doppler_velocity_method: str = "linear",
     chunked: bool = False,
 ) -> xr.Dataset:
     """
@@ -318,15 +319,15 @@ def load_and_concat_responses(
         line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.read_response`.
-    vdop : `xarray.DataArray`, optional
+    doppler_velocity : `xarray.DataArray`, optional
         Velocity axis to (re)sample onto. Passed to `muse.instrument.read_response`.
     slit : `xarray.DataArray`, optional
         Number of slits array of integers. Passed to `muse.instrument.read_response`.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
         Passed to `muse.instrument.read_response`.
-    vdop_method : `str`, optional
-        Interpolation method for vdop, by default "linear".
+    doppler_velocity_method : `str`, optional
+        Interpolation method for doppler_velocity, by default "linear".
         Passed to `muse.instrument.read_response`.
     chunked : `bool`, optional
         When `True`, load each response dask-backed so the concatenated
@@ -353,10 +354,10 @@ def load_and_concat_responses(
             dataset = read_response(
                 Path(response_directory) / filename,
                 logT=logT,
-                vdop=vdop,
+                doppler_velocity=doppler_velocity,
                 slit=slit,
                 logT_method=logT_method,
-                vdop_method=vdop_method,
+                doppler_velocity_method=doppler_velocity_method,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]

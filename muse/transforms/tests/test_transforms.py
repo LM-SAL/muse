@@ -50,8 +50,8 @@ def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
-        coords=("logT", "vdop", "x", "y"),
-        sizes={"logT": 7, "vdop": 9, "x": 385, "y": 62},
+        coords=("logT", "doppler_velocity", "x", "y"),
+        sizes={"logT": 7, "doppler_velocity": 9, "x": 385, "y": 62},
         finite_vars=("vdem",),
     )
     # Output spatial axes are remapped onto the MUSE pixel grid.
@@ -120,7 +120,7 @@ def test_match_fov_rotate(vdem_offgrid) -> None:
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
-        coords=("logT", "vdop", "x", "y"),
+        coords=("logT", "doppler_velocity", "x", "y"),
         finite_vars=("vdem",),
     )
     assert out.x.size == 35 * 11
@@ -131,11 +131,11 @@ def test_reshape_x_to_slit_step(vdem) -> None:
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
-        coords=("slit", "step", "logT", "vdop", "y"),
-        sizes={"slit": 35, "step": 11, "logT": 7, "vdop": 9, "y": 32},
+        coords=("slit", "step", "logT", "doppler_velocity", "y"),
+        sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    value = out.vdem.sel(step=0, logT=5, vdop=0, y=0, slit=0, method="nearest").values
+    value = out.vdem.sel(step=0, logT=5, doppler_velocity=0, y=0, slit=0, method="nearest").values
     assert np.isfinite(value)
     assert value >= 0
     assert out.attrs["step_size units"] == "arcsec"
@@ -167,8 +167,8 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
-        coords=("slit", "step", "logT", "vdop", "y"),
-        sizes={"slit": 35, "step": 11, "logT": 7, "vdop": 9, "y": 32},
+        coords=("slit", "step", "logT", "doppler_velocity", "y"),
+        sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
     assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
@@ -180,8 +180,8 @@ def test_reshape_slit_step_to_x_round_trips(vdem) -> None:
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
-        coords=("x", "logT", "vdop", "y"),
-        sizes={"x": 385, "logT": 7, "vdop": 9, "y": 32},
+        coords=("x", "logT", "doppler_velocity", "y"),
+        sizes={"x": 385, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
     assert out.x.attrs["units"] == "arcsec"

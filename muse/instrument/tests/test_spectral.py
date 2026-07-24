@@ -230,7 +230,6 @@ def test_velocity_axes_convert_to_kilometers_per_second():
     )
 
     xr.testing.assert_allclose(response_km, response_m)
-    assert "vdop" not in response_km.dims
     assert response_km.doppler_velocity.attrs["units"] == "km / s"
     assert response_km.nonthermal_velocity.attrs["units"] == "km / s"
 
