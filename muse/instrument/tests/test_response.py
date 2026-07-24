@@ -14,6 +14,7 @@ from muse.instrument.response import map_response_to_sg_detector
 from muse.instrument.spectral import create_spectral_response
 from muse.instrument.utils import read_response
 from muse.synthesis.synthesis import vdem_synthesis
+from muse.synthesis.utils import doppler_to_wavelength
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -69,14 +70,14 @@ def test_map_response_to_sg_detector_geometry_and_units():
     wavelength = response.wavelength_grid.values
     expected_response = np.stack([np.interp(row, wavelength, wavelength) for row in expected_wavelength]) * 0.1
 
-    assert mapped.detector_response.dims == ("line", "logT", "vdop", "slit", "detector_x_pixel")
+    assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity", "slit", "detector_x_pixel")
     assert mapped.detector_wavelength.dims == ("detector_x_pixel", "slit")
     np.testing.assert_allclose(
         mapped.detector_wavelength.transpose("slit", "detector_x_pixel"),
         expected_wavelength,
     )
     np.testing.assert_allclose(np.diff(mapped.detector_wavelength.isel(slit=0)), 0.1)
-    np.testing.assert_allclose(mapped.detector_response.isel(line=0, logT=0, vdop=0), expected_response)
+    np.testing.assert_allclose(mapped.detector_response.isel(line=0, logT=0, doppler_velocity=0), expected_response)
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.attrs["units"] == "Angstrom"
@@ -142,6 +143,15 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
         expected_start + (DEFAULTS_MUSE.pixels_SG.to_value(u.pix) - 1) * dispersion
     )
+
+
+def test_mapped_response_composes_with_doppler_to_wavelength():
+    # The mapped response used to carry the legacy vdop name, so the public inverse pair
+    # could not be applied to it; one axis name means the stages compose.
+    mapped = map_response_to_sg_detector(_spectral_response(), 171, number_of_slits=2, detector_pixels=4)
+
+    assert "doppler_velocity" in mapped.dims
+    assert "detector_wavelength" in doppler_to_wavelength(mapped).coords
 
 
 def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():
@@ -297,12 +307,12 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
     raster = xr.Dataset(
         {
             "vdem": (
-                ("logT", "vdop", "slit"),
+                ("logT", "doppler_velocity", "slit"),
                 np.ones((1, 1, 2)),
                 {"units": "1e27 / cm5"},
             )
         },
-        coords={"logT": response.logT, "vdop": response.vdop, "slit": response.slit},
+        coords={"logT": response.logT, "doppler_velocity": response.doppler_velocity, "slit": response.slit},
     )
     path = tmp_path / "response.nc"
     response.to_netcdf(path)

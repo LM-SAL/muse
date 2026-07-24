@@ -135,7 +135,7 @@ def test_instrument_quantity_converter_normalizes_units():
     defaults = InstrumentDefaults(
         spectral_slit_separation_SG=390.0 * u.mAA,
         main_lines_SG_wavelength={"Fe IX 171.073": 171073 * u.mAA},
-        target_vdop={"QS": np.array([1000, 2000]) * u.m / u.s},
+        target_doppler_velocity={"QS": np.array([1000, 2000]) * u.m / u.s},
         initial_wavelength_SG=xr.DataArray(
             [107680.34, 170623.14, 283016.08] * u.mAA,
             coords={"channel": [108, 171, 284]},
@@ -147,7 +147,7 @@ def test_instrument_quantity_converter_normalizes_units():
     assert defaults.spectral_slit_separation_SG.unit == u.AA
     np.testing.assert_allclose(defaults.spectral_slit_separation_SG.value, 0.39)
     assert defaults.main_lines_SG_wavelength["Fe IX 171.073"].unit == u.AA
-    assert defaults.target_vdop["QS"].unit == u.km / u.s
+    assert defaults.target_doppler_velocity["QS"].unit == u.km / u.s
     assert defaults.initial_wavelength_SG.data.unit == u.AA
     assert defaults.lpi[284].unit == 1 / imperial.inch
 
@@ -190,8 +190,8 @@ def test_instrument_defaults_validate_spectral_lines():
 
 
 def test_instrument_defaults_validate_related_mapping_keys():
-    with pytest.raises(ValueError, match="target_logT and target_vdop must use matching keys"):
-        InstrumentDefaults(target_logT={"QS": [4.8, 4.9]}, target_vdop={"AR": [-200, -100] * u.km / u.s})
+    with pytest.raises(ValueError, match="target_logT and target_doppler_velocity must use matching keys"):
+        InstrumentDefaults(target_logT={"QS": [4.8, 4.9]}, target_doppler_velocity={"AR": [-200, -100] * u.km / u.s})
 
     with pytest.raises(ValueError, match="lpi and mesh_transmission must use matching keys"):
         InstrumentDefaults(lpi={171: 70 / imperial.inch}, mesh_transmission={284: 0.81})

@@ -48,7 +48,7 @@ MUSE_DEFAULTS_DICT = {
         dims="channel",
     ),
     # Synthesis/inversions
-    "sum_over_dims_synthesis": ("logT", "vdop", "slit"),
+    "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
     "main_lines_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
     "main_lines_SG_wavelength": {
         "Fe XIX 108.355": 108.355 * u.AA,
@@ -65,7 +65,7 @@ MUSE_DEFAULTS_DICT = {
         "AR": np.arange(4.8, 7.2, 0.1),
         "FL": np.arange(4.8, 7.6, 0.1),
     },
-    "target_vdop": {
+    "target_doppler_velocity": {
         "QS": np.arange(-200, 210, 20) * u.km / u.s,
         "AR": np.arange(-300, 310, 20) * u.km / u.s,
         "FL": np.arange(-500, 510, 20) * u.km / u.s,

@@ -14,7 +14,7 @@ from muse.transforms.transforms import reshape_x_to_slit_step
 def _spectrum(response, vdem):
     # Keep slit so detector_wavelength survives, then add the Doppler coordinate moments require.
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))
+    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity"))
     return synthesis_utils.wavelength_to_doppler(spectrum)
 
 
@@ -109,7 +109,7 @@ def test_moments_pipeline_keeps_dask_inputs_lazy(response, vdem) -> None:
         vdem_synthesis(
             reshape_x_to_slit_step(vdem, nslits=35, nraster=11).chunk({"logT": 4}),
             response,
-            sum_over=("logT", "vdop"),
+            sum_over=("logT", "doppler_velocity"),
         )
     )
     assert isinstance(lazy_spectrum.flux.data, dask_array.Array)
@@ -160,7 +160,7 @@ def test_calculate_moments_rejects_bad_moment_dim(response, vdem) -> None:
 
 def test_calculate_moments_requires_doppler_velocity(response, vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "vdop"))  # no Doppler coordinate
+    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity"))  # no Doppler coordinate
     with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
         synthesis_utils.calculate_moments(spectrum)
 
@@ -195,18 +195,18 @@ def test_create_simple_vdem_tiny_cube() -> None:
     assert_dataset_structure(
         result,
         data_vars=("vdem",),
-        coords=("logT", "vdop", "x", "y"),
-        sizes={"logT": 3, "vdop": 3, "x": 2, "y": 3},
+        coords=("logT", "doppler_velocity", "x", "y"),
+        sizes={"logT": 3, "doppler_velocity": 3, "x": 2, "y": 3},
         finite_vars=("vdem",),
     )
-    assert result.vdem.dims == ("logT", "vdop", "x", "y")
+    assert result.vdem.dims == ("logT", "doppler_velocity", "x", "y")
     np.testing.assert_array_equal(result.logT.values, [4.5, 5.0, 5.5])
-    np.testing.assert_array_equal(result.vdop.values, [-1.0, -0.0, 1.0])
+    np.testing.assert_array_equal(result.doppler_velocity.values, [-1.0, -0.0, 1.0])
     np.testing.assert_array_equal(result.x.values, [10.0, 11.0])
     np.testing.assert_array_equal(result.y.values, [20.0, 21.0, 22.0])
     np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-12)
-    units = {name: result[name].attrs["units"] for name in ("vdem", "logT", "vdop", "x", "y")}
-    assert units == {"vdem": "1e27 / cm5", "logT": "dex(K)", "vdop": "km/s", "x": "cm", "y": "cm"}
+    units = {name: result[name].attrs["units"] for name in ("vdem", "logT", "doppler_velocity", "x", "y")}
+    assert units == {"vdem": "1e27 / cm5", "logT": "dex(K)", "doppler_velocity": "km/s", "x": "cm", "y": "cm"}
     for unit in units.values():
         u.Unit(unit)  # Every unit string must parse as an astropy unit
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
@@ -219,10 +219,10 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     inputs["velocity"] = np.full((2, 3, 2), -0.5)
 
     result = synthesis_utils.create_simple_vdem(**inputs)
-    # vdop axis is -velocity_axis[::-1] = [-1, 0, 1]; emission must sit in vdop=0, not vdop=-1.
+    # doppler_velocity axis is -velocity_axis[::-1] = [-1, 0, 1]; emission must sit in doppler_velocity=0, not doppler_velocity=-1.
     emission_per_vdop = result.vdem.sum(dim=("logT", "x", "y")).values
-    assert emission_per_vdop[1] > 0  # vdop == 0 bin
-    assert emission_per_vdop[0] == 0  # vdop == -1 bin stays empty
+    assert emission_per_vdop[1] > 0  # doppler_velocity == 0 bin
+    assert emission_per_vdop[0] == 0  # doppler_velocity == -1 bin stays empty
 
 
 def test_create_simple_vdem_internal_x_blocks_are_exact() -> None:

@@ -2,7 +2,7 @@ import pytest
 import xarray as xr
 
 from muse.instrument import migration
-from muse.tests.helpers import fake_response_file
+from muse.tests.helpers import fake_legacy_response_file
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore::zarr.errors.UnstableSpecificationWarning"),
@@ -15,7 +15,7 @@ pytestmark = [
 
 @pytest.mark.parametrize("suffix", [".nc", ".zarr"])
 def test_migrate_response_returns_and_verifies_schema(tmp_path, suffix) -> None:
-    source_response = fake_response_file()
+    source_response = fake_legacy_response_file()
     source = tmp_path / "legacy.nc"
     destination = tmp_path / f"canonical{suffix}"
     source_response.to_netcdf(source)
@@ -34,7 +34,7 @@ def test_migrate_response_returns_and_verifies_schema(tmp_path, suffix) -> None:
 def test_migrate_response_leaves_no_destination_when_verification_fails(tmp_path, monkeypatch) -> None:
     source = tmp_path / "legacy.nc"
     destination = tmp_path / "canonical.zarr"
-    fake_response_file().to_netcdf(source)
+    fake_legacy_response_file().to_netcdf(source)
 
     def fail_verification(_expected, _actual) -> None:
         msg = "verification failed"

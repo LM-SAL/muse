@@ -492,9 +492,11 @@ class InstrumentDefaults:
     Target logT values for different solar conditions.
     """
 
-    target_vdop: Mapping | None = field(default=None, converter=_quantity_mapping(u.km / u.s), eq=_mapping_eq)
+    target_doppler_velocity: Mapping | None = field(
+        default=None, converter=_quantity_mapping(u.km / u.s), eq=_mapping_eq
+    )
     """
-    Target vdop values for different solar conditions.
+    Target Doppler velocity values for different solar conditions.
 
     Values normalized to kilometers per second.
     """
@@ -549,7 +551,9 @@ class InstrumentDefaults:
     def __attrs_post_init__(self):
         self._validate_channel_fields()
         self._validate_line_fields()
-        _validate_matching_keys(self.target_logT, "target_logT", self.target_vdop, "target_vdop")
+        _validate_matching_keys(
+            self.target_logT, "target_logT", self.target_doppler_velocity, "target_doppler_velocity"
+        )
         _validate_matching_keys(
             self.exposure_times_SG, "exposure_times_SG", self.exposure_times_CI, "exposure_times_CI"
         )

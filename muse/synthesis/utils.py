@@ -209,26 +209,26 @@ def create_simple_vdem(
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
         vdem[:, ::-1],
-        dims=["logT", "vdop", "x", "y"],
+        dims=["logT", "doppler_velocity", "x", "y"],
         coords={
             "logT": log_temperature_axis,
-            "vdop": -velocity_axis[::-1],
+            "doppler_velocity": -velocity_axis[::-1],
             "x": x,
             "y": y,
         },
     )
     vdem_ds["vdem"].attrs = {
-        "description": "VDEM(logT, vdop, x, y)",
+        "description": "VDEM(logT, doppler_velocity, x, y)",
         "units": "1e27 / cm5",
     }
     vdem_ds.x.attrs["long_name"] = "X"
     vdem_ds.y.attrs["long_name"] = "Y"
     vdem_ds.logT.attrs["long_name"] = r"log$_{10}$(T)"
-    vdem_ds.vdop.attrs["long_name"] = r"v$_{Doppler}$"
+    vdem_ds.doppler_velocity.attrs["long_name"] = r"v$_{Doppler}$"
     vdem_ds.x.attrs["units"] = "cm"
     vdem_ds.y.attrs["units"] = "cm"
     vdem_ds.logT.attrs["units"] = "dex(K)"
-    vdem_ds.vdop.attrs["units"] = "km/s"
+    vdem_ds.doppler_velocity.attrs["units"] = "km/s"
     add_history(vdem_ds, call_inputs, create_simple_vdem)
     return vdem_ds
 
