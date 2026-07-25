@@ -1,0 +1,3 @@
+A scalar ``effective_area`` whose ``attrs["units"]`` contradicts the unit its data already
+carries (for example a ``cm2`` quantity tagged ``units="s"``) now raises `ValueError` instead of
+silently ignoring the attribute.

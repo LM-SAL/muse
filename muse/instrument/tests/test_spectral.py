@@ -329,6 +329,10 @@ def test_scalar_effective_area_is_validated():
         _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3, attrs={"units": "bogus"}))
     with pytest.raises(ValueError, match="effective_area must be convertible to cm2"):
         _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3))  # no units anywhere
+    with pytest.raises(ValueError, match="contradict the data unit"):
+        # Both the payload and the attrs declare a unit and they disagree; neither can be
+        # trusted, so this must not be silently resolved in favour of one of them.
+        _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3 * u.cm**2, attrs={"units": "s"}))
 
 
 @pytest.mark.parametrize(
