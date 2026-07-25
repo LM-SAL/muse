@@ -30,6 +30,21 @@ def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
         raise ValueError(msg) from exc
 
 
+def _spacing_matches(coord: xr.DataArray, to_arcsec: float, pixel_arcsec: float) -> bool:
+    """
+    Whether ``coord`` is already sampled at ``pixel_arcsec``, within 0.5%.
+
+    Returns `False` for a size-1 axis, whose spacing cannot be measured. The coordinate
+    data may be a plain array or an `astropy.units.Quantity`, so the scaled spacing is
+    unwrapped before it is compared with a plain float.
+    """
+    if coord.size < 2:
+        return False
+    spacing = (coord[1] - coord[0]).data * to_arcsec
+    spacing = getattr(spacing, "value", spacing)
+    return bool(abs(spacing - pixel_arcsec) / pixel_arcsec < 0.005)
+
+
 def _interp_keep_dtype(ds: xr.Dataset, axis: str, target) -> xr.Dataset:
     """
     Interpolate along ``axis`` and cast data variables back to their original dtype.
@@ -171,30 +186,14 @@ def match_fov(
         raise ValueError(msg)
 
     if not rotate:
-        sim_units_to_arcsec_x = _coordinate_unit_to(vdem, "x", u.arcsec)
-        sim_units_to_arcsec_y = _coordinate_unit_to(vdem, "y", u.arcsec)
-
-        if vdem.coords["x"].size > 1:
-            dx_coord_diff = vdem.coords["x"][1] - vdem.coords["x"][0]
-            dx_current = dx_coord_diff.data * sim_units_to_arcsec_x
-            if hasattr(dx_current, "value"):
-                dx_current = dx_current.value
-            if (abs(dx_current - dx_pix.value) / dx_pix.value < 0.005) and (vdem.coords["x"].size == nslits * nraster):
-                if vdem.coords["y"].size > 1:
-                    dy_coord_diff = vdem.coords["y"][1] - vdem.coords["y"][0]
-                    dy_current = dy_coord_diff.data * sim_units_to_arcsec_y
-                    if abs(dy_current - dy_pix.value) / dy_pix.value < 0.005:
-                        logger.info("vdem has already the MUSE pixel size")
-                        return vdem
-                else:
-                    logger.info("vdem has already the MUSE pixel size")
-                    return vdem
-        elif vdem.coords["y"].size > 1:
-            dy_coord_diff = vdem.coords["y"][1] - vdem.coords["y"][0]
-            dy_current = dy_coord_diff.data * sim_units_to_arcsec_y
-            if abs(dy_current - dy_pix.value) / dy_pix.value < 0.005:
-                logger.info("vdem has already the MUSE pixel size")
-                return vdem
+        x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
+        y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
+        # The x axis must also span the full raster; the y-only path (a single column) has no
+        # such count to check against.
+        x_at_pixel = x_at_pixel and vdem.coords["x"].size == nslits * nraster
+        if (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (y_at_pixel and vdem.coords["x"].size < 2):
+            logger.info("vdem has already the MUSE pixel size")
+            return vdem
     else:
         vdem = vdem.rename({"x": "ynew"})
         vdem = vdem.rename({"y": "x"})

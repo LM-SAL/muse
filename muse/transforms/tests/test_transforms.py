@@ -1,11 +1,41 @@
 import dask.array as da
 import numpy as np
 import pytest
+import xarray as xr
 
 import astropy.units as u
 
 from muse.tests.helpers import assert_dataset_structure
-from muse.transforms.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
+from muse.transforms.transforms import (
+    _spacing_matches,
+    match_fov,
+    reshape_slit_step_to_x,
+    reshape_x_to_slit_step,
+)
+
+
+@pytest.mark.parametrize(
+    ("spacing", "to_arcsec", "expected"),
+    [
+        (None, 1.0, False),  # a size-1 axis has no spacing to measure
+        (0.4, 1.0, True),  # exactly the MUSE pixel size
+        (0.4 * 1.004, 1.0, True),  # 0.4% off, inside the 0.5% tolerance
+        (0.4 * 1.006, 1.0, False),  # 0.6% off, outside it
+        (2.0, 0.2, True),  # coordinate in another unit, scaled to 0.4 arcsec
+    ],
+)
+def test_spacing_matches(spacing, to_arcsec, expected) -> None:
+    values = np.zeros(1) if spacing is None else np.arange(5.0) * spacing
+
+    assert _spacing_matches(xr.DataArray(values, dims="x"), to_arcsec, 0.4) is expected
+
+
+def test_spacing_matches_unwraps_a_quantity_coordinate() -> None:
+    # Coordinate data may carry a unit; the scaled spacing must be unwrapped before it is
+    # compared with a plain float, or the comparison raises.
+    coord = xr.DataArray(np.arange(5.0) * 0.4 * u.arcsec, dims="x")
+
+    assert _spacing_matches(coord, 1.0, 0.4) is True
 
 
 def test_match_fov_returns_input_when_already_muse_resolution(vdem) -> None:
@@ -26,6 +56,21 @@ def test_match_fov_returns_input_for_single_x_column(vdem) -> None:
     # since it matches the MUSE pixel size, returns the input.
     single_column = vdem.isel(x=[0])
     assert match_fov(single_column) is single_column
+
+
+@pytest.mark.parametrize(
+    ("case", "reason"),
+    [
+        ("y_mismatch", "dy is off the MUSE pixel size, so the x match alone must not accept"),
+        ("wrong_x_count", "dx matches but x does not span nslits * nraster, so it must not accept"),
+    ],
+)
+def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem, case, reason) -> None:
+    # The negative side of the early-return condition: each of these differs from the
+    # accepted case in exactly one term, so a wrong boolean would return the input unchanged.
+    source = vdem.assign_coords(y=vdem.y * 3.0) if case == "y_mismatch" else vdem.isel(x=slice(0, 100))
+
+    assert match_fov(source) is not source, reason
 
 
 def test_match_fov_relabels_single_pixel_input(vdem) -> None:

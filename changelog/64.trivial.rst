@@ -1,0 +1,2 @@
+``match_fov`` decides whether the input already sits on the MUSE pixel grid with one condition
+instead of three nested copies of the same comparison.
