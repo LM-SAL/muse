@@ -28,6 +28,21 @@ def test_match_fov_returns_input_for_single_x_column(vdem) -> None:
     assert match_fov(single_column) is single_column
 
 
+@pytest.mark.parametrize(
+    ("case", "reason"),
+    [
+        ("y_mismatch", "dy is off the MUSE pixel size, so the x match alone must not accept"),
+        ("wrong_x_count", "dx matches but x does not span nslits * nraster, so it must not accept"),
+    ],
+)
+def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem, case, reason) -> None:
+    # The negative side of the early-return condition: each of these differs from the
+    # accepted case in exactly one term, so a wrong boolean would return the input unchanged.
+    source = vdem.assign_coords(y=vdem.y * 3.0) if case == "y_mismatch" else vdem.isel(x=slice(0, 100))
+
+    assert match_fov(source) is not source, reason
+
+
 def test_match_fov_relabels_single_pixel_input(vdem) -> None:
     # Both axes are size 1: nothing to resample or tile, so match_fov falls through
     # to the tail and returns a copy with the coords relabeled onto the MUSE grid.
