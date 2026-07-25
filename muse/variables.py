@@ -41,7 +41,11 @@ MUSE_DEFAULTS_DICT = {
     "psf_fwhm": 0.5 * u.arcsec,
     # Other
     "data_compression": 1,
-    "ccd_gain": 10 * u.electron / u.DN,
+    "ccd_gain": xr.DataArray(
+        np.array([10.0, 10.0, 10.0]) * u.electron / u.DN,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
+    ),
     "pair_creation_energy": xr.DataArray(
         np.array([3.65, 3.65, 3.65]) * u.eV / u.electron,
         coords={"channel": [108, 171, 284]},

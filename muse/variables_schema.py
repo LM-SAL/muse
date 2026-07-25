@@ -401,9 +401,9 @@ class InstrumentDefaults:
     Data compression level.
     """
 
-    ccd_gain: u.Quantity | None = field(default=None, converter=_quantity(u.electron / u.DN))
+    ccd_gain: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
-    CCD gain in electrons per DN.
+    CCD gain in electrons per DN, per band (channel).
     """
 
     pair_creation_energy: xr.DataArray | None = field(

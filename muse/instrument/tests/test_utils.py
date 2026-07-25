@@ -97,11 +97,11 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     assert loaded.detector_response.dims == response.detector_response.dims
     np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
-    # The injected gain is per line and carries the default in electron/DN.
+    # The injected gain is per line, selected from the per-channel defaults in electron/DN.
     assert loaded.gain.dims == ("line",)
     np.testing.assert_allclose(
         loaded.gain.values,
-        DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN),
+        u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=loaded.channel).data).to_value(u.electron / u.DN),
     )
     assert loaded.gain.attrs["units"] == str(u.electron / u.DN)
 
@@ -182,7 +182,9 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
     assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl", "vdop"} & set(r.variables)
-    np.testing.assert_array_equal(r.gain.values, [DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN)])
+    np.testing.assert_array_equal(
+        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=r.channel).data).to_value(u.electron / u.DN)
+    )
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
@@ -268,11 +270,21 @@ def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_
     src.attrs["MAIN_LINE_WVL"] = 171.073
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
-    r = read_response(path)
+    # Without a channel coordinate the per-channel default gain cannot be selected.
+    r = read_response(path, gain=10 * u.electron / u.DN)
 
     assert "line" in r.dims
     assert float(r.line_wavelength) == pytest.approx(171.073)
     assert r.line_wavelength.attrs["units"] == str(u.AA)
+
+
+def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
+    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
+    src.attrs["MAIN_LINE_WVL"] = 171.073
+    path = _write(src, tmp_path / "resp.zarr", "zarr")
+
+    with pytest.raises(ValueError, match="pass gain explicitly"):
+        read_response(path)
 
 
 @pytest.mark.parametrize(("dropped", "match"), [(["channel"], "metadata$"), ([], "a band label")])
@@ -420,7 +432,9 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     np.testing.assert_array_equal(resp.component_kind, ["line", "line", "contaminants", "line"])
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
-    np.testing.assert_array_equal(resp.gain.values, np.full(4, DEFAULTS_MUSE.ccd_gain.value))
+    np.testing.assert_array_equal(
+        resp.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=resp.channel).data).value
+    )
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "detector_response" in resp.data_vars
