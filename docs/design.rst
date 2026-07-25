@@ -28,12 +28,8 @@ Validate input units with :func:`muse.utils.require_unit`, which checks presence
     )
     detector_wavelength = response.coords["detector_wavelength"] * wavelength_unit.to(u.AA)
 
-Input Validation
-================
-
-There is a single presence-and-units function, :func:`muse.utils.require_unit`, which checks presence, ``sum_over`` membership, and the per-field unit checks into one call.
-
-**Why** I want to avoid re-implementing the same checks across modules and start to enforce a consistent error message and behavior on input validation.
+One function does presence-and-units so the same checks are not re-implemented per module and every unit error reads the same.
+Domain checks compose on top of it rather than inside it: see ``muse.synthesis.synthesis._validate_inputs``, which checks slit consistency and ``sum_over`` membership itself and calls :func:`muse.utils.require_unit` for the units.
 
 Datasets should be immutable
 ============================

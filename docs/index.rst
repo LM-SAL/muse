@@ -53,7 +53,6 @@ None of this observation-handling functionality exists yet.
           :maxdepth: 1
 
           reference/index
-          known_issues
           contributing
           design
           changelog
