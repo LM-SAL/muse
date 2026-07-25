@@ -12,7 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history, coord_as_unit, require_unit
+from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 
 __all__ = ["create_spectral_response"]
 
@@ -126,12 +126,6 @@ def _create_wavelength_response(
         raise ValueError(msg)
 
     try:
-        import numexpr as ne  # noqa: PLC0415
-    except ImportError:
-        msg = "numexpr is required for this function, install it with `pip install muse[chianti]`"
-        raise ImportError(msg) from None
-
-    try:
         import periodictable as pt  # noqa: PLC0415
     except ImportError:
         msg = "periodictable is required for this function, install it with `pip install muse[chianti]`"
@@ -163,7 +157,6 @@ def _create_wavelength_response(
         if line_name not in main_response_parts:
             continue
         line_response, gofnt_scaled = _evaluate_gaussian_response(
-            ne,
             wavelength_grid,
             line_centers.isel(trans_index=i),
             doppler_widths.isel(trans_index=i),
@@ -189,7 +182,6 @@ def _create_wavelength_response(
     if include_contaminants:
         contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
         contaminant_response = _create_contaminant_response(
-            ne,
             line_list,
             contaminant_indices,
             wavelength_grid,
@@ -278,15 +270,7 @@ def _effective_area_in_canonical_units(effective_area, wavelength_grid):
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):
         msg = "effective_area must contain finite, non-negative values"
         raise ValueError(msg)
-    wavelength_values = np.asarray(wavelength)
-    if (
-        wavelength_values.ndim != 1
-        or wavelength_values.size == 0
-        or not np.all(np.isfinite(wavelength_values))
-        or np.any(np.diff(wavelength_values) <= 0)
-    ):
-        msg = "effective_area wavelength coordinate must be one-dimensional, finite, and strictly increasing"
-        raise ValueError(msg)
+    _require_increasing_axis(wavelength, "effective_area wavelength coordinate")
     return converted.assign_coords(wavelength=wavelength)
 
 
@@ -307,20 +291,11 @@ def _velocity_axis(values, dim):
 
 def _wavelength_grid_in_angstrom(wavelength_grid):
     values = wavelength_grid.to_value(u.AA)
-    if values.ndim != 1:
-        msg = "wavelength_grid must be one-dimensional"
-        raise ValueError(msg)
-    if values.size == 0 or not np.all(np.isfinite(values)):
-        msg = "wavelength_grid must contain finite values"
-        raise ValueError(msg)
-    if np.any(np.diff(values) <= 0):
-        msg = "wavelength_grid must be strictly increasing"
-        raise ValueError(msg)
+    _require_increasing_axis(values, "wavelength_grid")
     return xr.DataArray(values, dims="wavelength_bin", attrs={"units": str(u.AA)})
 
 
 def _create_contaminant_response(
-    numexpr,
     line_list,
     contaminant_indices,
     wavelength_grid,
@@ -336,7 +311,6 @@ def _create_contaminant_response(
     iterator = tqdm(contaminant_indices, desc="Spectral contaminants", unit="line") if progress else contaminant_indices
     for i in iterator:
         accumulator, gofnt_scaled = _evaluate_gaussian_response(
-            numexpr,
             wavelength_grid,
             line_centers.isel(trans_index=i),
             doppler_widths.isel(trans_index=i),
@@ -450,7 +424,6 @@ def _atomic_mass_from_atomic_number(atomic_number, elements, proton_mass):
 
 
 def _evaluate_gaussian_response(
-    numexpr,
     wavelength_grid,
     line_center,
     doppler_width,
@@ -459,6 +432,12 @@ def _evaluate_gaussian_response(
     *,
     accumulator=None,
 ):
+    try:
+        import numexpr  # noqa: PLC0415
+    except ImportError:
+        msg = "numexpr is required for this function, install it with `pip install muse[chianti]`"
+        raise ImportError(msg) from None
+
     center, width_for_bounds = xr.broadcast(line_center, doppler_width)
     half_window = _GAUSSIAN_WINDOW_SIGMA * width_for_bounds
     start = np.searchsorted(wavelength_grid.data, np.min((center - half_window).data), side="left")

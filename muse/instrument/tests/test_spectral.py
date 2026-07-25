@@ -4,7 +4,6 @@ Tests for CHIANTI-line Gaussian spectral responses.
 
 from functools import partial
 
-import numexpr as ne
 import numpy as np
 import pytest
 import xarray as xr
@@ -101,11 +100,10 @@ def test_gaussian_window_matches_full_grid():
     gofnt_scaled, width, shift = xr.broadcast(gofnt.broadcast_like(width) / RESPONSE_NORMALIZATION, width, shift)
     expected = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
 
-    response, _ = _evaluate_gaussian_response(ne, wavelength_grid, line_center, doppler_width, gofnt, gaussian_norm)
+    response, _ = _evaluate_gaussian_response(wavelength_grid, line_center, doppler_width, gofnt, gaussian_norm)
     np.testing.assert_allclose(response, expected, rtol=1e-15, atol=0)
 
     response, _ = _evaluate_gaussian_response(
-        ne,
         wavelength_grid,
         line_center,
         doppler_width,

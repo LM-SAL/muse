@@ -10,7 +10,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.utils.documentation import format_docstring
-from muse.utils.utils import add_history, coord_as_unit, require_unit
+from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["map_response_to_sg_detector"]
@@ -134,15 +134,7 @@ def map_response_to_sg_detector(
                 line_wavelength[physical_lines][0],
                 line_wavelength,
             )
-    wavelength_values = np.asarray(wavelength_grid)
-    if (
-        wavelength_values.size == 0
-        or not np.all(np.isfinite(wavelength_values))
-        or np.any(wavelength_values <= 0)
-        or np.any(np.diff(wavelength_values) <= 0)
-    ):
-        msg = "response.wavelength_grid must contain finite, positive, strictly increasing values"
-        raise ValueError(msg)
+    _require_increasing_axis(wavelength_grid, "response.wavelength_grid", positive=True)
 
     for name, value in (("number_of_slits", number_of_slits), ("detector_pixels", detector_pixels)):
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:

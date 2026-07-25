@@ -95,13 +95,25 @@ def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
     assert "serializable" not in caplog.text
 
 
-def test_add_history_records_bare_name_without_locals() -> None:
+def test_add_history_records_bare_name_without_inputs() -> None:
     def demo(ds, n=1): ...
 
     ds = xr.Dataset()
-    add_history(ds, demo)
-    add_history(ds, "calibrate")
-    assert ds.attrs["HISTORY"] == ["demo", "calibrate"]
+    add_history(ds, {}, demo)
+    add_history(ds, {}, "calibrate")
+    assert ds.attrs["HISTORY"] == ["demo()", "calibrate()"]
+    # An empty local_vars records no inputs, so the defaulted parameter never reaches attrs.
+    assert "n" not in ds.attrs
+
+
+def test_add_history_ignores_inputs_for_a_string_label() -> None:
+    # A string label has no signature to inspect, so inputs are skipped even when passed.
+    ds = xr.Dataset()
+
+    add_history(ds, {"x": 1, "gain": 10.0}, "calibrate")
+
+    assert ds.attrs["HISTORY"] == ["calibrate()"]
+    assert not {"x", "gain"} & set(ds.attrs)
 
 
 def test_add_history_appends_to_existing() -> None:
@@ -114,13 +126,13 @@ def test_add_history_appends_to_existing() -> None:
     assert ds.attrs["HISTORY"] == ["first()", "demo(ds=ds)"]
 
 
-def test_add_history_records_function_name_without_locals() -> None:
+def test_add_history_records_function_name_without_inputs() -> None:
     ds = xr.Dataset(
         {"a": ("x", [1])},
         attrs={"HISTORY": ["build"], "date created": "01-Jan-2026"},
     )
-    add_history(ds, "calibrate")
-    assert ds.attrs["HISTORY"] == ["build", "calibrate"]
+    add_history(ds, {}, "calibrate")
+    assert ds.attrs["HISTORY"] == ["build", "calibrate()"]
     assert "date modified" in ds.attrs
 
 
@@ -146,16 +158,16 @@ def test_add_history_inherits_history_from_sources() -> None:
     ds = xr.Dataset(attrs={"HISTORY": ["start"]})
     raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
     response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
-    add_history(ds, "demo", sources=(raster, response))
-    assert ds.attrs["HISTORY"] == ["start", "make_raster()", "make_response()", "demo"]
+    add_history(ds, {}, "demo", sources=(raster, response))
+    assert ds.attrs["HISTORY"] == ["start", "make_raster()", "make_response()", "demo()"]
 
 
 def test_add_history_does_not_duplicate_inherited_history() -> None:
     source = xr.Dataset(attrs={"HISTORY": ["load"]})
     # A result derived through xarray operations may already carry its source history.
     ds = xr.Dataset(attrs={"HISTORY": ["load"]})
-    add_history(ds, "demo", sources=(source,))
-    assert ds.attrs["HISTORY"] == ["load", "demo"]
+    add_history(ds, {}, "demo", sources=(source,))
+    assert ds.attrs["HISTORY"] == ["load", "demo()"]
 
 
 def test_add_history_nested_source_histories_merge_in_any_order() -> None:
@@ -163,16 +175,16 @@ def test_add_history_nested_source_histories_merge_in_any_order() -> None:
     transformed = xr.Dataset(attrs={"HISTORY": ["load", "transform"]})
     for sources in [(loaded, transformed), (transformed, loaded)]:
         ds = xr.Dataset()
-        add_history(ds, "demo", sources=sources)
-        assert ds.attrs["HISTORY"] == ["load", "transform", "demo"]
+        add_history(ds, {}, "demo", sources=sources)
+        assert ds.attrs["HISTORY"] == ["load", "transform", "demo()"]
 
 
 def test_add_history_initializes_history_from_sources() -> None:
     ds = xr.Dataset()
     raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
     response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
-    add_history(ds, "demo", sources=(raster, response))
-    assert ds.attrs["HISTORY"] == ["make_raster()", "make_response()", "demo"]
+    add_history(ds, {}, "demo", sources=(raster, response))
+    assert ds.attrs["HISTORY"] == ["make_raster()", "make_response()", "demo()"]
 
 
 @pytest.mark.parametrize("key", ["HISTORY", "date created", "date modified", "version"])

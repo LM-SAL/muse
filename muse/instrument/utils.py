@@ -122,10 +122,10 @@ def _response_chunks(response: xr.Dataset, overrides: Mapping[str, int] | None) 
 
 def _open_response_file(response_file: Path, *, chunked: bool = False) -> xr.Dataset:
     kwargs = {"chunks": {}} if chunked else {}
-    if response_file.is_dir() and (response_file / "zarr.json").exists():
+    # One call covers both zarr layouts, v3 (zarr.json) and v2 (.zgroup); consolidated=False
+    # also stops the missing-consolidated-metadata fallback warning from firing.
+    if response_file.is_dir():
         return xr.open_zarr(response_file, consolidated=False, **kwargs)
-    if response_file.is_dir() and (response_file / ".zgroup").exists():
-        return xr.open_zarr(response_file, **kwargs)
     return xr.open_dataset(response_file, **kwargs)
 
 
@@ -231,36 +231,23 @@ def read_response(
         r = r.assign_coords(line_wavelength=fallback)
 
     gain_unit = u.electron / u.DN
-    gain = gain.to(gain_unit)
+    gain = gain.to(gain_unit)  # a statement so add_history records the converted value
     gain_dim = "channel" if "channel" in r.dims else "line"
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
-    r = r.assign_coords(gain=(gain_dim, gain_values))
-    r.gain.attrs["units"] = str(gain_unit)
+    r = r.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
     # The current response files carry no wavelength units; warn and assume Angstrom for now.
-    _require_wavelength_units(r, "detector_wavelength")
-    _require_wavelength_units(r, "line_wavelength")
+    # This is intended to become a hard error once every response file carries units.
+    for name in ("detector_wavelength", "line_wavelength"):
+        if name in r and "units" not in r[name].attrs:
+            logger.warning(
+                f"Response {name} is missing the 'units' attribute; assuming Angstrom. "
+                f"This will raise an error in a future release once response files carry units."
+            )
+            r[name].attrs.update({"units": str(u.AA)})
 
     add_history(r, locals(), read_response)
     return r
-
-
-def _require_wavelength_units(r: xr.Dataset, name: str) -> None:
-    """
-    Ensure ``r[name]`` carries wavelength units, assuming Angstrom when missing.
-
-    Older response files store no units on ``SG_wvl``/``line_wvl``. For now a missing
-    ``units`` attribute logs a warning and Angstrom is assumed; this is intended to
-    become a hard error once all response files carry units.
-    """
-    if name not in r:
-        return
-    if "units" not in r[name].attrs:
-        logger.warning(
-            f"Response {name} is missing the 'units' attribute; assuming Angstrom. "
-            f"This will raise an error in a future release once response files carry units."
-        )
-        r[name].attrs.update({"units": str(u.AA)})
 
 
 def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
