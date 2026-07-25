@@ -1,0 +1,4 @@
+`muse.transforms.match_fov` with ``mode="constant"`` now pads the field of view with zeros, as
+its documentation always stated.
+`xarray.Dataset.pad` defaults ``constant_values`` to NaN, so the padded columns were NaN and
+propagated through synthesis into every derived moment.

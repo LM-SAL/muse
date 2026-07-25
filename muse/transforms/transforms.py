@@ -140,6 +140,8 @@ def match_fov(
     mode : `str`, optional
         This is the pad method used by `xarray.DataArray.pad`, by default is {mode}.
         Please check the the `xarray.DataArray.pad` documentation for all possible values.
+        ``"constant"`` fills the padded columns with zeros rather than the
+        `xarray.DataArray.pad` default of NaN, so they read as "no emission here".
     sub_interpolation: `int`
         Does a subgrid interpolation, by default {sub_interpolation},
     rotate: `bool`
@@ -218,7 +220,11 @@ def match_fov(
                     # indexing tiles any width and works on both numpy and dask backends.
                     vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster) % nx)
                 else:
-                    vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode)
+                    # xarray.pad defaults constant_values to NaN, which would poison every
+                    # downstream sum; a padded VDEM column means "no emission here", so fill
+                    # with zeros. Only "constant" accepts the argument.
+                    fill = {"constant_values": 0} if mode == "constant" else {}
+                    vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode, **fill)
         else:
             vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster))
 
