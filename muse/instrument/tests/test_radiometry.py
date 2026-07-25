@@ -64,6 +64,32 @@ def test_transform_response_units_photons_to_data_numbers():
     assert u.Unit(data_numbers.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
 
 
+@pytest.mark.parametrize(
+    "intermediate",
+    [
+        "1e-27 cm5 ph / (Angstrom s)",
+        "1e-27 cm5 electron / (Angstrom s)",
+        "1e-27 cm5 DN / (Angstrom s)",
+    ],
+)
+def test_transform_response_units_round_trips(intermediate):
+    # radiometry.py:104-107 says every "+" in the exponent cascade is load-bearing, but every
+    # other test converts away from erg/sr and stops. Converting back exercises all four
+    # exponents with the opposite sign and must return the original values.
+    response = _spectral_response()
+    original_units = response.spectral_response.attrs["units"]
+
+    forward = transform_response_units(response, intermediate, 171)
+    back = transform_response_units(forward, original_units, 171)
+
+    np.testing.assert_allclose(
+        back.spectral_response.values,
+        response.spectral_response.values,
+        rtol=1e-12,
+    )
+    assert u.Unit(back.spectral_response.attrs["units"]) == u.Unit(original_units)
+
+
 def test_transform_response_units_rescales_without_a_stage_change():
     converted = transform_response_units(_spectral_response(), "erg cm5 / (Angstrom s sr)", 171)
 

@@ -194,6 +194,26 @@ def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, vdem, legacy_inpu
         vdem_synthesis(reshaped_vdem, response)
 
 
+@pytest.mark.parametrize(
+    ("case", "match"),
+    [
+        ("raster_without_slit", "response has a slit dimension"),
+        ("response_without_slit", "raster has a slit dimension but response does not"),
+    ],
+)
+def test_vdem_synthesis_rejects_mismatched_slit_dimensions(response, vdem, case, match) -> None:
+    # The slit axis has to be present on both sides or neither; contracting a multi-slit
+    # response against a raster that has no slit axis is not a meaningful synthesis.
+    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    if case == "raster_without_slit":
+        reshaped_vdem = reshaped_vdem.isel(slit=0, drop=True)
+    else:
+        response = response.isel(slit=0, drop=True)
+
+    with pytest.raises(ValueError, match=match):
+        vdem_synthesis(reshaped_vdem, response)
+
+
 def test_vdem_synthesis_requires_present_arrays(response, vdem) -> None:
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     bad_response = response.drop_vars("detector_response")

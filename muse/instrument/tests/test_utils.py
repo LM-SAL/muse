@@ -83,6 +83,24 @@ def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
+def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
+    # The save tests read back with the raw opener and the read tests are fed raw to_netcdf
+    # output, so nothing checked that what save_response writes is what read_response accepts.
+    response = _small_response()
+    path = tmp_path / f"response.{fmt}"
+
+    save_response(response, path)
+    loaded = read_response(path)
+
+    # read_response adds a gain coordinate of its own, so compare the data rather than the
+    # whole object.
+    assert loaded.detector_response.dims == response.detector_response.dims
+    np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
+    np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
+    assert "gain" in loaded.coords
+
+
+@pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_save_response_accepts_chunk_overrides(tmp_path, fmt) -> None:
     response = _small_response()
     path = tmp_path / f"response.{fmt}"
@@ -109,13 +127,21 @@ def test_save_response_refuses_to_overwrite(tmp_path) -> None:
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, "must contain detector_response"),
+        ("bad_suffix", ValueError, "must end in"),
     ],
 )
 def test_save_response_validates_the_response(tmp_path, case, error, match) -> None:
-    response = None if case == "response_type" else fake_response().drop_vars("detector_response")
+    response = fake_response()
+    path = tmp_path / "response.nc"
+    if case == "response_type":
+        response = None
+    elif case == "missing_variable":
+        response = response.drop_vars("detector_response")
+    else:
+        path = tmp_path / "response.txt"
 
     with pytest.raises(error, match=match):
-        save_response(response, tmp_path / "response.nc")
+        save_response(response, path)
 
 
 @pytest.mark.parametrize(
@@ -165,6 +191,17 @@ def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> No
     assert r.sizes["doppler_velocity"] == src.sizes["vdop"]
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert "gain" in r.coords
+
+
+@pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
+def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped, expected) -> None:
+    # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
+    # be rejected on load rather than failing somewhere downstream.
+    src = fake_legacy_response_file().isel({dropped: 0}, drop=True)
+    path = _write(src, tmp_path / "resp.zarr", "zarr")
+
+    with pytest.raises(ValueError, match=f"Response must have {expected} coordinate"):
+        read_response(path)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
