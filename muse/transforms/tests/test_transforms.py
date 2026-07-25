@@ -138,6 +138,18 @@ def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
     assert bool(np.isfinite(out.vdem).all())
 
 
+def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
+    # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
+    # constant_values to NaN, which would propagate through synthesis into every moment.
+    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile").x.size
+
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, mode="constant")
+
+    assert out.x.size == 35 * 11
+    assert bool(np.isfinite(out.vdem).all())
+    np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
+
+
 def test_match_fov_notile_keeps_resampled_width(vdem_offgrid) -> None:
     out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile")
     # "notile" suffix skips the pad, so the resampled width is kept as-is (< full FOV).
