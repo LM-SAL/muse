@@ -111,7 +111,7 @@ def _create_wavelength_response(
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
     if nonthermal_velocity is not None:
         nonthermal_velocity = _velocity_axis(nonthermal_velocity, "nonthermal_velocity")
-    effective_area = _effective_area_in_canonical_units(effective_area, wavelength_grid)
+    effective_area = _effective_area_in_canonical_units(effective_area)
     if include_contaminants and effective_area is not None and np.unique(effective_area.data).size == 1:
         logger.warning(
             "A flat (wavelength-independent) effective area is only representative near the main lines; "
@@ -204,9 +204,11 @@ def _create_wavelength_response(
     ds = xr.Dataset({"spectral_response": responses})
 
     if effective_area is not None:
-        interp = effective_area.interp(wavelength=wavelength_grid).fillna(0)
-        interp = interp.rename(wavelength="wavelength_grid")
-        ds["spectral_response"] = ds.spectral_response * interp
+        # A curve is resampled onto the grid; a zero-dimensional area needs no resampling.
+        scaling = effective_area
+        if "wavelength" in effective_area.dims:
+            scaling = effective_area.interp(wavelength=wavelength_grid).fillna(0).rename(wavelength="wavelength_grid")
+        ds["spectral_response"] = ds.spectral_response * scaling
         ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**5 / u.s / u.sr / u.AA)
     else:
         ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**3 / u.s / u.sr / u.AA)
@@ -228,38 +230,39 @@ def _instrumental_width_in_angstrom(instrumental_width):
     return converted
 
 
-def _effective_area_in_canonical_units(effective_area, wavelength_grid):
+def _effective_area_in_canonical_units(effective_area):
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
         msg = "effective_area must be an xarray.DataArray, e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...)"
         raise TypeError(msg)
     if effective_area.ndim == 0:
-        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...))
-        # is applied uniformly: unwrap to a Quantity, honoring attrs["units"] when the
-        # data does not already carry a unit, and expand to a flat curve over the grid.
+        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...)) applies
+        # uniformly, so it stays zero-dimensional and simply multiplies the response.
         data = effective_area.data
-        if not isinstance(data, u.Quantity) and "units" in effective_area.attrs:
-            try:
-                data = u.Quantity(data, effective_area.attrs["units"])
-            except (TypeError, ValueError) as exc:
-                msg = "effective_area units must be a valid astropy unit"
-                raise ValueError(msg) from exc
+        units = effective_area.attrs.get("units")
         try:
-            value = u.Quantity(data).to_value(u.cm**2)
+            units = u.Unit(units) if units is not None else None
+        except (TypeError, ValueError) as exc:
+            msg = "effective_area units must be a valid astropy unit"
+            raise ValueError(msg) from exc
+        if not isinstance(data, u.Quantity):
+            # attrs["units"] names the unit the raw value is already in.
+            data = u.Quantity(data, units)
+        elif units is not None and not units.is_equivalent(data.unit):
+            # The payload carries its own unit, so contradicting attrs are a bug, not a request
+            # to convert. Trusting either one silently is how a wrong effective area gets in.
+            msg = f"effective_area units {units} contradict the data unit {data.unit}"
+            raise ValueError(msg)
+        try:
+            value = data.to_value(u.cm**2)
         except u.UnitConversionError as exc:
             msg = "effective_area must be convertible to cm2"
             raise ValueError(msg) from exc
         if not np.isfinite(value) or value < 0:
             msg = "effective_area must contain finite, non-negative values"
             raise ValueError(msg)
-        span = np.unique(wavelength_grid.data[[0, -1]])
-        return xr.DataArray(
-            np.full(span.size, value),
-            dims="wavelength",
-            coords={"wavelength": ("wavelength", span, {"units": str(u.AA)})},
-            attrs={"units": str(u.cm**2)},
-        )
+        return xr.DataArray(value, attrs={"units": str(u.cm**2)})
     if effective_area.dims != ("wavelength",):
         msg = "effective_area must be one-dimensional with wavelength as its only dimension"
         raise ValueError(msg)
