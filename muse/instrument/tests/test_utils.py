@@ -97,7 +97,13 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     assert loaded.detector_response.dims == response.detector_response.dims
     np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
-    assert "gain" in loaded.coords
+    # The injected gain is per line and carries the default in electron/DN.
+    assert loaded.gain.dims == ("line",)
+    np.testing.assert_allclose(
+        loaded.gain.values,
+        DEFAULTS_MUSE.ccd_gain.to_value(u.electron / u.DN),
+    )
+    assert loaded.gain.attrs["units"] == str(u.electron / u.DN)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
@@ -193,12 +199,13 @@ def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> No
     assert "gain" in r.coords
 
 
+@pytest.mark.parametrize("fmt", ["nc", "zarr"])
 @pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
-def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped, expected) -> None:
+def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
     # be rejected on load rather than failing somewhere downstream.
     src = fake_legacy_response_file().isel({dropped: 0}, drop=True)
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
+    path = _write(src, tmp_path / f"resp.{fmt}", fmt)
 
     with pytest.raises(ValueError, match=f"Response must have {expected} coordinate"):
         read_response(path)
