@@ -13,7 +13,7 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["map_response_to_sg_detector", "map_response_to_ci_detector"]
+__all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
 # Wavelength-space response units this mapping accepts.
 _ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
@@ -215,8 +215,8 @@ def map_response_to_ci_detector(response: xr.Dataset) -> xr.Dataset:
     resp["spectral_response"].attrs["units"] = str(u.Unit(response.spectral_response.attrs["units"]) * u.angstrom)
 
     resp = resp.assign_coords({"SG_xpixel": xr.DataArray(np.arange(1), dims="SG_xpixel")})
-    resp=resp.rename({"spectral_response":"detector_response"})
-    resp=resp.rename({"SG_xpixel":"detector_wavelength"})
+    resp = resp.rename({"spectral_response": "detector_response"})
+    resp = resp.rename({"SG_xpixel": "detector_wavelength"})
     resp.coords["detector_wavelength"].attrs["units"] = str(u.angstrom)
     add_history(resp, locals(), map_response_to_ci_detector)
 

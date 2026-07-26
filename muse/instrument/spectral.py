@@ -161,7 +161,7 @@ def _create_wavelength_response(
 
     if main_lines is not None:
         main_response_parts = {name: [] for name in main_lines}
-        if np.size(line_names) > 10: 
+        if np.size(line_names) > 10:
             warning_msg = (
                 f"Building a spectral response for {np.size(line_names)} lines may take a while or kill the memory. "
                 "If you are only interested in a few lines, consider passing them in `main_lines`."
@@ -169,9 +169,7 @@ def _create_wavelength_response(
             logger.warning(warning_msg)
         for i, line_name in enumerate(line_names):
             if line_name not in main_response_parts:
-                print('line_name', line_name)
                 continue
-            print('no skipping line_name', line_name)
             line_response, gofnt_scaled = _evaluate_gaussian_response(
                 wavelength_grid,
                 line_centers.isel(trans_index=i),

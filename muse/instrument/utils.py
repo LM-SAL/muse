@@ -380,7 +380,8 @@ def match_responses_and_vdems(
     doppler_velocity_method: str = "linear",
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
-    Resample the response and VDEM datasets onto a common logT and doppler_velocity grid.
+    Resample the response and VDEM datasets onto a common logT and doppler_velocity
+    grid.
 
     Parameters
     ----------
@@ -429,26 +430,24 @@ def match_responses_and_vdems(
             vr = np.arange(np.min(vdems.logT), np.max(vdems.logT), np.min(np.diff(responses.logT)))
             vdem_red = vdems.isel(logT=np.arange(np.size(vr)))
             for iii, ii in enumerate(vr):
-                data = vdems.vdem.where(vdems.logT<=ii)
-                if iii>0:
+                data = vdems.vdem.where(vdems.logT <= ii)
+                if iii > 0:
                     if ii == np.max(vr):
-                        data = vdems.vdem.where(vdems.logT>vr[iii-1]).sum(dim="logT")
+                        data = vdems.vdem.where(vdems.logT > vr[iii - 1]).sum(dim="logT")
                     else:
-                        data = data.where(data.logT>vr[iii-1]).sum(dim="logT")
-                else: 
-                    data = data.sum(dim='logT')
+                        data = data.where(data.logT > vr[iii - 1]).sum(dim="logT")
+                else:
+                    data = data.sum(dim="logT")
                 vdem_red.vdem.loc[{"logT": vdem_red.logT.isel(logT=iii).data}] = data
             vdem_red.coords["logT"] = vr
         else:
             shared_logT = vdems.logT.where(
-                (vdems.logT >= responses.logT.min())
-                & (vdems.logT <= responses.logT.max()),
+                (vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()),
                 drop=True,
             )
             if shared_logT.size < vdems.logT.size:
                 logger.warning(
-                    "High logT values are present in responses.logT; "
-                    "these will be dropped to match the VDEM logT axis."
+                    "High logT values are present in responses.logT; these will be dropped to match the VDEM logT axis."
                 )
 
             vdems = vdems.sel(logT=shared_logT, method="nearest", drop=True)
@@ -469,30 +468,38 @@ def match_responses_and_vdems(
             vdems = vdems.sel(logT=shared_logT, method="nearest", drop=True)
 
     else:
-        shared_logT = vdems.logT.where((vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()), drop=True)
+        shared_logT = vdems.logT.where(
+            (vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()), drop=True
+        )
         if shared_logT.size == 0:
             msg = "logT axes have no overlap between response and VDEM"
             raise ValueError(msg)
 
         responses = responses.interp(logT=shared_logT, method=logT_method)
 
-    if doppler_velocity_method == "nearest":      
+    if doppler_velocity_method == "nearest":
         if larger_doppler_velocity_bin:
-            vr = np.arange(np.min(vdems.doppler_velocity), np.max(vdems.doppler_velocity), np.min(np.diff(responses.doppler_velocity)))
+            vr = np.arange(
+                np.min(vdems.doppler_velocity),
+                np.max(vdems.doppler_velocity),
+                np.min(np.diff(responses.doppler_velocity)),
+            )
             vdem_red = vdems.isel(doppler_velocity=np.arange(np.size(vr)))
             for iii, ii in enumerate(vr):
-                data = vdems.vdem.where(vdems.doppler_velocity<=ii)
-                if iii>0:
+                data = vdems.vdem.where(vdems.doppler_velocity <= ii)
+                if iii > 0:
                     if ii == np.max(vr):
-                        data = vdems.vdem.where(vdems.doppler_velocity>vr[iii-1]).sum(dim="doppler_velocity")
+                        data = vdems.vdem.where(vdems.doppler_velocity > vr[iii - 1]).sum(dim="doppler_velocity")
                     else:
-                        data = data.where(data.doppler_velocity>vr[iii-1]).sum(dim="doppler_velocity")
-                else: 
-                    data = data.sum(dim='doppler_velocity')
-                vdem_red.vdem.loc[{"doppler_velocity": vdem_red.doppler_velocity.isel(doppler_velocity=iii).data}] = data
+                        data = data.where(data.doppler_velocity > vr[iii - 1]).sum(dim="doppler_velocity")
+                else:
+                    data = data.sum(dim="doppler_velocity")
+                vdem_red.vdem.loc[{"doppler_velocity": vdem_red.doppler_velocity.isel(doppler_velocity=iii).data}] = (
+                    data
+                )
             vdem_red.coords["doppler_velocity"] = vr
             vdems = vdem_red.copy(deep=True)
-        else: 
+        else:
             shared_doppler_velocity = vdems.doppler_velocity.where(
                 (vdems.doppler_velocity >= responses.doppler_velocity.min())
                 & (vdems.doppler_velocity <= responses.doppler_velocity.max()),
@@ -512,7 +519,9 @@ def match_responses_and_vdems(
             responses_doppler_velocity = np.asarray(responses.doppler_velocity.values)
             vdem_doppler_velocity = np.asarray(vdems.doppler_velocity.values)
             exact_mask = np.any(
-                np.isclose(vdem_doppler_velocity[:, np.newaxis], responses_doppler_velocity[np.newaxis, :], rtol=0, atol=1e-12),
+                np.isclose(
+                    vdem_doppler_velocity[:, np.newaxis], responses_doppler_velocity[np.newaxis, :], rtol=0, atol=1e-12
+                ),
                 axis=1,
             )
             shared_doppler_velocity = vdems.doppler_velocity.where(exact_mask, drop=True)
@@ -522,7 +531,7 @@ def match_responses_and_vdems(
 
             responses = responses.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
             vdems = vdems.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
- 
+
     else:
         responses = responses.interp(doppler_velocity=vdems.doppler_velocity, method=doppler_velocity_method)
 
