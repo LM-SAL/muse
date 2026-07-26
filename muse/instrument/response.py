@@ -13,7 +13,7 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["map_response_to_sg_detector"]
+__all__ = ["map_response_to_sg_detector", "map_response_to_ci_detector"]
 
 # Wavelength-space response units this mapping accepts.
 _ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
@@ -188,3 +188,36 @@ def map_response_to_sg_detector(
     )
     add_history(result, locals(), map_response_to_sg_detector)
     return result
+
+
+def map_response_to_ci_detector(response: xr.Dataset) -> xr.Dataset:
+    """
+    Convert a wavelength cube to a MUSE CI response.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Response function with temperature, velocity and wavelength axis.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        Response function for MUSE CI
+    """
+    resp = response.copy(deep=True)
+
+    wavelength_range = resp.wavelength_bin.max() - resp.wavelength_bin.min()
+    wavelength_size = resp.wavelength_bin.size
+
+    resp = resp.sum("wavelength_bin")
+    # multiply by pixel width in angstroms
+    resp["spectral_response"] *= wavelength_range / wavelength_size
+    resp["spectral_response"].attrs["units"] = str(u.Unit(response.spectral_response.attrs["units"]) * u.angstrom)
+
+    resp = resp.assign_coords({"SG_xpixel": xr.DataArray(np.arange(1), dims="SG_xpixel")})
+    resp=resp.rename({"spectral_response":"detector_response"})
+    resp=resp.rename({"SG_xpixel":"detector_wavelength"})
+    resp.coords["detector_wavelength"].attrs["units"] = str(u.angstrom)
+    add_history(resp, locals(), map_response_to_ci_detector)
+
+    return resp

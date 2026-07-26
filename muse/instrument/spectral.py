@@ -31,6 +31,7 @@ def create_spectral_response(
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
+    include_contaminants: bool = False,
 ) -> xr.Dataset:
     """
     Create an instrument-neutral wavelength-space spectral response.
@@ -61,6 +62,9 @@ def create_spectral_response(
         to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area.sel(channel=171)``)
         applied uniformly across the wavelength grid. If `None`, the response
         is not scaled by effective area.
+    include_contaminants : `bool`, optional
+        If `True`, include all lines not in ``main_lines`` in a single
+        ``contaminants`` line. If `False`, only the main lines are returned.
 
     Returns
     -------
@@ -78,6 +82,7 @@ def create_spectral_response(
         nonthermal_velocity=nonthermal_velocity,
         effective_area=effective_area,
         main_lines=main_lines,
+        include_contaminants=include_contaminants,
     )
     response = response.drop_vars("component_kind")
     add_history(response, call_inputs, create_spectral_response)
@@ -120,10 +125,12 @@ def _create_wavelength_response(
         )
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
-    main_lines = _validate_main_lines(line_names, main_lines)
-    if not main_lines and not include_contaminants:
+
+    if main_lines is None and not include_contaminants:
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)
+    if main_lines is not None:
+        main_lines = _validate_main_lines(line_names, main_lines)
 
     try:
         import periodictable as pt  # noqa: PLC0415
@@ -150,37 +157,49 @@ def _create_wavelength_response(
             doppler_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
         )
     doppler_widths = np.sqrt(doppler_widths_squared)
-
-    main_response_parts = {name: [] for name in main_lines}
     gaussian_norm = np.sqrt(2 * np.pi)
-    for i, line_name in enumerate(line_names):
-        if line_name not in main_response_parts:
-            continue
-        line_response, gofnt_scaled = _evaluate_gaussian_response(
-            wavelength_grid,
-            line_centers.isel(trans_index=i),
-            doppler_widths.isel(trans_index=i),
-            line_list.gofnt.isel(trans_index=i),
-            gaussian_norm,
-        )
-        line_response = xr.DataArray(line_response, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
-        line_response = line_response.expand_dims(line=[line_name])
-        line_response = line_response.assign_coords(
-            line_wavelength=("line", [line_list.wavelength.isel(trans_index=i).item()], {"units": str(u.AA)}),
-            component_kind=("line", ["line"]),
-        )
-        main_response_parts[line_name].append(line_response)
 
-    # Most main lines map to a single transition; skip the concat + reduce copies there.
-    responses = [
-        parts[0]
-        if len(parts) == 1
-        else xr.concat(parts, dim="_transition", join="exact").sum("_transition", keep_attrs=True)
-        for parts in main_response_parts.values()
-    ]
+    if main_lines is not None:
+        main_response_parts = {name: [] for name in main_lines}
+        if np.size(line_names) > 10: 
+            warning_msg = (
+                f"Building a spectral response for {np.size(line_names)} lines may take a while or kill the memory. "
+                "If you are only interested in a few lines, consider passing them in `main_lines`."
+            )
+            logger.warning(warning_msg)
+        for i, line_name in enumerate(line_names):
+            if line_name not in main_response_parts:
+                print('line_name', line_name)
+                continue
+            print('no skipping line_name', line_name)
+            line_response, gofnt_scaled = _evaluate_gaussian_response(
+                wavelength_grid,
+                line_centers.isel(trans_index=i),
+                doppler_widths.isel(trans_index=i),
+                line_list.gofnt.isel(trans_index=i),
+                gaussian_norm,
+            )
+            line_response = xr.DataArray(line_response, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
+            line_response = line_response.expand_dims(line=[line_name])
+            line_response = line_response.assign_coords(
+                line_wavelength=("line", [line_list.wavelength.isel(trans_index=i).item()], {"units": str(u.AA)}),
+                component_kind=("line", ["line"]),
+            )
+            main_response_parts[line_name].append(line_response)
+
+        # Most main lines map to a single transition; skip the concat + reduce copies there.
+        responses = [
+            parts[0]
+            if len(parts) == 1
+            else xr.concat(parts, dim="_transition", join="exact").sum("_transition", keep_attrs=True)
+            for parts in main_response_parts.values()
+        ]
 
     if include_contaminants:
-        contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
+        if main_lines is not None:
+            contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
+        else:
+            contaminant_indices = list(range(len(line_names)))
         contaminant_response = _create_contaminant_response(
             line_list,
             contaminant_indices,
@@ -192,13 +211,17 @@ def _create_wavelength_response(
         )
     else:
         contaminant_response = None
+
     if contaminant_response is not None:
         contaminant_response = contaminant_response.expand_dims(line=["contaminants"])
         contaminant_response = contaminant_response.assign_coords(
             line_wavelength=("line", [np.nan], {"units": str(u.AA)}),
             component_kind=("line", ["contaminants"]),
         )
-        responses.append(contaminant_response)
+        if main_lines is None:
+            responses = [contaminant_response]
+        else:
+            responses.append(contaminant_response)
 
     responses = xr.concat(responses, dim="line", coords="different", compat="equals", join="exact")
     ds = xr.Dataset({"spectral_response": responses})

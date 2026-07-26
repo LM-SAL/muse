@@ -94,7 +94,7 @@ def transform_response_units(
         if gain is None:
             gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
         if pair_energy is None:
-            pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy.sel(channel=channel).data)
+            pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy_sg.sel(channel=channel).data)
     except KeyError:
         msg = f"unsupported MUSE SG channel {channel}"
         raise ValueError(msg) from None

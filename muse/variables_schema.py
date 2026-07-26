@@ -337,11 +337,20 @@ class InstrumentDefaults:
     Number of steps per raster for the SG.
     """
 
-    main_line_effective_area: xr.DataArray | None = field(
+    main_line_sg_effective_area: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
     Effective area of the main line for the SG.
+
+    Normalized to square centimeters.
+    """
+
+    main_line_ci_effective_area: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
+    )
+    """
+    Effective area of the main line for the CI.
 
     Normalized to square centimeters.
     """
@@ -406,7 +415,14 @@ class InstrumentDefaults:
     CCD gain in electrons per DN, per band (channel).
     """
 
-    pair_creation_energy: xr.DataArray | None = field(
+    pair_creation_energy_sg: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
+    )
+    """
+    Mean energy that frees one electron-hole pair in silicon, per band (channel).
+    """
+
+    pair_creation_energy_ci: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """

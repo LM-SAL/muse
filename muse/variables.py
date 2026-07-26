@@ -46,10 +46,15 @@ MUSE_DEFAULTS_DICT = {
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
-    "pair_creation_energy": xr.DataArray(
+    "pair_creation_energy_sg": xr.DataArray(
         np.array([3.65, 3.65, 3.65]) * u.eV / u.electron,
         coords={"channel": [108, 171, 284]},
         dims="channel",
+    ),
+    "pair_creation_energy_ci": xr.DataArray(
+        np.array([3.65, 3.65]) * u.eV / u.electron,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
     ),
     # Synthesis/inversions
     "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
@@ -84,10 +89,15 @@ MUSE_DEFAULTS_DICT = {
         dims="channel",
     ),
     "channel_spectral_order": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
-    "main_line_effective_area": xr.DataArray(
+    "main_line_sg_effective_area": xr.DataArray(
         np.array([2.6, 4.3, 0.87]) * u.cm**2,
         coords={"channel": [108, 171, 284]},
         dims="channel",
+    ),
+    "main_line_ci_effective_area": xr.DataArray(
+        np.array([4.55]) * u.cm**2,
+        coords={"ci_channel": [195]},
+        dims="ci_channel",
     ),
     # Exposures
     "exposure_times_SG": {
