@@ -8,6 +8,7 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
+from muse.instrument.utils import _channel_as_angstrom
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
@@ -31,6 +32,7 @@ def _unit_power(unit, base) -> float:
     pixel_height_ci="dy_pixel_CI",
 )
 @u.quantity_input(
+    channel=u.AA,
     pixel_width=u.arcsec,
     pixel_height=u.arcsec,
     gain=u.electron / u.DN,
@@ -39,7 +41,7 @@ def _unit_power(unit, base) -> float:
 def transform_response_units(
     response: xr.Dataset,
     new_units: str,
-    channel: int,
+    channel: u.Quantity,
     *,
     detector: str = "sg",
     pixel_width: u.Quantity | None = None,
@@ -69,9 +71,9 @@ def transform_response_units(
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g.,
         ``"1e-27 cm5 ph / (Angstrom s)"``.
-    channel : `int`
-        MUSE channel in Angstrom. Selects the detector-specific per-channel
-        ``gain`` and ``pair_energy`` calibrations.
+    channel : `astropy.units.Quantity`
+        Nominal MUSE channel wavelength. Selects the detector-specific
+        per-channel ``gain`` and ``pair_energy`` calibrations.
     detector : {{"sg", "ci"}}, optional
         Detector whose default calibration to use, by default ``"sg"``.
     pixel_width, pixel_height : `astropy.units.Quantity`, optional
@@ -113,14 +115,15 @@ def transform_response_units(
         gains = DEFAULTS_MUSE.ccd_gain_ci
         pair_energies = DEFAULTS_MUSE.pair_creation_energy_ci
         channel_dimension = "ci_channel"
+    channel_value = _channel_as_angstrom(channel, pair_energies[channel_dimension], detector)
     pixel_width = default_pixel_width if pixel_width is None else pixel_width
     pixel_height = default_pixel_height if pixel_height is None else pixel_height
 
     try:
         if gain is None:
-            gain = u.Quantity(gains.sel({channel_dimension: channel}).data)
+            gain = u.Quantity(gains.sel({channel_dimension: channel_value}).data)
         if pair_energy is None:
-            pair_energy = u.Quantity(pair_energies.sel({channel_dimension: channel}).data)
+            pair_energy = u.Quantity(pair_energies.sel({channel_dimension: channel_value}).data)
     except KeyError:
         msg = f"unsupported MUSE {detector.upper()} channel {channel}"
         raise ValueError(msg) from None

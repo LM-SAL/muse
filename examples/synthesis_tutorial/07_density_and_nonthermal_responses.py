@@ -107,8 +107,8 @@ waveband_response = create_spectral_response(
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
-response = map_response_to_sg_detector(waveband_response, band)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+response = map_response_to_sg_detector(waveband_response, band * u.AA)
 print(response)
 
 plt.figure()
@@ -132,8 +132,8 @@ waveband_response = create_spectral_response(
     nonthermal_velocity=np.arange(0, 100, 20) * u.km / u.s,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
-response = map_response_to_sg_detector(waveband_response, band)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+response = map_response_to_sg_detector(waveband_response, band * u.AA)
 print(response)
 
 plt.figure()

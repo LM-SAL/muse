@@ -70,7 +70,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
 
     mapped = map_response_to_sg_detector(
         response,
-        171,
+        17.1 * u.nm,
         number_of_slits=2,
         dispersion=0.1 * u.AA / u.pix,
         slit_spacing=2 * u.pix,
@@ -95,6 +95,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
     assert mapped.line_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.item() == pytest.approx(171.073)
     assert mapped.channel.item() == 171
+    assert mapped.channel.attrs["units"] == "Angstrom"
     assert "spectral_response" not in mapped
     assert "wavelength_bin" not in mapped.dims
     assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_sg_detector(")
@@ -111,8 +112,8 @@ def test_map_response_to_sg_detector_keeps_chunked_input_lazy():
         "wavelength_start": 170 * u.AA,
     }
 
-    lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), 171, **kwargs)
-    eager = map_response_to_sg_detector(response, 171, **kwargs)
+    lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), 171 * u.AA, **kwargs)
+    eager = map_response_to_sg_detector(response, 171 * u.AA, **kwargs)
 
     assert isinstance(lazy.detector_response.data, da.Array)
     xr.testing.assert_allclose(lazy.compute(), eager)
@@ -128,7 +129,7 @@ def test_map_response_to_sg_detector_integrates_over_detector_pixels():
 
     mapped = map_response_to_sg_detector(
         response,
-        171,
+        171 * u.AA,
         number_of_slits=1,
         dispersion=0.01 * u.AA / u.pix,
         detector_pixels=100,
@@ -140,7 +141,7 @@ def test_map_response_to_sg_detector_integrates_over_detector_pixels():
 
 
 def test_map_response_to_sg_detector_uses_muse_defaults():
-    mapped = map_response_to_sg_detector(_spectral_response(), 171)
+    mapped = map_response_to_sg_detector(_spectral_response(), 171 * u.AA)
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
     assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
@@ -160,7 +161,7 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
 def test_mapped_response_composes_with_doppler_to_wavelength():
     # The mapped response used to carry the legacy vdop name, so the public inverse pair
     # could not be applied to it; one axis name means the stages compose.
-    mapped = map_response_to_sg_detector(_spectral_response(), 171, number_of_slits=2, detector_pixels=4)
+    mapped = map_response_to_sg_detector(_spectral_response(), 171 * u.AA, number_of_slits=2, detector_pixels=4)
 
     assert "doppler_velocity" in mapped.dims
     assert "detector_wavelength" in doppler_to_wavelength(mapped).coords
@@ -169,7 +170,7 @@ def test_mapped_response_composes_with_doppler_to_wavelength():
 def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():
     mapped = map_response_to_sg_detector(
         _spectral_response(contaminants=True),
-        171,
+        171 * u.AA,
         number_of_slits=1,
         detector_pixels=1,
         wavelength_start=171 * u.AA,
@@ -187,7 +188,7 @@ def test_map_response_to_sg_detector_preserves_invalid_physical_line_wavelength(
     else:
         response = response.assign_coords(component_kind=("line", component_kind))
 
-    mapped = map_response_to_sg_detector(response, 171, number_of_slits=1, detector_pixels=1)
+    mapped = map_response_to_sg_detector(response, 171 * u.AA, number_of_slits=1, detector_pixels=1)
 
     np.testing.assert_allclose(mapped.line_wavelength, [171.073, np.nan])
 
@@ -198,7 +199,7 @@ def test_map_response_to_sg_detector_preserves_input_nan():
 
     mapped = map_response_to_sg_detector(
         response,
-        171,
+        171 * u.AA,
         number_of_slits=1,
         dispersion=0.01 * u.AA / u.pix,
         detector_pixels=response.sizes["wavelength_bin"],
@@ -214,7 +215,7 @@ def test_map_response_to_sg_detector_requires_effective_area():
     response.spectral_response.attrs["units"] = "1e-27 erg cm3 / (Angstrom s sr)"
 
     with pytest.raises(ValueError, match="convertible"):
-        map_response_to_sg_detector(response, 171)
+        map_response_to_sg_detector(response, 171 * u.AA)
 
 
 @pytest.mark.parametrize(
@@ -222,6 +223,10 @@ def test_map_response_to_sg_detector_requires_effective_area():
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("channel", ValueError, "unsupported MUSE SG channel"),
+        ("channel_unitless", TypeError, "no 'unit' attribute"),
+        ("channel_units", u.UnitsError, "convertible to 'Angstrom'"),
+        ("channel_shape", ValueError, "scalar wavelength"),
+        ("channel_nonfinite", ValueError, "finite, positive wavelength"),
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
         ("wavelength_grid", ValueError, "strictly increasing"),
@@ -233,12 +238,20 @@ def test_map_response_to_sg_detector_requires_effective_area():
 )
 def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
     response = _spectral_response()
-    channel = 171
+    channel = 171 * u.AA
     kwargs = {}
     if case == "response_type":
         response = None
     elif case == "channel":
-        channel = 195
+        channel = 195 * u.AA
+    elif case == "channel_unitless":
+        channel = 171
+    elif case == "channel_units":
+        channel = 1 * u.s
+    elif case == "channel_shape":
+        channel = [171] * u.AA
+    elif case == "channel_nonfinite":
+        channel = np.nan * u.AA
     elif case == "schema":
         response = response.drop_vars("line_wavelength")
     elif case == "normalization":
@@ -263,7 +276,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     original = response.copy(deep=True)
 
     with xr.set_options(keep_attrs=False):
-        mapped = map_response_to_ci_detector(response, 195)
+        mapped = map_response_to_ci_detector(response, 19.5 * u.nm)
 
     assert isinstance(mapped.detector_response.data, da.Array)
     assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity")
@@ -274,6 +287,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.item() == 195
     assert mapped.channel.item() == 195
+    assert mapped.channel.attrs["units"] == "Angstrom"
     assert mapped.attrs["normalization"] == 1e-27
     assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_ci_detector(")
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
@@ -285,8 +299,8 @@ def test_ci_response_maps_directly_into_synthesis():
     spectral = _ci_spectral_response().assign_coords(
         line_wavelength=("line", [304.0], {"units": "Angstrom"}),
     )
-    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 304, detector="ci")
-    response = map_response_to_ci_detector(spectral, 304)
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 304 * u.AA, detector="ci")
+    response = map_response_to_ci_detector(spectral, 304 * u.AA)
     raster = xr.Dataset(
         {
             "vdem": (
@@ -317,6 +331,8 @@ def test_ci_response_maps_directly_into_synthesis():
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("channel", ValueError, "unsupported MUSE CI channel"),
+        ("channel_unitless", TypeError, "no 'unit' attribute"),
+        ("channel_units", u.UnitsError, "convertible to 'Angstrom'"),
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
         ("units", ValueError, "convertible"),
@@ -326,11 +342,15 @@ def test_ci_response_maps_directly_into_synthesis():
 )
 def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
     response = _ci_spectral_response()
-    channel = 195
+    channel = 195 * u.AA
     if case == "response_type":
         response = None
     elif case == "channel":
-        channel = 171
+        channel = 171 * u.AA
+    elif case == "channel_unitless":
+        channel = 195
+    elif case == "channel_units":
+        channel = 1 * u.s
     elif case == "schema":
         response = response.drop_vars("line_wavelength")
     elif case == "normalization":
@@ -394,10 +414,10 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
         effective_area=effective_area,
     )
     assert "slit" not in spectral.dims
-    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 171)
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
     response = map_response_to_sg_detector(
         spectral,
-        171,
+        171 * u.AA,
         number_of_slits=2,
         dispersion=0.01 * u.AA / u.pix,
         slit_spacing=2 * u.pix,

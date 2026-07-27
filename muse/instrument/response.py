@@ -9,6 +9,7 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.instrument.utils import _channel_as_angstrom
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
@@ -63,13 +64,14 @@ def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.
     detector_pixels="pixels_SG",
 )
 @u.quantity_input(
+    channel=u.AA,
     dispersion=u.AA / u.pix,
     slit_spacing=u.pix,
     wavelength_start=u.AA,
 )
 def map_response_to_sg_detector(
     response: xr.Dataset,
-    channel: int,
+    channel: u.Quantity,
     *,
     number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     dispersion: u.Quantity | None = None,
@@ -94,8 +96,8 @@ def map_response_to_sg_detector(
     response : `xarray.Dataset`
         Wavelength-space response containing ``spectral_response``,
         ``wavelength_grid``, and ``line_wavelength``.
-    channel : `int`
-        MUSE SG channel: 108, 171, or 284 Angstrom.
+    channel : `astropy.units.Quantity`
+        Nominal MUSE SG channel wavelength: 108, 171, or 284 Angstrom.
     number_of_slits : `int`, optional
         Number of simultaneous slits, by default {number_of_slits}.
     dispersion : `astropy.units.Quantity`, optional
@@ -122,12 +124,9 @@ def map_response_to_sg_detector(
     """
     response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
     line_wavelength = np.asarray(line_wavelength)
-    try:
-        spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel).item()
-        default_wavelength_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel).data)
-    except KeyError:
-        msg = f"unsupported MUSE SG channel {channel}"
-        raise ValueError(msg) from None
+    channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.channel_spectral_order.channel, "sg")
+    spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel_value).item()
+    default_wavelength_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel_value).data)
 
     if "component_kind" in response.coords:
         component_kind = np.asarray(response.component_kind)
@@ -188,13 +187,14 @@ def map_response_to_sg_detector(
     result = response.drop_dims("wavelength_bin")
     result = result.assign(detector_response=mapped).assign_coords(
         line_wavelength=("line", line_wavelength, {"units": str(u.AA)}),
-        channel=("line", np.full(response.sizes["line"], channel)),
+        channel=("line", np.full(response.sizes["line"], channel_value), {"units": str(u.AA)}),
     )
     add_history(result, locals(), map_response_to_sg_detector)
     return result
 
 
-def map_response_to_ci_detector(response: xr.Dataset, channel: int) -> xr.Dataset:
+@u.quantity_input(channel=u.AA)
+def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr.Dataset:
     """
     Integrate one wavelength-space response over a MUSE CI band.
 
@@ -208,8 +208,8 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: int) -> xr.Datase
         Wavelength-space response containing ``spectral_response``,
         ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
         be nonuniform.
-    channel : `int`
-        MUSE CI channel: 195 or 304 Angstrom.
+    channel : `astropy.units.Quantity`
+        Nominal MUSE CI channel wavelength: 195 or 304 Angstrom.
 
     Returns
     -------
@@ -220,10 +220,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: int) -> xr.Datase
     """
     response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
     line_wavelength = np.asarray(line_wavelength)
-    ci_channels = np.asarray(DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel)
-    if not isinstance(channel, numbers.Integral) or isinstance(channel, (bool, np.bool_)) or channel not in ci_channels:
-        msg = f"unsupported MUSE CI channel {channel}"
-        raise ValueError(msg)
+    channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel, "ci")
     if wavelength_grid.size < 2:
         msg = "response.wavelength_grid must contain at least two points for integration"
         raise ValueError(msg)
@@ -235,10 +232,10 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: int) -> xr.Datase
     result = response.drop_dims("wavelength_bin")
     result = result.assign(detector_response=mapped).assign_coords(
         line_wavelength=("line", line_wavelength, {"units": str(u.AA)}),
-        channel=("line", np.full(response.sizes["line"], channel)),
+        channel=("line", np.full(response.sizes["line"], channel_value), {"units": str(u.AA)}),
         detector_wavelength=(
             "line",
-            np.full(response.sizes["line"], channel, dtype=float),
+            np.full(response.sizes["line"], channel_value, dtype=float),
             {"units": str(u.AA)},
         ),
     )
