@@ -19,6 +19,43 @@ __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 _ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
 
 
+def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
+    required = {"spectral_response", "wavelength_grid", "line_wavelength"}
+    missing = sorted(required - set(response.variables))
+    if missing:
+        msg = f"response is missing required variables: {', '.join(missing)}"
+        raise ValueError(msg)
+    if "wavelength_bin" not in response.spectral_response.dims:
+        msg = "response.spectral_response must include a wavelength_bin dimension"
+        raise ValueError(msg)
+    if "line" not in response.spectral_response.dims:
+        msg = "response.spectral_response must include a line dimension"
+        raise ValueError(msg)
+    if response.wavelength_grid.dims != ("wavelength_bin",):
+        msg = "response.wavelength_grid must be one-dimensional along wavelength_bin"
+        raise ValueError(msg)
+    if response.line_wavelength.dims != ("line",):
+        msg = "response.line_wavelength must be one-dimensional along line"
+        raise ValueError(msg)
+
+    normalization = response.attrs.get("normalization")
+    if not isinstance(normalization, numbers.Real) or not np.isfinite(normalization) or normalization <= 0:
+        msg = "response normalization must be a finite, positive number"
+        raise ValueError(msg)
+    response_unit = require_unit(response, "spectral_response", "response.spectral_response")
+    if not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
+        accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
+        msg = f"response.spectral_response units must be convertible to one of {accepted}"
+        raise ValueError(msg)
+    wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
+    line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
+    _require_increasing_axis(wavelength_grid, "response.wavelength_grid", positive=True)
+    return response_unit, wavelength_grid, line_wavelength
+
+
 @format_docstring(
     "DEFAULTS_MUSE",
     number_of_slits="number_of_slits_SG",
@@ -83,9 +120,8 @@ def map_response_to_sg_detector(
         ``detector_wavelength`` and ``line_wavelength`` coordinates
         in Angstrom.
     """
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
+    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    line_wavelength = np.asarray(line_wavelength)
     try:
         spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel).item()
         default_wavelength_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel).data)
@@ -93,36 +129,6 @@ def map_response_to_sg_detector(
         msg = f"unsupported MUSE SG channel {channel}"
         raise ValueError(msg) from None
 
-    required = {"spectral_response", "wavelength_grid", "line_wavelength"}
-    missing = sorted(required - set(response.variables))
-    if missing:
-        msg = f"response is missing required variables: {', '.join(missing)}"
-        raise ValueError(msg)
-    if "wavelength_bin" not in response.spectral_response.dims:
-        msg = "response.spectral_response must include a wavelength_bin dimension"
-        raise ValueError(msg)
-    if "line" not in response.spectral_response.dims:
-        msg = "response.spectral_response must include a line dimension"
-        raise ValueError(msg)
-    if response.wavelength_grid.dims != ("wavelength_bin",):
-        msg = "response.wavelength_grid must be one-dimensional along wavelength_bin"
-        raise ValueError(msg)
-    if response.line_wavelength.dims != ("line",):
-        msg = "response.line_wavelength must be one-dimensional along line"
-        raise ValueError(msg)
-
-    normalization = response.attrs.get("normalization")
-    if not isinstance(normalization, numbers.Real) or not np.isfinite(normalization) or normalization <= 0:
-        msg = "response normalization must be a finite, positive number"
-        raise ValueError(msg)
-    response_unit = require_unit(response, "spectral_response", "response.spectral_response")
-    if not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
-        accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
-        msg = f"response.spectral_response units must be convertible to one of {accepted}"
-        raise ValueError(msg)
-    wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
-    line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
-    line_wavelength = np.asarray(line_wavelength)
     if "component_kind" in response.coords:
         component_kind = np.asarray(response.component_kind)
         valid_lines = np.isfinite(line_wavelength) & (line_wavelength > 0)
@@ -134,8 +140,6 @@ def map_response_to_sg_detector(
                 line_wavelength[physical_lines][0],
                 line_wavelength,
             )
-    _require_increasing_axis(wavelength_grid, "response.wavelength_grid", positive=True)
-
     for name, value in (("number_of_slits", number_of_slits), ("detector_pixels", detector_pixels)):
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:
             msg = f"{name} must be a positive integer"
@@ -190,34 +194,53 @@ def map_response_to_sg_detector(
     return result
 
 
-def map_response_to_ci_detector(response: xr.Dataset) -> xr.Dataset:
+def map_response_to_ci_detector(response: xr.Dataset, channel: int) -> xr.Dataset:
     """
-    Convert a wavelength cube to a MUSE CI response.
+    Integrate one wavelength-space response over a MUSE CI band.
+
+    The result is band-integrated and therefore has no detector wavelength-bin
+    dimension. ``detector_wavelength`` records the nominal CI channel
+    wavelength along ``line``.
 
     Parameters
     ----------
     response : `xarray.Dataset`
-        Response function with temperature, velocity and wavelength axis.
+        Wavelength-space response containing ``spectral_response``,
+        ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
+        be nonuniform.
+    channel : `int`
+        MUSE CI channel: 195 or 304 Angstrom.
 
     Returns
     -------
     `xarray.Dataset`
-        Response function for MUSE CI
+        Band-integrated response containing ``detector_response`` in the units
+        of ``response.spectral_response`` integrated over wavelength, with
+        ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    resp = response.copy(deep=True)
+    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    line_wavelength = np.asarray(line_wavelength)
+    ci_channels = np.asarray(DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel)
+    if not isinstance(channel, numbers.Integral) or isinstance(channel, (bool, np.bool_)) or channel not in ci_channels:
+        msg = f"unsupported MUSE CI channel {channel}"
+        raise ValueError(msg)
+    if wavelength_grid.size < 2:
+        msg = "response.wavelength_grid must contain at least two points for integration"
+        raise ValueError(msg)
 
-    wavelength_range = resp.wavelength_bin.max() - resp.wavelength_bin.min()
-    wavelength_size = resp.wavelength_bin.size
+    spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
+    mapped = spectral_response.integrate("wavelength_grid")
+    mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
 
-    resp = resp.sum("wavelength_bin")
-    # multiply by pixel width in angstroms
-    resp["spectral_response"] *= wavelength_range / wavelength_size
-    resp["spectral_response"].attrs["units"] = str(u.Unit(response.spectral_response.attrs["units"]) * u.angstrom)
-
-    resp = resp.assign_coords({"SG_xpixel": xr.DataArray(np.arange(1), dims="SG_xpixel")})
-    resp = resp.rename({"spectral_response": "detector_response"})
-    resp = resp.rename({"SG_xpixel": "detector_wavelength"})
-    resp.coords["detector_wavelength"].attrs["units"] = str(u.angstrom)
-    add_history(resp, locals(), map_response_to_ci_detector)
-
-    return resp
+    result = response.drop_dims("wavelength_bin")
+    result = result.assign(detector_response=mapped).assign_coords(
+        line_wavelength=("line", line_wavelength, {"units": str(u.AA)}),
+        channel=("line", np.full(response.sizes["line"], channel)),
+        detector_wavelength=(
+            "line",
+            np.full(response.sizes["line"], channel, dtype=float),
+            {"units": str(u.AA)},
+        ),
+    )
+    add_history(result, locals(), map_response_to_ci_detector)
+    return result

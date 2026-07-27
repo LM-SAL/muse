@@ -8,6 +8,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import linelist as linelist_module
+from muse.instrument import map_response_to_ci_detector
 from muse.instrument.linelist import create_chianti_line_list
 from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response import map_response_to_sg_detector
@@ -49,6 +50,17 @@ def _spectral_response(*, contaminants: bool = False) -> xr.Dataset:
             "component_kind": ("line", component_kind),
         },
         attrs={"normalization": 1e-27},
+    )
+
+
+def _ci_spectral_response() -> xr.Dataset:
+    response = _spectral_response().isel(wavelength_bin=slice(0, 3))
+    values = np.broadcast_to([1.0, 2.0, 4.0], response.spectral_response.shape).copy()
+    return response.assign(
+        spectral_response=(response.spectral_response.dims, values, response.spectral_response.attrs),
+    ).assign_coords(
+        wavelength_grid=("wavelength_bin", [190.0, 191.0, 194.0], {"units": "Angstrom"}),
+        line_wavelength=("line", [195.0], {"units": "Angstrom"}),
     )
 
 
@@ -244,6 +256,94 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
 
     with pytest.raises(error, match=match):
         map_response_to_sg_detector(response, channel, **kwargs)
+
+
+def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector_axis():
+    response = _ci_spectral_response().chunk({"wavelength_bin": 2})
+    original = response.copy(deep=True)
+
+    with xr.set_options(keep_attrs=False):
+        mapped = map_response_to_ci_detector(response, 195)
+
+    assert isinstance(mapped.detector_response.data, da.Array)
+    assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity")
+    assert "wavelength_bin" not in mapped.dims
+    assert "detector_x_pixel" not in mapped.dims
+    assert mapped.detector_wavelength.dims == ("line",)
+    assert mapped.detector_wavelength.item() == 195
+    assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
+    assert mapped.line_wavelength.item() == 195
+    assert mapped.channel.item() == 195
+    assert mapped.attrs["normalization"] == 1e-27
+    assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_ci_detector(")
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
+    np.testing.assert_allclose(mapped.detector_response.compute(), 10.5)
+    xr.testing.assert_identical(response, original)
+
+
+def test_ci_response_maps_directly_into_synthesis():
+    spectral = _ci_spectral_response().assign_coords(
+        line_wavelength=("line", [304.0], {"units": "Angstrom"}),
+    )
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 304, detector="ci")
+    response = map_response_to_ci_detector(spectral, 304)
+    raster = xr.Dataset(
+        {
+            "vdem": (
+                ("logT", "doppler_velocity"),
+                np.ones((1, 1)),
+                {"units": "cm-5"},
+            )
+        },
+        coords={
+            "logT": response.logT,
+            "doppler_velocity": response.doppler_velocity,
+        },
+    )
+
+    synthesized = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+
+    np.testing.assert_allclose(
+        synthesized.flux,
+        response.detector_response.sum(("logT", "doppler_velocity")),
+    )
+    assert synthesized.channel.item() == 304
+    assert synthesized.detector_wavelength.item() == 304
+    assert u.Unit(synthesized.flux.attrs["units"]) == u.Unit("1e-27 ph / s")
+
+
+@pytest.mark.parametrize(
+    ("case", "error", "match"),
+    [
+        ("response_type", TypeError, "xarray.Dataset"),
+        ("channel", ValueError, "unsupported MUSE CI channel"),
+        ("schema", ValueError, "missing required variables"),
+        ("normalization", ValueError, "normalization"),
+        ("units", ValueError, "convertible"),
+        ("wavelength_grid", ValueError, "strictly increasing"),
+        ("wavelength_grid_short", ValueError, "at least two points"),
+    ],
+)
+def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
+    response = _ci_spectral_response()
+    channel = 195
+    if case == "response_type":
+        response = None
+    elif case == "channel":
+        channel = 171
+    elif case == "schema":
+        response = response.drop_vars("line_wavelength")
+    elif case == "normalization":
+        response.attrs["normalization"] = 0
+    elif case == "units":
+        response.spectral_response.attrs["units"] = "1e-27 erg cm3 / (Angstrom s sr)"
+    elif case == "wavelength_grid":
+        response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
+    else:
+        response = response.isel(wavelength_bin=slice(0, 1))
+
+    with pytest.raises(error, match=match):
+        map_response_to_ci_detector(response, channel)
 
 
 @pytest.mark.filterwarnings(

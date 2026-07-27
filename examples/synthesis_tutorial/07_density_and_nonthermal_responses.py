@@ -88,7 +88,7 @@ lower = band - 35 / spectral_order
 upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
 instrumental_width = u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data)
-effective_area = DEFAULTS_MUSE.main_line_effective_area.sel(channel=band)
+effective_area = DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=band)
 # Since we will only plot at ``doppler_velocity=0``, we pass a single
 # Doppler-velocity point. This makes the code faster and use less RAM.
 doppler_velocity = [0] * u.km / u.s

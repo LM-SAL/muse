@@ -1,3 +1,4 @@
+import attrs
 import numpy as np
 import pytest
 import xarray as xr
@@ -5,6 +6,7 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
+from muse.instrument import radiometry as radiometry_module
 from muse.instrument.radiometry import transform_response_units
 from muse.variables import DEFAULTS_MUSE
 
@@ -66,7 +68,7 @@ def test_transform_response_units_photons_to_data_numbers():
 
 def test_transform_response_units_uses_channel_gain(monkeypatch):
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain,
+        DEFAULTS_MUSE.ccd_gain_sg,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
@@ -134,6 +136,16 @@ def test_transform_response_units_rejects_unknown_channel():
         transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 195)
 
 
+def test_transform_response_units_rejects_unknown_ci_channel():
+    with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171, detector="ci")
+
+
+def test_transform_response_units_rejects_unknown_detector():
+    with pytest.raises(ValueError, match="detector must be"):
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171, detector="other")
+
+
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
@@ -163,10 +175,41 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
 
 def test_transform_response_units_uses_the_channel_pair_energy():
     channel = 171
-    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy.sel(channel=channel).data)
+    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy_sg.sel(channel=channel).data)
     response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel)
 
     default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel)
     doubled = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel, pair_energy=2 * pair_energy)
 
     np.testing.assert_allclose(doubled.spectral_response, default.spectral_response / 2)
+
+
+def test_transform_response_units_selects_detector_calibration(monkeypatch):
+    ci_gain = xr.DataArray(
+        np.array([20.0, 20.0]) * u.electron / u.DN,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
+    )
+    ci_pair_energy = xr.DataArray(
+        np.array([7.3, 7.3]) * u.eV / u.electron,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
+    )
+    defaults = attrs.evolve(DEFAULTS_MUSE, ccd_gain_ci=ci_gain, pair_creation_energy_ci=ci_pair_energy)
+    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", defaults)
+
+    target_unit = "1e-27 cm5 DN / (Angstrom s)"
+    sg = transform_response_units(_spectral_response(), target_unit, 171)
+    ci = transform_response_units(_spectral_response(), target_unit, 195, detector="ci")
+
+    sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
+    ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)
+    sg_pair_energy = u.Quantity(defaults.pair_creation_energy_sg.sel(channel=171).data)
+    sg_gain = u.Quantity(defaults.ccd_gain_sg.sel(channel=171).data)
+    expected_ratio = (
+        ci_solid_angle
+        / sg_solid_angle
+        * (sg_pair_energy / (7.3 * u.eV / u.electron)).to_value(u.dimensionless_unscaled)
+        * (sg_gain / (20.0 * u.electron / u.DN)).to_value(u.dimensionless_unscaled)
+    )
+    np.testing.assert_allclose(ci.spectral_response / sg.spectral_response, expected_ratio)

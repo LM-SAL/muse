@@ -1,4 +1,4 @@
-``DEFAULTS_MUSE.ccd_gain`` is now a per-channel `xarray.DataArray` (channels
+``DEFAULTS_MUSE.ccd_gain_sg`` is now a per-channel `xarray.DataArray` (channels
 108, 171, 284) instead of a scalar `~astropy.units.Quantity`; every channel
 currently carries the same 10 electron / DN value, but the gains can now be
 calibrated independently.

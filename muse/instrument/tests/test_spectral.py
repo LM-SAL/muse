@@ -75,6 +75,18 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 
 
+def test_public_contract_can_sum_all_lines_as_contaminants():
+    response = create_spectral_response(
+        synthetic_line_list(2),
+        DEFAULT_WAVELENGTH_GRID,
+        main_lines=[],
+        include_contaminants=True,
+    )
+
+    assert response.line.values.tolist() == ["contaminants"]
+    assert "component_kind" not in response.coords
+
+
 def test_integral_matches_gofnt():
     ll = synthetic_line_list(1)
     response = _create_wavelength_response(
@@ -301,7 +313,7 @@ def test_effective_area_units_convert_without_mutating_input():
 
 
 def test_scalar_effective_area_matches_flat_curve():
-    # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...))
+    # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...))
     # must scale the response exactly like a flat curve.
     line_list = synthetic_line_list(1)
     flat = synthetic_effective_area(values=np.full(3, 4.3))

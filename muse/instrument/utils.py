@@ -168,7 +168,7 @@ def read_response(
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain`
+        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_sg`
         selected by the response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
@@ -236,7 +236,7 @@ def read_response(
             msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
             raise ValueError(msg)
         try:
-            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=r.channel).data)
+            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=r.channel).data)
         except KeyError:
             msg = f"unsupported MUSE SG channel(s) {np.unique(r.channel.values).tolist()}; pass gain explicitly"
             raise ValueError(msg) from None
@@ -349,7 +349,7 @@ def load_and_concat_responses(
         datasets = []
         for filename, channel in zip(response_files, channels, strict=True):
             try:
-                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=channel).data)
             except KeyError:
                 msg = f"unsupported MUSE SG channel {channel}"
                 raise ValueError(msg) from None
@@ -370,169 +370,3 @@ def load_and_concat_responses(
         channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
     ]
     return response.assign_coords(channel=("line", line_channels))
-
-
-def match_responses_and_vdems(
-    responses: xr.Dataset,
-    vdems: xr.Dataset,
-    *,
-    logT_method: str = "nearest",
-    doppler_velocity_method: str = "linear",
-) -> tuple[xr.Dataset, xr.Dataset]:
-    """
-    Resample the response and VDEM datasets onto a common logT and doppler_velocity
-    grid.
-
-    Parameters
-    ----------
-    responses : `xarray.Dataset`
-        Response dataset from `muse.instrument.read_response` or
-        `muse.instrument.load_and_concat_responses`.
-    vdems : `xarray.Dataset`
-        VDEM dataset from `muse.vdem.read_vdem`.
-    logT_method : `str`, optional
-        Interpolation method for logT, by default "nearest".
-        Passed to `muse.instrument.read_response`.
-    doppler_velocity_method : `str`, optional
-        Interpolation method for doppler_velocity, by default "linear".
-        Passed to `muse.instrument.read_response`.
-
-    Returns
-    -------
-    tuple of `xarray.Dataset`
-        The resampled response and VDEM datasets.
-    """
-    larger_logT_bin = False
-    if responses.logT.size > 1 and vdems.logT.size > 1:
-        response_logt_gradient = np.abs(np.gradient(responses.logT.values)).max()
-        vdem_logt_gradient = np.abs(np.gradient(vdems.logT.values)).min()
-        if response_logt_gradient > vdem_logt_gradient:
-            logger.warning(
-                "Response logT grid is coarser than the VDEM logT grid "
-                f"(response max dlogT={response_logt_gradient:.3g}, "
-                f"VDEM min dlogT={vdem_logt_gradient:.3g})."
-            )
-            larger_logT_bin = True
-    larger_doppler_velocity_bin = False
-    if responses.doppler_velocity.size > 1 and vdems.doppler_velocity.size > 1:
-        response_doppler_velocity_gradient = np.abs(np.gradient(responses.doppler_velocity.values)).max()
-        vdem_doppler_velocity_gradient = np.abs(np.gradient(vdems.doppler_velocity.values)).min()
-        if response_doppler_velocity_gradient > vdem_doppler_velocity_gradient:
-            logger.warning(
-                "Response doppler_velocity grid is coarser than the VDEM doppler_velocity grid "
-                f"(response max ddoppler_velocity={response_doppler_velocity_gradient:.3g}, "
-                f"VDEM min ddoppler_velocity={vdem_doppler_velocity_gradient:.3g})."
-            )
-            larger_doppler_velocity_bin = True
-
-    if logT_method == "nearest":
-        if larger_logT_bin:
-            vr = np.arange(np.min(vdems.logT), np.max(vdems.logT), np.min(np.diff(responses.logT)))
-            vdem_red = vdems.isel(logT=np.arange(np.size(vr)))
-            for iii, ii in enumerate(vr):
-                data = vdems.vdem.where(vdems.logT <= ii)
-                if iii > 0:
-                    if ii == np.max(vr):
-                        data = vdems.vdem.where(vdems.logT > vr[iii - 1]).sum(dim="logT")
-                    else:
-                        data = data.where(data.logT > vr[iii - 1]).sum(dim="logT")
-                else:
-                    data = data.sum(dim="logT")
-                vdem_red.vdem.loc[{"logT": vdem_red.logT.isel(logT=iii).data}] = data
-            vdem_red.coords["logT"] = vr
-        else:
-            shared_logT = vdems.logT.where(
-                (vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()),
-                drop=True,
-            )
-            if shared_logT.size < vdems.logT.size:
-                logger.warning(
-                    "High logT values are present in responses.logT; these will be dropped to match the VDEM logT axis."
-                )
-
-            vdems = vdems.sel(logT=shared_logT, method="nearest", drop=True)
-
-            # Prefer exact common logT values; if none match exactly, fall back to overlap + nearest.
-            responses_logt = np.asarray(responses.logT.values)
-            vdem_logt = np.asarray(vdems.logT.values)
-            exact_mask = np.any(
-                np.isclose(vdem_logt[:, np.newaxis], responses_logt[np.newaxis, :], rtol=0, atol=1e-12),
-                axis=1,
-            )
-            shared_logT = vdems.logT.where(exact_mask, drop=True)
-            if shared_logT.size != vdems.logT.size:
-                msg = "logT axes have no overlap between response and VDEM"
-                raise ValueError(msg)
-
-            responses = responses.sel(logT=shared_logT, method="nearest", drop=True)
-            vdems = vdems.sel(logT=shared_logT, method="nearest", drop=True)
-            responses.coords["logT"] = vdems.coords["logT"]
-    else:
-        shared_logT = vdems.logT.where(
-            (vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()), drop=True
-        )
-        if shared_logT.size == 0:
-            msg = "logT axes have no overlap between response and VDEM"
-            raise ValueError(msg)
-
-        responses = responses.interp(logT=shared_logT, method=logT_method)
-
-    if doppler_velocity_method == "nearest":
-        if larger_doppler_velocity_bin:
-            vr = np.arange(
-                np.min(vdems.doppler_velocity),
-                np.max(vdems.doppler_velocity),
-                np.min(np.diff(responses.doppler_velocity)),
-            )
-            vdem_red = vdems.isel(doppler_velocity=np.arange(np.size(vr)))
-            for iii, ii in enumerate(vr):
-                data = vdems.vdem.where(vdems.doppler_velocity <= ii)
-                if iii > 0:
-                    if ii == np.max(vr):
-                        data = vdems.vdem.where(vdems.doppler_velocity > vr[iii - 1]).sum(dim="doppler_velocity")
-                    else:
-                        data = data.where(data.doppler_velocity > vr[iii - 1]).sum(dim="doppler_velocity")
-                else:
-                    data = data.sum(dim="doppler_velocity")
-                vdem_red.vdem.loc[{"doppler_velocity": vdem_red.doppler_velocity.isel(doppler_velocity=iii).data}] = (
-                    data
-                )
-            vdem_red.coords["doppler_velocity"] = vr
-            vdems = vdem_red.copy(deep=True)
-        else:
-            shared_doppler_velocity = vdems.doppler_velocity.where(
-                (vdems.doppler_velocity >= responses.doppler_velocity.min())
-                & (vdems.doppler_velocity <= responses.doppler_velocity.max()),
-                drop=True,
-            )
-            if shared_doppler_velocity.size == 0:
-                msg = "doppler_velocity axes have no overlap between response and VDEM"
-                raise ValueError(msg)
-            if shared_doppler_velocity.size < vdems.doppler_velocity.size:
-                logger.warning(
-                    "High speed values are present in responses.doppler_velocity; "
-                    "these will be dropped to match the VDEM doppler_velocity axis."
-                )
-            vdems = vdems.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
-
-            # Prefer exact common logT values; if none match exactly, fall back to overlap + nearest.
-            responses_doppler_velocity = np.asarray(responses.doppler_velocity.values)
-            vdem_doppler_velocity = np.asarray(vdems.doppler_velocity.values)
-            exact_mask = np.any(
-                np.isclose(
-                    vdem_doppler_velocity[:, np.newaxis], responses_doppler_velocity[np.newaxis, :], rtol=0, atol=1e-12
-                ),
-                axis=1,
-            )
-            shared_doppler_velocity = vdems.doppler_velocity.where(exact_mask, drop=True)
-            if shared_doppler_velocity.size != vdems.doppler_velocity.size:
-                msg = "doppler_velocity axes have no overlap between response and VDEM"
-                raise ValueError(msg)
-
-            responses = responses.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
-            vdems = vdems.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
-            responses.coords["doppler_velocity"] = vdems.coords["doppler_velocity"]
-    else:
-        responses = responses.interp(doppler_velocity=vdems.doppler_velocity, method=doppler_velocity_method)
-
-    return responses, vdems
