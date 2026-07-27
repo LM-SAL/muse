@@ -8,6 +8,7 @@ API Reference
    :maxdepth: 2
 
    muse
+   data
    instrument
    transforms
    synthesis
