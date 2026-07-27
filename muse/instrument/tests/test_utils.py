@@ -101,7 +101,7 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     assert loaded.gain.dims == ("line",)
     np.testing.assert_allclose(
         loaded.gain.values,
-        u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=loaded.channel).data).to_value(u.electron / u.DN),
+        u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=loaded.channel).data).to_value(u.electron / u.DN),
     )
     assert loaded.gain.attrs["units"] == str(u.electron / u.DN)
 
@@ -183,7 +183,7 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
     assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl", "vdop"} & set(r.variables)
     np.testing.assert_array_equal(
-        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=r.channel).data).to_value(u.electron / u.DN)
+        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=r.channel).data).to_value(u.electron / u.DN)
     )
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
@@ -346,7 +346,7 @@ def test_read_response_gain_accepts_quantity(tmp_path) -> None:
 
 def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain,
+        DEFAULTS_MUSE.ccd_gain_sg,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
@@ -398,7 +398,7 @@ def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
 
 def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain,
+        DEFAULTS_MUSE.ccd_gain_sg,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )

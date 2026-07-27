@@ -32,6 +32,8 @@ pooch.retrieve(
     processor=pooch.Untar(extract_dir=extract_path.name),
 )
 vdem = xr.open_zarr(extract_path / "muse_example_vdem.zarr")
+if "vdop" in vdem.dims:
+    vdem = vdem.rename(vdop="doppler_velocity")
 vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
 # We need to keep the tutorial spectrum manageable.
 # Remove this selection so you can have the  full-resolution y axis.

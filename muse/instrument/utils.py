@@ -25,6 +25,22 @@ _LEGACY_RESPONSE_NAMES = {
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
 
 
+def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray, detector: str) -> int | float:
+    if not channel.isscalar:
+        msg = "channel must be a scalar wavelength"
+        raise ValueError(msg)
+    channel_value = channel.to_value(u.AA)
+    if not np.isfinite(channel_value) or channel_value <= 0:
+        msg = "channel must be a finite, positive wavelength"
+        raise ValueError(msg)
+    allowed = np.asarray(allowed_channels)
+    matches = np.isclose(allowed, channel_value, rtol=0, atol=1e-12)
+    if not matches.any():
+        msg = f"unsupported MUSE {detector.upper()} channel {channel}"
+        raise ValueError(msg)
+    return allowed[matches][0].item()
+
+
 def save_response(
     response: xr.Dataset,
     response_file: str | Path,
@@ -168,7 +184,7 @@ def read_response(
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain`
+        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_sg`
         selected by the response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
@@ -236,7 +252,7 @@ def read_response(
             msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
             raise ValueError(msg)
         try:
-            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=r.channel).data)
+            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=r.channel).data)
         except KeyError:
             msg = f"unsupported MUSE SG channel(s) {np.unique(r.channel.values).tolist()}; pass gain explicitly"
             raise ValueError(msg) from None
@@ -349,7 +365,7 @@ def load_and_concat_responses(
         datasets = []
         for filename, channel in zip(response_files, channels, strict=True):
             try:
-                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=channel).data)
             except KeyError:
                 msg = f"unsupported MUSE SG channel {channel}"
                 raise ValueError(msg) from None

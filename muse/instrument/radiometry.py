@@ -8,6 +8,7 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
+from muse.instrument.utils import _channel_as_angstrom
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
@@ -25,10 +26,13 @@ def _unit_power(unit, base) -> float:
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    pixel_width="dx_pixel_SG",
-    pixel_height="dy_pixel_SG",
+    pixel_width_sg="dx_pixel_SG",
+    pixel_height_sg="dy_pixel_SG",
+    pixel_width_ci="dx_pixel_CI",
+    pixel_height_ci="dy_pixel_CI",
 )
 @u.quantity_input(
+    channel=u.AA,
     pixel_width=u.arcsec,
     pixel_height=u.arcsec,
     gain=u.electron / u.DN,
@@ -37,10 +41,11 @@ def _unit_power(unit, base) -> float:
 def transform_response_units(
     response: xr.Dataset,
     new_units: str,
-    channel: int,
+    channel: u.Quantity,
     *,
-    pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
-    pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
+    detector: str = "sg",
+    pixel_width: u.Quantity | None = None,
+    pixel_height: u.Quantity | None = None,
     gain: u.Quantity | None = None,
     pair_energy: u.Quantity | None = None,
 ) -> xr.Dataset:
@@ -53,8 +58,9 @@ def transform_response_units(
 
     .. warning::
 
-        Do this before `muse.instrument.map_response_to_sg_detector`,
-        which passes the units through.
+        Do this before `muse.instrument.map_response_to_sg_detector` or
+        `muse.instrument.map_response_to_ci_detector`, which pass the units
+        through.
 
     Parameters
     ----------
@@ -65,19 +71,22 @@ def transform_response_units(
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g.,
         ``"1e-27 cm5 ph / (Angstrom s)"``.
-    channel : `int`
-        MUSE SG channel: 108, 171, or 284 Angstrom. Selects the per-channel
-        ``gain`` and ``pair_energy`` calibrations.
+    channel : `astropy.units.Quantity`
+        Nominal MUSE channel wavelength. Selects the detector-specific
+        per-channel ``gain`` and ``pair_energy`` calibrations.
+    detector : {{"sg", "ci"}}, optional
+        Detector whose default calibration to use, by default ``"sg"``.
     pixel_width, pixel_height : `astropy.units.Quantity`, optional
-        SG pixel angular size used to convert steradians to detector pixels,
-        by default {pixel_width} and {pixel_height}, respectively.
+        Pixel angular size used to convert steradians to detector pixels. If
+        `None`, use {pixel_width_sg} by {pixel_height_sg} for SG or
+        {pixel_width_ci} by {pixel_height_ci} for CI.
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the channel's
-        value from `~muse.variables_schema.InstrumentDefaults.ccd_gain`.
+        detector-specific value from `~muse.variables.DEFAULTS_MUSE`.
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon. If `None`,
-        use the channel's value from
-        `~muse.variables_schema.InstrumentDefaults.pair_creation_energy`.
+        use the channel's detector-specific value from
+        `~muse.variables.DEFAULTS_MUSE`.
 
     Returns
     -------
@@ -88,15 +97,35 @@ def transform_response_units(
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
+    if detector not in ("sg", "ci"):
+        msg = "detector must be 'sg' or 'ci'"
+        raise ValueError(msg)
     old_unit = require_unit(response, "spectral_response", "response.spectral_response")
     target_unit = u.Unit(new_units)
+
+    if detector == "sg":
+        default_pixel_width = DEFAULTS_MUSE.dx_pixel_SG
+        default_pixel_height = DEFAULTS_MUSE.dy_pixel_SG
+        gains = DEFAULTS_MUSE.ccd_gain_sg
+        pair_energies = DEFAULTS_MUSE.pair_creation_energy_sg
+        channel_dimension = "channel"
+    else:
+        default_pixel_width = DEFAULTS_MUSE.dx_pixel_CI
+        default_pixel_height = DEFAULTS_MUSE.dy_pixel_CI
+        gains = DEFAULTS_MUSE.ccd_gain_ci
+        pair_energies = DEFAULTS_MUSE.pair_creation_energy_ci
+        channel_dimension = "ci_channel"
+    channel_value = _channel_as_angstrom(channel, pair_energies[channel_dimension], detector)
+    pixel_width = default_pixel_width if pixel_width is None else pixel_width
+    pixel_height = default_pixel_height if pixel_height is None else pixel_height
+
     try:
         if gain is None:
-            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+            gain = u.Quantity(gains.sel({channel_dimension: channel_value}).data)
         if pair_energy is None:
-            pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy.sel(channel=channel).data)
+            pair_energy = u.Quantity(pair_energies.sel({channel_dimension: channel_value}).data)
     except KeyError:
-        msg = f"unsupported MUSE SG channel {channel}"
+        msg = f"unsupported MUSE {detector.upper()} channel {channel}"
         raise ValueError(msg) from None
     wavelength = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
 

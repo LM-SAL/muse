@@ -41,15 +41,26 @@ MUSE_DEFAULTS_DICT = {
     "psf_fwhm": 0.5 * u.arcsec,
     # Other
     "data_compression": 1,
-    "ccd_gain": xr.DataArray(
+    "ccd_gain_sg": xr.DataArray(
         np.array([10.0, 10.0, 10.0]) * u.electron / u.DN,
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
-    "pair_creation_energy": xr.DataArray(
+    "pair_creation_energy_sg": xr.DataArray(
         np.array([3.65, 3.65, 3.65]) * u.eV / u.electron,
         coords={"channel": [108, 171, 284]},
         dims="channel",
+    ),
+    # CI calibrations are independently scoped from the SG hardware.
+    "ccd_gain_ci": xr.DataArray(
+        np.array([10.0, 10.0]) * u.electron / u.DN,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
+    ),
+    "pair_creation_energy_ci": xr.DataArray(
+        np.array([3.65, 3.65]) * u.eV / u.electron,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
     ),
     # Synthesis/inversions
     "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
@@ -84,10 +95,17 @@ MUSE_DEFAULTS_DICT = {
         dims="channel",
     ),
     "channel_spectral_order": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
-    "main_line_effective_area": xr.DataArray(
+    "main_line_effective_area_sg": xr.DataArray(
         np.array([2.6, 4.3, 0.87]) * u.cm**2,
         coords={"channel": [108, 171, 284]},
         dims="channel",
+    ),
+    # Until the private wavelength-dependent throughput is available, both CI
+    # channels use the same provisional scalar area.
+    "main_line_effective_area_ci": xr.DataArray(
+        np.array([4.55, 4.55]) * u.cm**2,
+        coords={"ci_channel": [195, 304]},
+        dims="ci_channel",
     ),
     # Exposures
     "exposure_times_SG": {

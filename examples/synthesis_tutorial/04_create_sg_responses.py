@@ -8,7 +8,7 @@ the 108, 171, and 284 Angstrom bands and map them onto all
 35 MUSE spectrograph slits.
 
 We will use the default per-channel effective areas
-(``DEFAULTS_MUSE.main_line_effective_area``) and CHIANTI line lists from the
+(``DEFAULTS_MUSE.main_line_effective_area_sg``) and CHIANTI line lists from the
 :ref:`previous step <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`.
 
 To see how the response changes with other parameters — an electron-density
@@ -129,7 +129,7 @@ for band, config in bands.items():
         main_lines=config["main_lines"],
         instrumental_width=u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data),
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
-        effective_area=DEFAULTS_MUSE.main_line_effective_area.sel(channel=band),
+        effective_area=DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=band),
     )
     # Chunk over Doppler velocity so the detector mapping stays lazy (dask):
     # save_response then streams it to disk chunk by chunk instead of
@@ -137,8 +137,8 @@ for band, config in bands.items():
     # memory. Peak memory is roughly one chunk's interpolation temporaries per
     # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
     waveband_response = waveband_response.chunk({"doppler_velocity": 20})
-    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
-    response = map_response_to_sg_detector(waveband_response, band)
+    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+    response = map_response_to_sg_detector(waveband_response, band * u.AA)
 
     print(response)
 

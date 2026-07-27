@@ -39,6 +39,8 @@ pooch.retrieve(
     processor=pooch.Untar(extract_dir=extract_path.name),
 )
 vdem = xr.open_zarr(extract_path / "muse_example_vdem.zarr")
+if "vdop" in vdem.dims:
+    vdem = vdem.rename(vdop="doppler_velocity")
 
 ##############################################################################
 # First, let's print the VDEM to see what it looks like.

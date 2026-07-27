@@ -1,3 +1,3 @@
-``DEFAULTS_MUSE`` gained ``pair_creation_energy``, the mean energy that frees
-one electron-hole pair in silicon, stored per channel like
+``DEFAULTS_MUSE`` gained ``pair_creation_energy_sg``, the mean energy that frees
+one electron-hole pair in the SG detector, stored per channel like
 ``channel_spectral_order``.

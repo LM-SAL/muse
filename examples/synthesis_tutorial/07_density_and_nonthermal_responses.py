@@ -88,7 +88,7 @@ lower = band - 35 / spectral_order
 upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
 instrumental_width = u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data)
-effective_area = DEFAULTS_MUSE.main_line_effective_area.sel(channel=band)
+effective_area = DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=band)
 # Since we will only plot at ``doppler_velocity=0``, we pass a single
 # Doppler-velocity point. This makes the code faster and use less RAM.
 doppler_velocity = [0] * u.km / u.s
@@ -107,8 +107,8 @@ waveband_response = create_spectral_response(
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
-response = map_response_to_sg_detector(waveband_response, band)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+response = map_response_to_sg_detector(waveband_response, band * u.AA)
 print(response)
 
 plt.figure()
@@ -132,8 +132,8 @@ waveband_response = create_spectral_response(
     nonthermal_velocity=np.arange(0, 100, 20) * u.km / u.s,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band)
-response = map_response_to_sg_detector(waveband_response, band)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+response = map_response_to_sg_detector(waveband_response, band * u.AA)
 print(response)
 
 plt.figure()

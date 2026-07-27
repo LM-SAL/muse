@@ -31,6 +31,7 @@ def create_spectral_response(
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
+    include_contaminants: bool = False,
 ) -> xr.Dataset:
     """
     Create an instrument-neutral wavelength-space spectral response.
@@ -58,9 +59,12 @@ def create_spectral_response(
     effective_area : `xarray.DataArray`, optional
         Either a one-dimensional effective-area curve with a unit-bearing
         ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
-        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area.sel(channel=171)``)
+        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=171)``)
         applied uniformly across the wavelength grid. If `None`, the response
         is not scaled by effective area.
+    include_contaminants : `bool`, optional
+        If `True`, include all lines not in ``main_lines`` in a single
+        ``contaminants`` line. If `False`, only the main lines are returned.
 
     Returns
     -------
@@ -78,6 +82,7 @@ def create_spectral_response(
         nonthermal_velocity=nonthermal_velocity,
         effective_area=effective_area,
         main_lines=main_lines,
+        include_contaminants=include_contaminants,
     )
     response = response.drop_vars("component_kind")
     add_history(response, call_inputs, create_spectral_response)
@@ -150,9 +155,9 @@ def _create_wavelength_response(
             doppler_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
         )
     doppler_widths = np.sqrt(doppler_widths_squared)
+    gaussian_norm = np.sqrt(2 * np.pi)
 
     main_response_parts = {name: [] for name in main_lines}
-    gaussian_norm = np.sqrt(2 * np.pi)
     for i, line_name in enumerate(line_names):
         if line_name not in main_response_parts:
             continue
@@ -192,6 +197,7 @@ def _create_wavelength_response(
         )
     else:
         contaminant_response = None
+
     if contaminant_response is not None:
         contaminant_response = contaminant_response.expand_dims(line=["contaminants"])
         contaminant_response = contaminant_response.assign_coords(
@@ -234,10 +240,13 @@ def _effective_area_in_canonical_units(effective_area):
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
-        msg = "effective_area must be an xarray.DataArray, e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...)"
+        msg = (
+            "effective_area must be an xarray.DataArray, "
+            "e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...)"
+        )
         raise TypeError(msg)
     if effective_area.ndim == 0:
-        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area.sel(channel=...)) applies
+        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...)) applies
         # uniformly, so it stays zero-dimensional and simply multiplies the response.
         data = effective_area.data
         units = effective_area.attrs.get("units")

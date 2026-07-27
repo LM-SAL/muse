@@ -203,19 +203,19 @@ def _mapping_values_equal(a, b):
     return a.keys() == b.keys() and all(np.array_equal(a[key], b[key]) for key in a)
 
 
-def _channel_coordinates(data_array, name):
+def _channel_coordinates(data_array, name, dimension="channel"):
     if data_array is None:
         return None
-    if "channel" not in data_array.dims:
-        msg = f"{name} must have a 'channel' dimension"
+    if dimension not in data_array.dims:
+        msg = f"{name} must have a {dimension!r} dimension"
         raise ValueError(msg)
-    if "channel" not in data_array.coords:
-        msg = f"{name} must have a 'channel' coordinate"
+    if dimension not in data_array.coords:
+        msg = f"{name} must have a {dimension!r} coordinate"
         raise ValueError(msg)
-    if data_array.coords["channel"].dims != ("channel",):
-        msg = f"{name}.channel must be one-dimensional along the 'channel' dimension"
+    if data_array.coords[dimension].dims != (dimension,):
+        msg = f"{name}.{dimension} must be one-dimensional along the {dimension!r} dimension"
         raise ValueError(msg)
-    return tuple(np.asarray(data_array.coords["channel"].values).tolist())
+    return tuple(np.asarray(data_array.coords[dimension].values).tolist())
 
 
 def _quantity_set(quantity, unit):
@@ -337,13 +337,22 @@ class InstrumentDefaults:
     Number of steps per raster for the SG.
     """
 
-    main_line_effective_area: xr.DataArray | None = field(
+    main_line_effective_area_sg: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
     Effective area of the main line for the SG.
 
     Normalized to square centimeters.
+    """
+
+    main_line_effective_area_ci: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
+    )
+    """
+    Effective area of the main line for the CI.
+
+    Normalized to square centimeters and keyed by ``ci_channel``.
     """
 
     # Diffraction parameters
@@ -401,16 +410,32 @@ class InstrumentDefaults:
     Data compression level.
     """
 
-    ccd_gain: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    ccd_gain_sg: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
-    CCD gain in electrons per DN, per band (channel).
+    SG CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    pair_creation_energy: xr.DataArray | None = field(
+    ccd_gain_ci: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    """
+    CI CCD gain in electrons per DN, keyed by ``ci_channel``.
+    """
+
+    pair_creation_energy_sg: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
-    Mean energy that frees one electron-hole pair in silicon, per band (channel).
+    Mean energy that frees one electron-hole pair in the SG detector, keyed by
+    ``channel``.
+    """
+
+    pair_creation_energy_ci: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
+    )
+    """
+    Mean energy that frees one electron-hole pair in the CI detector, keyed by
+    ``ci_channel``.
+
+    CI calibration fields may cover different channel sets.
     """
 
     # Synthesis/inversions
@@ -560,6 +585,9 @@ class InstrumentDefaults:
         _validate_matching_keys(self.lpi, "lpi", self.mesh_transmission, "mesh_transmission")
 
     def _validate_channel_fields(self):
+        for name in ("ccd_gain_ci", "main_line_effective_area_ci", "pair_creation_energy_ci"):
+            _channel_coordinates(getattr(self, name), name, dimension="ci_channel")
+
         channels_by_field = {
             name: _channel_coordinates(value, name)
             for name, value in ((a.name, getattr(self, a.name)) for a in fields(type(self)))
