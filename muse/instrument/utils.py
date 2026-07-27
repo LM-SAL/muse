@@ -466,7 +466,7 @@ def match_responses_and_vdems(
 
             responses = responses.sel(logT=shared_logT, method="nearest", drop=True)
             vdems = vdems.sel(logT=shared_logT, method="nearest", drop=True)
-
+            responses.coords["logT"] = vdems.coords["logT"]
     else:
         shared_logT = vdems.logT.where(
             (vdems.logT >= responses.logT.min()) & (vdems.logT <= responses.logT.max()), drop=True
@@ -531,7 +531,7 @@ def match_responses_and_vdems(
 
             responses = responses.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
             vdems = vdems.sel(doppler_velocity=shared_doppler_velocity, method="nearest", drop=True)
-
+            responses.coords["doppler_velocity"] = vdems.coords["doppler_velocity"]
     else:
         responses = responses.interp(doppler_velocity=vdems.doppler_velocity, method=doppler_velocity_method)
 
