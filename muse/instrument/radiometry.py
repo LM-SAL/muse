@@ -27,7 +27,6 @@ def _unit_power(unit, base) -> float:
     "DEFAULTS_MUSE",
     pixel_width="dx_pixel_SG",
     pixel_height="dy_pixel_SG",
-    gain="ccd_gain",
 )
 @u.quantity_input(
     pixel_width=u.arcsec,
@@ -42,7 +41,7 @@ def transform_response_units(
     *,
     pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
     pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
-    gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
+    gain: u.Quantity | None = None,
     pair_energy: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
@@ -68,12 +67,13 @@ def transform_response_units(
         ``"1e-27 cm5 ph / (Angstrom s)"``.
     channel : `int`
         MUSE SG channel: 108, 171, or 284 Angstrom. Selects the per-channel
-        ``pair_energy`` calibration.
+        ``gain`` and ``pair_energy`` calibrations.
     pixel_width, pixel_height : `astropy.units.Quantity`, optional
         SG pixel angular size used to convert steradians to detector pixels,
         by default {pixel_width} and {pixel_height}, respectively.
     gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN, by default {gain}.
+        Camera gain, convertible to electron/DN. If `None`, use the channel's
+        value from `~muse.variables_schema.InstrumentDefaults.ccd_gain`.
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon. If `None`,
         use the channel's value from
@@ -90,12 +90,14 @@ def transform_response_units(
         raise TypeError(msg)
     old_unit = require_unit(response, "spectral_response", "response.spectral_response")
     target_unit = u.Unit(new_units)
-    if pair_energy is None:
-        try:
+    try:
+        if gain is None:
+            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+        if pair_energy is None:
             pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy.sel(channel=channel).data)
-        except KeyError:
-            msg = f"unsupported MUSE SG channel {channel}"
-            raise ValueError(msg) from None
+    except KeyError:
+        msg = f"unsupported MUSE SG channel {channel}"
+        raise ValueError(msg) from None
     wavelength = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
 
     photon_energy = (const.h * const.c / (np.asarray(wavelength) * u.AA)).to(u.erg) / u.ph

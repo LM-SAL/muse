@@ -9,7 +9,6 @@ from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history
 from muse.variables import DEFAULTS_MUSE
 
@@ -137,7 +136,6 @@ def _canonicalize_response_names(response: xr.Dataset) -> xr.Dataset:
     return response
 
 
-@format_docstring("DEFAULTS_MUSE", gain="ccd_gain")
 @u.quantity_input(gain=u.electron / u.DN)
 def read_response(
     response_file: str | Path,
@@ -147,7 +145,7 @@ def read_response(
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "nearest",
-    gain: u.Quantity = DEFAULTS_MUSE.ccd_gain,
+    gain: u.Quantity | None = None,
     chunked: bool = False,
 ) -> xr.Dataset:
     """
@@ -169,7 +167,9 @@ def read_response(
     doppler_velocity_method : `str`, optional
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN, by default {gain}.
+        Camera gain, convertible to electron/DN. If `None`, use the per-channel
+        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain`
+        selected by the response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
@@ -231,6 +231,15 @@ def read_response(
         r = r.assign_coords(line_wavelength=fallback)
 
     gain_unit = u.electron / u.DN
+    if gain is None:
+        if "channel" not in r.coords:
+            msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
+            raise ValueError(msg)
+        try:
+            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=r.channel).data)
+        except KeyError:
+            msg = f"unsupported MUSE SG channel(s) {np.unique(r.channel.values).tolist()}; pass gain explicitly"
+            raise ValueError(msg) from None
     gain = gain.to(gain_unit)  # a statement so add_history records the converted value
     gain_dim = "channel" if "channel" in r.dims else "line"
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
@@ -302,8 +311,8 @@ def load_and_concat_responses(
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
     channels : `Sequence` of `int`
-        One channel value per response file. The value is repeated for every
-        line when a file contains multiple lines.
+        One MUSE SG channel per response file. Selects the per-channel default
+        gain and is repeated for every line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.read_response`.
     doppler_velocity : `xarray.DataArray`, optional
@@ -329,7 +338,8 @@ def load_and_concat_responses(
     Raises
     ------
     ValueError
-        If the length of ``channels`` does not match ``response_files``.
+        If the length of ``channels`` does not match ``response_files`` or a
+        channel is unsupported.
     """
     if len(channels) != len(response_files):
         msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
@@ -337,7 +347,12 @@ def load_and_concat_responses(
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
-        for filename in response_files:
+        for filename, channel in zip(response_files, channels, strict=True):
+            try:
+                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+            except KeyError:
+                msg = f"unsupported MUSE SG channel {channel}"
+                raise ValueError(msg) from None
             dataset = read_response(
                 Path(response_directory) / filename,
                 logT=logT,
@@ -345,6 +360,7 @@ def load_and_concat_responses(
                 slit=slit,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
+                gain=gain,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
