@@ -8,38 +8,21 @@ This tutorial demonstrates how to visualize the detector spectra created by
 In addition to calculating the spectral moments as well.
 """
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
-import pooch
 import xarray as xr
 from matplotlib import colors
 
-from muse.log import change_logging_level
+from muse.data import fetch_example_data
 from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # Download the saved MUSE spectrum from the
 # :ref:`previous example <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
 #
-# If you have your own version locally, you need to change the ``spectrum_path``.
+# If you have your own version locally, change ``spectrum_path``.
 
-tutorial_dir = Path(pooch.os_cache("muse")) / "synthesis_tutorial"
-spectrum_path = Path(
-    pooch.retrieve(
-        url=(
-            "https://www.dropbox.com/scl/fi/jekc9ol4tjmaazbs0zii5/muse_synthetic_spectra.nc"
-            "?rlkey=rqe45g5f82mrkgyg5l3fy4ssg&st=lxupqq0h&dl=1"
-        ),
-        known_hash="sha256:cb0a2b4ad3f496a1b1bc5c224c5d84b0f268299efca964252e590befd6339009",
-        fname="muse_synthetic_spectra.nc",
-        path=tutorial_dir,
-    )
-)
+spectrum_path = fetch_example_data("muse_synthetic_spectra.nc")
 
 spectrum = xr.open_dataset(spectrum_path, engine="h5netcdf", chunks="auto")
 
@@ -61,7 +44,7 @@ spectrogram = spectrum.flux.sel(line="Fe IX 171.073").isel(step=2, slit=15, pres
 spectrogram_plot = spectrogram.plot.imshow(
     x="detector_wavelength",
     y="y",
-    norm=colors.PowerNorm(0.3),
+    norm=colors.LogNorm(vmin=0.3),
     cmap="jet",
     figsize=(12, 6),
 )

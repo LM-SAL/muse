@@ -9,31 +9,19 @@ This tutorial demonstrates how to synthesize the MUSE detector spectra.
 import os
 from pathlib import Path
 
-import pooch
+import matplotlib.pyplot as plt
 import xarray as xr
+from matplotlib import colors
 
+from muse.data import fetch_example_data
 from muse.instrument import load_and_concat_responses
-from muse.log import change_logging_level
 from muse.synthesis import vdem_synthesis
-from muse.transforms import match_fov, reshape_x_to_slit_step
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
+from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
 ##############################################################################
 # First we will load and reshape the VDEM. This is the used in Example 02.
 
-extract_path = Path(pooch.os_cache("muse")) / "muse_example_vdem"
-pooch.retrieve(
-    "https://www.dropbox.com/scl/fi/xb2f6pvs4cn1yg54n0pdg/muse_example_vdem.zarr.tar.gz?rlkey=u5y19c5lydrw9kur9bzahkvsv&st=t5vltlk8&dl=1",
-    known_hash="ab6c8a3fe4f30de6906f75165f19ccc8730040527f6b9b0cccbdd9a09c28a71c",
-    fname="muse_example_vdem.zarr.tar.gz",
-    path=extract_path.parent,
-    processor=pooch.Untar(extract_dir=extract_path.name),
-)
-vdem = xr.open_zarr(extract_path / "muse_example_vdem.zarr")
-if "vdop" in vdem.dims:
-    vdem = vdem.rename(vdop="doppler_velocity")
+vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
 # We need to keep the tutorial spectrum manageable.
 # Remove this selection so you can have the  full-resolution y axis.
@@ -48,35 +36,20 @@ vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 # This ensures that the VDEM and response function share the same temperature
 # and velocity grids.
 
-abundance = "sun_coronal_2021_chianti"
-tutorial_cache = Path(pooch.os_cache("muse")) / "synthesis_tutorial"
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
-response_artifacts = [
-    (
-        f"muse_sg_response_108_FeXIX108.355_FeXXI108.117_{abundance}_effarea.nc",
-        "https://www.dropbox.com/scl/fi/j9a783mb7cgfgvv32dvyg/muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc?rlkey=6l10a72999tunxabjmaj6todk&st=j25qujz2&dl=1",
-        "sha256:7cc72056ff8f5da547a8ebab649742b3463b0c1598bb1956826f73b0db893090",
-    ),
-    (
-        f"muse_sg_response_171_FeIX171.073_{abundance}_effarea.nc",
-        "https://www.dropbox.com/scl/fi/kyc9fisbxl8hxxl1um4ok/muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc?rlkey=h8coyvfvi35yzefqn9r0atgbl&st=3pelvukg&dl=1",
-        "sha256:caa78779b27e9a0d1e1b71ccd81c0d15403053ae551d5d4013d58b7a2a4680d1",
-    ),
-    (
-        f"muse_sg_response_284_FeXV284.163_{abundance}_effarea.nc",
-        "https://www.dropbox.com/scl/fi/7urj1qr4csm92apusgik6/muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc?rlkey=qer5d0hw94rpvk7l4bemignmv&st=kcue7mqi&dl=1",
-        "sha256:753b9bd0472d102431dc0ab9637ff9e2626098ac093a276634d0ad4025336839",
-    ),
-]
 response_files = [
-    Path(pooch.retrieve(url=url, known_hash=known_hash, fname=fname, path=tutorial_cache)).name
-    for fname, url, known_hash in response_artifacts
+    fetch_example_data(fname)
+    for fname in (
+        "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc",
+        "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc",
+        "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc",
+    )
 ]
 
 response = load_and_concat_responses(
-    response_directory=tutorial_cache,
-    response_files=response_files,
+    response_directory=response_files[0].parent,
+    response_files=[path.name for path in response_files],
     channels=[108, 171, 284],
     logT=vdem_raster.logT,
     doppler_velocity=vdem_raster.doppler_velocity,
@@ -131,3 +104,23 @@ spectrum.to_netcdf(output, engine="h5netcdf", encoding=encoding)
 
 print(spectrum)
 print(f"Saved {output}")
+
+##############################################################################
+# Finally, a quick look at the synthesized field of view: the spectrally
+# integrated Fe IX 171.073 intensity, with the slit and raster-step axes
+# collapsed back onto the x axis by
+# :func:`muse.transforms.reshape_slit_step_to_x`.
+# We read the spectrum back from the file we just saved rather than
+# recomputing the lazy synthesis graph a second time.
+
+saved_spectrum = xr.open_dataset(output, engine="h5netcdf")
+intensity = reshape_slit_step_to_x(saved_spectrum.sum(dim="detector_x_pixel"))
+plt.figure(figsize=(10, 4))
+intensity.flux.sel(line="Fe IX 171.073").isel(pressure=0).plot(
+    x="x",
+    y="y",
+    norm=colors.LogNorm(vmin=0.3),
+    cmap="inferno",
+)
+plt.title("Synthesized Fe IX 171.073 intensity over the full FOV")
+plt.show()

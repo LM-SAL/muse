@@ -57,6 +57,7 @@ optional-dependencies.docs = [
   "sphinx",
   "sphinxext-opengraph",
   "tabulate",
+  "aiapy",
 ]
 optional-dependencies.tests = [
   "muse[all]",

@@ -112,6 +112,7 @@ intersphinx_mapping = {
     "sunpy": ("https://docs.sunpy.org/en/stable/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "attrs": ("https://www.attrs.org/en/stable/", None),
+    "aiapy": ("https://aiapy.readthedocs.io/en/stable/", None),
 }
 
 # -- Options for sphinxext-opengraph ------------------------------------------
