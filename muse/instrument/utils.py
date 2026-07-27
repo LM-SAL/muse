@@ -311,8 +311,8 @@ def load_and_concat_responses(
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
     channels : `Sequence` of `int`
-        One channel value per response file. The value is repeated for every
-        line when a file contains multiple lines.
+        One MUSE SG channel per response file. Selects the per-channel default
+        gain and is repeated for every line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.read_response`.
     doppler_velocity : `xarray.DataArray`, optional
@@ -338,7 +338,8 @@ def load_and_concat_responses(
     Raises
     ------
     ValueError
-        If the length of ``channels`` does not match ``response_files``.
+        If the length of ``channels`` does not match ``response_files`` or a
+        channel is unsupported.
     """
     if len(channels) != len(response_files):
         msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
@@ -346,7 +347,12 @@ def load_and_concat_responses(
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
-        for filename in response_files:
+        for filename, channel in zip(response_files, channels, strict=True):
+            try:
+                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=channel).data)
+            except KeyError:
+                msg = f"unsupported MUSE SG channel {channel}"
+                raise ValueError(msg) from None
             dataset = read_response(
                 Path(response_directory) / filename,
                 logT=logT,
@@ -354,6 +360,7 @@ def load_and_concat_responses(
                 slit=slit,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
+                gain=gain,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]

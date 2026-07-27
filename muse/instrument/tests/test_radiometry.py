@@ -64,6 +64,25 @@ def test_transform_response_units_photons_to_data_numbers():
     assert u.Unit(data_numbers.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
 
 
+def test_transform_response_units_uses_channel_gain(monkeypatch):
+    monkeypatch.setattr(
+        DEFAULTS_MUSE.ccd_gain,
+        "data",
+        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
+    )
+    photons = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 284)
+
+    default = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", 284)
+    explicit = transform_response_units(
+        photons,
+        "1e-27 cm5 DN / (Angstrom s)",
+        284,
+        gain=12 * u.electron / u.DN,
+    )
+
+    np.testing.assert_allclose(default.spectral_response, explicit.spectral_response)
+
+
 @pytest.mark.parametrize(
     "intermediate",
     [

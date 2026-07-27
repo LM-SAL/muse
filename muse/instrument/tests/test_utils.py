@@ -344,6 +344,20 @@ def test_read_response_gain_accepts_quantity(tmp_path) -> None:
     assert r.gain.attrs["units"] == str(u.electron / u.DN)
 
 
+def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        DEFAULTS_MUSE.ccd_gain,
+        "data",
+        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
+    )
+    src = fake_legacy_response_file().assign_coords(channel=("line", [284]))
+    path = _write(src, tmp_path / "resp.zarr", "zarr")
+
+    r = read_response(path)
+
+    np.testing.assert_array_equal(r.gain.values, [12.0])
+
+
 def test_read_response_gain_rejects_wrong_units(tmp_path) -> None:
     path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
     with pytest.raises(u.UnitsError):
@@ -382,7 +396,12 @@ def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
         read_response(path)
 
 
-def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
+def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        DEFAULTS_MUSE.ccd_gain,
+        "data",
+        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
+    )
     first = xr.concat(
         [
             fake_legacy_response_file().assign_coords(
@@ -414,8 +433,8 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
         channel=("line", [284]),
         component_kind=("line", ["line"]),
     )
-    _write(first, tmp_path / "a.nc", "nc")
-    _write(second, tmp_path / "b.nc", "nc")
+    _write(first.drop_vars("channel"), tmp_path / "a.nc", "nc")
+    _write(second.drop_vars("channel"), tmp_path / "b.nc", "nc")
 
     resp = load_and_concat_responses(
         response_directory=tmp_path,
@@ -432,9 +451,7 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path) -> None:
     np.testing.assert_array_equal(resp.component_kind, ["line", "line", "contaminants", "line"])
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
-    np.testing.assert_array_equal(
-        resp.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain.sel(channel=resp.channel).data).value
-    )
+    np.testing.assert_array_equal(resp.gain.values, [8.0, 8.0, 8.0, 12.0])
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "detector_response" in resp.data_vars
@@ -464,3 +481,10 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
             response_files=["a.zarr"],
             channels=[171, 284],
         )
+
+
+def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None:
+    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
+
+    with pytest.raises(ValueError, match="unsupported MUSE SG channel 195"):
+        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
