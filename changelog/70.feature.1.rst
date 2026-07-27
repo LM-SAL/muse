@@ -1,0 +1,1 @@
+Add `muse.data.fetch_example_data` to download and cache the example data files used by the documentation gallery; the gallery examples use it instead of inlining download URLs.

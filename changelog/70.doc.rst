@@ -1,0 +1,1 @@
+Add AIA, Hinode/EIS, and Solar-C/EUVST response and synthesis examples using instrument-neutral wavelength-space responses, and a tutorial example creating the MUSE context-imager response.
