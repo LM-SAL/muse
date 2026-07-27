@@ -1,0 +1,2 @@
+Channel arguments for radiometric conversion and detector mapping
+now require scalar wavelength quantities.

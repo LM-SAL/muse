@@ -1,0 +1,2 @@
+Add CI response support with detector-specific calibration defaults, radiometric
+conversion, and band-integrated detector mapping.
