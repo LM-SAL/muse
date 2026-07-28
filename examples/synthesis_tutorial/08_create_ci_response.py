@@ -84,4 +84,5 @@ image.plot(
     cmap="inferno",
 )
 plt.title("Synthesized MUSE CI 195 image")
+
 plt.show()

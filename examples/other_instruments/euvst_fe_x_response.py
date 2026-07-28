@@ -8,11 +8,6 @@ list and a wavelength-space response for the Solar-C/EUVST short-wavelength
 band around the Fe X 174.531 and 175.263 Å pair, whose ratio is a
 well-known electron-density diagnostic.
 
-Unlike the :ref:`EIS example
-<sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`,
-which computes the line list at a fixed electron pressure, here we compute it
-on an electron-density grid, so the response carries a ``logD`` dimension.
-
 The CHIANTI line list is downloaded from the skipped preparation example.
 """
 
@@ -38,11 +33,9 @@ print(line_list)
 
 ##############################################################################
 # Now the instrument. EUVST is still pre-flight, so the numbers below are
-# representative design values: a spectral-pixel size of about 17 mÅ in
+# representative for this example: a spectral-pixel size of about 17 mÅ in
 # the short-wavelength band. We leave the instrumental width at zero and use a
-# unity effective area; substitute the real values once the calibrated curves
-# are available (as a one-dimensional ``xarray.DataArray`` with a unit-bearing
-# ``wavelength`` coordinate).
+# unity effective area.
 
 dispersion = 0.017 * u.AA
 wavelength_grid = np.arange(174.0, 175.6, dispersion.to_value(u.AA)) * u.AA

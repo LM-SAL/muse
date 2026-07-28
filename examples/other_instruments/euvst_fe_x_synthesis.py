@@ -25,7 +25,7 @@ import astropy.units as u
 
 from muse.data import fetch_example_data
 from muse.instrument import create_spectral_response
-from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
+from muse.synthesis import vdem_synthesis
 
 ##############################################################################
 # We fetch the VDEM used by the MUSE synthesis tutorial. Its ``logT`` and
@@ -39,11 +39,13 @@ vdem = vdem.isel(y=slice(None, None, 8))
 print(vdem)
 
 ##############################################################################
-# We recreate the EUVST Fe X response from the
-# :ref:`response example
-# <sphx_glr_generated_gallery_other_instruments_euvst_fe_x_response.py>`
-# on the VDEM's temperature and velocity grids, selecting a single density
-# from the precomputed density-dependent line list.
+# We recreate the EUVST Fe X response.
+#
+# :func:`muse.synthesis.vdem_synthesis` pairs the VDEM and response grid
+# point by grid point without interpolating, so the response must be
+# evaluated on the VDEM's exact ``logT`` and ``doppler_velocity`` grids,
+# while the response example used wider display grids to show the full
+# response shape.
 
 line_list_file = fetch_example_data("euvst_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(
@@ -97,21 +99,16 @@ spectrum_image.plot(
 plt.title("Synthesized EUVST Fe X spectrum at one raster position")
 
 ##############################################################################
-# Finally, the per-line intensity maps and the Doppler map of the stronger
-# line.
+# Finally, the intensity maps of the density-sensitive line pair: the
+# per-pixel spectrum summed over the spectral axis.
 
-velocity_spectrum = wavelength_to_doppler(spectrum)
-moments = calculate_moments(velocity_spectrum, moment_dim="wavelength_bin")
-
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 # Anchor each log scale to its own data: median to max spans the quiet
 # background and the flare core without washing either out.
-for ax, line in zip(axes[:2], ["Fe X 174.531", "Fe X 175.263"], strict=True):
-    intensity = moments["0th"].sel(line=line).isel(logD=0)
+for ax, line in zip(axes, ["Fe X 174.531", "Fe X 175.263"], strict=True):
+    intensity = spectrum.flux.sel(line=line).isel(logD=0).sum(dim="wavelength_bin", keep_attrs=True)
     intensity.plot(ax=ax, norm=colors.LogNorm(vmin=intensity.quantile(0.5).item(), vmax=intensity.max().item()))
     ax.set_title(f"{line} intensity")
-moments["1st"].sel(line="Fe X 174.531").isel(logD=0).plot(ax=axes[2], cmap="RdBu_r", robust=True)
-axes[2].set_title("Fe X 174.531 Doppler shift")
 plt.tight_layout()
 
 plt.show()

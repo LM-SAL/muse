@@ -1,7 +1,7 @@
 """
-===============================
-00 - Prepare CHIANTI line lists
-===============================
+==========================
+Prepare CHIANTI line lists
+==========================
 
 This example computes the CHIANTI line lists used by the response examples in
 this section. It requires a local CHIANTI database configured with ``XUVTOP``:
@@ -9,9 +9,6 @@ this section. It requires a local CHIANTI database configured with ``XUVTOP``:
 .. code-block::
 
     export XUVTOP=/path/to/CHIANTI_11.0.2_database
-
-The saved files can be published for the response examples to download, so
-those examples can run on Read the Docs without installing CHIANTI.
 """
 
 import os
@@ -24,9 +21,15 @@ import astropy.units as u
 
 from muse.instrument import create_chianti_line_list
 
+##############################################################################
+# We first confirm that the local environment is working.
+
 if not os.environ.get("XUVTOP"):
     msg = "XUVTOP is not set. Run `export XUVTOP=/path/to/CHIANTI_11.0.2_database` first."
     raise OSError(msg)
+
+##############################################################################
+# Now we need to configure the line-list calculations.
 
 abundance = "sun_coronal_2021_chianti"
 temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")

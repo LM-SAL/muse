@@ -11,7 +11,8 @@ def test_unknown_name_raises():
 def test_registry_entries_well_formed():
     for url, known_hash, subdir in _REGISTRY.values():
         assert url.startswith("https://")
-        assert url.endswith("dl=1")
+        if "dropbox.com" in url:
+            assert url.endswith("dl=1")
         assert known_hash.startswith("sha256:")
         assert len(known_hash) == len("sha256:") + 64
         assert subdir

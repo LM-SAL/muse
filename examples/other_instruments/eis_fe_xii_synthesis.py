@@ -35,10 +35,11 @@ vdem = vdem.isel(y=slice(None, None, 8))
 print(vdem)
 
 ##############################################################################
-# We recreate the EIS Fe XII response from the
-# :ref:`response example
-# <sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`,
-# this time using the VDEM's temperature and velocity grids.
+# We recreate the EIS Fe XII response as :func:`muse.synthesis.vdem_synthesis`
+# pairs the VDEM and response grid point by grid point without interpolating,
+# so the response must be evaluated on the VDEM's exact ``logT`` and
+# ``doppler_velocity`` grids, while the response example used wider display
+# grids to show the full response shape.
 
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.logT, method="nearest", tolerance=0.05)
@@ -47,14 +48,21 @@ line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=
 
 dispersion = 0.0223 * u.AA
 instrumental_fwhm = 0.056 * u.AA
+# Pre-flight SW-band effective area (no in-flight sensitivity decay).
+ea_table = np.loadtxt(fetch_example_data("EIS_EffArea_B.005"))
+effective_area = xr.DataArray(
+    ea_table[:, 1],
+    dims="wavelength",
+    coords={"wavelength": ("wavelength", ea_table[:, 0], {"units": str(u.AA)})},
+    attrs={"units": str(u.cm**2)},
+)
 response = create_spectral_response(
     line_list,
     np.arange(194.5, 195.7, dispersion.to_value(u.AA)) * u.AA,
     main_lines=["Fe XII 195.119", "Fe XII 195.179"],
     instrumental_width=instrumental_fwhm / (2 * np.sqrt(2 * np.log(2))),
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
-    # Placeholder unity area; substitute the calibrated EIS curve when available.
-    effective_area=xr.DataArray(1 * u.cm**2),
+    effective_area=effective_area,
 )
 # Convert the per-Å response to one value per EIS spectral detector pixel.
 response_unit = u.Unit(response.spectral_response.attrs["units"]) * u.AA

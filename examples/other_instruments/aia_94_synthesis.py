@@ -55,12 +55,14 @@ vdem = vdem.isel(y=slice(None, None, 8))
 print(vdem)
 
 ##############################################################################
-# We recreate the AIA 94 Å response from the
-# :ref:`response example
-# <sphx_glr_generated_gallery_other_instruments_aia_94_response.py>`
-# on the VDEM's temperature and velocity grids: the `aiapy` wavelength
-# response and plate scale, a precomputed iron-only line list, and the five
-# strongest radiometrically weighted contributors.
+# We recreate the AIA 94 Å response instead of reusing the one from the
+# previous example.
+#
+# :func:`muse.synthesis.vdem_synthesis` pairs the VDEM and response grid
+# point by grid point without interpolating, so the response must be
+# evaluated on the VDEM's exact ``logT`` and ``doppler_velocity`` grids,
+# while the response example used wider display grids to show the full
+# response shape.
 
 channel = Channel(94 * u.angstrom)
 # With no ``obstime``, this uses the baseline calibration without a

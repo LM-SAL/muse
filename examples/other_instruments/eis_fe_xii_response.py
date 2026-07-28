@@ -6,10 +6,7 @@ Create an EIS Fe XII response
 This tutorial demonstrates how to create a CHIANTI line list and a
 wavelength-space response for the Hinode/EIS Fe XII 195.119 Å window.
 
-:func:`muse.instrument.create_spectral_response` is instrument-neutral:
-everything MUSE-specific lives in the detector mapping
-(:func:`muse.instrument.map_response_to_sg_detector`), which we do not use here.
-Instead we sample the response on the EIS spectral-pixel grid directly.
+:func:`muse.instrument.create_spectral_response` is instrument-neutral.
 
 The CHIANTI line list is downloaded from the skipped preparation example.
 """
@@ -47,18 +44,25 @@ print(line_list)
 #
 # ``instrumental_width`` is a Gaussian sigma, so we convert from FWHM.
 #
-# We use a unity effective area here; for quantitative work, pass the
-# calibrated EIS effective-area curve (available via SolarSoft or
-# `eispac <https://eispac.readthedocs.io/en/stable/>`__)
-# as a one-dimensional ``xarray.DataArray`` with a unit-bearing ``wavelength``
-# coordinate instead.
+# For the effective area we use the pre-flight SW-band calibration curve
+# ``EIS_EffArea_B.005`` from SolarSoft (about 0.30 cm² near 195 Å;
+# Culhane et al. 2007), a plain two-column wavelength/area table. It carries
+# no in-flight sensitivity decay; for time-dependent calibrated values see
+# EIS Software Note #2 and the revised calibrations
+# (Del Zanna 2013; Warren et al. 2014).
 
 dispersion = 0.0223 * u.AA
 instrumental_fwhm = 0.056 * u.AA
 instrumental_width = instrumental_fwhm / (2 * np.sqrt(2 * np.log(2)))
 wavelength_grid = np.arange(194.5, 195.7, dispersion.to_value(u.AA)) * u.AA
 doppler_velocity = np.arange(-300, 310, 10) * u.km / u.s
-effective_area_unity = xr.DataArray(1 * u.cm**2)
+ea_table = np.loadtxt(fetch_example_data("EIS_EffArea_B.005"))
+effective_area = xr.DataArray(
+    ea_table[:, 1],
+    dims="wavelength",
+    coords={"wavelength": ("wavelength", ea_table[:, 0], {"units": str(u.AA)})},
+    attrs={"units": str(u.cm**2)},
+)
 
 response = create_spectral_response(
     line_list,
@@ -66,7 +70,7 @@ response = create_spectral_response(
     main_lines=["Fe XII 195.119", "Fe XII 195.179"],
     instrumental_width=instrumental_width,
     doppler_velocity=doppler_velocity,
-    effective_area=effective_area_unity,
+    effective_area=effective_area,
 )
 # ``create_spectral_response`` is per Å; multiplying by the EIS dispersion
 # integrates each sample over one spectral detector pixel.

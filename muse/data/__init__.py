@@ -57,6 +57,11 @@ _REGISTRY = {
         "sha256:e9acf61f70d8bf96698eb360890dd6a56a370cdb274d3308523c5a99fc1b0612",
         "synthesis_tutorial",
     ),
+    "EIS_EffArea_B.005": (
+        "https://hesperia.gsfc.nasa.gov/ssw/hinode/eis/response/EIS_EffArea_B.005",
+        "sha256:b56e5c2873b10bdc9bd31d0f342e5ecc0491ff752ece5807f1d8de2f94d15d64",
+        "eis_calibration",
+    ),
     "muse_synthetic_spectra.nc": (
         "https://www.dropbox.com/scl/fi/jekc9ol4tjmaazbs0zii5/muse_synthetic_spectra.nc"
         "?rlkey=rqe45g5f82mrkgyg5l3fy4ssg&st=qw52o3ye&dl=1",
