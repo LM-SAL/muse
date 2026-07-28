@@ -54,6 +54,14 @@ response = load_and_concat_responses(
     # spectrum streams to disk instead of being materialized in memory at once.
     chunked=True,
 )
+
+print(response)
+
+##############################################################################
+# We also need to ensure that both the response function and vdem are on the
+# same grid when it comes to doppler and temperature, otherwise the
+# synthesis will output incorrectly.
+
 response, vdem_raster = match_responses_and_vdems(
     response,
     vdem_raster,

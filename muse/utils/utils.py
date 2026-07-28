@@ -91,10 +91,10 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
     """
     target_unit = u.Unit(target_unit)
     unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)
-    converted = ds.coords[name] * unit.to(target_unit)
+    converted = unit.to(target_unit, ds.coords[name].data)
     return xr.DataArray(
-        converted.data,
-        dims=converted.dims,
+        converted,
+        dims=ds.coords[name].dims,
         attrs={**ds.coords[name].attrs, "units": str(target_unit)},
         name=name,
     )

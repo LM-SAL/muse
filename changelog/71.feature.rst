@@ -1,0 +1,1 @@
+Add `muse.instrument.match_responses_and_vdems` to place response and VDEM datasets on common temperature and velocity grids.

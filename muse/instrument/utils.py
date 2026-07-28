@@ -9,7 +9,7 @@ from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history, update_attrs
+from muse.utils.utils import add_history, coord_as_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_and_concat_responses", "match_responses_and_vdems", "read_response", "save_response"]
@@ -261,15 +261,21 @@ def read_response(
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
     r = r.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
-    # The current response files carry no wavelength units; warn and assume Angstrom for now.
-    # This is intended to become a hard error once every response file carries units.
-    for name in ("detector_wavelength", "line_wavelength"):
+    # Current response files do not carry units on every coordinate; warn and
+    # assume the established MUSE units until the files are migrated.
+    assumed_units = {
+        "logT": u.dex(u.K),
+        "doppler_velocity": u.km / u.s,
+        "detector_wavelength": u.AA,
+        "line_wavelength": u.AA,
+    }
+    for name, unit in assumed_units.items():
         if name in r and "units" not in r[name].attrs:
             logger.warning(
-                f"Response {name} is missing the 'units' attribute; assuming Angstrom. "
+                f"Response {name} is missing the 'units' attribute; assuming {unit}. "
                 f"This will raise an error in a future release once response files carry units."
             )
-            r[name].attrs.update({"units": str(u.AA)})
+            r[name].attrs.update({"units": str(unit)})
 
     add_history(r, locals(), read_response)
     return r
@@ -348,15 +354,21 @@ def match_responses_and_vdems(
 
     matched_responses = responses
     matched_vdems = vdems
-    methods = {"logT": logT_method, "doppler_velocity": doppler_velocity_method}
-    for name, method in methods.items():
+    axes = {
+        "logT": (logT_method, u.dex(u.K)),
+        "doppler_velocity": (doppler_velocity_method, u.km / u.s),
+    }
+    for name, (method, unit) in axes.items():
+        normalized_axes = []
         for dataset_name, dataset in (("response", matched_responses), ("vdem", matched_vdems)):
-            if name not in dataset.coords:
-                msg = f"{dataset_name} must have {name} coordinate"
-                raise ValueError(msg)
-            if dataset[name].size == 0 or not bool(np.isfinite(dataset[name]).all()):
+            axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")
+            if axis.size == 0 or not bool(np.isfinite(axis).all()):
                 msg = f"{dataset_name} {name} coordinate must contain finite values"
                 raise ValueError(msg)
+            normalized_axes.append(axis)
+
+        matched_responses = matched_responses.assign_coords({name: normalized_axes[0]})
+        matched_vdems = matched_vdems.assign_coords({name: normalized_axes[1]})
 
         matched_responses = _resample_axis(matched_responses, name, matched_vdems[name], method)
         axis = matched_responses[name]

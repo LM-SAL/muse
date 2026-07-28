@@ -6,7 +6,23 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.utils.utils import add_history, update_attrs
+from muse.utils.utils import add_history, coord_as_unit, update_attrs
+
+
+@pytest.mark.parametrize(
+    ("source_unit", "target_unit", "values", "expected"),
+    [
+        ("m/s", u.km / u.s, [1000.0, 2000.0], [1.0, 2.0]),
+        ("dex(mK)", u.dex(u.K), [6.0, 7.0], [3.0, 4.0]),
+    ],
+)
+def test_coord_as_unit_converts_coordinate_values(source_unit, target_unit, values, expected) -> None:
+    ds = xr.Dataset(coords={"axis": ("axis", values, {"units": source_unit})})
+
+    converted = coord_as_unit(ds, "axis", target_unit, "axis")
+
+    np.testing.assert_allclose(converted, expected)
+    assert converted.attrs["units"] == str(target_unit)
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):

@@ -300,13 +300,15 @@ def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match)
         read_response(path)
 
 
-def test_read_response_warns_on_missing_wavelength_units(tmp_path, caplog) -> None:
-    # The fixture mirrors the real files, which carry no units on line_wvl/SG_wvl.
+def test_read_response_assigns_missing_coordinate_units(tmp_path, caplog) -> None:
+    # The fixture mirrors the real files, which do not carry units on every coordinate.
     path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
 
     r = read_response(path)
 
     assert "missing the 'units' attribute" in caplog.text
+    assert r.logT.attrs["units"] == str(u.dex(u.K))
+    assert r.doppler_velocity.attrs["units"] == str(u.km / u.s)
     assert r.line_wavelength.attrs["units"] == str(u.AA)  # Angstrom assumed for now
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
 
@@ -319,7 +321,8 @@ def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None
 
     r = read_response(path)
 
-    assert "missing the 'units' attribute" not in caplog.text
+    assert "Response line_wavelength is missing the 'units' attribute" not in caplog.text
+    assert "Response detector_wavelength is missing the 'units' attribute" not in caplog.text
     assert r.line_wavelength.attrs["units"] == "nm"  # present units left untouched
     assert r.detector_wavelength.attrs["units"] == "nm"
 
@@ -514,6 +517,23 @@ def test_match_responses_and_vdems_trims_both_outputs_to_overlap() -> None:
     xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
 
 
+def test_match_responses_and_vdems_normalizes_equivalent_velocity_units() -> None:
+    response = fake_response()
+    vdem = fake_vdem()
+    velocity = xr.DataArray(
+        vdem.doppler_velocity.values * 1000,
+        dims="doppler_velocity",
+        attrs={"units": "m/s"},
+    )
+    vdem = vdem.assign_coords(doppler_velocity=velocity)
+
+    matched_response, matched_vdem = match_responses_and_vdems(response, vdem)
+
+    xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
+    assert matched_vdem.doppler_velocity.attrs["units"] == str(u.km / u.s)
+    assert matched_vdem.sizes["doppler_velocity"] == vdem.sizes["doppler_velocity"]
+
+
 def test_match_responses_and_vdems_preserves_inputs_lineage_and_laziness() -> None:
     response = fake_response().assign_attrs(HISTORY=["response()"]).chunk({"logT": 2})
     vdem = fake_vdem().assign_attrs(HISTORY=["vdem()"]).chunk({"logT": 2})
@@ -541,8 +561,16 @@ def test_match_responses_and_vdems_requires_coordinates(dataset, name) -> None:
     else:
         vdem = vdem.drop_vars(name)
 
-    with pytest.raises(ValueError, match=rf"{dataset} must have {name} coordinate"):
+    with pytest.raises(ValueError, match=rf"{dataset}\.{name} is missing"):
         match_responses_and_vdems(response, vdem)
+
+
+def test_match_responses_and_vdems_requires_coordinate_units() -> None:
+    response = fake_response()
+    del response.doppler_velocity.attrs["units"]
+
+    with pytest.raises(ValueError, match=r"response\.doppler_velocity must define units"):
+        match_responses_and_vdems(response, fake_vdem())
 
 
 def test_match_responses_and_vdems_rejects_nonoverlapping_coordinates() -> None:
