@@ -141,7 +141,7 @@ def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
-    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile").x.size
+    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False).x.size
 
     out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, mode="constant")
 
@@ -150,12 +150,29 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
 
 
-def test_match_fov_notile_keeps_resampled_width(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile")
-    # "notile" suffix skips the pad, so the resampled width is kept as-is (< full FOV).
+def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False)
+    # Disabling tiling leaves an input narrower than the MUSE FOV at its available width.
     assert out.x.size == 308
     assert out.x.size < 35 * 11
     assert bool(np.isfinite(out.vdem).all())
+
+
+def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
+    width = 35 * 11
+    wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
+    wider.x.attrs["units"] = "arcsec"
+
+    out = match_fov(wider, tile=False)
+
+    assert out.x.size == width
+    np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, width)).values)
+
+
+def test_match_fov_without_tiling_returns_narrow_input_at_pixel_size(vdem) -> None:
+    narrower = vdem.isel(x=slice(0, 100))
+
+    assert match_fov(narrower, tile=False) is narrower
 
 
 def test_match_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
@@ -268,9 +285,9 @@ def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
         reshape_slit_step_to_x(vdem)
 
 
-def test_match_fov_rejects_unknown_restype(vdem) -> None:
-    with pytest.raises(ValueError, match="Unsupported restype"):
-        match_fov(vdem, restype="match_fov")
+def test_match_fov_requires_boolean_tile(vdem) -> None:
+    with pytest.raises(TypeError, match="tile must be a bool"):
+        match_fov(vdem, tile="yes")
 
 
 def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:

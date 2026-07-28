@@ -468,11 +468,6 @@ class InstrumentDefaults:
     This is the pad method used by `xarray.DataArray.pad`
     """
 
-    fov_restype: str | None = field(default=None, validator=_instance(str))
-    """
-    Type of tiling and resolution matching.
-    """
-
     fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
     """
     Does a subgrid interpolation.
