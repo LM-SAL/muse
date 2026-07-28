@@ -14,7 +14,7 @@ import xarray as xr
 from matplotlib import colors
 
 from muse.data import fetch_example_data
-from muse.instrument import load_and_concat_responses, match_responses_and_vdems
+from muse.instrument import align_response_and_vdem, load_and_concat_responses
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
@@ -32,9 +32,6 @@ print(vdem_raster)
 ##############################################################################
 # For multi-line analysis, we load the response functions for several spectral
 # lines and concatenate them.
-#
-# We then use :func:`muse.instrument.match_responses_and_vdems` to ensure that
-# the VDEM and response function share the same temperature and velocity grids.
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -63,8 +60,11 @@ print(response)
 # We also need to ensure that both the response function and vdem are on the
 # same grid when it comes to doppler and temperature, otherwise the
 # synthesis will output incorrectly.
+#
+# We use :func:`muse.instrument.align_response_and_vdem` to ensure that
+# the VDEM and response function share the same temperature and velocity grids.
 
-response, vdem_raster = match_responses_and_vdems(
+response, vdem_raster = align_response_and_vdem(
     response,
     vdem_raster,
     logT_method="nearest",

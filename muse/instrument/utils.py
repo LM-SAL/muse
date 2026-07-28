@@ -12,7 +12,7 @@ from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["load_and_concat_responses", "match_responses_and_vdems", "read_response", "save_response"]
+__all__ = ["align_response_and_vdem", "load_and_concat_responses", "read_response", "save_response"]
 
 _DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _LEGACY_RESPONSE_NAMES = {
@@ -308,21 +308,21 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     return r.assign_coords({name: axis})
 
 
-def match_responses_and_vdems(
-    responses: xr.Dataset,
-    vdems: xr.Dataset,
+def align_response_and_vdem(
+    response: xr.Dataset,
+    vdem: xr.Dataset,
     *,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
-    Resample responses onto the overlapping VDEM temperature and velocity grids.
+    Resample response onto the overlapping VDEM temperature and velocity grids.
 
     Parameters
     ----------
-    responses : `xarray.Dataset`
+    response : `xarray.Dataset`
         Response dataset containing ``detector_response``.
-    vdems : `xarray.Dataset`
+    vdem : `xarray.Dataset`
         VDEM dataset containing ``vdem``.
     logT_method : `str`, optional
         Response resampling method for ``logT``, by default ``"nearest"``.
@@ -331,7 +331,7 @@ def match_responses_and_vdems(
 
     Returns
     -------
-    responses, vdems : `tuple` of `xarray.Dataset`
+    response, vdem : `tuple` of `xarray.Dataset`
         New datasets with identical ``logT`` and ``doppler_velocity`` coordinates.
 
     Raises
@@ -341,47 +341,47 @@ def match_responses_and_vdems(
     ValueError
         If a required variable or coordinate is missing, malformed, or has no overlap.
     """
-    for name, dataset in (("response", responses), ("vdem", vdems)):
+    for name, dataset in (("response", response), ("vdem", vdem)):
         if not isinstance(dataset, xr.Dataset):
             msg = f"{name} must be an xarray.Dataset"
             raise TypeError(msg)
-    if "detector_response" not in responses:
+    if "detector_response" not in response:
         msg = "response must contain detector_response"
         raise ValueError(msg)
-    if "vdem" not in vdems:
+    if "vdem" not in vdem:
         msg = "vdem must contain vdem"
         raise ValueError(msg)
 
-    matched_responses = responses
-    matched_vdems = vdems
+    matched_response = response
+    matched_vdem = vdem
     axes = {
         "logT": (logT_method, u.dex(u.K)),
         "doppler_velocity": (doppler_velocity_method, u.km / u.s),
     }
     for name, (method, unit) in axes.items():
         normalized_axes = []
-        for dataset_name, dataset in (("response", matched_responses), ("vdem", matched_vdems)):
+        for dataset_name, dataset in (("response", matched_response), ("vdem", matched_vdem)):
             axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")
             if axis.size == 0 or not bool(np.isfinite(axis).all()):
                 msg = f"{dataset_name} {name} coordinate must contain finite values"
                 raise ValueError(msg)
             normalized_axes.append(axis)
 
-        matched_responses = matched_responses.assign_coords({name: normalized_axes[0]})
-        matched_vdems = matched_vdems.assign_coords({name: normalized_axes[1]})
+        matched_response = matched_response.assign_coords({name: normalized_axes[0]})
+        matched_vdem = matched_vdem.assign_coords({name: normalized_axes[1]})
 
-        matched_responses = _resample_axis(matched_responses, name, matched_vdems[name], method)
-        axis = matched_responses[name]
-        if axis.size < matched_vdems.sizes[name]:
-            matched_vdems = matched_vdems.sel({name: axis})
+        matched_response = _resample_axis(matched_response, name, matched_vdem[name], method)
+        axis = matched_response[name]
+        if axis.size < matched_vdem.sizes[name]:
+            matched_vdem = matched_vdem.sel({name: axis})
 
-    matched_responses = matched_responses.drop_attrs(deep=False)
-    matched_vdems = matched_vdems.drop_attrs(deep=False)
-    update_attrs(matched_responses, responses)
-    update_attrs(matched_vdems, vdems)
-    add_history(matched_responses, locals(), match_responses_and_vdems, sources=(responses, vdems))
-    add_history(matched_vdems, locals(), match_responses_and_vdems, sources=(responses, vdems))
-    return matched_responses, matched_vdems
+    matched_response = matched_response.drop_attrs(deep=False)
+    matched_vdem = matched_vdem.drop_attrs(deep=False)
+    update_attrs(matched_response, response)
+    update_attrs(matched_vdem, vdem)
+    add_history(matched_response, locals(), align_response_and_vdem, sources=(response, vdem))
+    add_history(matched_vdem, locals(), align_response_and_vdem, sources=(response, vdem))
+    return matched_response, matched_vdem
 
 
 def load_and_concat_responses(

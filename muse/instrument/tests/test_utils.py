@@ -7,7 +7,7 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import match_responses_and_vdems
+from muse.instrument import align_response_and_vdem
 from muse.instrument.utils import load_and_concat_responses, read_response, save_response
 from muse.tests.helpers import fake_legacy_response_file, fake_response, fake_vdem
 from muse.variables import DEFAULTS_MUSE
@@ -494,22 +494,22 @@ def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None
         load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
 
 
-def test_match_responses_and_vdems_aligns_nonuniform_coarse_response() -> None:
+def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:
     response = fake_response().isel(logT=[0, 2, 5, 6], doppler_velocity=[0, 2, 4, 8])
     vdem = fake_vdem()
 
-    matched_response, matched_vdem = match_responses_and_vdems(response, vdem)
+    matched_response, matched_vdem = align_response_and_vdem(response, vdem)
 
     xr.testing.assert_equal(matched_response.logT, matched_vdem.logT)
     xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
     assert bool(np.isfinite(matched_response.detector_response).all())
 
 
-def test_match_responses_and_vdems_trims_both_outputs_to_overlap() -> None:
+def test_align_response_and_vdem_trims_both_outputs_to_overlap() -> None:
     response = fake_response().isel(logT=slice(1, -1), doppler_velocity=slice(1, -1))
     vdem = fake_vdem()
 
-    matched_response, matched_vdem = match_responses_and_vdems(response, vdem)
+    matched_response, matched_vdem = align_response_and_vdem(response, vdem)
 
     assert matched_vdem.sizes["logT"] == vdem.sizes["logT"] - 2
     assert matched_vdem.sizes["doppler_velocity"] == vdem.sizes["doppler_velocity"] - 2
@@ -517,7 +517,7 @@ def test_match_responses_and_vdems_trims_both_outputs_to_overlap() -> None:
     xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
 
 
-def test_match_responses_and_vdems_normalizes_equivalent_velocity_units() -> None:
+def test_align_response_and_vdem_normalizes_equivalent_velocity_units() -> None:
     response = fake_response()
     vdem = fake_vdem()
     velocity = xr.DataArray(
@@ -527,20 +527,20 @@ def test_match_responses_and_vdems_normalizes_equivalent_velocity_units() -> Non
     )
     vdem = vdem.assign_coords(doppler_velocity=velocity)
 
-    matched_response, matched_vdem = match_responses_and_vdems(response, vdem)
+    matched_response, matched_vdem = align_response_and_vdem(response, vdem)
 
     xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
     assert matched_vdem.doppler_velocity.attrs["units"] == str(u.km / u.s)
     assert matched_vdem.sizes["doppler_velocity"] == vdem.sizes["doppler_velocity"]
 
 
-def test_match_responses_and_vdems_preserves_inputs_lineage_and_laziness() -> None:
+def test_align_response_and_vdem_preserves_inputs_lineage_and_laziness() -> None:
     response = fake_response().assign_attrs(HISTORY=["response()"]).chunk({"logT": 2})
     vdem = fake_vdem().assign_attrs(HISTORY=["vdem()"]).chunk({"logT": 2})
     response_before = response.copy()
     vdem_before = vdem.copy()
 
-    matched_response, matched_vdem = match_responses_and_vdems(response, vdem)
+    matched_response, matched_vdem = align_response_and_vdem(response, vdem)
 
     assert isinstance(matched_response.detector_response.data, da.Array)
     assert isinstance(matched_vdem.vdem.data, da.Array)
@@ -548,12 +548,12 @@ def test_match_responses_and_vdems_preserves_inputs_lineage_and_laziness() -> No
     xr.testing.assert_identical(vdem, vdem_before)
     assert matched_response.attrs["HISTORY"][:2] == ["response()", "vdem()"]
     assert matched_vdem.attrs["HISTORY"][:2] == ["response()", "vdem()"]
-    assert matched_response.attrs["HISTORY"][-1].startswith("match_responses_and_vdems(")
-    assert matched_vdem.attrs["HISTORY"][-1].startswith("match_responses_and_vdems(")
+    assert matched_response.attrs["HISTORY"][-1].startswith("align_response_and_vdem(")
+    assert matched_vdem.attrs["HISTORY"][-1].startswith("align_response_and_vdem(")
 
 
 @pytest.mark.parametrize(("dataset", "name"), [("response", "logT"), ("vdem", "doppler_velocity")])
-def test_match_responses_and_vdems_requires_coordinates(dataset, name) -> None:
+def test_align_response_and_vdem_requires_coordinates(dataset, name) -> None:
     response = fake_response()
     vdem = fake_vdem()
     if dataset == "response":
@@ -562,20 +562,20 @@ def test_match_responses_and_vdems_requires_coordinates(dataset, name) -> None:
         vdem = vdem.drop_vars(name)
 
     with pytest.raises(ValueError, match=rf"{dataset}\.{name} is missing"):
-        match_responses_and_vdems(response, vdem)
+        align_response_and_vdem(response, vdem)
 
 
-def test_match_responses_and_vdems_requires_coordinate_units() -> None:
+def test_align_response_and_vdem_requires_coordinate_units() -> None:
     response = fake_response()
     del response.doppler_velocity.attrs["units"]
 
     with pytest.raises(ValueError, match=r"response\.doppler_velocity must define units"):
-        match_responses_and_vdems(response, fake_vdem())
+        align_response_and_vdem(response, fake_vdem())
 
 
-def test_match_responses_and_vdems_rejects_nonoverlapping_coordinates() -> None:
+def test_align_response_and_vdem_rejects_nonoverlapping_coordinates() -> None:
     response = fake_response()
     response = response.assign_coords(logT=response.logT + 10)
 
     with pytest.raises(ValueError, match="Requested logT axis has no overlap with the response range"):
-        match_responses_and_vdems(response, fake_vdem())
+        align_response_and_vdem(response, fake_vdem())
