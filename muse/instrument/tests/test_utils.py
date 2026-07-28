@@ -409,12 +409,24 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         dim="line",
         data_vars="all",
         join="exact",
+    ).assign_attrs(
+        HISTORY="first_response()",
+        shared_attr="kept",
+        conflicting_attr="first",
     )
-    second = fake_legacy_response_file().assign_coords(
-        line=("line", ["Fe XV 284.163"]),
-        line_wvl=("line", [284.163]),
-        channel=("line", [284]),
-        component_kind=("line", ["line"]),
+    second = (
+        fake_legacy_response_file()
+        .assign_coords(
+            line=("line", ["Fe XV 284.163"]),
+            line_wvl=("line", [284.163]),
+            channel=("line", [284]),
+            component_kind=("line", ["line"]),
+        )
+        .assign_attrs(
+            HISTORY="second_response()",
+            shared_attr="kept",
+            conflicting_attr="second",
+        )
     )
     _write(first.drop_vars("channel"), tmp_path / "a.nc", "nc")
     _write(second.drop_vars("channel"), tmp_path / "b.nc", "nc")
@@ -438,6 +450,11 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "detector_response" in resp.data_vars
+    assert resp.attrs["shared_attr"] == "kept"
+    assert "conflicting_attr" not in resp.attrs
+    assert resp.attrs["HISTORY"][0] == "first_response()"
+    assert "second_response()" in resp.attrs["HISTORY"]
+    assert resp.attrs["HISTORY"][-1].startswith("load_and_concat_responses(")
 
 
 def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:

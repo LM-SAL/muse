@@ -72,7 +72,7 @@ A library import that silently reconfigures process-wide state changes the behav
 - Never assume attrs survive a reduction or arithmetic operation (the host may run with ``keep_attrs=False``, and the test suite does).
   Set the attrs you need explicitly on the object you return, or pass ``keep_attrs=True`` to that one call.
   Units are the load-bearing attrs and are re-validated at every trust boundary by :func:`muse.utils.require_unit`.
-- Pass the combine keyword arguments (``data_vars``, ``coords``, ``compat``, ``join``) explicitly to every ``xarray.concat`` / ``xarray.merge`` call.
+- Pass the combine keyword arguments (``data_vars``, ``coords``, ``compat``, ``join``, ``combine_attrs``) explicitly to every ``xarray.concat`` / ``xarray.merge`` call.
   With no explicit values, the behavior depends on the host's ``use_new_combine_kwarg_defaults`` setting, and ambiguous calls raise a ``FutureWarning``, which the test suite treats as an error.
 - Logging configuration is the application's job.
   For scripts and notebooks, :func:`muse.log.change_logging_level` sets the overall level explicitly at call time; it replaces every Loguru sink, so applications that manage their own Loguru configuration should configure Loguru directly instead.
@@ -85,3 +85,7 @@ Functions that return a dataset record the call that produced it via :func:`muse
 This keeps a human-readable trail of the operations on the data itself.
 ``add_history`` alone owns the provenance attributes (``HISTORY``, ``date created``, ``date modified``, ``version``); a multi-input result inherits its inputs' histories by passing them as ``add_history(..., sources=...)``.
 :func:`muse.utils.update_attrs` copies the remaining (non-provenance) attributes from a source dataset.
+
+A newly constructed dataset needs both halves of this finalization.
+Preserve attrs intrinsic to the new result, explicitly copy or merge non-provenance source attrs with ``update_attrs``, then call ``add_history(..., sources=...)`` so the output records every source lineage and its producing call.
+Concatenation must select ``combine_attrs`` deliberately rather than silently inheriting only the first input's attrs.
