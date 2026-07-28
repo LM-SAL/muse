@@ -6,41 +6,24 @@
 This tutorial demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
 """
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
-import pooch
 import xarray as xr
 from matplotlib import colors
 
-from muse.log import change_logging_level
+from muse.data import fetch_example_data
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # Loading a VDEM
 #
 # In the :ref:`previous tutorial <sphx_glr_generated_gallery_synthesis_tutorial_skip_01_create_vdem.py>`,
 # we created a simple VDEM using ``create_simple_vdem``.
-# We will download this VDEM (from a personal data archive) and then load it using xarray.
-#
-# To download the data, we will use `pooch <https://www.fatiando.org/pooch/latest/>`__.
-# To avoid downloading individual files, we will use a tar-ed snapshot.
+# We will download this VDEM (from a personal data archive) using
+# :func:`muse.data.fetch_example_data`, which caches it locally via
+# `pooch <https://www.fatiando.org/pooch/latest/>`__, and then load it using xarray.
 
-extract_path = Path(pooch.os_cache("muse")) / "muse_example_vdem"
-pooch.retrieve(
-    "https://www.dropbox.com/scl/fi/xb2f6pvs4cn1yg54n0pdg/muse_example_vdem.zarr.tar.gz?rlkey=u5y19c5lydrw9kur9bzahkvsv&st=t5vltlk8&dl=1",
-    known_hash="ab6c8a3fe4f30de6906f75165f19ccc8730040527f6b9b0cccbdd9a09c28a71c",
-    fname="muse_example_vdem.zarr.tar.gz",
-    path=extract_path.parent,
-    processor=pooch.Untar(extract_dir=extract_path.name),
-)
-vdem = xr.open_zarr(extract_path / "muse_example_vdem.zarr")
-if "vdop" in vdem.dims:
-    vdem = vdem.rename(vdop="doppler_velocity")
+vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 
 ##############################################################################
 # First, let's print the VDEM to see what it looks like.

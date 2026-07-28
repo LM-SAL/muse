@@ -1,0 +1,1 @@
+`muse.synthesis.vdem_synthesis` now accepts the wavelength-space response names produced by `muse.instrument.create_spectral_response` (``spectral_response``, ``wavelength_grid``) as aliases for the detector-style names, and drops ``"slit"`` from the default ``sum_over`` when neither input has a slit dimension, so single-slit responses work without extra arguments.

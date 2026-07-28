@@ -1,0 +1,1 @@
+`muse.synthesis.vdem_synthesis` evaluates its contraction with an optimized einsum path (BLAS-backed) on both the numpy and dask backends, roughly 30x faster for the tutorial-sized synthesis.

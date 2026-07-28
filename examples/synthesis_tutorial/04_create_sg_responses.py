@@ -51,9 +51,8 @@ output_dir.mkdir(parents=True, exist_ok=True)
 bands = {
     108: {
         "url": (
-            "https://www.dropbox.com/scl/fi/dn0s3dvqe6d9misrlo1e8/"
+            "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
             "muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti.nc"
-            "?rlkey=egzb1ciuapro22qc2jbqwzqgx&st=jnezcgkr&dl=1"
         ),
         "hash": "sha256:aad92894196920d236fe515e89dd06e4aad1b8dea7b34cce6cff2b43e098ae7d",
         "fname": f"muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_{abundance}.nc",
@@ -62,9 +61,8 @@ bands = {
     },
     171: {
         "url": (
-            "https://www.dropbox.com/scl/fi/blch1e23rj34prqik3mcl/"
+            "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
-            "?rlkey=a6x99xdh2cl1ri649ojbkrly8&st=cu3vz09h&dl=1"
         ),
         "hash": "sha256:170993ad7bd2ebfc843561b9d0d46b2fffe04025617bc63eff39e55d69446cbf",
         "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
@@ -73,9 +71,8 @@ bands = {
     },
     284: {
         "url": (
-            "https://www.dropbox.com/scl/fi/riiexsfu9u7shiowo7hn8/"
+            "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
             "muse_chianti_line_list_284_FeXV284.163_sun_coronal_2021_chianti.nc"
-            "?rlkey=wf3wxlh392znzhwu5m5gqccsb&st=kwcxfrwx&dl=1"
         ),
         "hash": "sha256:a86280eed528550186c446d1fb566c4cc35705a064afe665164ee77582a24517",
         "fname": f"muse_chianti_line_list_284_FeXV284.163_{abundance}.nc",

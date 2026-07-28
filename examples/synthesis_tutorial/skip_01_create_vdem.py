@@ -18,11 +18,7 @@ import pooch
 from matplotlib import colors
 from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
-from muse.log import change_logging_level
 from muse.synthesis import calculate_moments, create_simple_vdem
-
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
-change_logging_level("INFO")
 
 ##############################################################################
 # Creating a VDEM
@@ -41,7 +37,7 @@ change_logging_level("INFO")
 
 simulation_path = Path(pooch.os_cache("muse")) / "flare_nature_astro"
 pooch.retrieve(
-    "https://www.dropbox.com/scl/fi/tpkscbv2jq0slpz5hbupe/flare_nature_astro.tar.gz?rlkey=egmnsk2u8y17sdx4d6rcl8brm&st=kllq9izh&e=1&dl=1",
+    "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/flare_nature_astro.tar.gz",
     known_hash="4ddc37682e65ee343657929beb8ddc50f472411ebd9fca66ec6ee18afeaf68c9",
     fname="flare_nature_astro.tar.gz",
     path=simulation_path.parent,

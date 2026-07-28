@@ -1,0 +1,5 @@
+********
+``data``
+********
+
+.. automodapi:: muse.data
