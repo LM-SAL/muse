@@ -9,10 +9,10 @@ from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history
+from muse.utils.utils import add_history, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["load_and_concat_responses", "read_response", "save_response"]
+__all__ = ["load_and_concat_responses", "match_responses_and_vdems", "read_response", "save_response"]
 
 _DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _LEGACY_RESPONSE_NAMES = {
@@ -303,6 +303,82 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     # Clamp on every path so nearest and interpolated responses behave consistently.
     r["detector_response"] = r.detector_response.fillna(0).clip(min=0).assign_attrs(r.detector_response.attrs)
     return r.assign_coords({name: axis})
+
+
+def match_responses_and_vdems(
+    responses: xr.Dataset,
+    vdems: xr.Dataset,
+    *,
+    logT_method: str = "nearest",
+    doppler_velocity_method: str = "linear",
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Resample responses onto the overlapping VDEM temperature and velocity grids.
+
+    Parameters
+    ----------
+    responses : `xarray.Dataset`
+        Response dataset containing ``detector_response``.
+    vdems : `xarray.Dataset`
+        VDEM dataset containing ``vdem``.
+    logT_method : `str`, optional
+        Response resampling method for ``logT``, by default ``"nearest"``.
+    doppler_velocity_method : `str`, optional
+        Response resampling method for ``doppler_velocity``, by default ``"linear"``.
+
+    Returns
+    -------
+    responses, vdems : `tuple` of `xarray.Dataset`
+        New datasets with identical ``logT`` and ``doppler_velocity`` coordinates.
+
+    Raises
+    ------
+    TypeError
+        If either input is not an `xarray.Dataset`.
+    ValueError
+        If a required variable or coordinate is missing, malformed, or has no overlap.
+    """
+    for name, dataset in (("response", responses), ("vdem", vdems)):
+        if not isinstance(dataset, xr.Dataset):
+            msg = f"{name} must be an xarray.Dataset"
+            raise TypeError(msg)
+    if "detector_response" not in responses:
+        msg = "response must contain detector_response"
+        raise ValueError(msg)
+    if "vdem" not in vdems:
+        msg = "vdem must contain vdem"
+        raise ValueError(msg)
+
+    matched_responses = responses
+    matched_vdems = vdems
+    methods = {"logT": logT_method, "doppler_velocity": doppler_velocity_method}
+    for name, method in methods.items():
+        for dataset_name, dataset in (("response", matched_responses), ("vdem", matched_vdems)):
+            if name not in dataset.coords:
+                msg = f"{dataset_name} must have {name} coordinate"
+                raise ValueError(msg)
+            if dataset[name].size == 0 or not bool(np.isfinite(dataset[name]).all()):
+                msg = f"{dataset_name} {name} coordinate must contain finite values"
+                raise ValueError(msg)
+
+        axis = matched_vdems[name]
+        in_range = (axis >= matched_responses[name].min()) & (axis <= matched_responses[name].max())
+        axis = axis.where(in_range, drop=True)
+        if axis.size == 0:
+            msg = f"{name} axes have no overlap between response and VDEM"
+            raise ValueError(msg)
+        if axis.size < matched_vdems.sizes[name]:
+            logger.info(f"Trimming the VDEM {name} coordinate to the response range")
+            matched_vdems = matched_vdems.sel({name: axis})
+        matched_responses = _resample_axis(matched_responses, name, axis, method)
+
+    matched_responses = matched_responses.drop_attrs(deep=False)
+    matched_vdems = matched_vdems.drop_attrs(deep=False)
+    update_attrs(matched_responses, responses)
+    update_attrs(matched_vdems, vdems)
+    add_history(matched_responses, locals(), match_responses_and_vdems, sources=(responses, vdems))
+    add_history(matched_vdems, locals(), match_responses_and_vdems, sources=(responses, vdems))
+    return matched_responses, matched_vdems
 
 
 def load_and_concat_responses(

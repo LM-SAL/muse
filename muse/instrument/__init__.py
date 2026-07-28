@@ -3,7 +3,12 @@ from muse.instrument.migration import migrate_response
 from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.spectral import create_spectral_response
-from muse.instrument.utils import load_and_concat_responses, read_response, save_response
+from muse.instrument.utils import (
+    load_and_concat_responses,
+    match_responses_and_vdems,
+    read_response,
+    save_response,
+)
 
 __all__ = [
     "create_chianti_line_list",
@@ -11,6 +16,7 @@ __all__ = [
     "load_and_concat_responses",
     "map_response_to_ci_detector",
     "map_response_to_sg_detector",
+    "match_responses_and_vdems",
     "migrate_response",
     "read_response",
     "save_response",
