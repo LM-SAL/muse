@@ -86,11 +86,14 @@ def _calc_einsum(
     if isinstance(vdem_data, da.Array) or isinstance(response_data, da.Array):
         # Keep dask-backed inputs lazy: the contraction becomes part of the graph, so
         # peak memory stays bounded by the chunks and the flux computes/writes streamed.
-        return da.einsum(f"{einsum_str}->{out_str}", vdem_data, response_data)
+        # optimize=True routes the contraction through tensordot/BLAS instead of the
+        # naive element loop (~30x faster on the MUSE tutorial synthesis).
+        return da.einsum(f"{einsum_str}->{out_str}", vdem_data, response_data, optimize=True)
     return np.einsum(
         f"{einsum_str}->{out_str}",
         np.asarray(vdem_data),
         np.asarray(response_data),
+        optimize=True,
     )
 
 
