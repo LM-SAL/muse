@@ -106,14 +106,15 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
 @u.quantity_input(dx_pix=u.arcsec, dy_pix=u.arcsec)
 def match_fov(
     vdem: xr.Dataset,
+    *,
     dx_pix=DEFAULTS_MUSE.dx_pixel_SG,
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
     nslits=DEFAULTS_MUSE.number_of_slits_SG,
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-    tile: bool = True,  # NOQA: FBT001, FBT002
+    tile: bool = True,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
-    rotate=False,  # NOQA: FBT002
+    rotate=False,
 ):
     """
     Match a VDEM's spatial resolution and available extent to the MUSE FOV.
