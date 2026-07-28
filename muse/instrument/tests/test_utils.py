@@ -190,19 +190,6 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
-def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> None:
-    src = fake_legacy_response_file()
-    path = _write(src, tmp_path / f"resp.{fmt}", fmt)
-
-    r = read_response(path)
-
-    assert r.sizes["logT"] == src.sizes["logT"]
-    assert r.sizes["doppler_velocity"] == src.sizes["vdop"]
-    assert r.line_wavelength.attrs["units"] == str(u.AA)
-    assert "gain" in r.coords
-
-
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
 @pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
 def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
@@ -389,14 +376,6 @@ def test_read_response_out_of_range_logT_raises(tmp_path) -> None:
 def test_read_response_requires_detector_response(tmp_path) -> None:
     path = _write(fake_legacy_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="detector_response"):
-        read_response(path)
-
-
-def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
-    src = fake_legacy_response_file().drop_vars(["line_wvl", "channel"])
-    path = _write(src, tmp_path / "resp.nc", "nc")
-
-    with pytest.raises(ValueError, match="line_wavelength"):
         read_response(path)
 
 

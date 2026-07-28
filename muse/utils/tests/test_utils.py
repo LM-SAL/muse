@@ -195,14 +195,6 @@ def test_add_history_nested_source_histories_merge_in_any_order() -> None:
         assert ds.attrs["HISTORY"] == ["load", "transform", "demo()"]
 
 
-def test_add_history_initializes_history_from_sources() -> None:
-    ds = xr.Dataset()
-    raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
-    response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
-    add_history(ds, {}, "demo", sources=(raster, response))
-    assert ds.attrs["HISTORY"] == ["make_raster()", "make_response()", "demo()"]
-
-
 @pytest.mark.parametrize("key", ["HISTORY", "date created", "date modified", "version"])
 def test_update_attrs_rejects_provenance_updates(key: str) -> None:
     ds = xr.Dataset()

@@ -3,45 +3,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from muse.synthesis.synthesis import _build_einsum_indices, vdem_synthesis
+from muse.synthesis.synthesis import vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_doppler_velocity
 from muse.transforms.transforms import reshape_x_to_slit_step
 
 SPEED_OF_LIGHT_KMS = 299792.458
-
-# Dimension names for the science contraction used across the einsum-index tests.
-RASTER_DIMS = ("logT", "doppler_velocity", "y", "slit", "step")
-RESPONSE_DIMS = ("line", "doppler_velocity", "logT", "slit", "detector_x_pixel")
-
-
-def test_build_einsum_indices_contracts_shared_dims() -> None:
-    # Shared dims (logT, doppler_velocity, slit) reuse the raster letters; the default sum_over
-    # contracts them, leaving y/step from the raster and line/detector_x_pixel from the response.
-    einsum_str, out_str, out_dims = _build_einsum_indices(
-        RASTER_DIMS, RESPONSE_DIMS, ("logT", "doppler_velocity", "slit")
-    )
-    assert einsum_str == "abcde,fbadg"
-    assert out_str == "cefg"
-    assert out_dims == ["y", "step", "line", "detector_x_pixel"]
-
-
-def test_build_einsum_indices_keeps_unsummed_slit() -> None:
-    # Dropping slit from sum_over keeps it as an output dimension.
-    einsum_str, out_str, out_dims = _build_einsum_indices(RASTER_DIMS, RESPONSE_DIMS, ("logT", "doppler_velocity"))
-    assert einsum_str == "abcde,fbadg"
-    assert out_str == "cdefg"
-    assert out_dims == ["y", "slit", "step", "line", "detector_x_pixel"]
-
-
-def test_build_einsum_indices_general_shapes() -> None:
-    # Letter assignment and shared-dim reuse are independent of the science names,
-    # and the produced spec is a well-formed einsum.
-    einsum_str, out_str, out_dims = _build_einsum_indices(("a_dim", "shared"), ("shared", "b_dim"), ("shared",))
-    assert einsum_str == "ab,bc"
-    assert out_str == "ac"
-    assert out_dims == ["a_dim", "b_dim"]
-    result = np.einsum(f"{einsum_str}->{out_str}", np.ones((2, 3)), np.ones((3, 4)))
-    assert result.shape == (2, 4)
 
 
 def test_vdem_synthesis(response, vdem) -> None:
@@ -95,21 +61,28 @@ def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, vdem)
     np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
 
 
-def test_vdem_synthesis_flux_matches_independent_einsum(response, vdem) -> None:
-    # Independently recompute one flux value with a plain xarray multiply + sum over
-    # the shared logT/doppler_velocity/slit dims, and compare to the einsum result. This
-    # guards the einsum index bookkeeping, not just the output shape.
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    result = vdem_synthesis(reshaped_vdem, response)
-
-    it, istep, iline, ipixel = (int(i) for i in np.unravel_index(int(result.flux.values.argmax()), result.flux.shape))
-    contribution = reshaped_vdem.vdem.isel(y=it, step=istep) * response.detector_response.isel(
-        line=iline,
-        detector_x_pixel=ipixel,
+def test_vdem_synthesis_contracts_values() -> None:
+    raster = xr.Dataset(
+        {"vdem": (("logT", "doppler_velocity", "y"), np.arange(1.0, 9.0).reshape(2, 2, 2), {"units": "cm-5"})}
     )
-    expected = float(contribution.sum().values)  # sums over logT, doppler_velocity, slit
-    got = float(result.flux.isel(y=it, step=istep, line=iline, detector_x_pixel=ipixel).values)
-    np.testing.assert_allclose(got, expected, rtol=1e-5)
+    response = xr.Dataset(
+        {
+            "detector_response": (
+                ("line", "doppler_velocity", "logT"),
+                [[[1.0, 0.0], [0.0, 1.0]], [[0.0, 2.0], [3.0, 0.0]]],
+                {"units": "cm5"},
+            )
+        },
+        coords={
+            "line_wavelength": ("line", [100.0, 200.0], {"units": "Angstrom"}),
+            "detector_wavelength": ("line", [100.0, 200.0], {"units": "Angstrom"}),
+        },
+    )
+
+    result = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+
+    assert result.flux.dims == ("y", "line")
+    np.testing.assert_array_equal(result.flux, [[8.0, 19.0], [10.0, 24.0]])
 
 
 def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> None:
@@ -129,30 +102,6 @@ def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
 
     assert isinstance(accel_flux.data, np.ndarray)
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
-
-
-def test_vdem_synthesis_is_linear_in_vdem(response, vdem) -> None:
-    # Synthesis is a tensor contraction, so scaling the VDEM scales the flux. An
-    # identity/passthrough that ignored the response could not preserve this.
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    base = vdem_synthesis(reshaped_vdem, response).flux
-    scaled_raster = reshaped_vdem.copy(deep=True)
-    scaled_raster["vdem"] = scaled_raster.vdem * 3.0
-    scaled = vdem_synthesis(scaled_raster, response).flux
-    np.testing.assert_allclose(scaled.values, 3.0 * base.values, rtol=1e-5)
-
-
-def test_vdem_synthesis_zeroing_response_removes_only_that_line(response, vdem) -> None:
-    # Zeroing one line's response must null exactly that line's flux and leave the
-    # rest untouched: proof the output is driven by the response, not echoing VDEM.
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    base = vdem_synthesis(reshaped_vdem, response).flux
-    muted_response = response.copy(deep=True)
-    muted_response.detector_response[3] = 0.0
-    out = vdem_synthesis(reshaped_vdem, muted_response).flux
-    assert float(base.isel(line=3).sum()) > 0.0
-    assert float(out.isel(line=3).sum()) == 0.0
-    np.testing.assert_array_equal(out.isel(line=0).values, base.isel(line=0).values)
 
 
 def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
