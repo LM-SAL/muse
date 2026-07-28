@@ -468,6 +468,11 @@ class InstrumentDefaults:
     This is the pad method used by `xarray.DataArray.pad`
     """
 
+    fov_tile: bool | None = field(default=None, validator=_instance((bool, np.bool_)))
+    """
+    Whether to extend inputs narrower than the MUSE field of view.
+    """
+
     fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
     """
     Does a subgrid interpolation.

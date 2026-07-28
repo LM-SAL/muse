@@ -100,6 +100,7 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     dy_pix="dy_pixel_SG",
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
+    tile="fov_tile",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
 )
@@ -111,7 +112,7 @@ def match_fov(
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
     nslits=DEFAULTS_MUSE.number_of_slits_SG,
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-    tile: bool = True,
+    tile: bool = DEFAULTS_MUSE.fov_tile,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate=False,
@@ -132,6 +133,7 @@ def match_fov(
     nraster : `int`
         Number of raster steps, by default is {nraster}.
     tile : `bool`, optional
+        Whether to extend inputs narrower than the MUSE FOV, by default {tile}.
         If `True`, extend an input narrower than the MUSE FOV to
         ``nslits * nraster`` pixels using ``mode``. If `False`, retain a
         narrower input without extending it. Inputs wider than the MUSE FOV
