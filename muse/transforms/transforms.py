@@ -103,6 +103,7 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
 )
+@u.quantity_input(dx_pix=u.arcsec, dy_pix=u.arcsec)
 def match_fov(
     vdem: xr.Dataset,
     dx_pix=DEFAULTS_MUSE.dx_pixel_SG,
@@ -171,15 +172,6 @@ def match_fov(
        a copy with the coordinates relabeled onto the MUSE grid. This degenerate
        path may be removed in the future.
     """
-    if not isinstance(dx_pix, u.Quantity):
-        msg = "dx_pix must be an astropy.units.Quantity convertible to arcsec"
-        raise TypeError(msg)
-    if not isinstance(dy_pix, u.Quantity):
-        msg = "dy_pix must be an astropy.units.Quantity convertible to arcsec"
-        raise TypeError(msg)
-    if not isinstance(tile, bool | np.bool_):
-        msg = "tile must be a bool"
-        raise TypeError(msg)
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
     target_width = nslits * nraster

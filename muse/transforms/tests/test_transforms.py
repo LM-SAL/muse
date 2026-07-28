@@ -285,13 +285,8 @@ def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
         reshape_slit_step_to_x(vdem)
 
 
-def test_match_fov_requires_boolean_tile(vdem) -> None:
-    with pytest.raises(TypeError, match="tile must be a bool"):
-        match_fov(vdem, tile="yes")
-
-
 def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
-    with pytest.raises(TypeError, match=r"dx_pix must be an astropy\.units\.Quantity"):
+    with pytest.raises(TypeError, match="has no 'unit' attribute"):
         match_fov(vdem, dx_pix=0.4)
 
 
