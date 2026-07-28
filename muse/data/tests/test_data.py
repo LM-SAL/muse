@@ -21,8 +21,6 @@ def test_missing_pooch_raises_import_error(monkeypatch):
 def test_registry_entries_well_formed():
     for url, known_hash, subdir in _REGISTRY.values():
         assert url.startswith("https://")
-        if "dropbox.com" in url:
-            assert url.endswith("dl=1")
         assert known_hash.startswith("sha256:")
         assert len(known_hash) == len("sha256:") + 64
         assert subdir
