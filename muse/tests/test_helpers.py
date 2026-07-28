@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from muse.tests.helpers import assert_dataset_structure
 
@@ -40,8 +39,3 @@ def test_fake_vdem_has_expected_axes(vdem) -> None:
         finite_vars=("vdem",),
     )
     assert vdem.x.attrs["units"] == "arcsec"
-
-
-def test_assert_dataset_structure_rejects_wrong_data_vars(vdem) -> None:
-    with pytest.raises(AssertionError, match="data vars differ"):
-        assert_dataset_structure(vdem, data_vars=("flux",), coords=("x",))

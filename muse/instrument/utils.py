@@ -460,8 +460,19 @@ def load_and_concat_responses(
             ).drop_vars("effective_area", errors="ignore")
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
-        response = xr.concat(datasets, dim="line", data_vars="all", coords="different", compat="equals", join="exact")
+        response = xr.concat(
+            datasets,
+            dim="line",
+            data_vars="all",
+            coords="different",
+            compat="equals",
+            join="exact",
+            combine_attrs="drop_conflicts",
+        )
     line_channels = [
         channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
     ]
-    return response.assign_coords(channel=("line", line_channels))
+    result = response.assign_coords(channel=("line", line_channels)).drop_attrs(deep=False)
+    update_attrs(result, response)
+    add_history(result, locals(), load_and_concat_responses, sources=datasets)
+    return result

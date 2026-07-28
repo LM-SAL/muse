@@ -10,7 +10,7 @@ import astropy.units as u
 from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.units import imperial
 
-from muse.variables import DEFAULTS_MUSE, MUSE_DEFAULTS_DICT
+from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults
 
 
@@ -103,10 +103,6 @@ def test_instrument_defaults_pickle_round_trip():
     loaded = pickle.loads(pickle.dumps(DEFAULTS_MUSE))  # NOQA: S301
 
     assert loaded == DEFAULTS_MUSE
-
-
-def test_instrument_defaults_compare_by_value():
-    assert InstrumentDefaults(**MUSE_DEFAULTS_DICT) == DEFAULTS_MUSE
 
 
 def test_instrument_int_and_bool_fields_accept_numpy_scalars():

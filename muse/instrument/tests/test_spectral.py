@@ -60,7 +60,11 @@ def synthetic_effective_area(
 
 
 def test_public_contract_records_history_and_excludes_unselected_lines():
-    line_list = synthetic_line_list(2)
+    line_list = synthetic_line_list(2).assign_attrs(
+        HISTORY=["create_chianti_line_list()"],
+        Chianti="10.1",
+        normalization=2e-27,
+    )
     main_line = line_list.full_name[0].item()
 
     response = create_spectral_response(
@@ -71,7 +75,9 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
 
     assert response.line.values.tolist() == [main_line]
     assert "component_kind" not in response.coords
-    assert response.attrs["HISTORY"][0].startswith("create_spectral_response(")
+    assert response.attrs["HISTORY"][0] == "create_chianti_line_list()"
+    assert response.attrs["HISTORY"][1].startswith("create_spectral_response(")
+    assert response.attrs["Chianti"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 
 

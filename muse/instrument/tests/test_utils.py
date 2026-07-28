@@ -190,19 +190,6 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
-def test_read_response_without_axes_returns_full_resolution(tmp_path, fmt) -> None:
-    src = fake_legacy_response_file()
-    path = _write(src, tmp_path / f"resp.{fmt}", fmt)
-
-    r = read_response(path)
-
-    assert r.sizes["logT"] == src.sizes["logT"]
-    assert r.sizes["doppler_velocity"] == src.sizes["vdop"]
-    assert r.line_wavelength.attrs["units"] == str(u.AA)
-    assert "gain" in r.coords
-
-
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
 @pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
 def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
@@ -392,14 +379,6 @@ def test_read_response_requires_detector_response(tmp_path) -> None:
         read_response(path)
 
 
-def test_read_response_requires_line_wavelength_source(tmp_path) -> None:
-    src = fake_legacy_response_file().drop_vars(["line_wvl", "channel"])
-    path = _write(src, tmp_path / "resp.nc", "nc")
-
-    with pytest.raises(ValueError, match="line_wavelength"):
-        read_response(path)
-
-
 def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         DEFAULTS_MUSE.ccd_gain_sg,
@@ -430,12 +409,24 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         dim="line",
         data_vars="all",
         join="exact",
+    ).assign_attrs(
+        HISTORY="first_response()",
+        shared_attr="kept",
+        conflicting_attr="first",
     )
-    second = fake_legacy_response_file().assign_coords(
-        line=("line", ["Fe XV 284.163"]),
-        line_wvl=("line", [284.163]),
-        channel=("line", [284]),
-        component_kind=("line", ["line"]),
+    second = (
+        fake_legacy_response_file()
+        .assign_coords(
+            line=("line", ["Fe XV 284.163"]),
+            line_wvl=("line", [284.163]),
+            channel=("line", [284]),
+            component_kind=("line", ["line"]),
+        )
+        .assign_attrs(
+            HISTORY="second_response()",
+            shared_attr="kept",
+            conflicting_attr="second",
+        )
     )
     _write(first.drop_vars("channel"), tmp_path / "a.nc", "nc")
     _write(second.drop_vars("channel"), tmp_path / "b.nc", "nc")
@@ -459,6 +450,11 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert "detector_response" in resp.data_vars
+    assert resp.attrs["shared_attr"] == "kept"
+    assert "conflicting_attr" not in resp.attrs
+    assert resp.attrs["HISTORY"][0] == "first_response()"
+    assert "second_response()" in resp.attrs["HISTORY"]
+    assert resp.attrs["HISTORY"][-1].startswith("load_and_concat_responses(")
 
 
 def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:

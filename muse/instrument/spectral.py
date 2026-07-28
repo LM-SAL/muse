@@ -12,7 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
+from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
 
 __all__ = ["create_spectral_response"]
 
@@ -85,7 +85,8 @@ def create_spectral_response(
         include_contaminants=include_contaminants,
     )
     response = response.drop_vars("component_kind")
-    add_history(response, call_inputs, create_spectral_response)
+    update_attrs(response, line_list, **response.attrs)
+    add_history(response, call_inputs, create_spectral_response, sources=(line_list,))
     return response
 
 

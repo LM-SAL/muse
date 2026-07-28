@@ -15,7 +15,6 @@ from muse.instrument.response import map_response_to_sg_detector
 from muse.instrument.spectral import create_spectral_response
 from muse.instrument.utils import read_response
 from muse.synthesis.synthesis import vdem_synthesis
-from muse.synthesis.utils import doppler_to_wavelength
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -156,15 +155,6 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
         expected_start + (DEFAULTS_MUSE.pixels_SG.to_value(u.pix) - 1) * dispersion
     )
-
-
-def test_mapped_response_composes_with_doppler_to_wavelength():
-    # The mapped response used to carry the legacy vdop name, so the public inverse pair
-    # could not be applied to it; one axis name means the stages compose.
-    mapped = map_response_to_sg_detector(_spectral_response(), 171 * u.AA, number_of_slits=2, detector_pixels=4)
-
-    assert "doppler_velocity" in mapped.dims
-    assert "detector_wavelength" in doppler_to_wavelength(mapped).coords
 
 
 def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():

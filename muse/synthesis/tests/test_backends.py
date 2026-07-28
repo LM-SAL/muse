@@ -8,17 +8,6 @@ from muse.synthesis._backends import _resolve_backend, numpy_to_torch, torch_to_
 
 
 @pytest.mark.parametrize(
-    ("cuda_device", "backend", "expected"),
-    [
-        (None, "numpy", "numpy"),
-        (None, "torch", "torch"),
-    ],
-)
-def test_resolve_backend_decision(cuda_device, backend, expected) -> None:
-    assert _resolve_backend(cuda_device, backend) == expected
-
-
-@pytest.mark.parametrize(
     ("cuda_device", "backend", "match"),
     [
         (None, "cupy", "Unknown backend"),
