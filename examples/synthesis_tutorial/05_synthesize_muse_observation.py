@@ -14,7 +14,7 @@ import xarray as xr
 from matplotlib import colors
 
 from muse.data import fetch_example_data
-from muse.instrument import load_and_concat_responses
+from muse.instrument import load_and_concat_responses, match_responses_and_vdems
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
@@ -29,12 +29,10 @@ vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 
 ##############################################################################
 # For multi-line analysis, we load the response functions for several spectral
-# lines and concatenate them. Each response function is interpolated to
-# match the VDEM's ``logT`` and ``doppler_velocity`` grids.
+# lines and concatenate them.
 #
-# To do this, we will use :func:`muse.instrument.load_and_concat_responses`
-# This ensures that the VDEM and response function share the same temperature
-# and velocity grids.
+# We then use :func:`muse.instrument.match_responses_and_vdems` to ensure that
+# the VDEM and response function share the same temperature and velocity grids.
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -51,14 +49,16 @@ response = load_and_concat_responses(
     response_directory=response_files[0].parent,
     response_files=[path.name for path in response_files],
     channels=[108, 171, 284],
-    logT=vdem_raster.logT,
-    doppler_velocity=vdem_raster.doppler_velocity,
     slit=vdem_raster.slit,
-    logT_method="nearest",
-    doppler_velocity_method="nearest",
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.
     chunked=True,
+)
+response, vdem_raster = match_responses_and_vdems(
+    response,
+    vdem_raster,
+    logT_method="nearest",
+    doppler_velocity_method="nearest",
 )
 
 print(response)

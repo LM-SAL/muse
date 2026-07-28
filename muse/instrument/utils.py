@@ -288,10 +288,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
         return r
     in_range = (axis >= r[name].min()) & (axis <= r[name].max())
     if not bool(in_range.all()):
-        logger.info(
-            f"Requested {name} extends beyond the response range; trimming to the response grid. "
-            f"Run vdem.sel(logT=response.logT, doppler_velocity=response.doppler_velocity, drop=True, method='nearest') to match."
-        )
+        logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
         axis = axis.where(in_range, drop=True)
         if axis.size == 0:
             msg = f"Requested {name} axis has no overlap with the response range"
@@ -361,16 +358,10 @@ def match_responses_and_vdems(
                 msg = f"{dataset_name} {name} coordinate must contain finite values"
                 raise ValueError(msg)
 
-        axis = matched_vdems[name]
-        in_range = (axis >= matched_responses[name].min()) & (axis <= matched_responses[name].max())
-        axis = axis.where(in_range, drop=True)
-        if axis.size == 0:
-            msg = f"{name} axes have no overlap between response and VDEM"
-            raise ValueError(msg)
+        matched_responses = _resample_axis(matched_responses, name, matched_vdems[name], method)
+        axis = matched_responses[name]
         if axis.size < matched_vdems.sizes[name]:
-            logger.info(f"Trimming the VDEM {name} coordinate to the response range")
             matched_vdems = matched_vdems.sel({name: axis})
-        matched_responses = _resample_axis(matched_responses, name, axis, method)
 
     matched_responses = matched_responses.drop_attrs(deep=False)
     matched_vdems = matched_vdems.drop_attrs(deep=False)

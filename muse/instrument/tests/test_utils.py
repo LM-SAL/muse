@@ -549,5 +549,5 @@ def test_match_responses_and_vdems_rejects_nonoverlapping_coordinates() -> None:
     response = fake_response()
     response = response.assign_coords(logT=response.logT + 10)
 
-    with pytest.raises(ValueError, match="logT axes have no overlap"):
+    with pytest.raises(ValueError, match="Requested logT axis has no overlap with the response range"):
         match_responses_and_vdems(response, fake_vdem())
