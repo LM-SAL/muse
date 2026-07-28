@@ -139,7 +139,7 @@ def match_fov(
         narrower input without extending it. Inputs wider than the MUSE FOV
         are always cropped. Spatial resolution matching is always performed.
     mode : `str`, optional
-        Pad method used when ``tile=True``, by default {mode}. See
+        Extension mode used when ``tile=True``, by default {mode}. See
         `xarray.DataArray.pad` for supported values.
         ``"wrap"`` repeats the input along x.
         ``"constant"`` fills the padded columns with zeros rather than the
@@ -191,7 +191,7 @@ def match_fov(
     )
     width_needs_no_change = vdem.coords["x"].size == target_width or (not tile and vdem.coords["x"].size < target_width)
     if not rotate and resolution_matches and width_needs_no_change:
-        logger.info("vdem has already the MUSE pixel size")
+        logger.info("vdem already has the requested pixel size and needs no x-extent change")
         return vdem
 
     # Shallow copy: every transform below returns a new object; the copy only isolates

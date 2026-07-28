@@ -309,7 +309,7 @@ def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
 
 
 def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
-    with pytest.raises(TypeError, match="has no 'unit' attribute"):
+    with pytest.raises(TypeError, match="dx_pix"):
         match_fov(vdem, dx_pix=0.4)
 
 

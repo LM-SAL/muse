@@ -1,1 +1,5 @@
-Replace the ``restype`` argument to `muse.transforms.match_fov` with the keyword-only ``tile`` option; inputs wider than the MUSE field of view are still cropped when tiling is disabled.
+Replace the ``restype`` argument to `muse.transforms.match_fov` with ``tile``, rename
+``DEFAULTS_MUSE.fov_restype`` to ``fov_tile``, and make all optional arguments keyword-only.
+Inputs wider than the MUSE field of view are still cropped when tiling is disabled,
+one-column inputs can now be tiled, and rotation no longer resamples grids that already have
+the requested pixel sizes.
