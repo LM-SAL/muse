@@ -159,43 +159,40 @@ def match_fov(
     -----
     Depending on the input grid, one of the following paths is taken:
 
-    1. **Already matched** - if the measurable spatial axes have the requested
-       pixel spacing and the x width needs no crop or extension, the input
-       dataset is returned unchanged.
+    1. **Already matched** - if rotation is disabled, the measurable spatial
+       axes have the requested pixel spacing, and the x width needs no crop or
+       extension, the input dataset is returned unchanged. After rotation,
+       matched axes skip resampling but continue through output finalization.
     2. **Single row or column** - if only one axis has more than one point, the
-       match is decided on that axis alone (the other spacing cannot be measured)
-       and, when it matches, the input dataset is returned unchanged.
+       resolution match is decided on that axis alone because the other spacing
+       cannot be measured. The x extent still follows ``tile``.
     3. **Resample** - otherwise each axis is resampled onto the requested
        pixel size (interpolated up, integer-factor averaged down, or
        sub-interpolated).
     4. **Match the x extent** - inputs wider than ``nslits * nraster`` are
        cropped. Narrower inputs are extended with ``mode`` only when
        ``tile=True``; otherwise their available width is retained.
-    5. **Single pixel** - a 1x1 input has nothing to resample or tile and returns
-       a copy with the coordinates relabeled onto the MUSE grid. This degenerate
-       path may be removed in the future.
+    5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
+       extent is extended when ``tile=True`` and retained when ``tile=False``.
     """
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
     target_width = nslits * nraster
 
-    resolution_matches = False
-    if not rotate:
-        x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
-        y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
-        resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
-            y_at_pixel and vdem.coords["x"].size < 2
-        )
-        width_needs_no_change = vdem.coords["x"].size == target_width or (
-            not tile and vdem.coords["x"].size < target_width
-        )
-        if resolution_matches and (width_needs_no_change or vdem.coords["x"].size < 2):
-            logger.info("vdem has already the MUSE pixel size")
-            return vdem
-    else:
+    if rotate:
         vdem = vdem.rename({"x": "ynew"})
         vdem = vdem.rename({"y": "x"})
         vdem = vdem.rename({"ynew": "y"})
+
+    x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
+    y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
+    resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
+        y_at_pixel and vdem.coords["x"].size < 2
+    )
+    width_needs_no_change = vdem.coords["x"].size == target_width or (not tile and vdem.coords["x"].size < target_width)
+    if not rotate and resolution_matches and width_needs_no_change:
+        logger.info("vdem has already the MUSE pixel size")
+        return vdem
 
     # Shallow copy: every transform below returns a new object; the copy only isolates
     # coord/attr mutations on the degenerate size-1 paths where resampling is a no-op.
@@ -211,7 +208,7 @@ def match_fov(
     nx = vdem_xr.x.size
     if nx > target_width:
         vdem_xr = vdem_xr.isel(x=np.arange(target_width))
-    elif tile and nx > 1 and nx < target_width:
+    elif tile and nx < target_width:
         if mode == "wrap":
             # dask.array.pad silently clips a wrap pad wider than the axis; modular
             # indexing tiles any width and works on both numpy and dask backends.
