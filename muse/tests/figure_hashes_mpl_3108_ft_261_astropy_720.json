@@ -7,7 +7,7 @@
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "201f325b67d241375d7f5f536f73ae96f7577a847a8dcce2fbec1bf579f2eb43",
   "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "060d58609d45660ed1f8955d34128c9dc2616042719b74c7b2e3afe0c772b60b",
   "muse.tests.test_figures.test_vdem_intensity_map": "0772526f8cee58e6bdd7d5651a9a30b283290b9c9ef57f4523b031cf75ebe45b",
-  "muse.tests.test_figures.test_response_logt_profile": "013bbf3f7dcb31f5c3d146a7fd117c6a6819c71cf6d38e942dba9e5c642e13f5",
+  "muse.tests.test_figures.test_response_logt_profile": "aaa25f945509258be38844bf50b702c7bd1c3a9a43c91c457b2a06f4ea1e69fb",
   "muse.tests.test_figures.test_response_line_profiles": "58ea39a302807bf53c9fa695bac1f17a688ed906fd6120279514e1a4e08cdb99",
   "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "e310f2c8bb82813638f2b73e387e07a6e20bf7225513a73be5b38b23399dcedd"
 }

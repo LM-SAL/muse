@@ -202,7 +202,7 @@ def fake_vdem():
     ds.vdem.attrs["time"] = 555291
     ds.vdem.attrs["units"] = "1e27 / cm5"
     ds.logT.attrs["long_name"] = "log$_{10}$(T)"
-    ds.logT.attrs["units"] = "log$_{10}$ (K)"
+    ds.logT.attrs["units"] = "dex(K)"
     ds.doppler_velocity.attrs["long_name"] = "v$_{Doppler}$"
     ds.doppler_velocity.attrs["units"] = "km/s"
     ds.x.attrs["units"] = "arcsec"
@@ -289,7 +289,7 @@ def fake_response():
     )
     response.line_wavelength.attrs["units"] = "Angstrom"
     response.logT.attrs["long_name"] = "log$_{10}$(T)"
-    response.logT.attrs["units"] = "log$_{10}$ (K)"
+    response.logT.attrs["units"] = "dex(K)"
     response.doppler_velocity.attrs["long_name"] = "v$_{Doppler}$"
     response.doppler_velocity.attrs["units"] = "km/s"
     response.detector_response.attrs["units"] = "1e-27 ph cm5 / s"

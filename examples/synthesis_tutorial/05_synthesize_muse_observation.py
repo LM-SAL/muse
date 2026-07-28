@@ -14,7 +14,7 @@ import xarray as xr
 from matplotlib import colors
 
 from muse.data import fetch_example_data
-from muse.instrument import load_and_concat_responses
+from muse.instrument import align_response_and_vdem, load_and_concat_responses
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
@@ -27,14 +27,11 @@ vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
 # Remove this selection so you can have the  full-resolution y axis.
 vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 
+print(vdem_raster)
+
 ##############################################################################
 # For multi-line analysis, we load the response functions for several spectral
-# lines and concatenate them. Each response function is interpolated to
-# match the VDEM's ``logT`` and ``doppler_velocity`` grids.
-#
-# To do this, we will use :func:`muse.instrument.load_and_concat_responses`
-# This ensures that the VDEM and response function share the same temperature
-# and velocity grids.
+# lines and concatenate them.
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -51,17 +48,32 @@ response = load_and_concat_responses(
     response_directory=response_files[0].parent,
     response_files=[path.name for path in response_files],
     channels=[108, 171, 284],
-    logT=vdem_raster.logT,
-    doppler_velocity=vdem_raster.doppler_velocity,
     slit=vdem_raster.slit,
-    logT_method="nearest",
-    doppler_velocity_method="nearest",
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.
     chunked=True,
 )
 
 print(response)
+
+##############################################################################
+# We also need to ensure that both the response function and vdem are on the
+# same grid when it comes to doppler and temperature, otherwise the
+# synthesis will output incorrectly.
+#
+# We use :func:`muse.instrument.align_response_and_vdem` to ensure that
+# the VDEM and response function share the same temperature and velocity grids.
+
+response, vdem_raster = align_response_and_vdem(
+    response,
+    vdem_raster,
+    logT_method="nearest",
+    doppler_velocity_method="nearest",
+)
+
+print(response)
+print("\n\n")
+print(vdem_raster)
 
 ##############################################################################
 # Now we can perform the synthesis using :func:`muse.synthesis.vdem_synthesis`

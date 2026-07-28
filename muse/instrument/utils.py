@@ -9,10 +9,10 @@ from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history
+from muse.utils.utils import add_history, coord_as_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["load_and_concat_responses", "read_response", "save_response"]
+__all__ = ["align_response_and_vdem", "load_and_concat_responses", "read_response", "save_response"]
 
 _DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _LEGACY_RESPONSE_NAMES = {
@@ -261,15 +261,21 @@ def read_response(
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
     r = r.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
-    # The current response files carry no wavelength units; warn and assume Angstrom for now.
-    # This is intended to become a hard error once every response file carries units.
-    for name in ("detector_wavelength", "line_wavelength"):
+    # Current response files do not carry units on every coordinate; warn and
+    # assume the established MUSE units until the files are migrated.
+    assumed_units = {
+        "logT": u.dex(u.K),
+        "doppler_velocity": u.km / u.s,
+        "detector_wavelength": u.AA,
+        "line_wavelength": u.AA,
+    }
+    for name, unit in assumed_units.items():
         if name in r and "units" not in r[name].attrs:
             logger.warning(
-                f"Response {name} is missing the 'units' attribute; assuming Angstrom. "
+                f"Response {name} is missing the 'units' attribute; assuming {unit}. "
                 f"This will raise an error in a future release once response files carry units."
             )
-            r[name].attrs.update({"units": str(u.AA)})
+            r[name].attrs.update({"units": str(unit)})
 
     add_history(r, locals(), read_response)
     return r
@@ -288,10 +294,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
         return r
     in_range = (axis >= r[name].min()) & (axis <= r[name].max())
     if not bool(in_range.all()):
-        logger.info(
-            f"Requested {name} extends beyond the response range; trimming to the response grid. "
-            f"Run vdem.sel(logT=response.logT, doppler_velocity=response.doppler_velocity, drop=True, method='nearest') to match."
-        )
+        logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
         axis = axis.where(in_range, drop=True)
         if axis.size == 0:
             msg = f"Requested {name} axis has no overlap with the response range"
@@ -303,6 +306,82 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     # Clamp on every path so nearest and interpolated responses behave consistently.
     r["detector_response"] = r.detector_response.fillna(0).clip(min=0).assign_attrs(r.detector_response.attrs)
     return r.assign_coords({name: axis})
+
+
+def align_response_and_vdem(
+    response: xr.Dataset,
+    vdem: xr.Dataset,
+    *,
+    logT_method: str = "nearest",
+    doppler_velocity_method: str = "linear",
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Resample response onto the overlapping VDEM temperature and velocity grids.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Response dataset containing ``detector_response``.
+    vdem : `xarray.Dataset`
+        VDEM dataset containing ``vdem``.
+    logT_method : `str`, optional
+        Response resampling method for ``logT``, by default ``"nearest"``.
+    doppler_velocity_method : `str`, optional
+        Response resampling method for ``doppler_velocity``, by default ``"linear"``.
+
+    Returns
+    -------
+    response, vdem : `tuple` of `xarray.Dataset`
+        New datasets with identical ``logT`` and ``doppler_velocity`` coordinates.
+
+    Raises
+    ------
+    TypeError
+        If either input is not an `xarray.Dataset`.
+    ValueError
+        If a required variable or coordinate is missing, malformed, or has no overlap.
+    """
+    for name, dataset in (("response", response), ("vdem", vdem)):
+        if not isinstance(dataset, xr.Dataset):
+            msg = f"{name} must be an xarray.Dataset"
+            raise TypeError(msg)
+    if "detector_response" not in response:
+        msg = "response must contain detector_response"
+        raise ValueError(msg)
+    if "vdem" not in vdem:
+        msg = "vdem must contain vdem"
+        raise ValueError(msg)
+
+    matched_response = response
+    matched_vdem = vdem
+    axes = {
+        "logT": (logT_method, u.dex(u.K)),
+        "doppler_velocity": (doppler_velocity_method, u.km / u.s),
+    }
+    for name, (method, unit) in axes.items():
+        normalized_axes = []
+        for dataset_name, dataset in (("response", matched_response), ("vdem", matched_vdem)):
+            axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")
+            if axis.size == 0 or not bool(np.isfinite(axis).all()):
+                msg = f"{dataset_name} {name} coordinate must contain finite values"
+                raise ValueError(msg)
+            normalized_axes.append(axis)
+
+        matched_response = matched_response.assign_coords({name: normalized_axes[0]})
+        matched_vdem = matched_vdem.assign_coords({name: normalized_axes[1]})
+
+        matched_response = _resample_axis(matched_response, name, matched_vdem[name], method)
+        axis = matched_response[name]
+        if axis.size < matched_vdem.sizes[name]:
+            matched_vdem = matched_vdem.sel({name: axis})
+
+    matched_response = matched_response.drop_attrs(deep=False)
+    matched_vdem = matched_vdem.drop_attrs(deep=False)
+    update_attrs(matched_response, response)
+    update_attrs(matched_vdem, vdem)
+    add_history(matched_response, locals(), align_response_and_vdem, sources=(response, vdem))
+    add_history(matched_vdem, locals(), align_response_and_vdem, sources=(response, vdem))
+    return matched_response, matched_vdem
 
 
 def load_and_concat_responses(
