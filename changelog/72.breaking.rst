@@ -1,0 +1,1 @@
+Replace the ``restype`` argument to `muse.transforms.match_fov` with the keyword-only ``tile`` option; inputs wider than the MUSE field of view are still cropped when tiling is disabled.
