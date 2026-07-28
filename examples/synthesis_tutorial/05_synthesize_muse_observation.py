@@ -27,6 +27,8 @@ vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
 # Remove this selection so you can have the  full-resolution y axis.
 vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 
+print(vdem_raster)
+
 ##############################################################################
 # For multi-line analysis, we load the response functions for several spectral
 # lines and concatenate them.
@@ -70,6 +72,8 @@ response, vdem_raster = match_responses_and_vdems(
 )
 
 print(response)
+print("\n\n")
+print(vdem_raster)
 
 ##############################################################################
 # Now we can perform the synthesis using :func:`muse.synthesis.vdem_synthesis`
