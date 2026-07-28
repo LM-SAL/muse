@@ -100,28 +100,25 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     dy_pix="dy_pixel_SG",
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
-    restype="fov_restype",
+    tile="fov_tile",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
 )
+@u.quantity_input(dx_pix=u.arcsec, dy_pix=u.arcsec)
 def match_fov(
     vdem: xr.Dataset,
+    *,
     dx_pix=DEFAULTS_MUSE.dx_pixel_SG,
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
     nslits=DEFAULTS_MUSE.number_of_slits_SG,
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-    restype: str = DEFAULTS_MUSE.fov_restype,
+    tile: bool = DEFAULTS_MUSE.fov_tile,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
-    rotate=False,  # NOQA: FBT002
+    rotate=False,
 ):
     """
-    Match the data to MUSE FOV allowing to:
-
-    1) match the resolution, restype[:9] = "match_res"
-    2) and tile the box in x axis, mode = "wrap" (np.pad option mode).
-    3) or tile the box in x axis with zeros, mode = "constant". (or any other pad option)
-    4) no tiling, restype[10:] = "notile".
+    Match a VDEM's spatial resolution and available extent to the MUSE FOV.
 
     Parameters
     ----------
@@ -135,11 +132,16 @@ def match_fov(
         Number of slits, by default is {nslits}.
     nraster : `int`
         Number of raster steps, by default is {nraster}.
-    restype : `str`, optional
-        Type of tiling and resolution matching, by default is {restype}.
+    tile : `bool`, optional
+        Whether to extend inputs narrower than the MUSE FOV, by default {tile}.
+        If `True`, extend an input narrower than the MUSE FOV to
+        ``nslits * nraster`` pixels using ``mode``. If `False`, retain a
+        narrower input without extending it. Inputs wider than the MUSE FOV
+        are always cropped. Spatial resolution matching is always performed.
     mode : `str`, optional
-        This is the pad method used by `xarray.DataArray.pad`, by default is {mode}.
-        Please check the the `xarray.DataArray.pad` documentation for all possible values.
+        Extension mode used when ``tile=True``, by default {mode}. See
+        `xarray.DataArray.pad` for supported values.
+        ``"wrap"`` repeats the input along x.
         ``"constant"`` fills the padded columns with zeros rather than the
         `xarray.DataArray.pad` default of NaN, so they read as "no emission here".
     sub_interpolation: `int`
@@ -149,84 +151,74 @@ def match_fov(
 
     Returns
     -------
-    array - `xarray.Dataset`
-            VDEM data matching MUSE data
+    `xarray.Dataset`
+        VDEM data resampled to the requested pixel sizes and cropped or extended
+        along x as described by ``tile``.
 
     Notes
     -----
     Depending on the input grid, one of the following paths is taken:
 
-    1. **Already at MUSE resolution** - if ``x`` has more than one point, its
-       spacing already matches ``dx_pix`` and ``x`` spans exactly
-       ``nslits * nraster`` points (and, when ``y`` has more than one point, its
-       spacing matches ``dy_pix``), the input dataset is returned unchanged.
+    1. **Already matched** - if rotation is disabled, the measurable spatial
+       axes have the requested pixel spacing, and the x width needs no crop or
+       extension, the input dataset is returned unchanged. After rotation,
+       matched axes skip resampling but continue through output finalization.
     2. **Single row or column** - if only one axis has more than one point, the
-       match is decided on that axis alone (the other spacing cannot be measured)
-       and, when it matches, the input dataset is returned unchanged.
-    3. **Resample and tile** - otherwise each axis is resampled onto the MUSE
+       resolution match is decided on that axis alone because the other spacing
+       cannot be measured. The x extent still follows ``tile``.
+    3. **Resample** - otherwise each axis is resampled onto the requested
        pixel size (interpolated up, integer-factor averaged down, or
-       sub-interpolated) and the ``x`` axis is then padded out with ``mode``
-       (``restype`` without the ``"notile"`` suffix) or truncated to
-       ``nslits * nraster``.
-    4. **No tiling** - a ``restype`` ending in ``"notile"`` skips the padding in
-       path 3 and keeps the resampled width.
-    5. **Single pixel** - a 1x1 input has nothing to resample or tile and returns
-       a copy with the coordinates relabeled onto the MUSE grid. This degenerate
-       path may be removed in the future.
+       sub-interpolated).
+    4. **Match the x extent** - inputs wider than ``nslits * nraster`` are
+       cropped. Narrower inputs are extended with ``mode`` only when
+       ``tile=True``; otherwise their available width is retained.
+    5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
+       extent is extended when ``tile=True`` and retained when ``tile=False``.
     """
-    if not isinstance(dx_pix, u.Quantity):
-        msg = "dx_pix must be an astropy.units.Quantity convertible to arcsec"
-        raise TypeError(msg)
-    if not isinstance(dy_pix, u.Quantity):
-        msg = "dy_pix must be an astropy.units.Quantity convertible to arcsec"
-        raise TypeError(msg)
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
+    target_width = nslits * nraster
 
-    if not restype.startswith("match_res"):
-        msg = f"Unsupported restype {restype!r}; only 'match_res*' is supported."
-        raise ValueError(msg)
-
-    if not rotate:
-        x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
-        y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
-        # The x axis must also span the full raster; the y-only path (a single column) has no
-        # such count to check against.
-        x_at_pixel = x_at_pixel and vdem.coords["x"].size == nslits * nraster
-        if (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (y_at_pixel and vdem.coords["x"].size < 2):
-            logger.info("vdem has already the MUSE pixel size")
-            return vdem
-    else:
+    if rotate:
         vdem = vdem.rename({"x": "ynew"})
         vdem = vdem.rename({"y": "x"})
         vdem = vdem.rename({"ynew": "y"})
+
+    x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
+    y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
+    resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
+        y_at_pixel and vdem.coords["x"].size < 2
+    )
+    width_needs_no_change = vdem.coords["x"].size == target_width or (not tile and vdem.coords["x"].size < target_width)
+    if not rotate and resolution_matches and width_needs_no_change:
+        logger.info("vdem already has the requested pixel size and needs no x-extent change")
+        return vdem
 
     # Shallow copy: every transform below returns a new object; the copy only isolates
     # coord/attr mutations on the degenerate size-1 paths where resampling is a no-op.
     vdem_xr = vdem.copy()
 
-    vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
-    vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
-    # The unstack inside the resampling moves the resampled axis last; restore each
-    # variable's original dimension order so downstream plots keep their orientation.
-    vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
+    if not resolution_matches:
+        vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
+        vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
+        # The unstack inside the resampling moves the resampled axis last; restore each
+        # variable's original dimension order so downstream plots keep their orientation.
+        vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     nx = vdem_xr.x.size
-    if nx > 1:
-        if nslits * nraster > nx:
-            if restype[10:] != "notile":
-                if mode == "wrap":
-                    # dask.array.pad silently clips a wrap pad wider than the axis; modular
-                    # indexing tiles any width and works on both numpy and dask backends.
-                    vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster) % nx)
-                else:
-                    # xarray.pad defaults constant_values to NaN, which would poison every
-                    # downstream sum; a padded VDEM column means "no emission here", so fill
-                    # with zeros. Only "constant" accepts the argument.
-                    fill = {"constant_values": 0} if mode == "constant" else {}
-                    vdem_xr = vdem_xr.pad(x=(0, nslits * nraster - nx), mode=mode, **fill)
+    if nx > target_width:
+        vdem_xr = vdem_xr.isel(x=np.arange(target_width))
+    elif tile and nx < target_width:
+        if mode == "wrap":
+            # dask.array.pad silently clips a wrap pad wider than the axis; modular
+            # indexing tiles any width and works on both numpy and dask backends.
+            vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
         else:
-            vdem_xr = vdem_xr.isel(x=np.arange(nslits * nraster))
+            # xarray.pad defaults constant_values to NaN, which would poison every
+            # downstream sum; a padded VDEM column means "no emission here", so fill
+            # with zeros. Only "constant" accepts the argument.
+            fill = {"constant_values": 0} if mode == "constant" else {}
+            vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
 
     vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value

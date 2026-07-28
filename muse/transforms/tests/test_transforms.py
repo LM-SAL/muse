@@ -51,11 +51,11 @@ def test_match_fov_returns_input_for_single_y_row(vdem) -> None:
     assert match_fov(single_row) is single_row
 
 
-def test_match_fov_returns_input_for_single_x_column(vdem) -> None:
+def test_match_fov_without_tiling_returns_input_for_single_x_column(vdem) -> None:
     # Only one x column, so dx cannot be measured: match_fov checks dy alone and,
-    # since it matches the MUSE pixel size, returns the input.
+    # since it matches the MUSE pixel size and needs no tiling, returns the input.
     single_column = vdem.isel(x=[0])
-    assert match_fov(single_column) is single_column
+    assert match_fov(single_column, tile=False) is single_column
 
 
 @pytest.mark.parametrize(
@@ -74,11 +74,10 @@ def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem, case
 
 
 def test_match_fov_relabels_single_pixel_input(vdem) -> None:
-    # Both axes are size 1: nothing to resample or tile, so match_fov falls through
-    # to the tail and returns a copy with the coords relabeled onto the MUSE grid.
-    # NOTE: this degenerate relabel-only path may be removed in the future.
+    # Both axes are size 1 and tiling is disabled, so match_fov falls through to
+    # the tail and returns a copy with the coords relabeled onto the MUSE grid.
     single_pixel = vdem.isel(x=[0], y=[0])
-    out = match_fov(single_pixel)
+    out = match_fov(single_pixel, tile=False)
     assert out is not single_pixel
     assert out.sizes["x"] == 1
     assert out.sizes["y"] == 1
@@ -141,7 +140,7 @@ def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
-    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile").x.size
+    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False).x.size
 
     out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, mode="constant")
 
@@ -150,12 +149,38 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
 
 
-def test_match_fov_notile_keeps_resampled_width(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, restype="match_res_notile")
-    # "notile" suffix skips the pad, so the resampled width is kept as-is (< full FOV).
+def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False)
+    # Disabling tiling leaves an input narrower than the MUSE FOV at its available width.
     assert out.x.size == 308
     assert out.x.size < 35 * 11
     assert bool(np.isfinite(out.vdem).all())
+
+
+def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
+    width = 35 * 11
+    wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
+    wider.x.attrs["units"] = "arcsec"
+
+    out = match_fov(wider, tile=False)
+
+    assert out.x.size == width
+    np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, width)).values)
+
+
+def test_match_fov_without_tiling_returns_narrow_input_at_pixel_size(vdem) -> None:
+    narrower = vdem.isel(x=slice(0, 100))
+
+    assert match_fov(narrower, tile=False) is narrower
+
+
+def test_match_fov_tiles_single_x_column(vdem) -> None:
+    single_column = vdem.isel(x=[0])
+
+    out = match_fov(single_column)
+
+    assert out.x.size == 35 * 11
+    np.testing.assert_array_equal(out.vdem.isel(x=0), out.vdem.isel(x=-1))
 
 
 def test_match_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
@@ -181,6 +206,21 @@ def test_match_fov_rotate(vdem_offgrid) -> None:
         finite_vars=("vdem",),
     )
     assert out.x.size == 35 * 11
+
+
+def test_match_fov_rotate_skips_resampling_when_resolution_matches(vdem) -> None:
+    source = vdem.assign_coords(
+        x=np.arange(vdem.x.size) * 0.167,
+        y=np.arange(vdem.y.size) * 0.4,
+    )
+    source.x.attrs["units"] = "arcsec"
+    source.y.attrs["units"] = "arcsec"
+
+    out = match_fov(source, rotate=True, tile=False)
+
+    assert out.sizes["x"] == source.sizes["y"]
+    assert out.sizes["y"] == source.sizes["x"]
+    np.testing.assert_array_equal(out.vdem.values, source.vdem.values)
 
 
 def test_reshape_x_to_slit_step(vdem) -> None:
@@ -268,13 +308,8 @@ def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
         reshape_slit_step_to_x(vdem)
 
 
-def test_match_fov_rejects_unknown_restype(vdem) -> None:
-    with pytest.raises(ValueError, match="Unsupported restype"):
-        match_fov(vdem, restype="match_fov")
-
-
 def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
-    with pytest.raises(TypeError, match=r"dx_pix must be an astropy\.units\.Quantity"):
+    with pytest.raises(TypeError, match="dx_pix"):
         match_fov(vdem, dx_pix=0.4)
 
 
