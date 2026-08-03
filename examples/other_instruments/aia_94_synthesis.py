@@ -11,10 +11,9 @@ and synthesizes an AIA 94 Å image from the same VDEM used in the
 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`,
 using :func:`muse.synthesis.vdem_synthesis`.
 
-An imager integrates over its whole bandpass, so after synthesizing the
-Doppler-resolved spectra of the strongest contributors we integrate over
-wavelength and sum over line to form the image. As in the response example,
-this includes only the five strongest iron lines (no other lines or continuum).
+AIA runs through the same pipeline stages as MUSE, with AIA's own
+calibration supplied at each step. As in the response example, this includes
+only the five strongest iron lines (no other lines or continuum).
 
 It requires `aiapy` (``pip install aiapy``) for the instrument response.
 """
@@ -33,7 +32,12 @@ import astropy.units as u
 import sunpy.visualization.colormaps  # NOQA: F401 -- registers the SDO colormaps with matplotlib
 
 from muse.data import fetch_example_data
-from muse.instrument import align_response_and_vdem, create_spectral_response, map_response_to_ci_detector
+from muse.instrument import (
+    align_response_and_vdem,
+    create_spectral_response,
+    map_response_to_ci_detector,
+    transform_response_units,
+)
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov
 
@@ -68,15 +72,18 @@ print(vdem)
 channel = Channel(94 * u.angstrom)
 # With no ``obstime``, this uses the baseline calibration without a
 # time-dependent degradation correction.
-photon_energy = (const.h * const.c / channel.wavelength / u.ph).to(u.erg / u.ph)
-radiometric_conversion_quantity = (channel.wavelength_response() * channel.plate_scale / photon_energy).to(
-    u.cm**2 * u.DN * u.sr / (u.erg * u.pix)
-)
-radiometric_conversion = xr.DataArray(
-    radiometric_conversion_quantity.value,
+
+aia_pixel = 0.6 * u.arcsec  # AIA plate scale per pixel side
+pair_energy = 3.65 * u.eV / u.electron  # silicon pair-creation energy
+# aiapy packages the camera gain as DN per photon
+electrons_per_photon = (const.h * const.c / channel.wavelength / u.ph / pair_energy).to(u.electron / u.ph)
+camera_gain = (electrons_per_photon / channel.gain).to(u.electron / u.DN).mean()
+
+effective_area = xr.DataArray(
+    channel.effective_area.to_value(u.cm**2),
     dims="wavelength",
     coords={"wavelength": ("wavelength", channel.wavelength.to_value(u.AA), {"units": str(u.AA)})},
-    attrs={"units": str(radiometric_conversion_quantity.unit)},
+    attrs={"units": str(u.cm**2)},
 ).sel(wavelength=slice(84, 106))
 
 line_list_file = fetch_example_data("aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc")
@@ -84,34 +91,39 @@ line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.log
 line_list = line_list.assign_coords(logT=vdem.logT)
 line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 
-conversion_at_lines = radiometric_conversion.interp(wavelength=line_list.wavelength).fillna(0.0).drop_vars("wavelength")
-peak_weight = (line_list.gofnt.isel(pressure=0) * conversion_at_lines).max(dim="logT")
+area_at_lines = effective_area.interp(wavelength=line_list.wavelength).fillna(0.0).drop_vars("wavelength")
+peak_weight = (line_list.gofnt.isel(pressure=0) * area_at_lines).max(dim="logT")
 ranked = line_list.full_name.values[np.argsort(-peak_weight.values)]
 main_lines = list(dict.fromkeys(str(name) for name in ranked))[:5]
 print(f"Strongest contributors: {main_lines}")
+
+##############################################################################
+# Now we will create the AIA response. In addition, we use
+# :func:`muse.instrument.transform_response_units` and AIA's own camera
+# gain, silicon pair energy, and plate scale.
 
 response = create_spectral_response(
     line_list,
     np.arange(91.0, 97.0, 0.05) * u.AA,
     main_lines=main_lines,
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
+    effective_area=effective_area,
+)
+response = transform_response_units(
+    response,
+    "1e-27 cm5 DN / (Angstrom s)",
+    gain=camera_gain,
+    pair_energy=pair_energy,
+    pixel_width=aia_pixel,
+    pixel_height=aia_pixel,
 )
 
 ##############################################################################
 # AIA is an imager, so we do not need Doppler-resolved spectra: the
 # wavelength-space response is integrated over the band, leaving a
-# response per (line, logT, doppler_velocity) grid point. The coarse radiometric
-# conversion is then applied per line at its rest wavelength.
+# response per (line, logT, doppler_velocity) grid point.
 
 aia_response = map_response_to_ci_detector(response, 94 * u.AA)
-conversion_per_line = (
-    radiometric_conversion.interp(wavelength=aia_response.line_wavelength).fillna(0.0).drop_vars("wavelength")
-)
-response_unit = u.Unit(aia_response.detector_response.attrs["units"]) * radiometric_conversion_quantity.unit
-scaled_response = (aia_response.detector_response * conversion_per_line).assign_attrs(
-    {**aia_response.detector_response.attrs, "units": str(response_unit)}
-)
-aia_response = aia_response.assign(detector_response=scaled_response)
 
 ##############################################################################
 # The VDEM is resampled onto AIA's 0.6 arcsec plate scale. AIA's field of
@@ -120,7 +132,7 @@ aia_response = aia_response.assign(detector_response=scaled_response)
 # :func:`muse.instrument.align_response_and_vdem` puts the response and the
 # VDEM on shared temperature and velocity grids.
 
-vdem_aia = match_fov(vdem, dx_pix=0.6 * u.arcsec, dy_pix=0.6 * u.arcsec, x_extent="keep")
+vdem_aia = match_fov(vdem, dx_pix=aia_pixel, dy_pix=aia_pixel, x_extent="keep")
 aia_response, vdem_aia = align_response_and_vdem(aia_response, vdem_aia)
 
 ##############################################################################
