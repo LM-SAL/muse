@@ -16,12 +16,17 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
-# Wavelength-space response units this mapping accepts.
-_ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
+# Wavelength-space response units these mappings accept.
+_ACCEPTED_SG_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
+_ACCEPTED_CI_RESPONSE_UNITS = tuple(
+    unit * emission_measure / (u.AA * u.s)
+    for unit in (u.erg / u.sr, u.ph, u.DN)
+    for emission_measure in (u.cm**3, u.cm**5)
+)
 
 
 def _validate_wavelength_response(
-    response: xr.Dataset, *, restrict_units: bool = True
+    response: xr.Dataset, *, accepted_units: tuple[u.UnitBase, ...] = _ACCEPTED_SG_RESPONSE_UNITS
 ) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
@@ -49,8 +54,8 @@ def _validate_wavelength_response(
         msg = "response normalization must be a finite, positive number"
         raise ValueError(msg)
     response_unit = require_unit(response, "spectral_response", "response.spectral_response")
-    if restrict_units and not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
-        accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
+    if not any(response_unit.is_equivalent(accepted) for accepted in accepted_units):
+        accepted = ", ".join(str(unit) for unit in accepted_units)
         msg = f"response.spectral_response units must be convertible to one of {accepted}"
         raise ValueError(msg)
     wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
@@ -216,7 +221,9 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         of ``response.spectral_response`` integrated over wavelength, with
         ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response, restrict_units=False)
+    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(
+        response, accepted_units=_ACCEPTED_CI_RESPONSE_UNITS
+    )
     line_wavelength = np.asarray(line_wavelength)
     channel_value = _channel_as_angstrom(channel, None, "ci")
     if wavelength_grid.size < 2:

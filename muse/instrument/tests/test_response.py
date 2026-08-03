@@ -299,7 +299,7 @@ def test_map_response_to_ci_detector_accepts_any_channel():
         map_response_to_ci_detector(response, -171 * u.AA)
 
 
-def test_map_response_to_ci_detector_accepts_any_units():
+def test_map_response_to_ci_detector_accepts_cm3_units():
     # e.g. an AIA line list carries gofnt per cm3 instead of the MUSE cm5 bases.
     response = _ci_spectral_response()
     response = response.assign(
@@ -309,6 +309,17 @@ def test_map_response_to_ci_detector_accepts_any_units():
     mapped = map_response_to_ci_detector(response, 171 * u.AA)
 
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 cm3 erg / (s sr)")
+
+
+@pytest.mark.parametrize("units", ["s", "erg cm3 / (s sr)"])
+def test_map_response_to_ci_detector_rejects_invalid_units(units):
+    response = _ci_spectral_response()
+    response = response.assign(
+        spectral_response=response.spectral_response.assign_attrs(units=units),
+    )
+
+    with pytest.raises(ValueError, match="convertible"):
+        map_response_to_ci_detector(response, 171 * u.AA)
 
 
 def test_ci_response_maps_directly_into_synthesis():
