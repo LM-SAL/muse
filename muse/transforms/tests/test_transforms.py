@@ -55,7 +55,7 @@ def test_match_fov_without_tiling_returns_input_for_single_x_column(vdem) -> Non
     # Only one x column, so dx cannot be measured: match_fov checks dy alone and,
     # since it matches the MUSE pixel size and needs no tiling, returns the input.
     single_column = vdem.isel(x=[0])
-    assert match_fov(single_column, tile=False) is single_column
+    assert match_fov(single_column, x_extent="crop") is single_column
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_match_fov_relabels_single_pixel_input(vdem) -> None:
     # Both axes are size 1 and tiling is disabled, so match_fov falls through to
     # the tail and returns a copy with the coords relabeled onto the MUSE grid.
     single_pixel = vdem.isel(x=[0], y=[0])
-    out = match_fov(single_pixel, tile=False)
+    out = match_fov(single_pixel, x_extent="crop")
     assert out is not single_pixel
     assert out.sizes["x"] == 1
     assert out.sizes["y"] == 1
@@ -140,7 +140,7 @@ def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
-    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False).x.size
+    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="crop").x.size
 
     out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, mode="constant")
 
@@ -150,11 +150,28 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
 
 
 def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, tile=False)
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="crop")
     # Disabling tiling leaves an input narrower than the MUSE FOV at its available width.
     assert out.x.size == 308
     assert out.x.size < 35 * 11
     assert bool(np.isfinite(out.vdem).all())
+
+
+def test_match_fov_without_x_extent_match_keeps_resampled_width(vdem_offgrid) -> None:
+    # x_extent="keep" resamples the resolution but leaves the x width alone,
+    # even though tiling would otherwise extend it to nslits*nraster.
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="keep")
+    assert out.x.size == 308
+    assert out.x.size < 35 * 11
+    assert bool(np.isfinite(out.vdem).all())
+
+
+def test_match_fov_without_x_extent_match_returns_input_at_pixel_size(vdem) -> None:
+    # With the width left alone, an input already at MUSE resolution needs no work
+    # at all, even one narrow enough that the tiling path would extend it.
+    narrower = vdem.isel(x=slice(0, 100))
+
+    assert match_fov(narrower, x_extent="keep") is narrower
 
 
 def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
@@ -162,7 +179,7 @@ def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
     wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
     wider.x.attrs["units"] = "arcsec"
 
-    out = match_fov(wider, tile=False)
+    out = match_fov(wider, x_extent="crop")
 
     assert out.x.size == width
     np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, width)).values)
@@ -171,7 +188,7 @@ def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
 def test_match_fov_without_tiling_returns_narrow_input_at_pixel_size(vdem) -> None:
     narrower = vdem.isel(x=slice(0, 100))
 
-    assert match_fov(narrower, tile=False) is narrower
+    assert match_fov(narrower, x_extent="crop") is narrower
 
 
 def test_match_fov_tiles_single_x_column(vdem) -> None:
@@ -216,7 +233,7 @@ def test_match_fov_rotate_skips_resampling_when_resolution_matches(vdem) -> None
     source.x.attrs["units"] = "arcsec"
     source.y.attrs["units"] = "arcsec"
 
-    out = match_fov(source, rotate=True, tile=False)
+    out = match_fov(source, rotate=True, x_extent="crop")
 
     assert out.sizes["x"] == source.sizes["y"]
     assert out.sizes["y"] == source.sizes["x"]

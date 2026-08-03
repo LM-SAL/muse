@@ -501,6 +501,20 @@ def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:
     assert bool(np.isfinite(matched_response.detector_response).all())
 
 
+def test_align_response_and_vdem_honors_custom_coord_methods() -> None:
+    response = fake_response().isel(logT=[0, 2, 5, 6], doppler_velocity=[0, 2, 4, 8])
+    vdem = fake_vdem()
+    nearest = {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("nearest", u.km / u.s)}
+
+    nearest_response, nearest_vdem = align_response_and_vdem(response, vdem, coord_methods=nearest)
+    default_response, _ = align_response_and_vdem(response, vdem)
+
+    xr.testing.assert_equal(nearest_response.logT, nearest_vdem.logT)
+    xr.testing.assert_equal(nearest_response.doppler_velocity, nearest_vdem.doppler_velocity)
+    # Nearest-neighbour velocity resampling must differ from the default linear interpolation.
+    assert not np.allclose(nearest_response.detector_response, default_response.detector_response)
+
+
 def test_align_response_and_vdem_trims_both_outputs_to_overlap() -> None:
     response = fake_response().isel(logT=slice(1, -1), doppler_velocity=slice(1, -1))
     vdem = fake_vdem()

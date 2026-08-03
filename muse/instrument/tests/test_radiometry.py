@@ -66,6 +66,26 @@ def test_transform_response_units_photons_to_data_numbers():
     assert u.Unit(data_numbers.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
 
 
+def test_transform_response_units_accepts_explicit_calibration_without_channel():
+    # A non-MUSE instrument supplies its own calibration; the MUSE channel list
+    # is only consulted when a gain or pair_energy default is needed.
+    response = _spectral_response()
+    gain = 2.5 * u.electron / u.DN
+
+    converted = transform_response_units(
+        response,
+        "1e-27 cm5 DN / (Angstrom s)",
+        gain=gain,
+        pair_energy=3.65 * u.eV / u.electron,
+        pixel_width=0.6 * u.arcsec,
+        pixel_height=0.6 * u.arcsec,
+    )
+
+    assert u.Unit(converted.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
+    with pytest.raises(ValueError, match="channel is required"):
+        transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", gain=gain)
+
+
 def test_transform_response_units_uses_channel_gain(monkeypatch):
     monkeypatch.setattr(
         DEFAULTS_MUSE.ccd_gain_sg,

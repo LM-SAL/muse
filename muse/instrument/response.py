@@ -20,7 +20,9 @@ __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 _ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
 
 
-def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
+def _validate_wavelength_response(
+    response: xr.Dataset, *, restrict_units: bool = True
+) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
@@ -47,7 +49,7 @@ def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.
         msg = "response normalization must be a finite, positive number"
         raise ValueError(msg)
     response_unit = require_unit(response, "spectral_response", "response.spectral_response")
-    if not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
+    if restrict_units and not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
         accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
         msg = f"response.spectral_response units must be convertible to one of {accepted}"
         raise ValueError(msg)
@@ -194,13 +196,9 @@ def map_response_to_sg_detector(
 
 
 @u.quantity_input(channel=u.AA)
-def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity, *, muse_ci=True) -> xr.Dataset:
+def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr.Dataset:
     """
-    Integrate one wavelength-space response over a MUSE CI band.
-
-    The result is band-integrated and therefore has no detector wavelength-bin
-    dimension. ``detector_wavelength`` records the nominal CI channel
-    wavelength along ``line``.
+    Integrate one wavelength-space response over an imaging band.
 
     Parameters
     ----------
@@ -209,10 +207,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity, *, mu
         ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
         be nonuniform.
     channel : `astropy.units.Quantity`
-        Nominal MUSE CI channel wavelength: 195 or 304 Angstrom.
-    muse_ci : `bool`, optional
-        If `True`, use the MUSE CI bandpass for integration. If `False`,
-        integrate over the full wavelength grid, by default `True`.
+        Nominal channel wavelength recorded in the output coordinates.
 
     Returns
     -------
@@ -221,12 +216,9 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity, *, mu
         of ``response.spectral_response`` integrated over wavelength, with
         ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response, restrict_units=False)
     line_wavelength = np.asarray(line_wavelength)
-    if muse_ci:
-        channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel, "ci")
-    else:
-        channel_value = channel.to_value(u.AA)
+    channel_value = _channel_as_angstrom(channel, None, "ci")
     if wavelength_grid.size < 2:
         msg = "response.wavelength_grid must contain at least two points for integration"
         raise ValueError(msg)
@@ -245,10 +237,5 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity, *, mu
             {"units": str(u.AA)},
         ),
     )
-    if not muse_ci:
-        result.attrs["instrumet"] = "NOT MUSE CI"
-    else:
-        result.attrs["instrument"] = "MUSE CI"
-
     add_history(result, locals(), map_response_to_ci_detector)
     return result

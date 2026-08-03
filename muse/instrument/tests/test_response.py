@@ -266,7 +266,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     original = response.copy(deep=True)
 
     with xr.set_options(keep_attrs=False):
-        mapped = map_response_to_ci_detector(response, 19.5 * u.nm)
+        mapped = map_response_to_ci_detector(response, 195 * u.AA)
 
     assert isinstance(mapped.detector_response.data, da.Array)
     assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity")
@@ -283,6 +283,32 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
     np.testing.assert_allclose(mapped.detector_response.compute(), 10.5)
     xr.testing.assert_identical(response, original)
+
+
+def test_map_response_to_ci_detector_accepts_any_channel():
+    # The channel is only recorded in the output coordinates, so non-MUSE
+    # imagers (e.g. AIA 171) pass their own band centre.
+    response = _ci_spectral_response()
+
+    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+
+    assert mapped.channel.item() == 171
+    assert mapped.detector_wavelength.item() == 171
+    # Basic channel validation still applies.
+    with pytest.raises(ValueError, match="finite, positive"):
+        map_response_to_ci_detector(response, -171 * u.AA)
+
+
+def test_map_response_to_ci_detector_accepts_any_units():
+    # e.g. an AIA line list carries gofnt per cm3 instead of the MUSE cm5 bases.
+    response = _ci_spectral_response()
+    response = response.assign(
+        spectral_response=response.spectral_response.assign_attrs(units="1e-27 cm3 erg / (Angstrom s sr)"),
+    )
+
+    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 cm3 erg / (s sr)")
 
 
 def test_ci_response_maps_directly_into_synthesis():
@@ -320,12 +346,10 @@ def test_ci_response_maps_directly_into_synthesis():
     ("case", "error", "match"),
     [
         ("response_type", TypeError, "xarray.Dataset"),
-        ("channel", ValueError, "unsupported MUSE CI channel"),
         ("channel_unitless", TypeError, "no 'unit' attribute"),
         ("channel_units", u.UnitsError, "convertible to 'Angstrom'"),
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
-        ("units", ValueError, "convertible"),
         ("wavelength_grid", ValueError, "strictly increasing"),
         ("wavelength_grid_short", ValueError, "at least two points"),
     ],
@@ -335,8 +359,6 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
     channel = 195 * u.AA
     if case == "response_type":
         response = None
-    elif case == "channel":
-        channel = 171 * u.AA
     elif case == "channel_unitless":
         channel = 195
     elif case == "channel_units":
@@ -345,8 +367,6 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
         response = response.drop_vars("line_wavelength")
     elif case == "normalization":
         response.attrs["normalization"] = 0
-    elif case == "units":
-        response.spectral_response.attrs["units"] = "1e-27 erg cm3 / (Angstrom s sr)"
     elif case == "wavelength_grid":
         response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
     else:

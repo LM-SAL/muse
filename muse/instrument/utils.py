@@ -11,6 +11,7 @@ import astropy.units as u
 from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import FrozenDict
 
 __all__ = ["align_response_and_vdem", "load_and_concat_responses", "read_response", "save_response"]
 
@@ -25,7 +26,7 @@ _LEGACY_RESPONSE_NAMES = {
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
 
 
-def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray, detector: str) -> int | float:
+def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | None, detector: str) -> int | float:
     if not channel.isscalar:
         msg = "channel must be a scalar wavelength"
         raise ValueError(msg)
@@ -33,6 +34,8 @@ def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray, de
     if not np.isfinite(channel_value) or channel_value <= 0:
         msg = "channel must be a finite, positive wavelength"
         raise ValueError(msg)
+    if allowed_channels is None:
+        return channel_value
     allowed = np.asarray(allowed_channels)
     matches = np.isclose(allowed, channel_value, rtol=0, atol=1e-12)
     if not matches.any():
@@ -309,10 +312,12 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
 
 
 def align_response_and_vdem(
-    response_orig: xr.Dataset,
-    vdem_orig: xr.Dataset,
+    response: xr.Dataset,
+    vdem: xr.Dataset,
     *,
-    coord_methods: dict[str, str] | None = None,
+    coord_methods: Mapping[str, tuple] = FrozenDict(
+        {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}
+    ),
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
     Resample response onto the overlapping VDEM temperature and velocity grids.
@@ -323,8 +328,10 @@ def align_response_and_vdem(
         Response dataset containing ``detector_response``.
     vdem : `xarray.Dataset`
         VDEM dataset containing ``vdem``.
-    coord_methods : `dict` of `str` to `str` and units, optional
-        Mapping from coordinate names (``logT`` and ``doppler_velocity``) to resampling methods, by default ``{"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}``.
+    coord_methods : `~collections.abc.Mapping`, optional
+        Maps each coordinate name to align to a ``(resampling method, unit)``
+        tuple, by default ``{"logT": ("nearest", u.dex(u.K)),
+        "doppler_velocity": ("linear", u.km / u.s)}``.
 
     Returns
     -------
@@ -338,11 +345,6 @@ def align_response_and_vdem(
     ValueError
         If a required variable or coordinate is missing, malformed, or has no overlap.
     """
-    if coord_methods is None:
-        coord_methods = {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}
-    response = response_orig.copy(deep=True)
-    vdem = vdem_orig.copy(deep=True)
-
     for name, dataset in (("response", response), ("vdem", vdem)):
         if not isinstance(dataset, xr.Dataset):
             msg = f"{name} must be an xarray.Dataset"
@@ -373,7 +375,8 @@ def align_response_and_vdem(
         axis = matched_response[name]
         if axis.size < matched_vdem.sizes[name]:
             matched_vdem = matched_vdem.sel({name: axis})
-        matched_response.coords[name] = matched_vdem.coords[name]
+        # Share vdem's coordinate values so downstream exact joins see byte-identical axes.
+        matched_response = matched_response.assign_coords({name: matched_vdem[name]})
 
     matched_response = matched_response.drop_attrs(deep=False)
     matched_vdem = matched_vdem.drop_attrs(deep=False)

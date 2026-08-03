@@ -33,8 +33,9 @@ import astropy.units as u
 import sunpy.visualization.colormaps  # NOQA: F401 -- registers the SDO colormaps with matplotlib
 
 from muse.data import fetch_example_data
-from muse.instrument import create_spectral_response
+from muse.instrument import align_response_and_vdem, create_spectral_response, map_response_to_ci_detector
 from muse.synthesis import vdem_synthesis
+from muse.transforms import match_fov
 
 try:
     from aiapy.response import Channel
@@ -95,32 +96,42 @@ response = create_spectral_response(
     main_lines=main_lines,
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
 )
-conversion_on_grid = (
-    radiometric_conversion.interp(wavelength=response.wavelength_grid).fillna(0.0).drop_vars("wavelength")
-)
-response_unit = u.Unit(response.spectral_response.attrs["units"]) * radiometric_conversion_quantity.unit
-scaled_response = (response.spectral_response * conversion_on_grid).assign_attrs(
-    {**response.spectral_response.attrs, "units": str(response_unit)}
-)
-response = response.assign(spectral_response=scaled_response)
 
 ##############################################################################
-# As in the :ref:`EIS synthesis example
-# <sphx_glr_generated_gallery_other_instruments_eis_fe_xii_synthesis.py>`,
-# the wavelength-space response feeds straight into
-# :func:`muse.synthesis.vdem_synthesis`.
+# AIA is an imager, so we do not need Doppler-resolved spectra: the
+# wavelength-space response is integrated over the band, leaving a
+# response per (line, logT, doppler_velocity) grid point. The coarse radiometric
+# conversion is then applied per line at its rest wavelength.
 
-spectrum = vdem_synthesis(vdem, response)
+aia_response = map_response_to_ci_detector(response, 94 * u.AA)
+conversion_per_line = (
+    radiometric_conversion.interp(wavelength=aia_response.line_wavelength).fillna(0.0).drop_vars("wavelength")
+)
+response_unit = u.Unit(aia_response.detector_response.attrs["units"]) * radiometric_conversion_quantity.unit
+scaled_response = (aia_response.detector_response * conversion_per_line).assign_attrs(
+    {**aia_response.detector_response.attrs, "units": str(response_unit)}
+)
+aia_response = aia_response.assign(detector_response=scaled_response)
+
+##############################################################################
+# The VDEM is resampled onto AIA's 0.6 arcsec plate scale. AIA's field of
+# view is not tied to the MUSE raster width, so ``x_extent="keep"`` matches
+# the resolution while leaving the x extent alone. Afterwards
+# :func:`muse.instrument.align_response_and_vdem` puts the response and the
+# VDEM on shared temperature and velocity grids.
+
+vdem_aia = match_fov(vdem, dx_pix=0.6 * u.arcsec, dy_pix=0.6 * u.arcsec, x_extent="keep")
+aia_response, vdem_aia = align_response_and_vdem(aia_response, vdem_aia)
+
+##############################################################################
+# The band-integrated response feeds straight into
+# :func:`muse.synthesis.vdem_synthesis`; summing over temperature and
+# velocity leaves one band-integrated count-rate image per line.
+
+spectrum = vdem_synthesis(vdem_aia, aia_response, sum_over=("logT", "doppler_velocity"))
 print(spectrum)
 
-##############################################################################
-# Integrating over the physical wavelength coordinate and summing over line
-# gives the band-integrated count rate. ``integrate`` includes the wavelength
-# bin width; a plain sum would make the result depend on the chosen grid step.
-
-per_line = spectrum.flux.isel(pressure=0).integrate("detector_wavelength")
-per_line.attrs["units"] = str(u.Unit(spectrum.flux.attrs["units"]) * u.AA)
-per_line = per_line.compute()
+per_line = spectrum.flux.isel(pressure=0).compute()
 image = per_line.sum(dim="line", keep_attrs=True)
 plt.figure()
 # Anchor the log scale to the data: median to max spans the background
