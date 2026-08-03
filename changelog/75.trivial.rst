@@ -1,0 +1,2 @@
+Building a spectral response for all lines in a line list now logs a warning when that means
+more than ten lines, since the computation may be slow and memory-hungry.

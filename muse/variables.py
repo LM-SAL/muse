@@ -73,7 +73,7 @@ MUSE_DEFAULTS_DICT = {
     },
     "bands_SG": np.asanyarray([108, 108, 171, 284]) * u.AA,
     "fov_mode": "wrap",
-    "fov_tile": True,
+    "fov_x_extent": "tile",
     "fov_sub_interpolation": 2,
     "target_logT": {
         "QS": np.arange(4.8, 6.7, 0.1),

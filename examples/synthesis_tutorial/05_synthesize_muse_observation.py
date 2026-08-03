@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import xarray as xr
 from matplotlib import colors
 
+import astropy.units as u
+
 from muse.data import fetch_example_data
 from muse.instrument import align_response_and_vdem, load_and_concat_responses
 from muse.synthesis import vdem_synthesis
@@ -67,8 +69,7 @@ print(response)
 response, vdem_raster = align_response_and_vdem(
     response,
     vdem_raster,
-    logT_method="nearest",
-    doppler_velocity_method="nearest",
+    coord_methods={"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)},
 )
 
 print(response)

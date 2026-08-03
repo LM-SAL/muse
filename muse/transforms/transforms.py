@@ -100,7 +100,7 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     dy_pix="dy_pixel_SG",
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
-    tile="fov_tile",
+    x_extent="fov_x_extent",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
 )
@@ -112,7 +112,7 @@ def match_fov(
     dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
     nslits=DEFAULTS_MUSE.number_of_slits_SG,
     nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-    tile: bool = DEFAULTS_MUSE.fov_tile,
+    x_extent: str = DEFAULTS_MUSE.fov_x_extent,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate=False,
@@ -132,14 +132,16 @@ def match_fov(
         Number of slits, by default is {nslits}.
     nraster : `int`
         Number of raster steps, by default is {nraster}.
-    tile : `bool`, optional
-        Whether to extend inputs narrower than the MUSE FOV, by default {tile}.
-        If `True`, extend an input narrower than the MUSE FOV to
-        ``nslits * nraster`` pixels using ``mode``. If `False`, retain a
-        narrower input without extending it. Inputs wider than the MUSE FOV
-        are always cropped. Spatial resolution matching is always performed.
+    x_extent : `str`, optional
+        How to treat the x width relative to ``nslits * nraster``, by default
+        {x_extent}. ``"tile"`` crops wider inputs and extends narrower ones
+        using ``mode``. ``"crop"`` crops wider inputs but retains a narrower
+        input at its available width. ``"keep"`` leaves the width untouched
+        and only matches the spatial resolution, for building the FOV of
+        instruments whose width is not tied to the MUSE raster. Spatial
+        resolution matching is always performed.
     mode : `str`, optional
-        Extension mode used when ``tile=True``, by default {mode}. See
+        Extension mode used when ``x_extent="tile"``, by default {mode}. See
         `xarray.DataArray.pad` for supported values.
         ``"wrap"`` repeats the input along x.
         ``"constant"`` fills the padded columns with zeros rather than the
@@ -153,7 +155,7 @@ def match_fov(
     -------
     `xarray.Dataset`
         VDEM data resampled to the requested pixel sizes and cropped or extended
-        along x as described by ``tile``.
+        along x as described by ``x_extent``.
 
     Notes
     -----
@@ -165,16 +167,20 @@ def match_fov(
        matched axes skip resampling but continue through output finalization.
     2. **Single row or column** - if only one axis has more than one point, the
        resolution match is decided on that axis alone because the other spacing
-       cannot be measured. The x extent still follows ``tile``.
+       cannot be measured. The x extent still follows ``x_extent``.
     3. **Resample** - otherwise each axis is resampled onto the requested
        pixel size (interpolated up, integer-factor averaged down, or
        sub-interpolated).
     4. **Match the x extent** - inputs wider than ``nslits * nraster`` are
        cropped. Narrower inputs are extended with ``mode`` only when
-       ``tile=True``; otherwise their available width is retained.
+       ``x_extent="tile"``; ``"crop"`` retains their available width. Skipped
+       entirely when ``x_extent="keep"``.
     5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
-       extent is extended when ``tile=True`` and retained when ``tile=False``.
+       extent is extended when ``x_extent="tile"`` and otherwise retained.
     """
+    if x_extent not in ("tile", "crop", "keep"):
+        msg = f"Unsupported x_extent {x_extent!r}; use 'tile', 'crop', or 'keep'"
+        raise ValueError(msg)
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
     target_width = nslits * nraster
@@ -189,7 +195,11 @@ def match_fov(
     resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
         y_at_pixel and vdem.coords["x"].size < 2
     )
-    width_needs_no_change = vdem.coords["x"].size == target_width or (not tile and vdem.coords["x"].size < target_width)
+    width_needs_no_change = (
+        x_extent == "keep"
+        or vdem.coords["x"].size == target_width
+        or (x_extent == "crop" and vdem.coords["x"].size < target_width)
+    )
     if not rotate and resolution_matches and width_needs_no_change:
         logger.info("vdem already has the requested pixel size and needs no x-extent change")
         return vdem
@@ -206,19 +216,20 @@ def match_fov(
         vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     nx = vdem_xr.x.size
-    if nx > target_width:
-        vdem_xr = vdem_xr.isel(x=np.arange(target_width))
-    elif tile and nx < target_width:
-        if mode == "wrap":
-            # dask.array.pad silently clips a wrap pad wider than the axis; modular
-            # indexing tiles any width and works on both numpy and dask backends.
-            vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
-        else:
-            # xarray.pad defaults constant_values to NaN, which would poison every
-            # downstream sum; a padded VDEM column means "no emission here", so fill
-            # with zeros. Only "constant" accepts the argument.
-            fill = {"constant_values": 0} if mode == "constant" else {}
-            vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
+    if x_extent != "keep":
+        if nx > target_width:
+            vdem_xr = vdem_xr.isel(x=np.arange(target_width))
+        elif x_extent == "tile" and nx < target_width:
+            if mode == "wrap":
+                # dask.array.pad silently clips a wrap pad wider than the axis; modular
+                # indexing tiles any width and works on both numpy and dask backends.
+                vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
+            else:
+                # xarray.pad defaults constant_values to NaN, which would poison every
+                # downstream sum; a padded VDEM column means "no emission here", so fill
+                # with zeros. Only "constant" accepts the argument.
+                fill = {"constant_values": 0} if mode == "constant" else {}
+                vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
 
     vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value

@@ -1,0 +1,4 @@
+Replace the ``tile`` argument to `muse.transforms.match_fov` with ``x_extent`` and rename
+``DEFAULTS_MUSE.fov_tile`` to ``fov_x_extent``. ``x_extent="tile"`` matches ``tile=True``,
+``"crop"`` matches ``tile=False``, and the new ``"keep"`` leaves the x width untouched and only
+matches the spatial resolution, for instruments whose width is not tied to the MUSE raster.

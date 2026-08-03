@@ -1,0 +1,3 @@
+The ``channel`` argument to `muse.instrument.transform_response_units` is now optional when both
+``gain`` and ``pair_energy`` are given explicitly, so non-MUSE instruments can supply their own
+calibration without referencing a MUSE channel.

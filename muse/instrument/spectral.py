@@ -126,7 +126,13 @@ def _create_wavelength_response(
         )
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
+    all_lines_requested = main_lines is None
     main_lines = _validate_main_lines(line_names, main_lines)
+    if all_lines_requested and len(main_lines) > 10:
+        logger.warning(
+            f"Building a spectral response for all {len(main_lines)} lines may take a while and use a lot of memory. "
+            "If you are only interested in a few lines, pass them in `main_lines`."
+        )
     if not main_lines and not include_contaminants:
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)

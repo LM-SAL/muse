@@ -11,6 +11,7 @@ import astropy.units as u
 from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import FrozenDict
 
 __all__ = ["align_response_and_vdem", "load_and_concat_responses", "read_response", "save_response"]
 
@@ -25,7 +26,7 @@ _LEGACY_RESPONSE_NAMES = {
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
 
 
-def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray, detector: str) -> int | float:
+def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | None, detector: str) -> int | float:
     if not channel.isscalar:
         msg = "channel must be a scalar wavelength"
         raise ValueError(msg)
@@ -33,6 +34,8 @@ def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray, de
     if not np.isfinite(channel_value) or channel_value <= 0:
         msg = "channel must be a finite, positive wavelength"
         raise ValueError(msg)
+    if allowed_channels is None:
+        return channel_value
     allowed = np.asarray(allowed_channels)
     matches = np.isclose(allowed, channel_value, rtol=0, atol=1e-12)
     if not matches.any():
@@ -312,8 +315,9 @@ def align_response_and_vdem(
     response: xr.Dataset,
     vdem: xr.Dataset,
     *,
-    logT_method: str = "nearest",
-    doppler_velocity_method: str = "linear",
+    coord_methods: Mapping[str, tuple] = FrozenDict(
+        {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}
+    ),
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
     Resample response onto the overlapping VDEM temperature and velocity grids.
@@ -324,10 +328,11 @@ def align_response_and_vdem(
         Response dataset containing ``detector_response``.
     vdem : `xarray.Dataset`
         VDEM dataset containing ``vdem``.
-    logT_method : `str`, optional
-        Response resampling method for ``logT``, by default ``"nearest"``.
-    doppler_velocity_method : `str`, optional
-        Response resampling method for ``doppler_velocity``, by default ``"linear"``.
+    coord_methods : `~collections.abc.Mapping`, optional
+        Maps each coordinate name to align to a ``(resampling method, unit)``
+        tuple, by default ``{"logT": ("nearest", u.dex(u.K)),
+        "doppler_velocity": ("linear", u.km / u.s)}``. Coordinates not listed
+        are left unaligned.
 
     Returns
     -------
@@ -354,11 +359,8 @@ def align_response_and_vdem(
 
     matched_response = response
     matched_vdem = vdem
-    axes = {
-        "logT": (logT_method, u.dex(u.K)),
-        "doppler_velocity": (doppler_velocity_method, u.km / u.s),
-    }
-    for name, (method, unit) in axes.items():
+
+    for name, (method, unit) in coord_methods.items():
         normalized_axes = []
         for dataset_name, dataset in (("response", matched_response), ("vdem", matched_vdem)):
             axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")
@@ -374,6 +376,8 @@ def align_response_and_vdem(
         axis = matched_response[name]
         if axis.size < matched_vdem.sizes[name]:
             matched_vdem = matched_vdem.sel({name: axis})
+        # Share vdem's coordinate values so downstream exact joins see byte-identical axes.
+        matched_response = matched_response.assign_coords({name: matched_vdem[name]})
 
     matched_response = matched_response.drop_attrs(deep=False)
     matched_vdem = matched_vdem.drop_attrs(deep=False)

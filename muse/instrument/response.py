@@ -16,11 +16,18 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
-# Wavelength-space response units this mapping accepts.
-_ACCEPTED_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
+# Wavelength-space response units these mappings accept.
+_ACCEPTED_SG_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
+_ACCEPTED_CI_RESPONSE_UNITS = tuple(
+    unit * emission_measure / (u.AA * u.s)
+    for unit in (u.erg / u.sr, u.ph, u.DN)
+    for emission_measure in (u.cm**3, u.cm**5)
+)
 
 
-def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
+def _validate_wavelength_response(
+    response: xr.Dataset, *, accepted_units: tuple[u.UnitBase, ...] = _ACCEPTED_SG_RESPONSE_UNITS
+) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
@@ -47,8 +54,8 @@ def _validate_wavelength_response(response: xr.Dataset) -> tuple[u.UnitBase, xr.
         msg = "response normalization must be a finite, positive number"
         raise ValueError(msg)
     response_unit = require_unit(response, "spectral_response", "response.spectral_response")
-    if not any(response_unit.is_equivalent(accepted) for accepted in _ACCEPTED_RESPONSE_UNITS):
-        accepted = ", ".join(str(unit) for unit in _ACCEPTED_RESPONSE_UNITS)
+    if not any(response_unit.is_equivalent(accepted) for accepted in accepted_units):
+        accepted = ", ".join(str(unit) for unit in accepted_units)
         msg = f"response.spectral_response units must be convertible to one of {accepted}"
         raise ValueError(msg)
     wavelength_grid = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
@@ -80,7 +87,10 @@ def map_response_to_sg_detector(
     wavelength_start: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
-    Map one wavelength-space response onto the MUSE SG detector.
+    Map one wavelength-space response onto the MUSE SG detector (by default).
+
+    This can be used to map to another detector by passing the appropriate
+    keyword arguments.
 
     One call maps one MUSE channel and spectral order. The input should come
     from `muse.instrument.create_spectral_response` with effective
@@ -196,11 +206,7 @@ def map_response_to_sg_detector(
 @u.quantity_input(channel=u.AA)
 def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr.Dataset:
     """
-    Integrate one wavelength-space response over a MUSE CI band.
-
-    The result is band-integrated and therefore has no detector wavelength-bin
-    dimension. ``detector_wavelength`` records the nominal CI channel
-    wavelength along ``line``.
+    Integrate one wavelength-space response over an imaging band.
 
     Parameters
     ----------
@@ -209,7 +215,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
         be nonuniform.
     channel : `astropy.units.Quantity`
-        Nominal MUSE CI channel wavelength: 195 or 304 Angstrom.
+        Nominal channel wavelength recorded in the output coordinates.
 
     Returns
     -------
@@ -218,9 +224,11 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         of ``response.spectral_response`` integrated over wavelength, with
         ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(
+        response, accepted_units=_ACCEPTED_CI_RESPONSE_UNITS
+    )
     line_wavelength = np.asarray(line_wavelength)
-    channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel, "ci")
+    channel_value = _channel_as_angstrom(channel, None, "ci")
     if wavelength_grid.size < 2:
         msg = "response.wavelength_grid must contain at least two points for integration"
         raise ValueError(msg)

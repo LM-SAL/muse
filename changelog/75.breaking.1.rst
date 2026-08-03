@@ -1,0 +1,5 @@
+Replace the ``logT_method`` and ``doppler_velocity_method`` arguments to
+`muse.instrument.align_response_and_vdem` with a single ``coord_methods`` mapping of coordinate
+name to a ``(resampling method, unit)`` tuple. The aligned response and VDEM now also share
+identical coordinate values, so downstream exact joins no longer fail on floating-point
+differences.

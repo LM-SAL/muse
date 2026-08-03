@@ -468,9 +468,11 @@ class InstrumentDefaults:
     This is the pad method used by `xarray.DataArray.pad`
     """
 
-    fov_tile: bool | None = field(default=None, validator=_instance((bool, np.bool_)))
+    fov_x_extent: str | None = field(default=None, validator=_instance(str))
     """
-    Whether to extend inputs narrower than the MUSE field of view.
+    How `~muse.transforms.match_fov` treats the x width: ``"tile"`` crops wider inputs
+    and extends narrower ones, ``"crop"`` only crops, ``"keep"`` leaves the width
+    untouched.
     """
 
     fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
