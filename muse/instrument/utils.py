@@ -331,7 +331,8 @@ def align_response_and_vdem(
     coord_methods : `~collections.abc.Mapping`, optional
         Maps each coordinate name to align to a ``(resampling method, unit)``
         tuple, by default ``{"logT": ("nearest", u.dex(u.K)),
-        "doppler_velocity": ("linear", u.km / u.s)}``.
+        "doppler_velocity": ("linear", u.km / u.s)}``. Coordinates not listed
+        are left unaligned.
 
     Returns
     -------

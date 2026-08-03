@@ -174,6 +174,11 @@ def test_match_fov_without_x_extent_match_returns_input_at_pixel_size(vdem) -> N
     assert match_fov(narrower, x_extent="keep") is narrower
 
 
+def test_match_fov_rejects_invalid_x_extent(vdem) -> None:
+    with pytest.raises(ValueError, match="Unsupported x_extent 'foo'"):
+        match_fov(vdem, x_extent="foo")
+
+
 def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
     width = 35 * 11
     wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
