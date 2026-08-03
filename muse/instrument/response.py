@@ -194,7 +194,7 @@ def map_response_to_sg_detector(
 
 
 @u.quantity_input(channel=u.AA)
-def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr.Dataset:
+def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity, *, muse_ci=True) -> xr.Dataset:
     """
     Integrate one wavelength-space response over a MUSE CI band.
 
@@ -210,6 +210,9 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         be nonuniform.
     channel : `astropy.units.Quantity`
         Nominal MUSE CI channel wavelength: 195 or 304 Angstrom.
+    muse_ci : `bool`, optional
+        If `True`, use the MUSE CI bandpass for integration. If `False`,
+        integrate over the full wavelength grid, by default `True`.
 
     Returns
     -------
@@ -220,7 +223,10 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
     """
     response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
     line_wavelength = np.asarray(line_wavelength)
-    channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel, "ci")
+    if muse_ci:
+        channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.pair_creation_energy_ci.ci_channel, "ci")
+    else:
+        channel_value = channel.to_value(u.AA)
     if wavelength_grid.size < 2:
         msg = "response.wavelength_grid must contain at least two points for integration"
         raise ValueError(msg)
@@ -239,5 +245,10 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
             {"units": str(u.AA)},
         ),
     )
+    if not muse_ci:
+        result.attrs["instrumet"] = "NOT MUSE CI"
+    else:
+        result.attrs["instrument"] = "MUSE CI"
+
     add_history(result, locals(), map_response_to_ci_detector)
     return result
