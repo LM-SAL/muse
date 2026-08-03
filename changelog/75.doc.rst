@@ -1,0 +1,2 @@
+Revamp the AIA 94 Angstrom synthesis example to band-integrate the wavelength-space response
+with `muse.instrument.map_response_to_ci_detector` instead of hand-rolling the integration.

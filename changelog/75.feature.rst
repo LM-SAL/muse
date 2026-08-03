@@ -1,0 +1,4 @@
+`muse.instrument.map_response_to_ci_detector` now accepts any positive channel wavelength
+instead of only the MUSE CI channels, and accepts spectral responses in emission-measure bases
+per cm3 as well as per cm5, so imaging bands of other instruments (e.g., AIA with a CHIANTI
+``gofnt`` line list) can be band-integrated directly.
