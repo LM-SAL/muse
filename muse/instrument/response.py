@@ -87,7 +87,10 @@ def map_response_to_sg_detector(
     wavelength_start: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
-    Map one wavelength-space response onto the MUSE SG detector.
+    Map one wavelength-space response onto the MUSE SG detector (by default).
+
+    This can be used to map to another detector by passing the appropriate
+    keyword arguments.
 
     One call maps one MUSE channel and spectral order. The input should come
     from `muse.instrument.create_spectral_response` with effective
