@@ -116,6 +116,7 @@ def match_fov(
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate=False,
+    select_target_width=True,
 ):
     """
     Match a VDEM's spatial resolution and available extent to the MUSE FOV.
@@ -148,6 +149,11 @@ def match_fov(
         Does a subgrid interpolation, by default {sub_interpolation},
     rotate: `bool`
         Rotates 90 degrees the FOV, by default False.
+    select_target_width: `bool`
+        Whether to crop or extend the x axis to ``nslits * nraster``,
+        by default True. If `False`, the x axis is left unchanged after
+        resampling to the requested pixel size. This is useful for testing
+        the resampling behavior without changing the x extent.
 
     Returns
     -------
@@ -206,19 +212,20 @@ def match_fov(
         vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     nx = vdem_xr.x.size
-    if nx > target_width:
-        vdem_xr = vdem_xr.isel(x=np.arange(target_width))
-    elif tile and nx < target_width:
-        if mode == "wrap":
-            # dask.array.pad silently clips a wrap pad wider than the axis; modular
-            # indexing tiles any width and works on both numpy and dask backends.
-            vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
-        else:
-            # xarray.pad defaults constant_values to NaN, which would poison every
-            # downstream sum; a padded VDEM column means "no emission here", so fill
-            # with zeros. Only "constant" accepts the argument.
-            fill = {"constant_values": 0} if mode == "constant" else {}
-            vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
+    if select_target_width:
+        if nx > target_width:
+            vdem_xr = vdem_xr.isel(x=np.arange(target_width))
+        elif tile and nx < target_width:
+            if mode == "wrap":
+                # dask.array.pad silently clips a wrap pad wider than the axis; modular
+                # indexing tiles any width and works on both numpy and dask backends.
+                vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
+            else:
+                # xarray.pad defaults constant_values to NaN, which would poison every
+                # downstream sum; a padded VDEM column means "no emission here", so fill
+                # with zeros. Only "constant" accepts the argument.
+                fill = {"constant_values": 0} if mode == "constant" else {}
+                vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
 
     vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value
