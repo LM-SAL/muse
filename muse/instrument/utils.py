@@ -309,11 +309,10 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
 
 
 def align_response_and_vdem(
-    response: xr.Dataset,
-    vdem: xr.Dataset,
+    response_orig: xr.Dataset,
+    vdem_orig: xr.Dataset,
     *,
-    logT_method: str = "nearest",
-    doppler_velocity_method: str = "linear",
+    coord_methods: dict[str, str] | None = None,
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
     Resample response onto the overlapping VDEM temperature and velocity grids.
@@ -324,10 +323,8 @@ def align_response_and_vdem(
         Response dataset containing ``detector_response``.
     vdem : `xarray.Dataset`
         VDEM dataset containing ``vdem``.
-    logT_method : `str`, optional
-        Response resampling method for ``logT``, by default ``"nearest"``.
-    doppler_velocity_method : `str`, optional
-        Response resampling method for ``doppler_velocity``, by default ``"linear"``.
+    coord_methods : `dict` of `str` to `str` and units, optional
+        Mapping from coordinate names (``logT`` and ``doppler_velocity``) to resampling methods, by default ``{"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}``.
 
     Returns
     -------
@@ -341,6 +338,11 @@ def align_response_and_vdem(
     ValueError
         If a required variable or coordinate is missing, malformed, or has no overlap.
     """
+    if coord_methods is None:
+        coord_methods = {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}
+    response = response_orig.copy(deep=True)
+    vdem = vdem_orig.copy(deep=True)
+
     for name, dataset in (("response", response), ("vdem", vdem)):
         if not isinstance(dataset, xr.Dataset):
             msg = f"{name} must be an xarray.Dataset"
@@ -354,11 +356,8 @@ def align_response_and_vdem(
 
     matched_response = response
     matched_vdem = vdem
-    axes = {
-        "logT": (logT_method, u.dex(u.K)),
-        "doppler_velocity": (doppler_velocity_method, u.km / u.s),
-    }
-    for name, (method, unit) in axes.items():
+
+    for name, (method, unit) in coord_methods.items():
         normalized_axes = []
         for dataset_name, dataset in (("response", matched_response), ("vdem", matched_vdem)):
             axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")
@@ -374,6 +373,7 @@ def align_response_and_vdem(
         axis = matched_response[name]
         if axis.size < matched_vdem.sizes[name]:
             matched_vdem = matched_vdem.sel({name: axis})
+        matched_response.coords[name] = matched_vdem.coords[name]
 
     matched_response = matched_response.drop_attrs(deep=False)
     matched_vdem = matched_vdem.drop_attrs(deep=False)
