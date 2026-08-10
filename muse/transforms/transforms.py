@@ -45,15 +45,23 @@ def _spacing_matches(coord: xr.DataArray, to_arcsec: float, pixel_arcsec: float)
     return bool(abs(spacing - pixel_arcsec) / pixel_arcsec < 0.005)
 
 
-def _interp_keep_dtype(ds: xr.Dataset, axis: str, target) -> xr.Dataset:
+def _resample_weights(coord_values: np.ndarray, n: int, blocks: int) -> np.ndarray:
     """
-    Interpolate along ``axis`` and cast data variables back to their original dtype.
+    Matrix mapping samples at ``coord_values`` onto ``n`` output pixels.
 
-    Coordinates keep xarray's interpolation dtype, usually float64.
+    Row ``i`` holds the weights that linearly interpolate the input onto ``blocks``
+    evenly spaced sub-samples of output pixel ``i`` and average them, so applying the
+    matrix reproduces interpolate-then-block-average in a single product.
     """
-    dtypes = {name: var.dtype for name, var in ds.data_vars.items()}
-    out = ds.interp({axis: target})
-    return out.assign({name: out[name].astype(dtype) for name, dtype in dtypes.items() if out[name].dtype != dtype})
+    fine = np.linspace(coord_values[0], coord_values[-1], n * blocks)
+    right = np.clip(np.searchsorted(coord_values, fine, side="right"), 1, coord_values.size - 1)
+    left = right - 1
+    frac = (fine - coord_values[left]) / (coord_values[right] - coord_values[left])
+    weights = np.zeros((n * blocks, coord_values.size))
+    rows = np.arange(n * blocks)
+    weights[rows, left] = 1.0 - frac
+    weights[rows, right] = frac
+    return weights.reshape(n, blocks, coord_values.size).mean(axis=1)
 
 
 def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_interpolation: int) -> xr.Dataset:
@@ -64,6 +72,10 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     is much coarser, and otherwise sub-interpolates before averaging. A size-1 axis is
     returned unchanged. ``coord`` must be strictly monotonically increasing and roughly
     evenly spaced for block averaging.
+
+    The interpolate-then-average pipeline is one linear map along ``axis``, applied as a
+    single matrix product (`xarray.dot`): dask-backed inputs stay lazy and keep one
+    chunk along the resampled axis instead of one chunk per output pixel.
     """
     coord = ds[axis]
     if coord.size <= 1:
@@ -72,26 +84,27 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
         msg = f"{axis} coordinate must be strictly monotonically increasing to resample onto the MUSE pixel grid"
         raise ValueError(msg)
     to_cm = _coordinate_unit_to(ds, axis, u.cm)
-
-    def grid(n):
-        return np.linspace(coord[0].values, coord[-1].values, n)
-
     span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
     n = int(np.round(span_pixels))
     if n > coord.size:
-        return _interp_keep_dtype(ds, axis, grid(n))
-    if coord.size // n > 3:
+        # Finer target grid: pure interpolation, no block averaging.
+        blocks = 1
+    elif coord.size // n > 3:
         # factor = coord.size / span_pixels; the rounded sample count n equals round(span_pixels).
         blocks = int(np.round(coord.size / span_pixels))
-        ds = _interp_keep_dtype(ds, axis, grid(n * blocks))
     else:
-        # sub_interpolation == 0 means "no sub-grid", but the meshgrid/unstack below still
-        # needs >= 1 block; fall back to interpolating straight onto the n output pixels.
+        # sub_interpolation == 0 means "no sub-grid", but the averaging still needs
+        # >= 1 block; fall back to interpolating straight onto the n output pixels.
         blocks = max(1, int(coord.size / n * sub_interpolation))
-        ds = _interp_keep_dtype(ds, axis, grid(n * blocks))
-    block_index, centers = (arr.flatten() for arr in np.meshgrid(range(blocks), grid(n)))
-    ds = ds.assign_coords(_block=(axis, block_index), _center=(axis, centers))
-    return ds.set_index({axis: ("_block", "_center")}).unstack(axis).mean(dim="_block").rename({"_center": axis})
+    # No coords on the weights array: alignment must be by dimension only.
+    weights = xr.DataArray(_resample_weights(coord.values, n, blocks), dims=("_center", axis))
+    centers = np.linspace(coord[0].values, coord[-1].values, n)
+    resampled = {
+        name: xr.dot(var, weights, dim=axis).rename({"_center": axis}).astype(var.dtype)
+        for name, var in ds.data_vars.items()
+        if axis in var.dims
+    }
+    return ds.drop_dims(axis).assign(resampled).assign_coords({axis: centers})
 
 
 @format_docstring(
