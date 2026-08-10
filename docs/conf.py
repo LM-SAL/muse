@@ -180,7 +180,7 @@ gallery_mode = os.environ.get("MUSE_GALLERY_MODE", "unskipped")
 gallery_parallel = int(os.environ.get("MUSE_GALLERY_PARALLEL", "1"))
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
-    "filename_pattern": ".*" if gallery_mode == "all" else "((?!skip_).)*$",
+    "filename_pattern": ".*" if gallery_mode == "all" else "^((?!skip_).)*$",
     "examples_dirs": str(Path("..") / "examples"),
     "subsection_order": [
         "../examples/synthesis_tutorial",
