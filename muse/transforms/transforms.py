@@ -73,9 +73,14 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     returned unchanged. ``coord`` must be strictly monotonically increasing and roughly
     evenly spaced for block averaging.
 
-    The interpolate-then-average pipeline is one linear map along ``axis``, applied as a
-    single matrix product (`xarray.dot`): dask-backed inputs stay lazy and keep one
-    chunk along the resampled axis instead of one chunk per output pixel.
+    The interpolate-then-average pipeline is one linear map along ``axis``, applied per
+    block with `xarray.apply_ufunc`: dask-backed inputs stay lazy and every output chunk
+    depends only on its local input chunks, so chained x/y resampling streams instead of
+    materializing the intermediate.
+
+    Only data variables carrying ``axis`` are resampled; any auxiliary coordinate that
+    depends on ``axis`` is dropped with the old grid (`match_fov` rebuilds the
+    ``x``/``y`` coordinates and their units afterwards).
     """
     coord = ds[axis]
     if coord.size <= 1:
