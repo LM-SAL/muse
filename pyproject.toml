@@ -37,6 +37,7 @@ optional-dependencies.chianti = [
   "ChiantiPy>=0.15.0",
   "numexpr>=2.14",
   "periodictable",
+  "threadpoolctl>=3",
 ]
 optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
 optional-dependencies.docs = [
