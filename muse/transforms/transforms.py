@@ -99,8 +99,26 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     # No coords on the weights array: alignment must be by dimension only.
     weights = xr.DataArray(_resample_weights(coord.values, n, blocks), dims=("_center", axis))
     centers = np.linspace(coord[0].values, coord[-1].values, n)
+
+    def apply_weights(block: np.ndarray, weight_block: np.ndarray, dtype=None) -> np.ndarray:
+        return (block @ weight_block.T).astype(dtype)
+
+    # apply_ufunc(dask="parallelized") applies the matrix per block, so every output
+    # chunk depends only on its local input chunks. xr.dot builds a chunked einsum
+    # graph instead, and chaining two of those (x then y) forms an all-to-all barrier
+    # that holds the entire intermediate in memory at once (~7 GB on the tutorial VDEM).
     resampled = {
-        name: xr.dot(var, weights, dim=axis).rename({"_center": axis}).astype(var.dtype)
+        name: xr.apply_ufunc(
+            apply_weights,
+            var,
+            weights,
+            kwargs={"dtype": var.dtype},
+            input_core_dims=[[axis], ["_center", axis]],
+            output_core_dims=[["_center"]],
+            dask="parallelized",
+            output_dtypes=[var.dtype],
+            dask_gufunc_kwargs={"allow_rechunk": True},
+        ).rename({"_center": axis})
         for name, var in ds.data_vars.items()
         if axis in var.dims
     }
