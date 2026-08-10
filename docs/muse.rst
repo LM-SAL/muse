@@ -15,7 +15,7 @@ The MUSE Investigation includes a vigorous numerical modeling component that lev
 The MUSE payload consists of:
 
 * The Multi-slit Spectrograph: collects line profiles in bright coronal lines (Fe IX 171 Å, Fe XV 284 Å, Fe XIX 108 Å, Fe XXI 108 Å), covering a large temperature range (0.7-12 MK) at the highest angular (0.4") and temporal resolution (1s time) ever achieved.
-* The Context Imager: based on the successful Hi-C rocket, collects high resolution (0.33") images (Fe XII 195 Å and He II 304 Å) over a large field-of-view, showing transition region and coronal morphology and motions.
+* The Context Imager: based on the successful Hi-C rocket, collects high-resolution (0.33") images (Fe XII 195 Å and He II 304 Å) over a large field-of-view, showing transition region and coronal morphology and motions.
 
 MUSE addresses all of NASA's Heliophysics Science Goals and enables advances in all Key Science Goals of the `Solar and Space Physics Decadal Survey <https://nap.nationalacademies.org/catalog/13060/solar-and-space-physics-a-science-for-a-technological-society>`__.
 MUSE will fill a crucial gap in the capabilities of the Heliophysics System Observatory and next generation instruments such as DKIST, EUVST, Parker Solar Probe and Solar Orbiter.
