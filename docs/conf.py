@@ -182,7 +182,12 @@ sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
     "filename_pattern": ".*" if gallery_mode == "all" else "^((?!skip_).)*$",
     "examples_dirs": str(Path("..") / "examples"),
-    "within_subsection_order": "ExampleTitleSortKey",
+    "subsection_order": [
+        "../examples/synthesis_tutorial",
+        "../examples/other_instruments",
+    ],
+    # String FQN keeps sphinx_gallery_conf picklable so Sphinx can cache it
+    "within_subsection_order": "muse.utils.documentation._SkipAwareFileNameSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),
     "abort_on_example_error": False,
     "plot_gallery": gallery_mode != "none",

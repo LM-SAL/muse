@@ -21,7 +21,8 @@ from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
 ##############################################################################
-# First we will load and reshape the VDEM. This is the used in Example 02.
+# First we will load and reshape the VDEM. This is the used in
+# :ref:`sphx_glr_generated_gallery_synthesis_tutorial_02_vdem_to_muse_fov.py`.
 
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
