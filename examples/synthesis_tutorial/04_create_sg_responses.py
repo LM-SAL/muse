@@ -134,7 +134,7 @@ for band, config in bands.items():
     # materializing the full detector response (~18 GB for the 108 band) in
     # memory. Peak memory is roughly one chunk's interpolation temporaries per
     # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
-    waveband_response = waveband_response.chunk({"doppler_velocity": 20})
+    waveband_response = waveband_response.chunk({"doppler_velocity": 10})
     waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
     response = map_response_to_sg_detector(waveband_response, band * u.AA)
 
