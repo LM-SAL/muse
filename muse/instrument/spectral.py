@@ -136,6 +136,14 @@ def _create_wavelength_response(
     if not main_lines and not include_contaminants:
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)
+    if not include_contaminants and not all_lines_requested:
+        # Only the selected lines are evaluated, but the per-transition centers and
+        # widths below are computed for the whole list; a broad-band list can carry
+        # thousands of transitions (dominating peak memory), so drop the rest first.
+        selected = set(main_lines)
+        keep = [i for i, name in enumerate(line_names) if name in selected]
+        line_list = line_list.isel(trans_index=keep)
+        line_names = tuple(str(name) for name in line_list.full_name.values)
 
     try:
         import periodictable as pt  # noqa: PLC0415
@@ -462,19 +470,29 @@ def _evaluate_gaussian_response(
     start = np.searchsorted(wavelength_grid.data, np.min((center - half_window).data), side="left")
     stop = np.searchsorted(wavelength_grid.data, np.max((center + half_window).data), side="right")
 
-    shift = (wavelength_grid - line_center).broadcast_like(gofnt)
+    # Broadcast only the +-window slice of the grid: the Gaussian is exactly zero
+    # outside it, and broadcasting the full grid first materializes several
+    # (logT x doppler x wavelength) float64 temporaries per line (~5 GB for the
+    # 108 band) where the window needs a small fraction of that.
+    window_grid = wavelength_grid.isel(wavelength_bin=slice(start, stop))
+    shift = (window_grid - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(doppler_width, shift)
     gofnt_scaled = (gofnt / _RESPONSE_NORMALIZATION).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
-    response = np.zeros_like(gofnt_scaled.data) if accumulator is None else accumulator
-    index = [slice(None)] * response.ndim
-    index[gofnt_scaled.get_axis_num("wavelength_bin")] = slice(start, stop)
-    index = tuple(index)
-    scaled = gofnt_scaled.isel(wavelength_bin=slice(start, stop)).data
-    shift = shift.isel(wavelength_bin=slice(start, stop)).data
-    width = width.isel(wavelength_bin=slice(start, stop)).data
-    response[index] += numexpr.evaluate(
+    wavelength_axis = gofnt_scaled.get_axis_num("wavelength_bin")
+    if accumulator is None:
+        full_shape = list(gofnt_scaled.shape)
+        full_shape[wavelength_axis] = wavelength_grid.size
+        accumulator = np.zeros(tuple(full_shape), dtype=gofnt_scaled.dtype)
+    index = [slice(None)] * accumulator.ndim
+    index[wavelength_axis] = slice(start, stop)
+    accumulator[tuple(index)] += numexpr.evaluate(
         _GAUSSIAN_EXPRESSION,
-        local_dict={"scaled": scaled, "shift": shift, "width": width, "gaussian_norm": gaussian_norm},
+        local_dict={
+            "scaled": gofnt_scaled.data,
+            "shift": shift.data,
+            "width": width.data,
+            "gaussian_norm": gaussian_norm,
+        },
     )
-    return response, gofnt_scaled
+    return accumulator, gofnt_scaled

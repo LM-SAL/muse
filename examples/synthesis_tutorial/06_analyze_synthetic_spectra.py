@@ -92,7 +92,9 @@ ax.set_title("Synthesized 171 Angstrom intensity")
 
 velocity_spectrum = wavelength_to_doppler(spectrum)
 moments = calculate_moments(velocity_spectrum)
-moment_maps = reshape_slit_step_to_x(moments).isel(pressure=0)
+# Materialize the small moment maps once; otherwise every panel below would
+# recompute the shared lazy moments graph from the chunked spectrum.
+moment_maps = reshape_slit_step_to_x(moments).isel(pressure=0).compute()
 
 fig, axes = plt.subplots(
     moment_maps.sizes["line"],

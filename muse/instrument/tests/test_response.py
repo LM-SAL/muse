@@ -406,10 +406,12 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
         coords={"logT": [6.0]},
     )
 
-    fake_chianti = SimpleNamespace(
-        bunch=lambda *_args, **_kwargs: SimpleNamespace(AbundanceName="test.abund"),
+    monkeypatch.setattr(linelist_module, "_initialize_chianti", lambda: ("test", object()))
+    monkeypatch.setattr(
+        linelist_module,
+        "_compute_bunch",
+        lambda *_args, **_kwargs: SimpleNamespace(AbundanceName="test.abund"),
     )
-    monkeypatch.setattr(linelist_module, "_initialize_chianti", lambda: ("test", fake_chianti))
     monkeypatch.setattr(
         linelist_module,
         "_chianti_bunch_to_dataset",

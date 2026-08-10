@@ -117,13 +117,12 @@ def test_rejects_invalid_minimum_abundance(minimum_abundance, error, error_type)
 def test_converts_units_for_chianti(monkeypatch):
     captured = {}
 
-    class FakeChianti:
-        @staticmethod
-        def bunch(temperature, density, wavelength_range, **kwargs):
-            captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
-            return type("FakeBunch", (), {"AbundanceName": "chianti/sun_coronal_2021_chianti.abund"})()
+    def fake_compute_bunch(_ch, temperature, density, wavelength_range, **kwargs):
+        captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
+        return type("FakeBunch", (), {"AbundanceName": "chianti/sun_coronal_2021_chianti.abund"})()
 
-    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
+    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", object()))
+    monkeypatch.setattr(linelist, "_compute_bunch", fake_compute_bunch)
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
@@ -146,12 +145,8 @@ def test_converts_units_for_chianti(monkeypatch):
 
 
 def test_no_lines_raises(monkeypatch):
-    class FakeChianti:
-        @staticmethod
-        def bunch(*_args, **_kwargs):
-            return object()
-
-    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
+    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", object()))
+    monkeypatch.setattr(linelist, "_compute_bunch", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
