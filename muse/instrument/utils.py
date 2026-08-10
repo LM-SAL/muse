@@ -305,9 +305,21 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     if method == "nearest":
         r = r.sel({name: axis}, drop=True, method="nearest")
     else:
-        r = r.interp({name: axis}, method=method)
+        nearest = r[name].sel({name: axis}, method="nearest").values
+        if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=1e-12, atol=0.0):
+            # Every requested point already sits on the response grid, where interpolation
+            # reduces to selection; selecting also reads only the needed slabs of a
+            # dask-backed response instead of the full axis.
+            r = r.sel({name: axis}, drop=True, method="nearest")
+        else:
+            r = r.interp({name: axis}, method=method)
     # Clamp on every path so nearest and interpolated responses behave consistently.
     r["detector_response"] = r.detector_response.fillna(0).clip(min=0).assign_attrs(r.detector_response.attrs)
+    if r.detector_response.chunks is not None:
+        # Response files store tiny chunks along logT; point selection above keeps one
+        # dask chunk per selected point, which shatters downstream synthesis graphs.
+        # Consolidate the resampled axis into a single chunk.
+        r = r.chunk({name: -1})
     return r.assign_coords({name: axis})
 
 
