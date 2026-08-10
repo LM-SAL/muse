@@ -1,10 +1,22 @@
 exclude: .*(.fits|.fts|.fit|.txt|.csv)$
 repos:
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
+<<<<<<<
     rev: v1.27.0
+=======
+    rev: v1.28.0
+>>>>>>>
     hooks:
       - id: zizmor
     # This should be before any formatting hooks like isort
+<<<<<<<
+=======
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.16.1"
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+>>>>>>>
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.8
     hooks:
@@ -58,6 +70,14 @@ repos:
         types_or: [python, rst, yaml]
       - id: mixed-line-ending
         types_or: [python, rst]
+<<<<<<<
+=======
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        args: [ "--write-changes" ]
+>>>>>>>
   # See https://github.com/python-trio/trio/pull/3255
   - repo: https://github.com/adhtruong/mirrors-typos
     rev: v1.48.0
