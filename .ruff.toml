@@ -14,6 +14,7 @@ lint.ignore = [
   "ANN206",  # Missing return type annotation for classmethod
   "C901",  # Function is too complex
   "COM812",  # May cause conflicts when used with the formatter
+  "CPY001",  # Missing copyright notice at top of file
   "D100",  # Missing docstring in public module
   "D101",  # Missing docstring in public class
   "D102",  # Missing docstring in public method
@@ -37,6 +38,7 @@ lint.ignore = [
   "PLR0912",  # Too many branches (31 > 12)
   "PLR0913",  # Too many arguments in function definition
   "PLR0915",  # Too many statements (91 > 50)
+  "PLR0917",  # Too many positional arguments
   "PLR2004",  # Magic value used in comparison
   "SLF001",  # Private member accessed
   "TD001",  # Invalid TODO tag: `FIXME`
