@@ -1,4 +1,30 @@
+from pathlib import Path
+
 __all__ = ["format_docstring"]
+
+
+class _SkipAwareFileNameSortKey:
+    """
+    Sphinx-gallery ``within_subsection_order`` key; private API for ``docs/conf.py``.
+
+    Sorts gallery scripts by filename, ignoring a leading ``skip_`` prefix, so
+    numbered scripts (``02_...``, ``skip_01_...``) interleave in numeric order,
+    while un-numbered ``skip_`` scripts sort before everything else.
+
+    Parameters
+    ----------
+    src_dir : `str`
+        The gallery subsection source directory (unused, required by sphinx-gallery).
+    """
+
+    def __init__(self, src_dir):
+        self.src_dir = src_dir
+
+    def __call__(self, filename):
+        name = Path(filename).name
+        stripped = name.removeprefix("skip_")
+        unnumbered_skip = name.startswith("skip_") and not stripped[:1].isdigit()
+        return (not unnumbered_skip, stripped)
 
 
 def format_docstring(defaults_name, /, **param_to_field):
