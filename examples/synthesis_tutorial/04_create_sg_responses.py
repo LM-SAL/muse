@@ -18,6 +18,7 @@ motions such as Alfven-wave turbulence — see
 """
 
 import os
+import shutil
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -144,9 +145,14 @@ for band, config in bands.items():
         integrated_response.plot(x="detector_x_pixel")
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 
-    output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.nc"
+    # Store the response in float32 and as Zarr: float32 keeps ~7 significant digits
+    # (far below any calibration uncertainty, and it changes the synthesized flux by
+    # ~1e-7 relative), while Zarr compresses in parallel and cuts both the file size
+    # and the write/read time severalfold compared to float64 NetCDF.
+    response = response.assign(detector_response=response.detector_response.astype(np.float32))
+    output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.zarr"
     # save_response refuses to overwrite, so clear the artifact of a previous run.
-    output.unlink(missing_ok=True)
+    shutil.rmtree(output, ignore_errors=True)
     save_response(response, output)
     print(f"Saved {output}")
 

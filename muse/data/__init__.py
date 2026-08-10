@@ -31,19 +31,19 @@ _REGISTRY = {
         "sha256:c5ee652cee96c1224c338a526fedea631d85fe2bb37499c2ab6254991d9e081c",
         "chianti_line_lists",
     ),
-    "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc": (
-        f"{_SAMPLE_DATA_URL}muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc",
-        "sha256:953f743d87d81b3e62da068e009544d09cc7419103a6cd8a72b88f65e8c3965f",
+    "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr": (
+        f"{_SAMPLE_DATA_URL}muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
+        "sha256:dccba701ae6bbf9043d2d1a29ed6794dc3e88c00c6f757efecb3be2ce6cf10c9",
         "synthesis_tutorial",
     ),
-    "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc": (
-        f"{_SAMPLE_DATA_URL}muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc",
-        "sha256:4560e331902ab7d30107ef2fca7528f07d9ac77a5fd70051e7da5729fc806569",
+    "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr": (
+        f"{_SAMPLE_DATA_URL}muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
+        "sha256:d93ae1eae64de9d1e33964c3a834374fae2af0d04d5a5378c487cf7379de5e16",
         "synthesis_tutorial",
     ),
-    "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc": (
-        f"{_SAMPLE_DATA_URL}muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc",
-        "sha256:e9acf61f70d8bf96698eb360890dd6a56a370cdb274d3308523c5a99fc1b0612",
+    "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr": (
+        f"{_SAMPLE_DATA_URL}muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
+        "sha256:79b58e21d44aa0b92250fad69a90c095d687d4cc72078c80e0cdbe178e1aea98",
         "synthesis_tutorial",
     ),
     "EIS_EffArea_B.005": (
@@ -96,7 +96,8 @@ def fetch_example_data(name):
         local_path = local_dir / name
         if local_path.exists():
             return local_path
-        # The zarr store is published as a tarball; retrieve extracts it once.
+    if name.endswith(".zarr"):
+        # Zarr stores are directories, published as tarballs; retrieve extracts once.
         pooch.retrieve(
             url,
             known_hash=known_hash,

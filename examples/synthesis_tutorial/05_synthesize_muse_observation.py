@@ -41,9 +41,9 @@ output_dir.mkdir(parents=True, exist_ok=True)
 response_files = [
     fetch_example_data(fname)
     for fname in (
-        "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.nc",
-        "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.nc",
-        "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.nc",
+        "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr",
+        "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr",
+        "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr",
     )
 ]
 
