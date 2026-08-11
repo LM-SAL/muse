@@ -25,58 +25,58 @@ urls.Homepage = "https://muse.lmsal.com"
 urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"
 urls."Source Code" = "https://github.com/LM-SAL/muse"
 dependencies = [
-  "astropy>=7.2",
+  "astropy>=8.0",
   "attrs>=26.1.0",
   "loguru>=0.7.3",
-  "numpy>=2.4.0",
-  "tqdm>=4.67",
-  "xarray[io,parallel]>=2026.4.0",
+  "numpy>=2.5.0",
+  "tqdm>=4.70",
+  "xarray[io,parallel]>=2026.7.0",
 ]
 optional-dependencies.all = ["muse[chianti,torch]"]
 optional-dependencies.chianti = [
-  "ChiantiPy>=0.15.0",
+  "ChiantiPy>=0.16.0",
   "numexpr>=2.14",
-  "periodictable",
-  "threadpoolctl>=3",
+  "periodictable>=2.1.0",
+  "threadpoolctl>=3.6.0",
 ]
-optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm"]
+optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm>=10.2.0"]
 optional-dependencies.docs = [
   "muse",
-  "matplotlib>=3.10.0",
-  "joblib", # for parallel sphinx-gallery builds (MUSE_GALLERY_PARALLEL)
-  "memory_profiler", # for sphinx-gallery memory usage
-  "packaging",
-  "plasmacalcs[most]",
-  "pooch",
-  "pydata-sphinx-theme",
-  "sphinx-autodoc-typehints",
-  "sphinx-automodapi",
-  "sphinx-changelog",
-  "sphinx-copybutton",
-  "sphinx-design",
-  "sphinx-gallery",
-  "sphinx",
-  "sphinxext-opengraph",
-  "tabulate",
-  "aiapy",
+  "matplotlib>=3.11.0",
+  "joblib>=1.5.0", # for parallel sphinx-gallery builds (MUSE_GALLERY_PARALLEL)
+  "memory_profiler>=0.61.0", # for sphinx-gallery memory usage
+  "packaging>=26.3",
+  "plasmacalcs[most]>=2026.3.0",
+  "pooch>=1.9.0",
+  "pydata-sphinx-theme>=0.20.0",
+  "sphinx-autodoc-typehints>=3.13.0",
+  "sphinx-automodapi>=0.22.0",
+  "sphinx-changelog>=1.6.0",
+  "sphinx-copybutton>=0.5.0",
+  "sphinx-design>=0.7.0",
+  "sphinx-gallery>=0.21.0",
+  "sphinx>=9.1.0",
+  "sphinxext-opengraph>=0.13.0",
+  "tabulate>=0.10.0",
+  "aiapy>=0.12.0",
 ]
 optional-dependencies.tests = [
   "muse[all]",
-  "matplotlib>=3.10.0",
-  "pytest-doctestplus",
-  "pytest-loguru",
-  "pytest-mpl",
-  "pytest-remotedata",
-  "pytest",
+  "matplotlib>=3.11.0",
+  "pytest-doctestplus>=1.7.0",
+  "pytest-loguru>=0.4.0",
+  "pytest-mpl>=0.19.0",
+  "pytest-remotedata>=0.4.0",
+  "pytest>=9.1.0",
 ]
-optional-dependencies.torch = ["torch>=2.12.0"]
+optional-dependencies.torch = ["torch>=2.13.0"]
 dynamic = ["version"]
 
 [build-system]
 requires = [
-  "setuptools>=62.1",
-  "setuptools-scm[toml]>=8",
-  "wheel",
+  "setuptools>=84.0.0",
+  "setuptools-scm[toml]>=10.2.0",
+  "wheel>=0.47.0",
 ]
 build-backend = "setuptools.build_meta"
 
