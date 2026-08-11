@@ -136,6 +136,10 @@ for band, config in bands.items():
     # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
     waveband_response = waveband_response.chunk({"doppler_velocity": 10})
     waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+    # Cast before mapping to halve the interpolation temporaries.
+    waveband_response = waveband_response.assign(
+        spectral_response=waveband_response.spectral_response.astype(np.float32)
+    )
     response = map_response_to_sg_detector(waveband_response, band * u.AA)
 
     print(response)
@@ -145,7 +149,7 @@ for band, config in bands.items():
         integrated_response.plot(x="detector_x_pixel")
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 
-    # Store the response in float32 and as Zarr: float32 keeps ~7 significant digits
+    # Store the mapped response in float32: float32 keeps ~7 significant digits
     # (far below any calibration uncertainty, and it changes the synthesized flux by
     # ~1e-7 relative), while Zarr compresses in parallel and cuts both the file size
     # and the write/read time severalfold compared to float64 NetCDF.
