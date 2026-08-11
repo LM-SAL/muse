@@ -122,9 +122,11 @@ print(f"Saved {output}")
 # collapsed back onto the x axis by
 # :func:`muse.transforms.reshape_slit_step_to_x`.
 # We read the spectrum back from the file we just saved rather than
-# recomputing the lazy synthesis graph a second time.
+# recomputing the lazy synthesis graph a second time, and open it dask-backed
+# so the full-resolution flux streams through the sum instead of being loaded
+# into memory at once.
 
-saved_spectrum = xr.open_dataset(output, engine="h5netcdf")
+saved_spectrum = xr.open_dataset(output, engine="h5netcdf", chunks="auto")
 intensity = reshape_slit_step_to_x(saved_spectrum.sum(dim="detector_x_pixel"))
 plt.figure(figsize=(10, 4))
 intensity.flux.sel(line="Fe IX 171.073").isel(pressure=0).plot(
