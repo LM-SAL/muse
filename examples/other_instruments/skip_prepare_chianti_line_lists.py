@@ -4,11 +4,7 @@ Prepare CHIANTI line lists
 ==========================
 
 This example computes the CHIANTI line lists used by the response examples in
-this section. It requires a local CHIANTI database configured with ``XUVTOP``:
-
-.. code-block::
-
-    export XUVTOP=/path/to/CHIANTI_11.0.2_database
+this section. It requires a local CHIANTI database configured with ``XUVTOP``.
 """
 
 import os

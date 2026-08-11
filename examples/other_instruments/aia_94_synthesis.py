@@ -54,9 +54,7 @@ except ImportError:
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
-# We need to keep the tutorial spectrum manageable.
-# Remove this selection so you can have the full-resolution y axis.
-vdem = vdem.isel(y=slice(None, None, 8))
+
 print(vdem)
 
 ##############################################################################

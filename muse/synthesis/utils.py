@@ -12,8 +12,7 @@ from muse.utils.utils import add_history, coord_as_unit, require_unit, update_at
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
 
-_VDEM_X_BLOCK_SIZE = 32
-# Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (block temporaries
+# Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (per-slice temporaries
 # scale with worker count) and this runs nested under gallery/CI parallelism on
 # 2-4 vCPU builders, where a cpu-derived pool would oversubscribe.
 _VDEM_MAX_WORKERS = 4
@@ -81,8 +80,10 @@ def create_simple_vdem(
 
     Integration is along ``integration_axis`` (the last axis by default).
 
-    Intermediate arrays are processed in x blocks (a few worker threads at a time) to
-    bound peak memory. The returned VDEM is still allocated eagerly in full.
+    Intermediate arrays are processed one x slice per worker thread; temporaries stay
+    bounded by the slice size (y times z) and the fixed worker count.
+
+    The returned VDEM is still allocated eagerly in full.
 
     The intensity of a spectral line can be defined as :math:`I = \int n_e^2\, G(T) dl`, where
     :math:`n_e` is the electron density, :math:`G(T)` is the contribution function, and the emission
@@ -170,44 +171,41 @@ def create_simple_vdem(
     velocity_edges = np.append(velocity_axis - velocity_bin_width / 2.0, velocity_axis[-1] + velocity_bin_width / 2.0)
     temperature_lower_edge = log_temperature_axis[0] - log_temperature_bin_width / 2.0
     temperature_upper_edge = log_temperature_axis[-1] + log_temperature_bin_width / 2.0
-    cell_length_los = cell_length.reshape(1, 1, -1)
+    cell_length_los = cell_length.reshape(1, -1)
 
-    # Only the output scales with n_x; full-cube intermediates stay bounded by the block
-    # size times the number of worker threads.
+    # Only the output scales with n_x; full-cube intermediates stay bounded by the
+    # (y, z) slice size times the number of worker threads.
     vdem_dtype = (np.empty(0, dtype=ne_nh.dtype) / 1e27).dtype
     vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=vdem_dtype)
 
-    def process_block(block_start: int) -> None:
-        block = slice(block_start, min(block_start + _VDEM_X_BLOCK_SIZE, n_x))
-        n_x_block = block.stop - block.start
-        ne_nh_block = ne_nh[block] / 1e27  # normalize to the 1e27 / cm^5 output units
+    def process_slice(ix: int) -> None:
+        ne_nh_slice = ne_nh[ix] / 1e27  # normalize to the 1e27 / cm^5 output units
         # n_e * n_H * cell_length is the emission each voxel spreads over temperature bins.
-        emission_block = ne_nh_block * cell_length_los
-        temperature_block = temperature[block]
+        emission_slice = ne_nh_slice * cell_length_los
         # Each line-of-sight cell spans the temperatures between it and its neighbour; its
         # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
-        log_temperature_block = np.log10(temperature_block)
-        log_temperature_prev = np.roll(log_temperature_block, 1, axis=2)
-        log_temperature_prev[:, :, 0] = 2.0  # boundary cell is entered from 100 K
-        max_log_temperature = np.maximum(log_temperature_block, log_temperature_prev)
-        min_log_temperature = np.minimum(log_temperature_block, log_temperature_prev)
+        log_temperature_slice = np.log10(temperature[ix])
+        log_temperature_prev = np.roll(log_temperature_slice, 1, axis=1)
+        log_temperature_prev[:, 0] = 2.0  # boundary cell is entered from 100 K
+        max_log_temperature = np.maximum(log_temperature_slice, log_temperature_prev)
+        min_log_temperature = np.minimum(log_temperature_slice, log_temperature_prev)
         # Every voxel falls in exactly one velocity bin, so scatter each voxel onto a flat
-        # (velocity_bin, x, y) index; that index has no z axis, so np.bincount's accumulation
+        # (velocity_bin, y) index; that index has no z axis, so np.bincount's accumulation
         # is the line-of-sight sum.
-        velocity_bin = np.searchsorted(velocity_edges, velocity[block], side="right") - 1
+        velocity_bin = np.searchsorted(velocity_edges, velocity[ix], side="right") - 1
         voxel_mask = (
             (velocity_bin >= 0)
             & (velocity_bin < n_velocity_bins)
             & (max_log_temperature >= temperature_lower_edge)
             & (min_log_temperature < temperature_upper_edge)
         )
-        scatter_index = velocity_bin * (n_x_block * n_y) + np.arange(n_x_block * n_y).reshape(n_x_block, n_y, 1)
+        scatter_index = velocity_bin * n_y + np.arange(n_y).reshape(n_y, 1)
 
         # Flatten the contributing voxels; each spans [segment_lo, segment_hi] in log T,
         # clamped to the temperature axis.
-        n_spatial = n_velocity_bins * n_x_block * n_y
+        n_spatial = n_velocity_bins * n_y
         spatial_index = scatter_index[voxel_mask]
-        emission = emission_block[voxel_mask]
+        emission = emission_slice[voxel_mask]
         segment_lo = np.clip(min_log_temperature[voxel_mask], temperature_lower_edge, temperature_upper_edge)
         segment_hi = np.clip(max_log_temperature[voxel_mask], temperature_lower_edge, temperature_upper_edge)
         bin_lo = np.clip(
@@ -256,12 +254,12 @@ def create_simple_vdem(
             weights=point_weights,
             minlength=n_temperature_bins * n_spatial,
         )
-        vdem[:, :, block, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_x_block, n_y)
+        vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)
 
-    # Blocks are independent and write disjoint x slices; numpy releases the GIL in the
+    # Slices are independent and write disjoint x indices; numpy releases the GIL in the
     # heavy ops (log10, searchsorted, bincount), so threads scale without extra copies.
     with ThreadPoolExecutor(max_workers=_VDEM_MAX_WORKERS) as executor:
-        for done in [executor.submit(process_block, start) for start in range(0, n_x, _VDEM_X_BLOCK_SIZE)]:
+        for done in [executor.submit(process_slice, ix) for ix in range(n_x)]:
             done.result()
 
     vdem_ds = xr.Dataset()

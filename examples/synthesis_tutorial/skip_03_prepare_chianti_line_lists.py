@@ -6,11 +6,7 @@
 This tutorial demonstrates how to compute the CHIANTI line lists needed to
 create a MUSE response.
 
-It requires a local CHIANTI database configured with ``XUVTOP``
-
-.. code-block::
-
-    export XUVTOP=/path/to/CHIANTI_11.0.2_database
+It requires a local CHIANTI database configured with ``XUVTOP``.
 """
 
 import os
@@ -33,6 +29,7 @@ if not os.environ.get("XUVTOP"):
 
 ##############################################################################
 # Now we need to configure the line-list calculations.
+#
 # For MUSE the options are:
 #
 # - Ion: fe_9, fe_15, fe_19 or fe_21
@@ -76,7 +73,7 @@ bands = {
 # and we use netCDF to save out the expensive results so they can be reused.
 #
 # Note that if you want to speed up the calculation, please make sure to install
-# ``muse[chianti]`` such that the dependencies required for this function are installed.
+# ``muse[chianti]`` so that all optional dependencies are installed.
 
 for band, config in bands.items():
     spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=band).item()

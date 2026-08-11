@@ -33,9 +33,7 @@ from muse.synthesis import vdem_synthesis
 # interpolation is needed before the synthesis.
 
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
-# We need to keep the tutorial spectrum manageable.
-# Remove this selection so you can have the full-resolution y axis.
-vdem = vdem.isel(y=slice(None, None, 8))
+
 print(vdem)
 
 ##############################################################################

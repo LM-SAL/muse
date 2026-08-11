@@ -129,13 +129,12 @@ for band, config in bands.items():
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
         effective_area=DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=band),
     )
-    # Chunk over Doppler velocity so the detector mapping stays lazy (dask):
-    # save_response then streams it to disk chunk by chunk instead of
-    # materializing the full detector response (~18 GB for the 108 band) in
-    # memory. Peak memory is roughly one chunk's interpolation temporaries per
-    # dask worker; if you run out of RAM, cap dask.config.set(num_workers=...).
+    # Chunk over Doppler velocity so the detector mapping stays lazy
     waveband_response = waveband_response.chunk({"doppler_velocity": 10})
     waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+    waveband_response = waveband_response.assign(
+        spectral_response=waveband_response.spectral_response.astype(np.float32)
+    )
     response = map_response_to_sg_detector(waveband_response, band * u.AA)
 
     print(response)
@@ -145,10 +144,6 @@ for band, config in bands.items():
         integrated_response.plot(x="detector_x_pixel")
         plt.title("Integrated 171 Angstrom response at zero Doppler velocity")
 
-    # Store the response in float32 and as Zarr: float32 keeps ~7 significant digits
-    # (far below any calibration uncertainty, and it changes the synthesized flux by
-    # ~1e-7 relative), while Zarr compresses in parallel and cuts both the file size
-    # and the write/read time severalfold compared to float64 NetCDF.
     response = response.assign(detector_response=response.detector_response.astype(np.float32))
     output = output_dir / f"muse_sg_response_{band}_{config['output_label']}_{abundance}_effarea.zarr"
     # save_response refuses to overwrite, so clear the artifact of a previous run.
