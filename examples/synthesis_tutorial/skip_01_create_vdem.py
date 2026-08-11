@@ -11,6 +11,7 @@ A VDEM is the emission measure of the solar atmosphere as a function of temperat
 import os
 import contextlib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -111,7 +112,21 @@ axes[2].set_title("VDEM 2nd moment")
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
-vdem.to_zarr(output_dir / "muse_example_vdem.zarr", mode="w", zarr_format=3)
+output = output_dir / "muse_example_vdem.zarr"
+with TemporaryDirectory(prefix=f".{output.name}-", dir=output_dir) as temporary_directory_name:
+    temporary_directory = Path(temporary_directory_name)
+    staged = temporary_directory / output.name
+    backup = temporary_directory / "previous"
+    vdem.to_zarr(staged, mode="w", zarr_format=3)
+    (staged / ".muse-complete").touch()
+    if output.exists():
+        output.replace(backup)
+    try:
+        staged.replace(output)
+    except BaseException:
+        if backup.exists() and not output.exists():
+            backup.replace(output)
+        raise
 
 ##############################################################################
 # Now that you have a VDEM, you can use it to create a synthetic MUSE observation.

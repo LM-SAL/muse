@@ -8,6 +8,7 @@ from pathlib import Path
 __all__ = ["fetch_example_data"]
 
 _SAMPLE_DATA_URL = "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
+_VDEM_COMPLETE_MARKER = ".muse-complete"
 
 #: File name -> (download URL, SHA-256 hash, cache subdirectory).
 _REGISTRY = {
@@ -63,7 +64,7 @@ def fetch_example_data(name):
     """
     Download and cache one of the example data files used by the documentation gallery.
 
-    An example VDEM already present in the synthesis-tutorial output directory
+    A completed example VDEM already present in the synthesis-tutorial output directory
     (``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``, defaulting to
     ``examples/synthesis_tutorial/artifacts``) is returned without downloading,
     so a VDEM regenerated locally with the tutorial wins over the published
@@ -94,7 +95,7 @@ def fetch_example_data(name):
     if name == "muse_example_vdem.zarr":
         local_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
         local_path = local_dir / name
-        if local_path.exists():
+        if local_path.is_dir() and (local_path / _VDEM_COMPLETE_MARKER).is_file():
             return local_path
     if name.endswith(".zarr"):
         # Zarr stores are directories, published as tarballs; retrieve extracts once.

@@ -1,4 +1,5 @@
 import sys
+from unittest.mock import Mock
 
 import pytest
 
@@ -26,8 +27,27 @@ def test_registry_entries_well_formed():
         assert subdir
 
 
-def test_local_vdem_wins(tmp_path, monkeypatch):
+def test_incomplete_local_vdem_falls_back(tmp_path, monkeypatch):
     monkeypatch.setenv("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", str(tmp_path))
     local = tmp_path / "muse_example_vdem.zarr"
     local.mkdir()
-    assert fetch_example_data("muse_example_vdem.zarr") == local
+    cached = tmp_path / "cache" / "muse_example_vdem" / local.name
+    pooch = Mock()
+    pooch.os_cache.return_value = tmp_path / "cache"
+    monkeypatch.setitem(sys.modules, "pooch", pooch)
+
+    assert fetch_example_data(local.name) == cached
+    pooch.retrieve.assert_called_once()
+
+
+def test_completed_local_vdem_wins(tmp_path, monkeypatch):
+    monkeypatch.setenv("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", str(tmp_path))
+    local = tmp_path / "muse_example_vdem.zarr"
+    local.mkdir()
+    (local / ".muse-complete").touch()
+    pooch = Mock()
+    pooch.os_cache.return_value = tmp_path / "cache"
+    monkeypatch.setitem(sys.modules, "pooch", pooch)
+
+    assert fetch_example_data(local.name) == local
+    pooch.retrieve.assert_not_called()
