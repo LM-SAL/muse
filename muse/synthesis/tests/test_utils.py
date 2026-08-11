@@ -225,9 +225,10 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # doppler_velocity == -1 bin stays empty
 
 
-def test_create_simple_vdem_internal_x_blocks_are_exact() -> None:
+def test_create_simple_vdem_internal_x_slices_are_exact() -> None:
+    # Multiple x indices exercise the per-slice worker tasks; each must be exact.
     inputs = _tiny_vdem_inputs()
-    n_x = synthesis_utils._VDEM_X_BLOCK_SIZE + 1
+    n_x = 3
     shape = (n_x, 3, 2)
     inputs["temperature"] = np.broadcast_to(inputs["temperature"][:1], shape).copy()
     inputs["velocity"] = np.broadcast_to(inputs["velocity"][:1], shape).copy()
