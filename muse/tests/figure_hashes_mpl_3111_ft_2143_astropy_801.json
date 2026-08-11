@@ -1,13 +1,13 @@
 {
-  "muse.instrument.tests.test_figures.test_spectral_response_doppler_profiles": "699b8e2612438b35511d887c44d79b0969fd389af0f42d066550615846412b84",
-  "muse.instrument.tests.test_figures.test_spectral_response_broadening_profiles": "e9c712acaa5cb29ea62ed92f94529d128cc48bd87326e6731b9cb2c6ff91d009",
-  "muse.instrument.tests.test_figures.test_spectral_response_effective_area_cutoff": "95c8b4b260df8bb7dd7d270519986666c00e2c4898af1f8b86c8e8a4aea82948",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "747e50d626876afaf4e0211110f393258fd5d0e260c5cca9209df7d20cbe72bb",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "95c27a38291a9a2c5135b71dae3a5881128231092cf487739ac6d08d6181b995",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "201f325b67d241375d7f5f536f73ae96f7577a847a8dcce2fbec1bf579f2eb43",
-  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "060d58609d45660ed1f8955d34128c9dc2616042719b74c7b2e3afe0c772b60b",
-  "muse.tests.test_figures.test_vdem_intensity_map": "0772526f8cee58e6bdd7d5651a9a30b283290b9c9ef57f4523b031cf75ebe45b",
-  "muse.tests.test_figures.test_response_logt_profile": "aaa25f945509258be38844bf50b702c7bd1c3a9a43c91c457b2a06f4ea1e69fb",
-  "muse.tests.test_figures.test_response_line_profiles": "58ea39a302807bf53c9fa695bac1f17a688ed906fd6120279514e1a4e08cdb99",
-  "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "e310f2c8bb82813638f2b73e387e07a6e20bf7225513a73be5b38b23399dcedd"
+  "muse.instrument.tests.test_figures.test_spectral_response_doppler_profiles": "68fdbfc8be6cfc57107c80358fb594de5b62cc6b870177a8be18fda7adee4dc2",
+  "muse.instrument.tests.test_figures.test_spectral_response_broadening_profiles": "ec89a3f8418d4118cda5a2afb576ad4eb15ab1e077be8dede88e483269b5f103",
+  "muse.instrument.tests.test_figures.test_spectral_response_effective_area_cutoff": "da092aa5dbeec5e070ec4d88f870a38582e537cf145b6f7ba418a738c6674ccf",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "252fd5dd807a4ae1a4605eab05dcfc1d37905f91e7321e09d5e6c60d54a237df",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "2b58e9dbf4fecea77608f5bc495cfd1f1f3b8951c699bdb0150685a9ce04e075",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_doppler_shift": "f16679bdf3e9514c3800d32a472548822cf24036f3b71f8ff751ac658cdc7133",
+  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "d5b83bcbd061b1c2d962dca7b239fcdd9f94cae238ba914ddbe02d98bd642d5b",
+  "muse.tests.test_figures.test_vdem_intensity_map": "805a28c52c2b6e5a7f8c1334019db5abcb72ce3845d1b4e06b789e8461973392",
+  "muse.tests.test_figures.test_response_logt_profile": "5d9ebcc6315422a86426996c7eb68bdce51c49965355010109c67d094439bf3d",
+  "muse.tests.test_figures.test_response_line_profiles": "c11519d48711d793365e09a9f82e17e7bcf100e6956c1c1886c8bb25448f29dc",
+  "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "a25fa1b24ea8d971d340a88a5c6c272b3667fadb1dab9d15d56a38f104279973"
 }
