@@ -26,8 +26,9 @@ from muse.variables import DEFAULTS_MUSE
 change_logging_level("INFO")
 
 ##############################################################################
-# We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band:
-# the fixed-pressure one already used in
+# We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band.
+#
+# The fixed-pressure list was generated with the same workflow as
 # :ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`,
 # and the density-grid one generated with the snippet below.
 #

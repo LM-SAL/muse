@@ -27,8 +27,6 @@ from muse.variables import DEFAULTS_MUSE
 # Fetch the VDEM used throughout the synthesis tutorial.
 
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
-# Keep the gallery example manageable.
-vdem = vdem.isel(y=slice(None, None, 8))
 
 ##############################################################################
 # Fetch a CHIANTI Fe XII line list around 195 Angstrom. CHIANTI emissivities

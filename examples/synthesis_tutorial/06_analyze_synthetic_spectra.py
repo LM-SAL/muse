@@ -5,7 +5,7 @@
 
 This tutorial demonstrates how to visualize the detector spectra created by
 :ref:`example 05 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
-In addition to calculating the spectral moments as well.
+In addition to calculating the spectral moments.
 """
 
 import matplotlib.pyplot as plt

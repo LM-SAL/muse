@@ -26,9 +26,6 @@ from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit
 
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 vdem_raster = reshape_x_to_slit_step(match_fov(vdem))
-# We need to keep the tutorial spectrum manageable.
-# Remove this selection so you can have the  full-resolution y axis.
-vdem_raster = vdem_raster.isel(y=slice(None, None, 8))
 
 print(vdem_raster)
 

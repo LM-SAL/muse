@@ -78,10 +78,11 @@ vdem = create_simple_vdem(
 # - Spatial distribution (x, y dimensions)
 # - Temporal evolution (time dimension)
 #
-# We can now print and plot the VDEM we created.
+# We can now print the VDEM we created.
 
 print(vdem)
 
+##############################################################################
 # Calculate the VDEM moments
 #
 # The velocity moments can be calculated directly from the VDEM without first

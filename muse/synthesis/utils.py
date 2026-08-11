@@ -12,7 +12,8 @@ from muse.utils.utils import add_history, coord_as_unit, require_unit, update_at
 
 __all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
 
-_VDEM_X_BLOCK_SIZE = 32
+# One x slice per task: scatter temporaries scale with block size.
+_VDEM_X_BLOCK_SIZE = 1
 # Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (block temporaries
 # scale with worker count) and this runs nested under gallery/CI parallelism on
 # 2-4 vCPU builders, where a cpu-derived pool would oversubscribe.
