@@ -1,3 +1,7 @@
+import gc
+import time
+import tracemalloc
+
 import dask.array as da
 import numpy as np
 import pytest
@@ -104,6 +108,37 @@ def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
 
     assert isinstance(accel_flux.data, np.ndarray)
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
+
+
+@pytest.mark.slow
+def test_vdem_synthesis_cost_regression(response, vdem) -> None:
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response = response.isel(detector_x_pixel=np.arange(1024) % response.sizes["detector_x_pixel"]).assign_coords(
+        detector_x_pixel=np.arange(1024)
+    )
+    # Current einsum baselines (2026-08-14): numpy 0.08 s/146 MiB,
+    # dask 0.22 s/514 MiB, and torch 0.04 s. Limits are deliberately wide for shared CI runners.
+    cases = {
+        "numpy": (raster, "numpy", 1.0, 300),
+        "dask": (raster.chunk({"logT": 5, "step": 4}), "numpy", 2.0, 1024),
+        "torch": (raster, "torch", 1.0, None),
+    }
+
+    for name, (case_raster, backend, max_seconds, max_peak_mib) in cases.items():
+        vdem_synthesis(case_raster, response, backend=backend).flux.compute()
+        gc.collect()
+        tracemalloc.start()
+        try:
+            start = time.perf_counter()
+            vdem_synthesis(case_raster, response, backend=backend).flux.compute()
+            elapsed = time.perf_counter() - start
+            peak_mib = tracemalloc.get_traced_memory()[1] / 1024**2
+        finally:
+            tracemalloc.stop()
+
+        assert elapsed < max_seconds, f"{name} synthesis took {elapsed:.2f} s (limit {max_seconds:.2f} s)"
+        if max_peak_mib is not None:  # Torch allocations are outside tracemalloc.
+            assert peak_mib < max_peak_mib, f"{name} synthesis peaked at {peak_mib:.0f} MiB (limit {max_peak_mib} MiB)"
 
 
 def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
