@@ -303,7 +303,7 @@ def fake_legacy_response_file():
 
     Deliberately uses the pre-canonical names (``SG_resp``, ``SG_wvl``, ``SG_xpixel``,
     ``line_wvl``, ``vdop``): reading it is what exercises
-    `muse.instrument.utils._canonicalize_response_names`, so do not modernize them here.
+    `muse.instrument.response_io._canonicalize_response_names`, so do not modernize them here.
     Build canonical files with ``save_response(fake_response(), path)`` instead.
     """
     n_logT, n_vdop, n_slit, n_pixel, n_wave = 5, 7, 4, 8, 6

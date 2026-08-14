@@ -135,7 +135,7 @@ for band, config in bands.items():
     waveband_response = waveband_response.assign(
         spectral_response=waveband_response.spectral_response.astype(np.float32)
     )
-    response = map_response_to_sg_detector(waveband_response, band * u.AA)
+    response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 
     print(response)
 

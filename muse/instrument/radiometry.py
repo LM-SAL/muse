@@ -8,7 +8,7 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
-from muse.instrument.utils import _channel_as_angstrom
+from muse.instrument.response import _channel_as_angstrom
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE

@@ -26,24 +26,6 @@ _LEGACY_RESPONSE_NAMES = {
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
 
 
-def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | None, detector: str) -> int | float:
-    if not channel.isscalar:
-        msg = "channel must be a scalar wavelength"
-        raise ValueError(msg)
-    channel_value = channel.to_value(u.AA)
-    if not np.isfinite(channel_value) or channel_value <= 0:
-        msg = "channel must be a finite, positive wavelength"
-        raise ValueError(msg)
-    if allowed_channels is None:
-        return channel_value
-    allowed = np.asarray(allowed_channels)
-    matches = np.isclose(allowed, channel_value, rtol=0, atol=1e-12)
-    if not matches.any():
-        msg = f"unsupported MUSE {detector.upper()} channel {channel}"
-        raise ValueError(msg)
-    return allowed[matches][0].item()
-
-
 def save_response(
     response: xr.Dataset,
     response_file: str | Path,

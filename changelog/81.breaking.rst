@@ -1,0 +1,4 @@
+:func:`~muse.instrument.map_response_to_sg_detector` now takes ``channel`` as an
+optional keyword-only argument — pass it for the MUSE SG calibration, or give the
+detector geometry explicitly. ``muse.instrument.utils`` was renamed to
+``muse.instrument.response_io``.
