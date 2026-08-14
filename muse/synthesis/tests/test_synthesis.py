@@ -91,6 +91,14 @@ def test_vdem_synthesis_contracts_values() -> None:
     np.testing.assert_array_equal(result.flux, [[8.0, 19.0], [10.0, 24.0]])
 
 
+def test_vdem_synthesis_rejects_misaligned_contraction_coordinates(response, vdem) -> None:
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response = response.assign_coords(logT=response.logT.values + 1e-9)
+
+    with pytest.raises(xr.AlignmentError):
+        vdem_synthesis(raster, response)
+
+
 def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> None:
     component_kind = ["line", "line", "contaminants", "line", "contaminants", "line", "contaminants"]
     response = response.assign_coords(component_kind=("line", component_kind))

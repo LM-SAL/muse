@@ -1,5 +1,4 @@
-import string
-from collections.abc import Hashable, Sequence
+from collections.abc import Sequence
 
 import dask.array as da
 import numpy as np
@@ -35,111 +34,6 @@ def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray
     if not isinstance(array.data, da.Array):
         return array
     return array.chunk({dim: -1 for dim in dims if dim in array.dims})
-
-
-def _calc_einsum(
-    *,
-    raster: xr.Dataset,
-    response: xr.Dataset,
-    einsum_str: str,
-    out_str: str,
-    cuda_device: int | None = None,
-    backend: str = "numpy",
-):
-    """
-    Compute the tensor product using the selected array backend.
-
-    Parameters
-    ----------
-    raster : `xarray.Dataset`
-        VDEM raster dataset.
-    response : `xarray.Dataset`
-        Response function dataset.
-    einsum_str : `str`
-        Einsum input string.
-    out_str : `str`
-        Einsum output string.
-    cuda_device : `int` or `None`, optional
-        CUDA device index for GPU use (requires ``backend="torch"``), or None for CPU.
-    backend : `str`, optional
-        ``"numpy"`` (default) or ``"torch"``. Torch is opt-in.
-
-    Returns
-    -------
-    array-like
-        Result of the einsum operation.
-    """
-    backend = _resolve_backend(cuda_device, backend)
-    logger.debug(f"Using {backend} for synthesis")
-    if backend == "torch":
-        import torch  # NOQA: PLC0415
-
-        return torch_to_numpy(
-            torch.einsum(
-                f"{einsum_str}->{out_str}",
-                numpy_to_torch(raster.vdem.data, cuda_device=cuda_device),
-                numpy_to_torch(response.detector_response.data, cuda_device=cuda_device),
-            )
-        )
-    vdem_data = raster.vdem.data
-    response_data = response.detector_response.data
-    if isinstance(vdem_data, da.Array) or isinstance(response_data, da.Array):
-        # Keep dask-backed inputs lazy: the contraction becomes part of the graph, so
-        # peak memory stays bounded by the chunks and the flux computes/writes streamed.
-        # optimize=True routes the contraction through tensordot/BLAS instead of the
-        # naive element loop (~30x faster on the MUSE tutorial synthesis).
-        return da.einsum(f"{einsum_str}->{out_str}", vdem_data, response_data, optimize=True)
-    return np.einsum(
-        f"{einsum_str}->{out_str}",
-        np.asarray(vdem_data),
-        np.asarray(response_data),
-        optimize=True,
-    )
-
-
-def _build_einsum_indices(
-    raster_dims: tuple[Hashable, ...],
-    response_dims: tuple[Hashable, ...],
-    sum_over: Sequence[str],
-) -> tuple[str, str, list[Hashable]]:
-    """
-    Build the einsum spec for contracting the VDEM raster with the response.
-
-    Each unique dimension name gets one index letter; dimensions shared by both
-    operands reuse the same letter (so einsum contracts over them). The output
-    keeps every dimension not in ``sum_over``, in raster-then-response order.
-
-    Parameters
-    ----------
-    raster_dims, response_dims : `tuple` of `str`
-        Dimension names of ``raster.vdem`` and ``response.detector_response``.
-    sum_over : `tuple` of `str`
-        Dimension names to contract over.
-
-    Returns
-    -------
-    einsum_str : `str`
-        Input spec, e.g. ``"abcde,fbcdg"``.
-    out_str : `str`
-        Output spec for the non-summed dimensions.
-    out_dims : `list` of `str`
-        Output dimension names, aligned with ``out_str``.
-    """
-    letters = iter(string.ascii_lowercase)
-    dim_to_letter = {}
-    for dim in (*raster_dims, *response_dims):
-        if dim not in dim_to_letter:
-            dim_to_letter[dim] = next(letters)
-
-    out_dims = []
-    for dim in (*raster_dims, *response_dims):
-        if dim not in sum_over and dim not in out_dims:
-            out_dims.append(dim)
-
-    raster_spec = "".join(dim_to_letter[dim] for dim in raster_dims)
-    response_spec = "".join(dim_to_letter[dim] for dim in response_dims)
-    out_str = "".join(dim_to_letter[dim] for dim in out_dims)
-    return f"{raster_spec},{response_spec}", out_str, out_dims
 
 
 def _validate_inputs(
@@ -212,6 +106,7 @@ def vdem_synthesis(
         Response functions. ``detector_response`` and ``line_wavelength`` must
         define units in the attrs. ``detector_wavelength`` must define units when
         its slit dimension is retained in the output.
+        Coordinates shared with ``raster`` must match exactly.
         The wavelength-space names produced by
         `muse.instrument.create_spectral_response` (``spectral_response``,
         ``wavelength_grid``) are accepted and renamed to
@@ -252,35 +147,47 @@ def vdem_synthesis(
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
     raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
     response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))
-    einsum_str, out_str, dims = _build_einsum_indices(raster.vdem.dims, response.detector_response.dims, sum_over)
+    dim_indices = {
+        dim: index for index, dim in enumerate(dict.fromkeys((*raster.vdem.dims, *response.detector_response.dims)))
+    }
+    raster_indices = [dim_indices[dim] for dim in raster.vdem.dims]
+    response_indices = [dim_indices[dim] for dim in response.detector_response.dims]
+    output_dims = [dim for dim in dim_indices if dim not in sum_over]
+    output_indices = [dim_indices[dim] for dim in output_dims]
+    backend = _resolve_backend(cuda_device, backend)
     logger.debug(
-        f"einsum {einsum_str}->{out_str}: "
-        f"vdem{np.shape(raster.vdem.data)} x detector_response{np.shape(response.detector_response.data)}"
-    )
-    einsum_result = _calc_einsum(
-        raster=raster,
-        response=response,
-        einsum_str=einsum_str,
-        out_str=out_str,
-        cuda_device=cuda_device,
-        backend=backend,
-    )
-    ds = xr.Dataset()
-    update_attrs(ds, raster)
-    update_attrs(ds, response)
-    for key in dims:
-        ds[key] = raster[key] if key in raster.vdem.dims else response[key]
-    out_dims = set(dims)
-    coords = {name: coord for name, coord in raster.coords.items() if set(coord.dims) <= out_dims}
-    coords.update(
-        {name: coord for name, coord in response.detector_response.coords.items() if set(coord.dims) <= out_dims}
+        f"Using {backend} to contract vdem{np.shape(raster.vdem.data)} and "
+        f"detector_response{np.shape(response.detector_response.data)} over {tuple(sum_over)}"
     )
 
-    logger.debug(f"flux {tuple(dims)} shape {np.shape(einsum_result)}")
-    flux = xr.DataArray(data=einsum_result, dims=dims, coords=coords)
-    ds["flux"] = flux
+    def contract(vdem, detector_response):
+        if backend == "torch":
+            import torch  # NOQA: PLC0415
+
+            return torch_to_numpy(
+                torch.einsum(
+                    numpy_to_torch(vdem, cuda_device=cuda_device),
+                    raster_indices,
+                    numpy_to_torch(detector_response, cuda_device=cuda_device),
+                    response_indices,
+                    output_indices,
+                )
+            )
+        return np.einsum(vdem, raster_indices, detector_response, response_indices, output_indices, optimize=True)
+
+    flux = xr.apply_ufunc(
+        contract,
+        raster.vdem,
+        response.detector_response,
+        input_core_dims=[list(raster.vdem.dims), list(response.detector_response.dims)],
+        output_core_dims=[output_dims],
+        join="exact",
+        dask="allowed",
+        keep_attrs=False,
+    )
+    flux.attrs = {"units": str(raster_vdem_unit * response_unit)}
+    ds = flux.to_dataset(name="flux")
     ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
-    ds.flux.attrs.update({"units": str(raster_vdem_unit * response_unit)})
     # detector_wavelength carries a slit dimension, so only attach it when slit
     # survives in the output (or the response never had one); otherwise it would
     # re-introduce slit.
@@ -294,5 +201,7 @@ def vdem_synthesis(
                 "response.detector_wavelength",
             )
         )
+    update_attrs(ds, raster)
+    update_attrs(ds, response)
     add_history(ds, locals(), vdem_synthesis, sources=(raster, response))
     return ds
