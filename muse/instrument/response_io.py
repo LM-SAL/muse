@@ -162,7 +162,10 @@ def read_response(
     doppler_velocity : `xarray.DataArray`, optional
         Velocity axis to (re)sample onto.
     slit : `xarray.DataArray`, optional
-        Number of slits array of integers.
+        Number of slits array of integers. Slits are selected by label
+        ``0..slit.max()`` with nearest-match and relabeled 0-based: a file whose
+        slit labels do not start at 0 (e.g. 1-based) silently duplicates its
+        first slit and drops its last instead of shifting.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
     doppler_velocity_method : `str`, optional
@@ -216,7 +219,10 @@ def read_response(
     r = _resample_axis(r, "doppler_velocity", doppler_velocity, doppler_velocity_method)
 
     if slit is not None:
-        r = r.sel(slit=np.arange(slit.max() + 1), drop=True, method="nearest")
+        # Normalize to 0-based labels so downstream exact joins see byte-identical axes.
+        r = r.sel(slit=np.arange(slit.max() + 1), drop=True, method="nearest").assign_coords(
+            slit=np.arange(slit.max() + 1)
+        )
 
     if "channel" not in r.dims and "line" not in r.dims:
         r = r.expand_dims("line")

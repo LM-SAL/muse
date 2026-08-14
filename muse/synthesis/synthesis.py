@@ -73,6 +73,17 @@ def _validate_inputs(
             raise ValueError(msg)
     raster_vdem_unit = require_unit(raster, "vdem", "raster.vdem")
     response_unit = require_unit(response, "detector_response", "response.detector_response")
+    # join="exact" only validates indexed dims; a shared dim indexed on one side would
+    # otherwise contract positionally against unordered labels: no error, wrong flux.
+    for dim in sorted(set(raster.vdem.dims) & set(response.detector_response.dims)):
+        if (dim in raster.xindexes) != (dim in response.xindexes):
+            unindexed = "response" if dim in raster.xindexes else "raster"
+            msg = (
+                f"{dim!r} has an index coordinate on only one input ({unindexed} lacks it), so labels "
+                "cannot be aligned; add the coordinate with assign_coords or regrid with "
+                "muse.instrument.align_response_and_vdem"
+            )
+            raise ValueError(msg)
     require_unit(response, "line_wavelength", "response.line_wavelength", coord_only=True, convertible_to=u.AA)
     if "slit" not in response.detector_response.dims or "slit" not in sum_over:
         require_unit(
@@ -106,7 +117,8 @@ def vdem_synthesis(
         Response functions. ``detector_response`` and ``line_wavelength`` must
         define units in the attrs. ``detector_wavelength`` must define units when
         its slit dimension is retained in the output.
-        Coordinates shared with ``raster`` must match exactly.
+        Indexed coordinates shared with ``raster`` must match exactly; a
+        dimension indexed on only one input is rejected.
         The wavelength-space names produced by
         `muse.instrument.create_spectral_response` (``spectral_response``,
         ``wavelength_grid``) are accepted and renamed to
@@ -132,6 +144,15 @@ def vdem_synthesis(
         dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
         stays bounded and writing streams chunk by chunk; the Torch backend
         always computes its inputs eagerly.
+
+    Raises
+    ------
+    ValueError
+        If either input fails validation (missing units, mismatched slit
+        dimensions, the legacy ``vdop`` axis, a ``sum_over`` dimension missing
+        from the response, or a shared dimension indexed on only one input), or
+        if shared indexed coordinates do not match exactly — regrid with
+        `muse.instrument.align_response_and_vdem`.
     """
     renames = {
         old: new
@@ -157,10 +178,17 @@ def vdem_synthesis(
     backend = _resolve_backend(cuda_device, backend)
     logger.debug(
         f"Using {backend} to contract vdem{np.shape(raster.vdem.data)} and "
-        f"detector_response{np.shape(response.detector_response.data)} over {tuple(sum_over)}"
+        f"detector_response{np.shape(response.detector_response.data)} over {tuple(sum_over)} "
+        f"-> flux{tuple(output_dims)}"
     )
 
     def contract(vdem, detector_response):
+        # Unwrap duck arrays (e.g. astropy Quantity) so einsum's sublist mode works;
+        # dask stays raw so the contraction dispatches to da.einsum and stays lazy.
+        vdem = vdem if isinstance(vdem, da.Array) else np.asarray(vdem)
+        detector_response = (
+            detector_response if isinstance(detector_response, da.Array) else np.asarray(detector_response)
+        )
         if backend == "torch":
             import torch  # NOQA: PLC0415
 
@@ -175,18 +203,40 @@ def vdem_synthesis(
             )
         return np.einsum(vdem, raster_indices, detector_response, response_indices, output_indices, optimize=True)
 
-    flux = xr.apply_ufunc(
-        contract,
-        raster.vdem,
-        response.detector_response,
-        input_core_dims=[list(raster.vdem.dims), list(response.detector_response.dims)],
-        output_core_dims=[output_dims],
-        join="exact",
-        dask="allowed",
-        keep_attrs=False,
-    )
+    try:
+        flux = xr.apply_ufunc(
+            contract,
+            raster.vdem,
+            response.detector_response,
+            input_core_dims=[list(raster.vdem.dims), list(response.detector_response.dims)],
+            output_core_dims=[output_dims],
+            join="exact",
+            dask="allowed",
+            keep_attrs=True,
+        )
+    except xr.AlignmentError as err:
+        msg = (
+            "raster and response coordinates disagree on a shared dimension; "
+            f"regrid the response with muse.instrument.align_response_and_vdem ({err})"
+        )
+        raise ValueError(msg) from err
     flux.attrs = {"units": str(raster_vdem_unit * response_unit)}
     ds = flux.to_dataset(name="flux")
+    # apply_ufunc drops coords the inputs disagree on and never materializes index
+    # coords for bare dims.
+    out_dims = set(ds.flux.dims)
+    restored = {
+        name: coord
+        for source in (response, raster)
+        for name, coord in source.coords.items()
+        if set(coord.dims) <= out_dims
+    }
+    restored |= {
+        dim: (raster[dim] if dim in raster.vdem.dims else response[dim])
+        for dim in ds.flux.dims
+        if dim not in restored and dim not in ds.coords
+    }
+    ds = ds.assign_coords(restored)
     ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
     # detector_wavelength carries a slit dimension, so only attach it when slit
     # survives in the output (or the response never had one); otherwise it would

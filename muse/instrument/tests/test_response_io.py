@@ -189,6 +189,18 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
+def test_read_response_normalizes_slit_labels(tmp_path) -> None:
+    # Files with non-0-based slit numbering must come back 0-based so downstream
+    # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
+    src = fake_legacy_response_file()
+    src = src.assign_coords(slit=src.slit.values + 1)
+    path = _write(src, tmp_path / "resp.nc", "nc")
+
+    r = read_response(path, slit=_slit(3))
+
+    np.testing.assert_array_equal(r.slit.values, np.arange(3))
+
+
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 @pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
 def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
