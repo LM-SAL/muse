@@ -95,8 +95,23 @@ def test_ci_calibration_defaults_cover_both_channels():
 def test_instrumental_width_sg():
     width = DEFAULTS_MUSE.instrumental_width_SG
 
+    assert DEFAULTS_MUSE.instrumental_fwhm_SG == 0.0815 * u.AA
     np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm)
     np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm / 2)
+
+
+def test_instrumental_fwhm_sg_normalizes_to_angstrom():
+    defaults = attrs.evolve(DEFAULTS_MUSE, instrumental_fwhm_SG=0.00815 * u.nm)
+
+    assert defaults.instrumental_fwhm_SG.unit == u.AA
+    np.testing.assert_allclose(defaults.instrumental_fwhm_SG.value, 0.0815)
+
+
+def test_instrumental_width_sg_requires_fwhm():
+    defaults = attrs.evolve(DEFAULTS_MUSE, instrumental_fwhm_SG=None)
+
+    with pytest.raises(ValueError, match="requires instrumental_fwhm_SG"):
+        defaults.instrumental_width_SG  # NOQA: B018
 
 
 def test_instrument_defaults_pickle_round_trip():
