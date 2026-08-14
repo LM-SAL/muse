@@ -107,7 +107,7 @@ waveband_response = create_spectral_response(
     effective_area=effective_area,
 )
 waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
-response = map_response_to_sg_detector(waveband_response, band * u.AA)
+response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 
 plt.figure()
@@ -132,7 +132,7 @@ waveband_response = create_spectral_response(
     effective_area=effective_area,
 )
 waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
-response = map_response_to_sg_detector(waveband_response, band * u.AA)
+response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 
 plt.figure()

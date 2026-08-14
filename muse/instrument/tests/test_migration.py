@@ -24,8 +24,8 @@ def test_migrate_response_returns_and_verifies_schema(tmp_path, suffix) -> None:
 
     assert "SG_resp" in before
     assert "detector_response" in after
-    with migration.response_utils._open_response_file(destination) as migrated:
-        expected = migration.response_utils._canonicalize_response_names(source_response)
+    with migration.response_io._open_response_file(destination) as migrated:
+        expected = migration.response_io._canonicalize_response_names(source_response)
         xr.testing.assert_identical(migrated.load(), expected)
     with xr.open_dataset(source) as unchanged:
         assert "SG_resp" in unchanged

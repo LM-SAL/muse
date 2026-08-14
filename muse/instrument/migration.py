@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 
 import xarray as xr
 
-from muse.instrument import utils as response_utils
+from muse.instrument import response_io
 
 __all__ = ["migrate_response"]
 
@@ -41,13 +41,13 @@ def migrate_response(source: str | Path, destination: str | Path) -> tuple[str, 
         msg = f"Destination directory does not exist: {destination.parent}"
         raise ValueError(msg)
 
-    with response_utils._open_response_file(source, chunked=True) as opened:
+    with response_io._open_response_file(source, chunked=True) as opened:
         before = _schema(opened)
-        canonical = response_utils._canonicalize_response_names(opened)
+        canonical = response_io._canonicalize_response_names(opened)
         with TemporaryDirectory(prefix=f".{destination.name}-", dir=destination.parent) as temporary_directory:
             staged = Path(temporary_directory) / destination.name
-            response_utils.save_response(canonical, staged)
-            with response_utils._open_response_file(staged, chunked=True) as written:
+            response_io.save_response(canonical, staged)
+            with response_io._open_response_file(staged, chunked=True) as written:
                 _verify_values(canonical, written)
                 after = _schema(written)
             if destination.exists():

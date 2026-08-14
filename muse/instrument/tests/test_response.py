@@ -8,12 +8,11 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import linelist as linelist_module
-from muse.instrument import map_response_to_ci_detector
+from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.linelist import create_chianti_line_list
 from muse.instrument.radiometry import transform_response_units
-from muse.instrument.response import map_response_to_sg_detector
+from muse.instrument.response_io import read_response
 from muse.instrument.spectral import create_spectral_response
-from muse.instrument.utils import read_response
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.variables import DEFAULTS_MUSE
 
@@ -69,7 +68,6 @@ def test_map_response_to_sg_detector_geometry_and_units():
 
     mapped = map_response_to_sg_detector(
         response,
-        17.1 * u.nm,
         number_of_slits=2,
         dispersion=0.1 * u.AA / u.pix,
         slit_spacing=2 * u.pix,
@@ -93,8 +91,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.attrs["units"] == "Angstrom"
     assert mapped.line_wavelength.item() == pytest.approx(171.073)
-    assert mapped.channel.item() == 171
-    assert mapped.channel.attrs["units"] == "Angstrom"
+    assert "channel" not in mapped.coords
     assert "spectral_response" not in mapped
     assert "wavelength_bin" not in mapped.dims
     assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_sg_detector(")
@@ -111,8 +108,8 @@ def test_map_response_to_sg_detector_keeps_chunked_input_lazy():
         "wavelength_start": 170 * u.AA,
     }
 
-    lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), 171 * u.AA, **kwargs)
-    eager = map_response_to_sg_detector(response, 171 * u.AA, **kwargs)
+    lazy = map_response_to_sg_detector(response.chunk({"doppler_velocity": 1}), **kwargs)
+    eager = map_response_to_sg_detector(response, **kwargs)
 
     assert isinstance(lazy.detector_response.data, da.Array)
     xr.testing.assert_allclose(lazy.compute(), eager)
@@ -128,7 +125,6 @@ def test_map_response_to_sg_detector_integrates_over_detector_pixels():
 
     mapped = map_response_to_sg_detector(
         response,
-        171 * u.AA,
         number_of_slits=1,
         dispersion=0.01 * u.AA / u.pix,
         detector_pixels=100,
@@ -140,7 +136,7 @@ def test_map_response_to_sg_detector_integrates_over_detector_pixels():
 
 
 def test_map_response_to_sg_detector_uses_muse_defaults():
-    mapped = map_response_to_sg_detector(_spectral_response(), 171 * u.AA)
+    mapped = map_response_to_sg_detector(_spectral_response(), channel=17.1 * u.nm)
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
     assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
@@ -155,12 +151,14 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
         expected_start + (DEFAULTS_MUSE.pixels_SG.to_value(u.pix) - 1) * dispersion
     )
+    assert mapped.channel.item() == 171
+    assert mapped.channel.attrs["units"] == "Angstrom"
 
 
 def test_map_response_to_sg_detector_gives_contaminants_a_line_reference():
     mapped = map_response_to_sg_detector(
         _spectral_response(contaminants=True),
-        171 * u.AA,
+        channel=171 * u.AA,
         number_of_slits=1,
         detector_pixels=1,
         wavelength_start=171 * u.AA,
@@ -178,7 +176,7 @@ def test_map_response_to_sg_detector_preserves_invalid_physical_line_wavelength(
     else:
         response = response.assign_coords(component_kind=("line", component_kind))
 
-    mapped = map_response_to_sg_detector(response, 171 * u.AA, number_of_slits=1, detector_pixels=1)
+    mapped = map_response_to_sg_detector(response, channel=171 * u.AA, number_of_slits=1, detector_pixels=1)
 
     np.testing.assert_allclose(mapped.line_wavelength, [171.073, np.nan])
 
@@ -189,7 +187,6 @@ def test_map_response_to_sg_detector_preserves_input_nan():
 
     mapped = map_response_to_sg_detector(
         response,
-        171 * u.AA,
         number_of_slits=1,
         dispersion=0.01 * u.AA / u.pix,
         detector_pixels=response.sizes["wavelength_bin"],
@@ -205,7 +202,7 @@ def test_map_response_to_sg_detector_requires_effective_area():
     response.spectral_response.attrs["units"] = "1e-27 erg cm3 / (Angstrom s sr)"
 
     with pytest.raises(ValueError, match="convertible"):
-        map_response_to_sg_detector(response, 171 * u.AA)
+        map_response_to_sg_detector(response, channel=171 * u.AA)
 
 
 @pytest.mark.parametrize(
@@ -258,7 +255,24 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         kwargs["number_of_slits"] = 0
 
     with pytest.raises(error, match=match):
-        map_response_to_sg_detector(response, channel, **kwargs)
+        map_response_to_sg_detector(response, channel=channel, **kwargs)
+
+
+def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel():
+    with pytest.raises(
+        ValueError,
+        match="missing: number_of_slits, dispersion, detector_pixels, wavelength_start",
+    ):
+        map_response_to_sg_detector(_spectral_response())
+
+    with pytest.raises(ValueError, match="missing: slit_spacing"):
+        map_response_to_sg_detector(
+            _spectral_response(),
+            number_of_slits=2,
+            dispersion=0.1 * u.AA / u.pix,
+            detector_pixels=4,
+            wavelength_start=170 * u.AA,
+        )
 
 
 def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector_axis():
@@ -440,7 +454,7 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
     spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
     response = map_response_to_sg_detector(
         spectral,
-        171 * u.AA,
+        channel=171 * u.AA,
         number_of_slits=2,
         dispersion=0.01 * u.AA / u.pix,
         slit_spacing=2 * u.pix,
