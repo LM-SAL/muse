@@ -8,7 +8,7 @@ the 108, 171, and 284 Angstrom bands and map them onto all
 35 MUSE spectrograph slits.
 
 We will use the default per-channel effective areas
-(``DEFAULTS_MUSE.main_line_effective_area_sg``) and CHIANTI line lists from the
+(``DEFAULTS_MUSE.main_line_effective_area_SG``) and CHIANTI line lists from the
 :ref:`previous step <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`.
 
 To see how the response changes with other parameters — an electron-density
@@ -117,7 +117,7 @@ for band, config in bands.items():
     )
     line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
     line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
-    spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=band).item()
+    spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item()
     lower = band - 35 / spectral_order
     upper = band + 35 / spectral_order
     wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
@@ -125,9 +125,9 @@ for band, config in bands.items():
         line_list,
         wavelength_grid,
         main_lines=config["main_lines"],
-        instrumental_width=u.Quantity(DEFAULTS_MUSE.instrumental_width_sg.sel(channel=band).data),
+        instrumental_width=u.Quantity(DEFAULTS_MUSE.instrumental_width_SG.sel(channel=band).data),
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
-        effective_area=DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=band),
+        effective_area=DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band),
     )
     # Chunk over Doppler velocity so the detector mapping stays lazy
     waveband_response = waveband_response.chunk({"doppler_velocity": 10})

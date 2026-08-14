@@ -48,7 +48,7 @@ waveband_response = create_spectral_response(
     np.arange(194.5, 195.7, 0.01) * u.AA,
     main_lines=["Fe XII 195.119", "Fe XII 195.179"],
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
-    effective_area=DEFAULTS_MUSE.main_line_effective_area_ci.sel(ci_channel=channel.to_value(u.AA)),
+    effective_area=DEFAULTS_MUSE.main_line_effective_area_CI.sel(channel=channel.to_value(u.AA)),
 )
 
 ##############################################################################

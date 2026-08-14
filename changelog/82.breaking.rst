@@ -1,0 +1,12 @@
+``InstrumentDefaults`` names now capitalize the SG/CI detector shorthands consistently:
+``main_line_effective_area_sg``/``_ci`` → ``main_line_effective_area_SG``/``_CI``,
+``ccd_gain_sg``/``_ci`` → ``ccd_gain_SG``/``_CI``,
+``pair_creation_energy_sg``/``_ci`` → ``pair_creation_energy_SG``/``_CI``,
+``instrumental_width_sg`` → ``instrumental_width_SG``,
+``pixels_between_slits`` → ``pixels_between_slits_SG``,
+``channel_spectral_order`` → ``channel_spectral_order_SG``. The CI calibration
+DataArrays now use the plain ``channel`` dimension instead of ``ci_channel``, matching
+the SG calibrations (each detector keeps its own channel set). The ``detector`` selector of
+`~muse.instrument.transform_response_units` is now case-insensitive (``"SG"``/``"CI"``).
+No compatibility aliases; saved response files and their generic ``channel`` coordinate
+are unchanged.

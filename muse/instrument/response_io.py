@@ -169,7 +169,7 @@ def read_response(
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_sg`
+        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_SG`
         selected by the response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
@@ -237,7 +237,7 @@ def read_response(
             msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
             raise ValueError(msg)
         try:
-            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=r.channel).data)
+            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=r.channel).data)
         except KeyError:
             msg = f"unsupported MUSE SG channel(s) {np.unique(r.channel.values).tolist()}; pass gain explicitly"
             raise ValueError(msg) from None
@@ -442,7 +442,7 @@ def load_and_concat_responses(
         datasets = []
         for filename, channel in zip(response_files, channels, strict=True):
             try:
-                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_sg.sel(channel=channel).data)
+                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=channel).data)
             except KeyError:
                 msg = f"unsupported MUSE SG channel {channel}"
                 raise ValueError(msg) from None

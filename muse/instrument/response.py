@@ -150,10 +150,10 @@ def map_response_to_sg_detector(
     channel_value = None
     spectral_order = None
     if channel is not None:
-        channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.channel_spectral_order.channel, "sg")
-        spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=channel_value).item()
+        channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.channel_spectral_order_SG.channel, "sg")
+        spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=channel_value).item()
         number_of_slits = DEFAULTS_MUSE.number_of_slits_SG if number_of_slits is None else number_of_slits
-        slit_spacing = DEFAULTS_MUSE.pixels_between_slits if slit_spacing is None else slit_spacing
+        slit_spacing = DEFAULTS_MUSE.pixels_between_slits_SG if slit_spacing is None else slit_spacing
         detector_pixels = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix)) if detector_pixels is None else detector_pixels
         wavelength_start = (
             u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel_value).data)
