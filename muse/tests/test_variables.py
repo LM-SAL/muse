@@ -16,7 +16,7 @@ from muse.variables_schema import InstrumentDefaults
 
 def test_instrument_defaults_reject_top_level_reassignment():
     with pytest.raises(FrozenInstanceError, match="can't set attribute"):
-        DEFAULTS_MUSE.ccd_gain_sg = 20 * u.electron / u.DN
+        DEFAULTS_MUSE.ccd_gain_SG = 20 * u.electron / u.DN
 
 
 def test_instrument_mapping_fields_are_read_only_and_copied():
@@ -86,14 +86,14 @@ def test_instrument_defaults_use_evolve_for_overrides():
 
 
 def test_ci_calibration_defaults_cover_both_channels():
-    np.testing.assert_array_equal(DEFAULTS_MUSE.ccd_gain_ci.ci_channel, [195, 304])
-    np.testing.assert_allclose(DEFAULTS_MUSE.ccd_gain_ci.data.value, [10.0, 10.0])
-    np.testing.assert_array_equal(DEFAULTS_MUSE.main_line_effective_area_ci.ci_channel, [195, 304])
-    np.testing.assert_allclose(DEFAULTS_MUSE.main_line_effective_area_ci.data.value, [4.55, 4.55])
+    np.testing.assert_array_equal(DEFAULTS_MUSE.ccd_gain_CI.channel, [195, 304])
+    np.testing.assert_allclose(DEFAULTS_MUSE.ccd_gain_CI.data.value, [10.0, 10.0])
+    np.testing.assert_array_equal(DEFAULTS_MUSE.main_line_effective_area_CI.channel, [195, 304])
+    np.testing.assert_allclose(DEFAULTS_MUSE.main_line_effective_area_CI.data.value, [4.55, 4.55])
 
 
 def test_instrumental_width_sg():
-    width = DEFAULTS_MUSE.instrumental_width_sg
+    width = DEFAULTS_MUSE.instrumental_width_SG
 
     np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm)
     np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), 0.0815 / gaussian_sigma_to_fwhm / 2)
@@ -144,15 +144,15 @@ def test_instrument_quantity_converter_normalizes_units():
             coords={"channel": [108, 171, 284]},
             dims="channel",
         ),
-        main_line_effective_area_ci=xr.DataArray(
+        main_line_effective_area_CI=xr.DataArray(
             [4.55e-4] * u.m**2,
-            coords={"ci_channel": [195]},
-            dims="ci_channel",
+            coords={"channel": [195]},
+            dims="channel",
         ),
-        pair_creation_energy_ci=xr.DataArray(
+        pair_creation_energy_CI=xr.DataArray(
             [0.00365, 0.00365] * u.keV / u.electron,
-            coords={"ci_channel": [195, 304]},
-            dims="ci_channel",
+            coords={"channel": [195, 304]},
+            dims="channel",
         ),
         lpi={284: 70 / imperial.inch},
     )
@@ -162,10 +162,10 @@ def test_instrument_quantity_converter_normalizes_units():
     assert defaults.main_lines_SG_wavelength["Fe IX 171.073"].unit == u.AA
     assert defaults.target_doppler_velocity["QS"].unit == u.km / u.s
     assert defaults.initial_wavelength_SG.data.unit == u.AA
-    assert defaults.main_line_effective_area_ci.data.unit == u.cm**2
-    assert defaults.pair_creation_energy_ci.data.unit == u.eV / u.electron
-    np.testing.assert_allclose(defaults.main_line_effective_area_ci.data.value, [4.55])
-    np.testing.assert_allclose(defaults.pair_creation_energy_ci.data.value, [3.65, 3.65])
+    assert defaults.main_line_effective_area_CI.data.unit == u.cm**2
+    assert defaults.pair_creation_energy_CI.data.unit == u.eV / u.electron
+    np.testing.assert_allclose(defaults.main_line_effective_area_CI.data.value, [4.55])
+    np.testing.assert_allclose(defaults.pair_creation_energy_CI.data.value, [3.65, 3.65])
     assert defaults.lpi[284].unit == 1 / imperial.inch
 
 
@@ -183,30 +183,30 @@ def test_instrument_defaults_validate_spectral_channels():
     mismatched_order = xr.DataArray([2, 1], coords={"channel": [108, 284]}, dims="channel")
 
     with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order=mismatched_order)
+        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order_SG=mismatched_order)
 
     order = xr.DataArray([2, 1], coords={"channel": [108, 171]}, dims="channel")
     with pytest.raises(ValueError, match="bands_SG unique channels"):
-        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order=order, bands_SG=[108, 284] * u.AA)
+        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order_SG=order, bands_SG=[108, 284] * u.AA)
 
     # Every per-channel DataArray field is checked, not just the two spectral ones.
     mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
     with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(initial_wavelength_SG=initial, pair_creation_energy_sg=mismatched_pair_energy)
+        InstrumentDefaults(initial_wavelength_SG=initial, pair_creation_energy_SG=mismatched_pair_energy)
 
 
 @pytest.mark.parametrize(
     ("field", "unit"),
     [
-        ("ccd_gain_ci", u.electron / u.DN),
-        ("main_line_effective_area_ci", u.cm**2),
-        ("pair_creation_energy_ci", u.eV / u.electron),
+        ("ccd_gain_CI", u.electron / u.DN),
+        ("main_line_effective_area_CI", u.cm**2),
+        ("pair_creation_energy_CI", u.eV / u.electron),
     ],
 )
-def test_ci_calibrations_require_ci_channel(field, unit):
-    calibration = xr.DataArray([1] * unit, coords={"channel": [195]}, dims="channel")
+def test_ci_calibrations_require_channel_dimension(field, unit):
+    calibration = xr.DataArray([1] * unit, coords={"wavelength": [195]}, dims="wavelength")
 
-    with pytest.raises(ValueError, match=rf"{field} must have a 'ci_channel' dimension"):
+    with pytest.raises(ValueError, match=rf"{field} must have a 'channel' dimension"):
         InstrumentDefaults(**{field: calibration})
 
 

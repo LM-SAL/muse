@@ -59,7 +59,7 @@ def create_spectral_response(
     effective_area : `xarray.DataArray`, optional
         Either a one-dimensional effective-area curve with a unit-bearing
         ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
-        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=171)``)
+        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=171)``)
         applied uniformly across the wavelength grid. If `None`, the response
         is not scaled by effective area.
     include_contaminants : `bool`, optional
@@ -257,11 +257,11 @@ def _effective_area_in_canonical_units(effective_area):
     if not isinstance(effective_area, xr.DataArray):
         msg = (
             "effective_area must be an xarray.DataArray, "
-            "e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...)"
+            "e.g. DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=...)"
         )
         raise TypeError(msg)
     if effective_area.ndim == 0:
-        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...)) applies
+        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=...)) applies
         # uniformly, so it stays zero-dimensional and simply multiplies the response.
         data = effective_area.data
         units = effective_area.attrs.get("units")

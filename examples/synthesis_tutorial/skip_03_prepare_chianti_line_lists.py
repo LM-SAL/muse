@@ -76,7 +76,7 @@ bands = {
 # ``muse[chianti]`` so that all optional dependencies are installed.
 
 for band, config in bands.items():
-    spectral_order = DEFAULTS_MUSE.channel_spectral_order.sel(channel=band).item()
+    spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item()
     wavelength_range = [band - 35 / spectral_order, band + 35 / spectral_order] * u.AA
     line_list = create_chianti_line_list(
         temperature=temperature,

@@ -145,8 +145,8 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     dispersion = (
         2
         * DEFAULTS_MUSE.spectral_slit_separation_SG
-        / DEFAULTS_MUSE.pixels_between_slits
-        / DEFAULTS_MUSE.channel_spectral_order.sel(channel=171).item()
+        / DEFAULTS_MUSE.pixels_between_slits_SG
+        / DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=171).item()
     ).to_value(u.AA / u.pix)
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=-1).item() == pytest.approx(
         expected_start + (DEFAULTS_MUSE.pixels_SG.to_value(u.pix) - 1) * dispersion

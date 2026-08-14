@@ -319,7 +319,7 @@ def test_effective_area_units_convert_without_mutating_input():
 
 
 def test_scalar_effective_area_matches_flat_curve():
-    # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area_sg.sel(channel=...))
+    # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=...))
     # must scale the response exactly like a flat curve.
     line_list = synthetic_line_list(1)
     flat = synthetic_effective_area(values=np.full(3, 4.3))

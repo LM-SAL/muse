@@ -249,6 +249,10 @@ class InstrumentDefaults:
     instrument needs (see `muse.variables` for the MUSE instance). Each field
     documents its meaning and the unit it is normalized to.
 
+    Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
+    the ``_SG``/``_CI`` field suffix identifies the detector, and the two channel sets
+    are independent of each other.
+
     Fields are validated and normalized on construction. Instances prevent top-level
     attribute reassignment; create modified copies with `attrs.evolve`.
 
@@ -320,7 +324,7 @@ class InstrumentDefaults:
     Number of slits in the SG.
     """
 
-    pixels_between_slits: u.Quantity | None = field(default=None, converter=_quantity(u.pixel))
+    pixels_between_slits_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pixel))
     """
     Number of pixels between slits for the SG.
     """
@@ -337,7 +341,7 @@ class InstrumentDefaults:
     Number of steps per raster for the SG.
     """
 
-    main_line_effective_area_sg: xr.DataArray | None = field(
+    main_line_effective_area_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
@@ -346,13 +350,13 @@ class InstrumentDefaults:
     Normalized to square centimeters.
     """
 
-    main_line_effective_area_ci: xr.DataArray | None = field(
+    main_line_effective_area_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
     Effective area of the main line for the CI.
 
-    Normalized to square centimeters and keyed by ``ci_channel``.
+    Normalized to square centimeters and keyed by ``channel``.
     """
 
     # Diffraction parameters
@@ -410,17 +414,17 @@ class InstrumentDefaults:
     Data compression level.
     """
 
-    ccd_gain_sg: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    ccd_gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     SG CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    ccd_gain_ci: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    ccd_gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
-    CI CCD gain in electrons per DN, keyed by ``ci_channel``.
+    CI CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    pair_creation_energy_sg: xr.DataArray | None = field(
+    pair_creation_energy_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
@@ -428,12 +432,12 @@ class InstrumentDefaults:
     ``channel``.
     """
 
-    pair_creation_energy_ci: xr.DataArray | None = field(
+    pair_creation_energy_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
     Mean energy that frees one electron-hole pair in the CI detector, keyed by
-    ``ci_channel``.
+    ``channel``.
 
     CI calibration fields may cover different channel sets.
     """
@@ -560,7 +564,7 @@ class InstrumentDefaults:
     Values normalized to Angstroms.
     """
 
-    channel_spectral_order: xr.DataArray | None = field(default=None, converter=_data_array(), eq=_data_array_eq)
+    channel_spectral_order_SG: xr.DataArray | None = field(default=None, converter=_data_array(), eq=_data_array_eq)
     """
     Spectral order of main line for each band (channel)
     """
@@ -587,13 +591,21 @@ class InstrumentDefaults:
         _validate_matching_keys(self.lpi, "lpi", self.mesh_transmission, "mesh_transmission")
 
     def _validate_channel_fields(self):
-        for name in ("ccd_gain_ci", "main_line_effective_area_ci", "pair_creation_energy_ci"):
-            _channel_coordinates(getattr(self, name), name, dimension="ci_channel")
+        # SG and CI calibrations share the "channel" dimension name but carry
+        # independent channel sets. The _CI suffix identifies a detector's fields:
+        # CI DataArrays are checked for the dimension and excluded from the SG
+        # cross-field matching below.
+        array_fields = {
+            a.name: value for a in fields(type(self)) if isinstance(value := getattr(self, a.name), xr.DataArray)
+        }
+        for name, value in array_fields.items():
+            if name.endswith("_CI"):
+                _channel_coordinates(value, name, dimension="channel")
 
         channels_by_field = {
             name: _channel_coordinates(value, name)
-            for name, value in ((a.name, getattr(self, a.name)) for a in fields(type(self)))
-            if isinstance(value, xr.DataArray) and "channel" in value.dims
+            for name, value in array_fields.items()
+            if not name.endswith("_CI") and "channel" in value.dims
         }
         reference, channels = next(iter(channels_by_field.items()), (None, None))
         for name, field_channels in channels_by_field.items():
@@ -630,7 +642,7 @@ class InstrumentDefaults:
             raise ValueError(msg)
 
     @property
-    def instrumental_width_sg(self):
+    def instrumental_width_SG(self):
         """
         Instrumental width sigma in Angstroms.
 
@@ -638,7 +650,7 @@ class InstrumentDefaults:
         B. Value has spectral plate scale baked in and should be calculated using a
         future property.
         """
-        if self.channel_spectral_order is None:
-            msg = "instrumental_width_sg requires channel_spectral_order"
+        if self.channel_spectral_order_SG is None:
+            msg = "instrumental_width_SG requires channel_spectral_order_SG"
             raise ValueError(msg)
-        return 0.0815 * u.AA / gaussian_sigma_to_fwhm / self.channel_spectral_order
+        return 0.0815 * u.AA / gaussian_sigma_to_fwhm / self.channel_spectral_order_SG
