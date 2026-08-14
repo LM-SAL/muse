@@ -14,6 +14,7 @@ from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response_io import read_response
 from muse.instrument.spectral import create_spectral_response
 from muse.synthesis.synthesis import vdem_synthesis
+from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -405,7 +406,7 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
     "ignore:numpy.ndarray size changed:RuntimeWarning",
     "ignore:Setting the shape on a NumPy array has been deprecated in NumPy:DeprecationWarning: ",
 )
-def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_path):
+def test_public_response_workflow_composes_through_moment_analysis(monkeypatch, tmp_path):
     generated_line_list = xr.Dataset(
         {
             "wavelength": ("trans_index", [171.073], {"units": "Angstrom"}),
@@ -484,3 +485,25 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
     assert np.isfinite(synthesized.flux).all()
     assert bool((synthesized.flux > 0).any())
     assert synthesized.line_wavelength.item() == pytest.approx(171.073)
+
+    # Moment analysis needs the per-slit detector_wavelength coordinate, so keep the
+    # slit dimension out of the contraction (the tutorial-05/06 workflow).
+    spectrum = vdem_synthesis(raster, loaded_response, sum_over=("logT", "doppler_velocity"))
+    moments = calculate_moments(wavelength_to_doppler(spectrum))
+
+    assert moments["0th"].dims == ("slit", "line")
+    assert u.Unit(moments["0th"].attrs["units"]) == u.Unit("ph / s")
+    assert moments["1st"].attrs["units"] == "km / s"
+    assert moments["2nd"].attrs["units"] == "km / s"
+    for name in ("0th", "1st", "2nd"):
+        assert np.isfinite(moments[name]).all()
+    assert [entry.partition("(")[0] for entry in moments.attrs["HISTORY"]] == [
+        "create_chianti_line_list",
+        "create_spectral_response",
+        "transform_response_units",
+        "map_response_to_sg_detector",
+        "read_response",
+        "vdem_synthesis",
+        "wavelength_to_doppler",
+        "calculate_moments",
+    ]
