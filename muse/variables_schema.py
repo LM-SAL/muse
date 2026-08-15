@@ -245,8 +245,10 @@ class InstrumentDefaults:
     Container of instrument properties used by functions and methods within the muse
     library; not a general-purpose instrument defaults class.
 
-    Every parameter is optional and defaults to `None`; populate the ones a given
-    instrument needs (see `muse.variables` for the MUSE instance). Each field
+    Every parameter is optional; most default to `None`, while the response-creation
+    fields (`electron_density`, `electron_pressure`, `response_logT_min`,
+    `response_method`, `normalization`) carry physical defaults. Populate the ones a
+    given instrument needs (see `muse.variables` for the MUSE instance). Each field
     documents its meaning and the unit it is normalized to.
 
     Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
@@ -542,6 +544,8 @@ class InstrumentDefaults:
     Type of interpolation in the response creation.
     """
 
+    # Duplicates _RESPONSE_NORMALIZATION (muse/instrument/spectral.py), which is the
+    # value the pipeline actually writes; keep the two in sync.
     normalization: float = field(default=1e-27, converter=float)
     """
     Normalization in the response function.

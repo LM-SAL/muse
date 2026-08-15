@@ -19,7 +19,49 @@ __all__ = [
     "fake_vdem",
     "fake_vdem_offgrid",
     "fake_vdem_single_doppler_velocity",
+    "synthetic_effective_area",
+    "synthetic_line_list",
 ]
+
+
+def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
+    """
+    Return a minimal deterministic iron line list.
+    """
+    wavelength = np.linspace(170.6, 171.4, n_lines) if wavelength is None else np.asarray(wavelength, dtype=float)
+    n_lines = wavelength.size
+    logT = np.array([5.8, 6.0, 6.2]) if logT is None else np.asarray(logT, dtype=float)
+    peaks = np.linspace(1.0, 0.5, n_lines)
+    gofnt = peaks[np.newaxis, :] * np.exp(-((logT[:, np.newaxis] - 6.0) ** 2) / 0.02) * 1e-25
+    return xr.Dataset(
+        {
+            "wavelength": ("trans_index", wavelength, {"units": "Angstrom"}),
+            "atomic_number": ("trans_index", np.full(n_lines, 26)),
+            "gofnt": (("logT", "trans_index"), gofnt, {"units": "erg cm3 / (s sr)"}),
+            "full_name": ("trans_index", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
+        },
+        coords={"logT": logT},
+    )
+
+
+def synthetic_effective_area(
+    values=(1.0, 1.0, 1.0),
+    wavelength=(169.0, 171.0, 173.0),
+    *,
+    area_units="cm2",
+    wavelength_units="Angstrom",
+):
+    """
+    Return a minimal deterministic effective area.
+    """
+    area_attrs = {} if area_units is None else {"units": area_units}
+    wavelength_attrs = {} if wavelength_units is None else {"units": wavelength_units}
+    return xr.DataArray(
+        np.asarray(values),
+        dims="wavelength",
+        coords={"wavelength": ("wavelength", np.asarray(wavelength), wavelength_attrs)},
+        attrs=area_attrs,
+    )
 
 
 def _clean_version(version: str) -> str:

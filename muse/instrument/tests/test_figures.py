@@ -4,8 +4,7 @@ import numpy as np
 import astropy.units as u
 
 from muse.instrument.spectral import create_spectral_response
-from muse.instrument.tests.test_spectral import synthetic_effective_area, synthetic_line_list
-from muse.tests.helpers import figure_test
+from muse.tests.helpers import figure_test, synthetic_effective_area, synthetic_line_list
 
 WAVELENGTH_GRID = np.linspace(170.75, 171.25, 501) * u.AA
 

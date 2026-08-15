@@ -340,9 +340,9 @@ def calculate_moments(
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
 
     if vmax is not None:
-        velocity = spectrum[doppler_name]
-        velocity_mask = xr.where(np.abs(velocity) > vmax, 0.0, 1.0)
-        masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
+        # Negated form on purpose: NaN Doppler (contaminant lines) must stay included,
+        # matching the old 0/1 mask, and `<= vmax` would zero it instead.
+        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > vmax), 0)
         masked_spectrum = spectrum.assign({integration_name: masked_flux})
         if vmask is not None:
             peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
