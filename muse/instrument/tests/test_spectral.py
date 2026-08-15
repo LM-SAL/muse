@@ -4,15 +4,18 @@ Tests for CHIANTI-line Gaussian spectral responses.
 
 from functools import partial
 
+import attrs
 import numpy as np
 import pytest
 import xarray as xr
 
 import astropy.units as u
 
+import muse.instrument.spectral as spectral_module
 from muse.instrument.spectral import _create_wavelength_response as _create_wavelength_response_impl
 from muse.instrument.spectral import _evaluate_gaussian_response, create_spectral_response
 from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
+from muse.variables import DEFAULTS_MUSE
 
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
@@ -40,6 +43,25 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.attrs["HISTORY"][1].startswith("create_spectral_response(")
     assert response.attrs["Chianti"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
+
+
+def test_spectral_response_uses_default_normalization(monkeypatch):
+    defaults = attrs.evolve(DEFAULTS_MUSE, normalization=2e-27)
+    monkeypatch.setattr(spectral_module, "DEFAULTS_MUSE", defaults)
+    line_list = synthetic_line_list(1)
+
+    response = create_spectral_response(
+        line_list,
+        DEFAULT_WAVELENGTH_GRID,
+        main_lines=[line_list.full_name[0].item()],
+    )
+
+    assert response.attrs["normalization"] == defaults.normalization
+    dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
+    integral = (response.spectral_response.isel(line=0) * dlam).sum("wavelength_bin")
+    expected = line_list.gofnt.isel(trans_index=0) / defaults.normalization
+    np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
+    assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
 
 
 def test_public_contract_can_sum_all_lines_as_contaminants():

@@ -33,7 +33,7 @@ print(vdem_raster)
 # For multi-line analysis, we load the response functions for several spectral
 # lines and concatenate them.
 
-output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", Path(__file__).parent / "artifacts"))
+output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
 response_files = [
     fetch_example_data(fname)

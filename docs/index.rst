@@ -41,7 +41,7 @@ None of this observation-handling functionality exists yet.
           :maxdepth: 1
 
           muse
-          tutorial/index
+          installation
           generated/gallery/index
 
     .. grid-item-card::

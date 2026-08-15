@@ -48,7 +48,7 @@ def format_docstring(defaults_name, /, **param_to_field):
     defaults class, since the defaults object itself is an instance and so has no
     documentation target of its own.
     """
-    from muse import variables  # NOQA: PLC0415 - not circular; deferred so the decorator resolves live values
+    from muse import variables  # NOQA: PLC0415
 
     defaults = getattr(variables, defaults_name)
     schema = type(defaults)

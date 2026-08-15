@@ -87,7 +87,8 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
     Returns
     -------
     `xarray.DataArray`
-        Coordinate values in ``target_unit`` with updated ``units`` attrs.
+        Coordinate values in ``target_unit`` with updated ``units`` attrs. Coordinates
+        attached to the source coordinate are not retained.
     """
     target_unit = u.Unit(target_unit)
     unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)

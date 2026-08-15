@@ -1,4 +1,4 @@
-.. _muse_changelog:
+.. _muse-changelog:
 
 *********
 Changelog

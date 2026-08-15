@@ -47,7 +47,7 @@ change_logging_level("INFO")
 
 abundance = "sun_coronal_2021_chianti"
 cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
-output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", Path(__file__).parent / "artifacts"))
+output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
 bands = {
     108: {

@@ -130,6 +130,34 @@ def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
     assert moments["0th"].attrs["units"] == "ph / s"
 
 
+def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
+    spectrum = xr.Dataset(
+        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
+        coords={
+            "detector_x_pixel": [0, 1],
+            "doppler_velocity": (("detector_x_pixel",), [np.nan, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
+
+    assert moments["0th"].item() == 5.0
+
+
+@pytest.mark.parametrize("vmax", [None, 50])
+def test_calculate_moments_rejects_unrelated_doppler_dim(vmax) -> None:
+    spectrum = xr.Dataset(
+        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
+        coords={
+            "detector_x_pixel": [0, 1],
+            "doppler_velocity": (("other",), [0.0, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"dimensions must be a subset"):
+        synthesis_utils.calculate_moments(spectrum, vmax=vmax)
+
+
 def test_calculate_moments_vmask_keeps_peak_window() -> None:
     spectrum = _tiny_moment_spectrum()
 

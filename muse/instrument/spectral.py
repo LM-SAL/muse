@@ -13,10 +13,10 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
+from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["create_spectral_response"]
 
-_RESPONSE_NORMALIZATION = 1e-27
 # The Gaussian is exactly zero beyond this point in float64.
 _GAUSSIAN_WINDOW_SIGMA = 40
 _GAUSSIAN_EXPRESSION = "scaled * exp(-0.5 * (shift / width) ** 2) / gaussian_norm / width"
@@ -230,13 +230,13 @@ def _create_wavelength_response(
         if "wavelength" in effective_area.dims:
             scaling = effective_area.interp(wavelength=wavelength_grid).fillna(0).rename(wavelength="wavelength_grid")
         ds["spectral_response"] = ds.spectral_response * scaling
-        ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**5 / u.s / u.sr / u.AA)
+        ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**5 / u.s / u.sr / u.AA)
     else:
-        ds.spectral_response.attrs["units"] = str(_RESPONSE_NORMALIZATION * u.erg * u.cm**3 / u.s / u.sr / u.AA)
+        ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**3 / u.s / u.sr / u.AA)
 
     ds = ds.assign_coords(wavelength_grid=wavelength_grid.assign_attrs(units=str(u.AA)))
 
-    ds.attrs["normalization"] = _RESPONSE_NORMALIZATION
+    ds.attrs["normalization"] = DEFAULTS_MUSE.normalization
     return ds
 
 
@@ -477,7 +477,7 @@ def _evaluate_gaussian_response(
     window_grid = wavelength_grid.isel(wavelength_bin=slice(start, stop))
     shift = (window_grid - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(doppler_width, shift)
-    gofnt_scaled = (gofnt / _RESPONSE_NORMALIZATION).broadcast_like(width)
+    gofnt_scaled = (gofnt / DEFAULTS_MUSE.normalization).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     wavelength_axis = gofnt_scaled.get_axis_num("wavelength_bin")
     if accumulator is None:

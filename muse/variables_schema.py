@@ -544,8 +544,6 @@ class InstrumentDefaults:
     Type of interpolation in the response creation.
     """
 
-    # Duplicates _RESPONSE_NORMALIZATION (muse/instrument/spectral.py), which is the
-    # value the pipeline actually writes; keep the two in sync.
     normalization: float = field(default=1e-27, converter=float)
     """
     Normalization in the response function.
