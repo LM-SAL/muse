@@ -194,11 +194,13 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
     src = fake_legacy_response_file()
     src = src.assign_coords(slit=src.slit.values + 1)
+    expected = src.SG_resp.isel(slit=slice(3)).values
     path = _write(src, tmp_path / "resp.nc", "nc")
 
     r = read_response(path, slit=_slit(3))
 
     np.testing.assert_array_equal(r.slit.values, np.arange(3))
+    np.testing.assert_allclose(r.detector_response.values, expected)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])

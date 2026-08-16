@@ -10,10 +10,11 @@ repos:
     hooks:
       - id: docformatter
         args: ["--black", "--pre-summary-newline", "--pre-summary-space", "--make-summary-multi-line", "--close-quotes-on-newline", "--in-place"]
+        additional_dependencies: ["tomli"]
         # Define here once and then reference using YAML anchor
         exclude: &exclude_dirs ^muse/(data|extern)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.16.2"
+    rev: "v0.16.3"
     hooks:
       - id: ruff-check
         args: ["--fix", "--unsafe-fixes"]
@@ -22,7 +23,7 @@ repos:
       - id: ruff-format
         exclude: *exclude_dirs
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: "v0.0.69"
+    rev: "v0.0.72"
     hooks:
       - id: ty
         stages: [manual]

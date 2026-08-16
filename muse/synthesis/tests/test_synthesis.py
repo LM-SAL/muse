@@ -168,6 +168,16 @@ def test_vdem_synthesis_keeps_conflicting_scalar_coords_from_raster(response, vd
     assert str(result.instrument.values) == "muse-raster"
 
 
+def test_vdem_synthesis_preserves_response_output_coords(response, vdem) -> None:
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11).assign_coords(
+        channel=("line", np.full(response.sizes["line"], 999))
+    )
+
+    result = vdem_synthesis(raster, response)
+
+    np.testing.assert_array_equal(result.channel, response.channel)
+
+
 def test_vdem_synthesis_propagates_dataset_level_coords(response, vdem) -> None:
     # A raster coord living on a response-only output dim (so not attached to the
     # vdem variable) must still propagate to the output.

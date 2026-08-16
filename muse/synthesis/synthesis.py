@@ -225,12 +225,16 @@ def vdem_synthesis(
     # apply_ufunc drops coords the inputs disagree on and never materializes index
     # coords for bare dims.
     out_dims = set(ds.flux.dims)
-    restored = {
-        name: coord
-        for source in (response, raster)
-        for name, coord in source.coords.items()
-        if set(coord.dims) <= out_dims
-    }
+    # Response-only output dims own their coordinates; scalar conflicts keep raster metadata.
+    response_only_dims = set(response.detector_response.dims) - set(raster.vdem.dims)
+    restored = {name: coord for name, coord in raster.coords.items() if set(coord.dims) <= out_dims}
+    restored.update(
+        {
+            name: coord
+            for name, coord in response.coords.items()
+            if set(coord.dims) <= out_dims and (name not in restored or response_only_dims.intersection(coord.dims))
+        }
+    )
     restored |= {
         dim: (raster[dim] if dim in raster.vdem.dims else response[dim])
         for dim in ds.flux.dims
