@@ -1,0 +1,8 @@
+``muse.synthesis.vdem_synthesis`` now aligns the contraction by coordinate labels
+instead of purely by position. Shared indexed coordinates that do not match
+exactly (for example a response file storing ``logT`` as float32 against a
+float64 VDEM, or grids offset by interpolation drift), and shared dimensions
+that carry an index coordinate on only one input, now raise a ``ValueError``
+instead of silently contracting positionally. Regrid the response onto the
+VDEM's grid with ``muse.instrument.align_response_and_vdem`` before
+synthesizing. Output coordinates, their units, and attrs are unchanged.

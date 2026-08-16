@@ -1,7 +1,15 @@
+import gc
+import os
+import time
+import tracemalloc
+
+import dask
 import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
+
+import astropy.units as u
 
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_doppler_velocity
@@ -60,10 +68,13 @@ def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, vdem)
 
     assert isinstance(lazy.flux.data, da.Array)
     assert lazy.flux.data.npartitions <= reshaped_vdem.sizes["y"] * response.sizes["line"]
+    # ~309 tasks with the rechunk in place; deleting _single_chunk_over on either
+    # operand pairs chunks instead (960+ tasks), so bound the graph structurally.
+    assert len(dict(lazy.flux.data.__dask_graph__())) < 600
     np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
 
 
-def test_vdem_synthesis_contracts_values() -> None:
+def _coordless_inputs() -> tuple[xr.Dataset, xr.Dataset]:
     raster = xr.Dataset(
         {"vdem": (("logT", "doppler_velocity", "y"), np.arange(1.0, 9.0).reshape(2, 2, 2), {"units": "cm-5"})}
     )
@@ -80,11 +91,102 @@ def test_vdem_synthesis_contracts_values() -> None:
             "detector_wavelength": ("line", [100.0, 200.0], {"units": "Angstrom"}),
         },
     )
+    return raster, response
+
+
+def test_vdem_synthesis_contracts_values() -> None:
+    raster, response = _coordless_inputs()
 
     result = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
 
     assert result.flux.dims == ("y", "line")
     np.testing.assert_array_equal(result.flux, [[8.0, 19.0], [10.0, 24.0]])
+
+
+def test_vdem_synthesis_materializes_index_coordinates() -> None:
+    # Every output dim must carry an index coordinate even for coordinate-less
+    # inputs, so .sel(line=...) and index-aligned concat/merge keep working.
+    raster, response = _coordless_inputs()
+
+    result = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+
+    for dim in result.flux.dims:
+        assert dim in result.coords, f"{dim} has no index coordinate"
+    np.testing.assert_array_equal(result.y.values, [0, 1])
+    np.testing.assert_array_equal(result.line.values, [0, 1])
+
+
+def test_vdem_synthesis_rejects_misaligned_contraction_coordinates(response, vdem) -> None:
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response = response.assign_coords(logT=response.logT.values + 1e-9)
+
+    with pytest.raises(ValueError, match="align_response_and_vdem"):
+        vdem_synthesis(raster, response)
+
+
+def test_vdem_synthesis_rejects_one_sided_index_coordinates(response, vdem) -> None:
+    # A shared dim indexed on one input only bypasses join="exact" and would
+    # contract positionally against unordered labels; it must fail loudly.
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    bare = response.drop_vars("logT")
+
+    with pytest.raises(ValueError, match="'logT' has an index coordinate on only one input"):
+        vdem_synthesis(raster, bare)
+
+
+def test_vdem_synthesis_preserves_coordinate_attrs(response, vdem) -> None:
+    # Coordinate units must survive the contraction: downstream consumers
+    # (reshape_x_to_slit_step, match_fov) require units on the spatial coords.
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+
+    result = vdem_synthesis(raster, response)
+
+    assert result.y.attrs == raster.y.attrs
+    assert result.y.attrs["units"] == "arcsec"
+
+
+def test_vdem_synthesis_accepts_quantity_backed_data(response, vdem) -> None:
+    # Duck arrays (e.g. astropy Quantity from a units-aware pipeline) must contract
+    # like plain numpy instead of hitting einsum's subscripts-only Quantity path.
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    quantity_raster = raster.assign(vdem=raster.vdem.copy(data=u.Quantity(raster.vdem.data, copy=False)))
+
+    expected = vdem_synthesis(raster, response)
+    result = vdem_synthesis(quantity_raster, response)
+
+    np.testing.assert_array_equal(result.flux.values, expected.flux.values)
+
+
+def test_vdem_synthesis_keeps_conflicting_scalar_coords_from_raster(response, vdem) -> None:
+    # A coord both inputs carry with different values must survive with the
+    # raster's value (pre-refactor behavior), not silently vanish.
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11).assign_coords(instrument="muse-raster")
+    response = response.assign_coords(instrument="muse-response")
+
+    result = vdem_synthesis(raster, response)
+
+    assert str(result.instrument.values) == "muse-raster"
+
+
+def test_vdem_synthesis_preserves_response_output_coords(response, vdem) -> None:
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11).assign_coords(
+        channel=("line", np.full(response.sizes["line"], 999))
+    )
+
+    result = vdem_synthesis(raster, response)
+
+    np.testing.assert_array_equal(result.channel, response.channel)
+
+
+def test_vdem_synthesis_propagates_dataset_level_coords(response, vdem) -> None:
+    # A raster coord living on a response-only output dim (so not attached to the
+    # vdem variable) must still propagate to the output.
+    line_tags = [f"l{i}" for i in range(response.sizes["line"])]
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11).assign_coords(line_tag=("line", line_tags))
+
+    result = vdem_synthesis(raster, response)
+
+    assert list(result.line_tag.values) == line_tags
 
 
 def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> None:
@@ -98,12 +200,55 @@ def test_vdem_synthesis_preserves_internal_component_kind(response, vdem) -> Non
 
 
 def test_vdem_synthesis_torch_backend_matches_numpy(response, vdem) -> None:
+    pytest.importorskip("torch")
     reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     numpy_flux = vdem_synthesis(reshaped_vdem, response, backend="numpy").flux
     accel_flux = vdem_synthesis(reshaped_vdem, response, backend="torch").flux
 
     assert isinstance(accel_flux.data, np.ndarray)
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
+
+
+@pytest.mark.cost
+def test_vdem_synthesis_cost_regression(response, vdem) -> None:
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        pytest.skip("cost baselines need an uncontended machine; rerun with -n 0")
+    raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    response = response.isel(detector_x_pixel=np.arange(1024) % response.sizes["detector_x_pixel"]).assign_coords(
+        detector_x_pixel=np.arange(1024)
+    )
+    # Untraced baselines (2026-08-14, threads scheduler pinned to 4 workers):
+    # numpy 0.03 s/146 MiB, dask 0.19 s/514 MiB, chunked-response 0.14 s/508 MiB.
+    # Limits are deliberately wide for shared CI runners; graph-shape regressions are
+    # caught structurally by test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk.
+    cases = {
+        "numpy": (raster, response, 1.0, 300),
+        "dask": (raster.chunk({"logT": 5, "step": 4}), response, 2.0, 1024),
+        "chunked-response": (
+            raster.chunk({"step": 4}),
+            response.chunk({"logT": 1, "doppler_velocity": 2}),
+            2.0,
+            1024,
+        ),
+    }
+
+    for name, (case_raster, case_response, max_seconds, max_peak_mib) in cases.items():
+        with dask.config.set(scheduler="threads", num_workers=4):
+            vdem_synthesis(case_raster, case_response).flux.compute()  # warm caches and imports
+            gc.collect()
+            start = time.perf_counter()
+            vdem_synthesis(case_raster, case_response).flux.compute()
+            elapsed = time.perf_counter() - start
+            gc.collect()
+            tracemalloc.start()  # traced separately: tracing inflates wall-clock ~1.3x
+            try:
+                vdem_synthesis(case_raster, case_response).flux.compute()
+                peak_mib = tracemalloc.get_traced_memory()[1] / 1024**2
+            finally:
+                tracemalloc.stop()
+
+        assert elapsed < max_seconds, f"{name} synthesis took {elapsed:.2f} s (limit {max_seconds:.2f} s)"
+        assert peak_mib < max_peak_mib, f"{name} synthesis peaked at {peak_mib:.0f} MiB (limit {max_peak_mib} MiB)"
 
 
 def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
