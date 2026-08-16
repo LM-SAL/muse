@@ -1,0 +1,4 @@
+The SG instrumental FWHM is now a named calibration field,
+``InstrumentDefaults.instrumental_fwhm_SG`` (normalized to Angstroms), instead of a constant
+baked into the ``instrumental_width_SG`` property. The property now derives the sigma from the
+field and raises `ValueError` when the field is unset.

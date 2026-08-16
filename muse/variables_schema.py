@@ -569,6 +569,13 @@ class InstrumentDefaults:
     Spectral order of main line for each band (channel)
     """
 
+    instrumental_fwhm_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    """
+    Instrumental FWHM for the SG, with the spectral plate scale baked in.
+
+    Normalized to Angstroms.
+    """
+
     def __repr__(self) -> str:
         lines = []
         for attribute in fields(type(self)):
@@ -646,11 +653,10 @@ class InstrumentDefaults:
         """
         Instrumental width sigma in Angstroms.
 
-        FWHM in pixels converted to 1 sigma in Angstroms. Value, .0815, provided by Paul
-        B. Value has spectral plate scale baked in and should be calculated using a
-        future property.
+        ``instrumental_fwhm_SG`` converted to 1 sigma and divided by the channel
+        spectral order.
         """
-        if self.channel_spectral_order_SG is None:
-            msg = "instrumental_width_SG requires channel_spectral_order_SG"
+        if self.instrumental_fwhm_SG is None or self.channel_spectral_order_SG is None:
+            msg = "instrumental_width_SG requires instrumental_fwhm_SG and channel_spectral_order_SG"
             raise ValueError(msg)
-        return 0.0815 * u.AA / gaussian_sigma_to_fwhm / self.channel_spectral_order_SG
+        return self.instrumental_fwhm_SG / gaussian_sigma_to_fwhm / self.channel_spectral_order_SG

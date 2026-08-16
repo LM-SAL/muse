@@ -95,6 +95,9 @@ MUSE_DEFAULTS_DICT = {
         dims="channel",
     ),
     "channel_spectral_order_SG": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
+    # Value provided by Paul B.; spectral plate scale baked in. Replace with a measured
+    # calibration when one exists.
+    "instrumental_fwhm_SG": 0.0815 * u.AA,
     "main_line_effective_area_SG": xr.DataArray(
         np.array([2.6, 4.3, 0.87]) * u.cm**2,
         coords={"channel": [108, 171, 284]},
