@@ -13,7 +13,7 @@ from muse.instrument.linelist import create_chianti_line_list
 from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response_io import read_response
 from muse.instrument.spectral import create_spectral_response
-from muse.synthesis.synthesis import vdem_synthesis
+from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -405,7 +405,7 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
     "ignore:numpy.ndarray size changed:RuntimeWarning",
     "ignore:Setting the shape on a NumPy array has been deprecated in NumPy:DeprecationWarning: ",
 )
-def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_path):
+def test_public_response_workflow_composes_through_moment_analysis(monkeypatch, tmp_path):
     generated_line_list = xr.Dataset(
         {
             "wavelength": ("trans_index", [171.073], {"units": "Angstrom"}),
@@ -484,3 +484,48 @@ def test_public_response_workflow_maps_directly_into_synthesis(monkeypatch, tmp_
     assert np.isfinite(synthesized.flux).all()
     assert bool((synthesized.flux > 0).any())
     assert synthesized.line_wavelength.item() == pytest.approx(171.073)
+
+    # Moment analysis needs the per-slit detector_wavelength coordinate, so keep the
+    # slit dimension out of the contraction (the tutorial-05/06 workflow).
+    spectrum = vdem_synthesis(raster, loaded_response, sum_over=("logT", "doppler_velocity"))
+    moments = calculate_moments(wavelength_to_doppler(spectrum))
+
+    assert moments["0th"].dims == ("slit", "line")
+    assert u.Unit(moments["0th"].attrs["units"]) == u.Unit("ph / s")
+    assert moments["1st"].attrs["units"] == "km / s"
+    assert moments["2nd"].attrs["units"] == "km / s"
+    for name in ("0th", "1st", "2nd"):
+        assert np.isfinite(moments[name]).all()
+    assert moments.attrs["HISTORY"] == [
+        (
+            "create_chianti_line_list(temperature=[1000000.0], density=None, pressure=[3000000000000000.0], "
+            "abundance=test, wavelength_range=(170.0, 172.0), minimum_abundance=None, element_list=None, "
+            "ion_list=['fe_9'])"
+        ),
+        (
+            f"create_spectral_response(line_list=line_list, wavelength_grid={np.linspace(170.5, 171.5, 101)}, "
+            "main_lines=['Fe IX 171.073'], instrumental_width=0.0, doppler_velocity=[0.], nonthermal_velocity=None, "
+            "effective_area=effective_area, include_contaminants=False)"
+        ),
+        (
+            "transform_response_units(response=response, new_units=1e-27 cm5 ph / (Angstrom s), channel=171.0, "
+            "detector=sg, pixel_width=0.4, pixel_height=0.167, gain=10.0, pair_energy=3.65)"
+        ),
+        (
+            "map_response_to_sg_detector(response=response, channel=171.0, number_of_slits=2, dispersion=0.01, "
+            "slit_spacing=2.0, detector_pixels=5, wavelength_start=171.05)"
+        ),
+        (
+            f"read_response(response_file={path}, logT=None, doppler_velocity=None, slit=None, logT_method=nearest, "
+            "doppler_velocity_method=nearest, gain=[10.], chunked=False)"
+        ),
+        (
+            "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'doppler_velocity'), "
+            "cuda_device=None, backend=numpy)"
+        ),
+        "wavelength_to_doppler(response=response)",
+        (
+            "calculate_moments(spectrum=spectrum, moment_dim=detector_x_pixel, integration_name=flux, "
+            "doppler_name=doppler_velocity, vmax=None, vmask=None)"
+        ),
+    ]
