@@ -1,0 +1,2 @@
+The installation guide moved from ``tutorial/installation`` to a top-level ``installation``
+page and the tutorial wrapper page is gone.

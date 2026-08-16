@@ -1,4 +1,4 @@
-.. _muse_api:
+.. _muse-api:
 
 *************
 API Reference

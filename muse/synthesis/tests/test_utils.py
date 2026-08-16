@@ -8,13 +8,11 @@ import astropy.units as u
 import muse.synthesis.utils as synthesis_utils
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure
-from muse.transforms.transforms import reshape_x_to_slit_step
 
 
-def _spectrum(response, vdem):
+def _spectrum(response, raster):
     # Keep slit so detector_wavelength survives, then add the Doppler coordinate moments require.
-    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity"))
+    spectrum = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
     return synthesis_utils.wavelength_to_doppler(spectrum)
 
 
@@ -86,8 +84,8 @@ def test_wavelength_to_doppler_requires_units() -> None:
         synthesis_utils.wavelength_to_doppler(resp)
 
 
-def test_calculate_moments_structure(response, vdem) -> None:
-    spectrum = _spectrum(response, vdem)
+def test_calculate_moments_structure(response, raster) -> None:
+    spectrum = _spectrum(response, raster)
     moments = synthesis_utils.calculate_moments(spectrum)
 
     assert_dataset_structure(
@@ -101,13 +99,13 @@ def test_calculate_moments_structure(response, vdem) -> None:
     assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
 
 
-def test_moments_pipeline_keeps_dask_inputs_lazy(response, vdem) -> None:
+def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
     # Spectra opened with chunks="auto" (see example 06) must stay lazy through
     # wavelength_to_doppler and calculate_moments and match the eager results.
-    eager_spectrum = _spectrum(response, vdem)
+    eager_spectrum = _spectrum(response, raster)
     lazy_spectrum = synthesis_utils.wavelength_to_doppler(
         vdem_synthesis(
-            reshape_x_to_slit_step(vdem, nslits=35, nraster=11).chunk({"logT": 4}),
+            raster.chunk({"logT": 4}),
             response,
             sum_over=("logT", "doppler_velocity"),
         )
@@ -132,6 +130,34 @@ def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
     assert moments["0th"].attrs["units"] == "ph / s"
 
 
+def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
+    spectrum = xr.Dataset(
+        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
+        coords={
+            "detector_x_pixel": [0, 1],
+            "doppler_velocity": (("detector_x_pixel",), [np.nan, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
+
+    assert moments["0th"].item() == 5.0
+
+
+@pytest.mark.parametrize("vmax", [None, 50])
+def test_calculate_moments_rejects_unrelated_doppler_dim(vmax) -> None:
+    spectrum = xr.Dataset(
+        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
+        coords={
+            "detector_x_pixel": [0, 1],
+            "doppler_velocity": (("other",), [0.0, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"dimensions must be a subset"):
+        synthesis_utils.calculate_moments(spectrum, vmax=vmax)
+
+
 def test_calculate_moments_vmask_keeps_peak_window() -> None:
     spectrum = _tiny_moment_spectrum()
 
@@ -142,8 +168,8 @@ def test_calculate_moments_vmask_keeps_peak_window() -> None:
     assert moments["2nd"].item() == 0.0
 
 
-def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
-    spectrum = _spectrum(response, vdem)
+def test_calculate_moments_does_not_mutate_input(response, raster) -> None:
+    spectrum = _spectrum(response, raster)
     before_attrs = dict(spectrum.attrs)
     before_dopp = spectrum.doppler_velocity.values.copy()
     synthesis_utils.calculate_moments(spectrum)
@@ -152,15 +178,14 @@ def test_calculate_moments_does_not_mutate_input(response, vdem) -> None:
     np.testing.assert_array_equal(spectrum.doppler_velocity.values, before_dopp)
 
 
-def test_calculate_moments_rejects_bad_moment_dim(response, vdem) -> None:
-    spectrum = _spectrum(response, vdem)
+def test_calculate_moments_rejects_bad_moment_dim(response, raster) -> None:
+    spectrum = _spectrum(response, raster)
     with pytest.raises(ValueError, match=r"'nope' not found in array dimensions"):
         synthesis_utils.calculate_moments(spectrum, moment_dim="nope")
 
 
-def test_calculate_moments_requires_doppler_velocity(response, vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity"))  # no Doppler coordinate
+def test_calculate_moments_requires_doppler_velocity(response, raster) -> None:
+    spectrum = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))  # no Doppler coordinate
     with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
         synthesis_utils.calculate_moments(spectrum)
 

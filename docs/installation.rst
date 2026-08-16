@@ -1,4 +1,4 @@
-.. _muse-tutorial-installing:
+.. _muse-installing:
 
 ************
 Installation
@@ -19,7 +19,7 @@ If you already have Python and ``conda`` working you can skip the next section.
 Instead, we recommend that you use miniforge which is a minimal installer that set ups ``conda`` with the ``conda-forge`` channel, which is free to use for everyone.
 If you are using miniforge, you can skip the next section.
 
-.. _muse-tutorial-installing-miniforge:
+.. _muse-installing-miniforge:
 
 Installing miniforge (and conda)
 ================================
@@ -136,7 +136,7 @@ This checks if ``muse`` was installed correctly.
 
 If you want to install another package later, you can run ``conda install <package_name>``.
 
-.. _muse-tutorial-installing-torch:
+.. _muse-installing-torch:
 
 Installing Torch (optional)
 ===========================

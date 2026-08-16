@@ -87,11 +87,14 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
     Returns
     -------
     `xarray.DataArray`
-        Coordinate values in ``target_unit`` with updated ``units`` attrs.
+        Coordinate values in ``target_unit`` with updated ``units`` attrs. Coordinates
+        attached to the source coordinate are not retained.
     """
     target_unit = u.Unit(target_unit)
     unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)
     converted = unit.to(target_unit, ds.coords[name].data)
+    # Rebuilt without coords on purpose: multiplying an index coordinate scales the
+    # data but not the index, so the converted values must not stay self-indexed.
     return xr.DataArray(
         converted,
         dims=ds.coords[name].dims,

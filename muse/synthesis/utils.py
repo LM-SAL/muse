@@ -315,7 +315,8 @@ def calculate_moments(
         Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
     doppler_name : `str`, optional
         Name of the Doppler-velocity coordinate in ``spectrum``, by default
-        ``"doppler_velocity"``.
+        ``"doppler_velocity"``. Its dimensions must be a subset of the dimensions
+        of ``integration_name``.
     vmax : `float` or None, optional
         Maximum absolute velocity (km/s) to include in the integration, by default None.
     vmask : `float` or None, optional
@@ -338,11 +339,13 @@ def calculate_moments(
     # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
     spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * dopp_unit.to(u.km / u.s)})
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
+    if not set(spectrum[doppler_name].dims).issubset(spectrum[integration_name].dims):
+        msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{integration_name} dimensions"
+        raise ValueError(msg)
 
     if vmax is not None:
-        velocity = spectrum[doppler_name]
-        velocity_mask = xr.where(np.abs(velocity) > vmax, 0.0, 1.0)
-        masked_flux = (spectrum[integration_name] * velocity_mask).transpose(*spectrum[integration_name].dims)
+        # NaN Doppler coordinates stay included, matching the old 0/1 mask.
+        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > vmax), 0)
         masked_spectrum = spectrum.assign({integration_name: masked_flux})
         if vmask is not None:
             peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)

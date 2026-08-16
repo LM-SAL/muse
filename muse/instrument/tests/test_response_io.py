@@ -43,6 +43,12 @@ def _open(path, fmt: str) -> xr.Dataset:
     return xr.open_dataset(path)
 
 
+@pytest.fixture
+def legacy_path(tmp_path):
+    # For tests reading a pristine legacy file where the on-disk format is irrelevant.
+    return _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
+
+
 def _small_response() -> xr.Dataset:
     response = fake_response().isel(line=slice(0, 2), logT=slice(0, 3), slit=slice(0, 4))
     response = response.assign_coords(component_kind=("line", ["line"] * response.sizes["line"]))
@@ -255,12 +261,11 @@ def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_
     assert "detector_response" in response
 
 
-def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
+def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(legacy_path) -> None:
     # A grid offset from the source logT forces real interpolation rather than nearest selection.
     logT = _axis(np.linspace(5.1, 6.9, 9), "logT")
 
-    r = read_response(path, logT=logT, logT_method="linear")
+    r = read_response(legacy_path, logT=logT, logT_method="linear")
 
     np.testing.assert_allclose(r.logT.values, logT.values)
     assert bool((r.detector_response >= 0).all())  # interp path clamps negatives to zero
@@ -301,11 +306,9 @@ def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match)
         read_response(path)
 
 
-def test_read_response_assigns_missing_coordinate_units(tmp_path, caplog) -> None:
+def test_read_response_assigns_missing_coordinate_units(legacy_path, caplog) -> None:
     # The fixture mirrors the real files, which do not carry units on every coordinate.
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
-
-    r = read_response(path)
+    r = read_response(legacy_path)
 
     assert "missing the 'units' attribute" in caplog.text
     assert r.logT.attrs["units"] == str(u.dex(u.K))
@@ -340,10 +343,8 @@ def test_read_response_prefers_legacy_line_wvl_when_both_names_exist(tmp_path) -
     assert "line_wvl" not in r
 
 
-def test_read_response_gain_accepts_quantity(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
-
-    r = read_response(path, gain=5.0 * u.electron / u.DN)
+def test_read_response_gain_accepts_quantity(legacy_path) -> None:
+    r = read_response(legacy_path, gain=5.0 * u.electron / u.DN)
 
     np.testing.assert_array_equal(r.gain.values, [5.0])
     assert r.gain.attrs["units"] == str(u.electron / u.DN)
@@ -363,28 +364,22 @@ def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
     np.testing.assert_array_equal(r.gain.values, [12.0])
 
 
-def test_read_response_gain_rejects_wrong_units(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.zarr", "zarr")
+def test_read_response_gain_rejects_wrong_units(legacy_path) -> None:
     with pytest.raises(u.UnitsError):
-        read_response(path, gain=5.0 * u.second)
+        read_response(legacy_path, gain=5.0 * u.second)
 
 
-def test_read_response_empty_logT_raises(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="must not be empty"):
-        read_response(path, logT=xr.DataArray(np.array([]), dims="logT"))
-
-
-def test_read_response_nonfinite_logT_raises(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="finite"):
-        read_response(path, logT=xr.DataArray(np.array([5.0, np.nan]), dims="logT"))
-
-
-def test_read_response_out_of_range_logT_raises(tmp_path) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="no overlap"):
-        read_response(path, logT=xr.DataArray(np.array([8.0, 8.5]), dims="logT"))
+@pytest.mark.parametrize(
+    ("logT", "match"),
+    [
+        ([], "must not be empty"),
+        ([5.0, np.nan], "finite"),
+        ([8.0, 8.5], "no overlap"),
+    ],
+)
+def test_read_response_validates_the_logT_axis(legacy_path, logT, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        read_response(legacy_path, logT=xr.DataArray(np.array(logT), dims="logT"))
 
 
 def test_read_response_requires_detector_response(tmp_path) -> None:

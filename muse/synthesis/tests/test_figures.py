@@ -8,12 +8,11 @@ from muse.transforms.transforms import reshape_x_to_slit_step
 
 
 @figure_test
-def test_vdem_synthesis_detector_spectrum(response, vdem):
+def test_vdem_synthesis_detector_spectrum(response, raster):
     """
     Synthesized detector spectrum per line at the brightest y/step.
     """
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    flux = vdem_synthesis(reshaped_vdem, response).flux
+    flux = vdem_synthesis(raster, response).flux
     brightest = flux.sum(dim=["line", "detector_x_pixel"])
     it, istep = (int(i) for i in np.unravel_index(int(brightest.values.argmax()), brightest.shape))
     fig, ax = plt.subplots()
@@ -23,15 +22,14 @@ def test_vdem_synthesis_detector_spectrum(response, vdem):
 
 
 @figure_test
-def test_vdem_synthesis_fov(response, vdem):
+def test_vdem_synthesis_fov(response, raster):
     """
     Synthesized total-flux FOV: slit-summed (y, step) vs full-resolution (y, x).
     """
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     # Default sum_over collapses slit -> coarse (y, step) field.
-    collapsed = vdem_synthesis(reshaped_vdem, response).flux.sum(dim=["line", "detector_x_pixel"])
+    collapsed = vdem_synthesis(raster, response).flux.sum(dim=["line", "detector_x_pixel"])
     # Keep slit, then restack (slit, step) -> x to recover the full spatial resolution.
-    kept = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "doppler_velocity")).flux.sum(
+    kept = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity")).flux.sum(
         dim=["line", "detector_x_pixel"]
     )
     # reset_index drops the (slit, step) MultiIndex, leaving a plain 0..384 x axis to plot.
@@ -66,12 +64,11 @@ def test_vdem_synthesis_doppler_shift(response):
 
 
 @figure_test
-def test_calculate_moments_maps(response, vdem):
+def test_calculate_moments_maps(response, raster):
     """
     0th/1st/2nd moment maps over (y, step) for line 0 at the central slit.
     """
-    reshaped_vdem = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    spectrum = wavelength_to_doppler(vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "doppler_velocity")))
+    spectrum = wavelength_to_doppler(vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity")))
     moments = calculate_moments(spectrum).isel(line=0, slit=17)
     fig, axes = plt.subplots(1, 3, figsize=(13, 4), constrained_layout=True)
     titles = ("0th: intensity [ph / s]", "1st: velocity [km / s]", "2nd: width [km / s]")

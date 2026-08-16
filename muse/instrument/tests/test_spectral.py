@@ -4,59 +4,23 @@ Tests for CHIANTI-line Gaussian spectral responses.
 
 from functools import partial
 
+import attrs
 import numpy as np
 import pytest
 import xarray as xr
 
 import astropy.units as u
 
+import muse.instrument.spectral as spectral_module
 from muse.instrument.spectral import _create_wavelength_response as _create_wavelength_response_impl
 from muse.instrument.spectral import _evaluate_gaussian_response, create_spectral_response
+from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
+from muse.variables import DEFAULTS_MUSE
 
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
 DOPPLER_VELOCITY = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
 _create_wavelength_response = partial(_create_wavelength_response_impl, wavelength_grid=DEFAULT_WAVELENGTH_GRID)
-
-
-def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
-    """
-    Return a minimal deterministic iron line list.
-    """
-    wavelength = np.linspace(170.6, 171.4, n_lines) if wavelength is None else np.asarray(wavelength, dtype=float)
-    n_lines = wavelength.size
-    logT = np.array([5.8, 6.0, 6.2]) if logT is None else np.asarray(logT, dtype=float)
-    peaks = np.linspace(1.0, 0.5, n_lines)
-    gofnt = peaks[np.newaxis, :] * np.exp(-((logT[:, np.newaxis] - 6.0) ** 2) / 0.02) * 1e-25
-    return xr.Dataset(
-        {
-            "wavelength": ("trans_index", wavelength, {"units": "Angstrom"}),
-            "atomic_number": ("trans_index", np.full(n_lines, 26)),
-            "gofnt": (("logT", "trans_index"), gofnt, {"units": "erg cm3 / (s sr)"}),
-            "full_name": ("trans_index", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
-        },
-        coords={"logT": logT},
-    )
-
-
-def synthetic_effective_area(
-    values=(1.0, 1.0, 1.0),
-    wavelength=(169.0, 171.0, 173.0),
-    *,
-    area_units="cm2",
-    wavelength_units="Angstrom",
-):
-    """
-    Return a minimal deterministic effective area.
-    """
-    area_attrs = {} if area_units is None else {"units": area_units}
-    wavelength_attrs = {} if wavelength_units is None else {"units": wavelength_units}
-    return xr.DataArray(
-        np.asarray(values),
-        dims="wavelength",
-        coords={"wavelength": ("wavelength", np.asarray(wavelength), wavelength_attrs)},
-        attrs=area_attrs,
-    )
 
 
 def test_public_contract_records_history_and_excludes_unselected_lines():
@@ -79,6 +43,25 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.attrs["HISTORY"][1].startswith("create_spectral_response(")
     assert response.attrs["Chianti"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
+
+
+def test_spectral_response_uses_default_normalization(monkeypatch):
+    defaults = attrs.evolve(DEFAULTS_MUSE, normalization=2e-27)
+    monkeypatch.setattr(spectral_module, "DEFAULTS_MUSE", defaults)
+    line_list = synthetic_line_list(1)
+
+    response = create_spectral_response(
+        line_list,
+        DEFAULT_WAVELENGTH_GRID,
+        main_lines=[line_list.full_name[0].item()],
+    )
+
+    assert response.attrs["normalization"] == defaults.normalization
+    dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
+    integral = (response.spectral_response.isel(line=0) * dlam).sum("wavelength_bin")
+    expected = line_list.gofnt.isel(trans_index=0) / defaults.normalization
+    np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
+    assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
 
 
 def test_public_contract_can_sum_all_lines_as_contaminants():

@@ -29,8 +29,6 @@ py:class iterable
 py:class iterables
 py:obj iterable
 py:obj iterables
-py:obj parfive
-py:mod parfive
 py:obj astropy.io.fits.hdu.base.ExtensionHDU
 
 # Raised by core Python code
@@ -42,10 +40,6 @@ py:class D[k] if k in D, else d.  d defaults to None.
 py:class None.  Remove all items from D.
 py:class None.  Update D from mapping/iterable E and F.
 py:class v, remove specified key and return the corresponding value.
-
-# This comes from Map.wcs
-py:class prop
-py:class Maxwell
 
 # These come from astropy.coordinates.baseframe.represent_as
 py:class data
@@ -77,17 +71,9 @@ py:class numpy.core.records.recarray
 py:class numpy.ma.core.MaskedArray
 py:class numpy.ma.mvoid
 py:class numpy.void
-py:class pandas.DataFrame
-py:class xmlrpc.client.Error
-py:class xmlrpc.client.Fault
-py:class xmlrpclib.Error
-py:class xmlrpclib.Fault
-py:obj aiohttp.ClientResponse
 py:obj astropy.visualization.wcsaxes.coordinates_map.CoordinatesMap.grid
 py:obj data
 py:obj numpy.ma.core.MaskedArray
-py:obj pkg_resources.parse_version
-py:obj sunpy.extern.parse.parse
 
 # Pending on python docs links issue #11975
 py:class classmethod
