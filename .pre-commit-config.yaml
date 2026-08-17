@@ -1,12 +1,5 @@
 exclude: .*(.fits|.fts|.fit|.txt|.csv)$
 repos:
-<<<<<<<
-  - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.29.0
-    hooks:
-      - id: zizmor
-=======
->>>>>>>
     # This should be before any formatting hooks like isort
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.8
