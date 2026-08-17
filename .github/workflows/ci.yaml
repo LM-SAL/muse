@@ -26,6 +26,8 @@ permissions: {}
 jobs:
   core:
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
+    permissions:
+      id-token: write
     with:
       submodules: false
       coverage: codecov-oidc
@@ -113,6 +115,8 @@ jobs:
   test:
     needs: [core, sdist_verify]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
+    permissions:
+      id-token: write
     with:
       submodules: false
       coverage: codecov-oidc
