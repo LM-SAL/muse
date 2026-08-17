@@ -7,6 +7,10 @@ This tutorial demonstrates how to compute the CHIANTI line lists needed to
 create a MUSE response.
 
 It requires a local CHIANTI database configured with ``XUVTOP``.
+
+.. note::
+
+    This example is skipped due to a lack of local CHIANTI database.
 """
 
 import os

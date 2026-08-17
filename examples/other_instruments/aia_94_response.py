@@ -121,8 +121,11 @@ plt.title("AIA 94 Å temperature response (Fe lines only)")
 # spectral response for the strongest ones. Repeated transitions sharing a
 # ``full_name`` are summed by ``create_spectral_response``.
 
+
 peak_weight = (line_list.gofnt.isel(pressure=0) * conversion_at_lines).max(dim="logT")
 ranked = line_list.full_name.values[np.argsort(-peak_weight.values)]
+# We deliberately only use the top 5 otherwise the full band would
+# compute 1353983 profiles with contaminants.
 main_lines = list(dict.fromkeys(str(name) for name in ranked))[:5]
 print(f"Strongest contributors: {main_lines}")
 
@@ -131,6 +134,8 @@ response = create_spectral_response(
     np.arange(91.0, 97.0, 0.02) * u.AA,
     main_lines=main_lines,
     doppler_velocity=np.arange(-300, 320, 20) * u.km / u.s,
+    # This can be slow.
+    include_contaminants=True,
 )
 conversion_on_grid = (
     radiometric_conversion.interp(wavelength=response.wavelength_grid).fillna(0.0).drop_vars("wavelength")
