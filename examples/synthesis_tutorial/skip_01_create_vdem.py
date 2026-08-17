@@ -6,6 +6,11 @@
 This tutorial demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
 
 A VDEM is the emission measure of the solar atmosphere as a function of temperature, velocity, and spatial structure.
+
+.. note::
+
+    This example is skipped due to amount of RAM it requires to generate the VDEM.
+    This is why there are no plots.
 """
 
 import os
@@ -38,7 +43,7 @@ from muse.synthesis import calculate_moments, create_simple_vdem
 simulation_path = Path(pooch.os_cache("muse")) / "flare_nature_astro"
 pooch.retrieve(
     "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/flare_nature_astro.tar.gz",
-    known_hash="4ddc37682e65ee343657929beb8ddc50f472411ebd9fca66ec6ee18afeaf68c9",
+    known_hash="f14aaf1608033ff6c5ac39f053f1c5f0a48ba7cb9c522350d146ff9561d3b349",
     fname="flare_nature_astro.tar.gz",
     path=simulation_path.parent,
     processor=pooch.Untar(extract_dir=simulation_path.parent),
@@ -46,7 +51,7 @@ pooch.retrieve(
 
 # Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
 with contextlib.chdir(simulation_path):
-    muram_calc = MuramCalculator(dir=simulation_path, snap="0310000", units="cgs")
+    muram_calc = MuramCalculator(dir=simulation_path, snap="0297000", units="cgs")
     temperature = muram_calc("T")  # Temperature array in K
     # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
     r_per_nH_tot = 2.383931923587366e-24
@@ -68,6 +73,9 @@ vdem = create_simple_vdem(
     y_coord,
     velocity_axis,
     log_temperature_axis,
+    # This is the axis along which the integration is performed,
+    # in this case along the line of sight (z-axis)
+    integration_axis=2,
 )
 
 ##############################################################################

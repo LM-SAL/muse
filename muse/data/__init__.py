@@ -13,7 +13,7 @@ _SAMPLE_DATA_URL = "https://github.com/LM-SAL/muse-sample-data/releases/download
 _REGISTRY = {
     "muse_example_vdem.zarr": (
         f"{_SAMPLE_DATA_URL}muse_example_vdem.zarr.tar.gz",
-        "sha256:e0fea3be03421d405a4e47653020b68f35ebfa1d0433a4c45479e270d4dbaf76",
+        "sha256:9736243c13be83b62986095f2cdfc9884c9eae941ff0498c2c2d37551b079c50",
         "muse_example_vdem",
     ),
     "aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc": (
