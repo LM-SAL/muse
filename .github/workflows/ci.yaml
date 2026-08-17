@@ -15,13 +15,6 @@ on:
   pull_request:
   # Allow manual runs through the web UI
   workflow_dispatch:
-  schedule:
-    #        ┌───────── minute (0 - 59)
-    #        │ ┌───────── hour (0 - 23)
-    #        │ │ ┌───────── day of the month (1 - 31)
-    #        │ │ │ ┌───────── month (1 - 12 or JAN-DEC)
-    #        │ │ │ │ ┌───────── day of the week (0 - 6 or SUN-SAT)
-    - cron: "0 7 * * 3" # Every Wed at 07:00 UTC
 
 concurrency:
   # event_name keeps a push to main from cancelling the scheduled cost-regression run.
@@ -33,14 +26,14 @@ permissions: {}
 jobs:
   core:
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
+    permissions:
+      id-token: write
     with:
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       envs: |
         - linux: py313
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   cost:
     name: Synthesis cost regression
@@ -122,16 +115,16 @@ jobs:
   test:
     needs: [core, sdist_verify]
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
+    permissions:
+      id-token: write
     with:
       submodules: false
-      coverage: codecov
+      coverage: codecov-oidc
       toxdeps: tox-pypi-filter
       envs: |
         - linux: py314
         - windows: py312
         - macos: py312
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
     needs: [core]
