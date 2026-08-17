@@ -4,7 +4,13 @@ Prepare CHIANTI line lists
 ==========================
 
 This example computes the CHIANTI line lists used by the response examples in
-this section. It requires a local CHIANTI database configured with ``XUVTOP``.
+this section.
+
+It requires a local CHIANTI database configured with ``XUVTOP``.
+
+.. note::
+
+    This example is skipped due to a lack of local CHIANTI database.
 """
 
 import os
