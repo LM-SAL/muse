@@ -47,6 +47,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 ## Code conventions
 
 - **`__all__`** in every public implementation module; keep accurate when adding/removing public names.
+- **Each user-facing subpackage `__init__` is the facade**: explicit re-exports plus `__all__`; implementation modules stay private.
 - **Docstrings: numpy style** (`pydocstyle convention = numpy`) with `Parameters`/`Returns`. Use `@format_docstring("DEFAULTS_MUSE", param="field_name")` decorator (`muse.utils.documentation`) to inject default values into docstrings — maps `{placeholder}` to field name on named defaults object.
 - **Errors:** assign message to `msg` variable, then raise (ruff `EM`):
   ```python
