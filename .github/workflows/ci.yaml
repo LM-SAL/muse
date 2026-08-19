@@ -59,6 +59,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Restore CHIANTI 11.0.2 database
         id: cache-chianti
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -79,10 +80,9 @@ jobs:
       - name: Install integration dependencies
         run: |
           sudo apt-get update && sudo apt-get install --yes graphviz
-          python -m pip install --upgrade pip
-          python -m pip install --editable '.[chianti]' \
-            pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata
-          python -m pip install tox tox-pypi-filter
+          uv pip install --system --editable '.[chianti]' \
+            pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata \
+            tox tox-uv tox-pypi-filter
       - name: Test live CHIANTI line-list generation
         run: python -m pytest muse/instrument/tests/test_linelist.py --remote-data=any -q
       - name: Build docs with the full synthesis tutorial gallery
@@ -104,13 +104,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-      - run: python -m pip install -U --user build
-      - run: python -m build . --sdist
-      - run: python -m pip install -U --user twine
-      - run: python -m twine check dist/*
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv build --sdist
+      - run: uvx twine check dist/*
 
   test:
     needs: [core, sdist_verify]
