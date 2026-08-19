@@ -1,0 +1,2 @@
+Function signatures across the package now carry type annotations, public API and
+private helpers alike.

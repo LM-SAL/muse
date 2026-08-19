@@ -18,11 +18,6 @@ repos:
         exclude: *exclude_dirs
       - id: ruff-format
         exclude: *exclude_dirs
-  - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: "v0.0.72"
-    hooks:
-      - id: ty
-        stages: [manual]
   - repo: https://github.com/PyCQA/isort
     rev: 9.0.0b2
     hooks:

@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Callable
 
 __all__ = ["format_docstring"]
 
@@ -17,17 +18,17 @@ class _SkipAwareFileNameSortKey:
         The gallery subsection source directory (unused, required by sphinx-gallery).
     """
 
-    def __init__(self, src_dir):
+    def __init__(self, src_dir: str) -> None:
         self.src_dir = src_dir
 
-    def __call__(self, filename):
+    def __call__(self, filename: str) -> tuple[bool, str]:
         name = Path(filename).name
         stripped = name.removeprefix("skip_")
         unnumbered_skip = name.startswith("skip_") and not stripped[:1].isdigit()
         return (not unnumbered_skip, stripped)
 
 
-def format_docstring(defaults_name, /, **param_to_field):
+def format_docstring[F: Callable](defaults_name: str, /, **param_to_field: str) -> Callable[[F], F]:
     """
     A function decorator that substitutes ``{placeholders}`` in the docstring with the
     attribute path and import-time value of fields on a defaults object from
@@ -58,7 +59,7 @@ def format_docstring(defaults_name, /, **param_to_field):
         for param, field in param_to_field.items()
     }
 
-    def format_doc(f):
+    def format_doc(f: F) -> F:
         if f.__doc__:
             f.__doc__ = f.__doc__.format(**substitutions)
         return f

@@ -6,8 +6,12 @@ backend resolution, so they live here rather than in the public ``muse.utils`` s
 """
 
 import importlib.util
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 
 def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> str:
@@ -55,7 +59,7 @@ def _resolve_backend(cuda_device: int | None = None, backend: str = "numpy") -> 
     return backend
 
 
-def torch_to_numpy(torch_tensor):
+def torch_to_numpy(torch_tensor: "torch.Tensor") -> np.ndarray:
     """
     Convert a `torch.Tensor` to a `numpy.ndarray`.
 
@@ -79,7 +83,7 @@ def torch_to_numpy(torch_tensor):
         return np.array(tensor.tolist())
 
 
-def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None):
+def numpy_to_torch(numpy_array: np.ndarray, cuda_device: int | None = None) -> "torch.Tensor":
     """
     Convert a `numpy.ndarray` to a `torch.Tensor`.
 

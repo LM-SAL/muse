@@ -124,11 +124,3 @@ type = [
   { directory = "trivial", name = "Internal Changes", showcontent = true },
 ]
 
-[tool.ty.src]
-include = ["muse"]
-exclude = [
-  "muse/**/tests/**",
-  "muse/conftest.py",
-  "muse/_version.py",
-  "muse/version.py"
-]
