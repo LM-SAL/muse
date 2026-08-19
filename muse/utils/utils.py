@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 
 import dask.array as da
 import numpy as np
+import numpy.typing as npt
 import xarray as xr
 
 import astropy.units as u
@@ -23,7 +24,14 @@ __all__ = [
 ]
 
 
-def require_unit(ds: xr.Dataset, name: str, label: str, *, coord_only: bool = False, convertible_to=None):
+def require_unit(
+    ds: xr.Dataset,
+    name: str,
+    label: str,
+    *,
+    coord_only: bool = False,
+    convertible_to: u.UnitBase | str | None = None,
+) -> u.UnitBase:
     """
     Validate that ``ds[name]`` exists and carries a usable ``astropy`` unit.
 
@@ -68,7 +76,7 @@ def require_unit(ds: xr.Dataset, name: str, label: str, *, coord_only: bool = Fa
     return unit
 
 
-def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.DataArray:
+def coord_as_unit(ds: xr.Dataset, name: str, target_unit: u.UnitBase | str, label: str) -> xr.DataArray:
     """
     Return coordinate ``name`` converted to ``target_unit``.
 
@@ -103,7 +111,7 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit, label: str) -> xr.Data
     )
 
 
-def _require_increasing_axis(values, label: str, *, positive: bool = False) -> None:
+def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: bool = False) -> None:
     """
     Validate that ``values`` form a usable one-dimensional axis.
 
@@ -129,7 +137,7 @@ def _require_increasing_axis(values, label: str, *, positive: bool = False) -> N
 _PROVENANCE_ATTRS = ("HISTORY", "date created", "date modified", "version")
 
 
-def _history_entries(history) -> list:
+def _history_entries(history: str | list[str] | None) -> list[str]:
     if history is None:
         return []
     if isinstance(history, list):
@@ -161,7 +169,7 @@ def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
     ds.attrs["version"] = _version
 
 
-def _attr_safe(value):
+def _attr_safe(value: object) -> str | int | float | list | None:
     """
     Coerce ``value`` to a form serializable by both netCDF4 and Zarr v3, or `None` to
     skip it.

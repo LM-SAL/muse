@@ -21,7 +21,7 @@ _SPATIAL_EQUIVALENCY = [
 ]
 
 
-def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit):
+def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit: u.UnitBase) -> float:
     unit = require_unit(ds, coord_name, f"{coord_name} coordinate", coord_only=True)
     try:
         return unit.to(target_unit, equivalencies=_SPATIAL_EQUIVALENCY)
@@ -144,15 +144,15 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
 def match_fov(
     vdem: xr.Dataset,
     *,
-    dx_pix=DEFAULTS_MUSE.dx_pixel_SG,
-    dy_pix=DEFAULTS_MUSE.dy_pixel_SG,
-    nslits=DEFAULTS_MUSE.number_of_slits_SG,
-    nraster=DEFAULTS_MUSE.steps_per_raster_SG,
+    dx_pix: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
+    dy_pix: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
+    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
     x_extent: str = DEFAULTS_MUSE.fov_x_extent,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
-    rotate=False,
-):
+    rotate: bool = False,
+) -> xr.Dataset:
     """
     Match a VDEM's spatial resolution and available extent to the MUSE FOV.
 
@@ -287,9 +287,9 @@ def match_fov(
 )
 def reshape_x_to_slit_step(
     ds: xr.Dataset,
-    nslits=DEFAULTS_MUSE.number_of_slits_SG,
-    nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-):
+    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+) -> xr.Dataset:
     """
     For a given xarray data set (either vdem or spectra) we reshape from the x spatial
     axis to raster step and slits.
@@ -333,9 +333,9 @@ def reshape_x_to_slit_step(
 )
 def reshape_slit_step_to_x(
     ds: xr.Dataset,
-    nslits=DEFAULTS_MUSE.number_of_slits_SG,
-    nraster=DEFAULTS_MUSE.steps_per_raster_SG,
-):
+    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+) -> xr.Dataset:
     """
     Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
     onto a single x spatial axis.

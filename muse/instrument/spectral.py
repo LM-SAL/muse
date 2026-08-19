@@ -240,7 +240,7 @@ def _create_wavelength_response(
     return ds
 
 
-def _instrumental_width_in_angstrom(instrumental_width):
+def _instrumental_width_in_angstrom(instrumental_width: u.Quantity) -> float:
     if not instrumental_width.isscalar:
         msg = "instrumental_width must be scalar"
         raise ValueError(msg)
@@ -251,7 +251,7 @@ def _instrumental_width_in_angstrom(instrumental_width):
     return converted
 
 
-def _effective_area_in_canonical_units(effective_area):
+def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> xr.DataArray | None:
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
@@ -301,7 +301,7 @@ def _effective_area_in_canonical_units(effective_area):
     return converted.assign_coords(wavelength=wavelength)
 
 
-def _velocity_axis(values, dim):
+def _velocity_axis(values: u.Quantity, dim: str) -> xr.DataArray:
     values = np.atleast_1d(values.to_value(u.km / u.s))
     if values.ndim != 1:
         msg = f"{dim} must be scalar or one-dimensional"
@@ -316,22 +316,22 @@ def _velocity_axis(values, dim):
     return xr.DataArray(values, dims=dim, coords={dim: coordinate})
 
 
-def _wavelength_grid_in_angstrom(wavelength_grid):
+def _wavelength_grid_in_angstrom(wavelength_grid: u.Quantity) -> xr.DataArray:
     values = wavelength_grid.to_value(u.AA)
     _require_increasing_axis(values, "wavelength_grid")
     return xr.DataArray(values, dims="wavelength_bin", attrs={"units": str(u.AA)})
 
 
 def _create_contaminant_response(
-    line_list,
-    contaminant_indices,
-    wavelength_grid,
-    line_centers,
-    doppler_widths,
-    gaussian_norm,
+    line_list: xr.Dataset,
+    contaminant_indices: list[int],
+    wavelength_grid: xr.DataArray,
+    line_centers: xr.DataArray,
+    doppler_widths: xr.DataArray,
+    gaussian_norm: float,
     *,
-    progress,
-):
+    progress: bool,
+) -> xr.DataArray | None:
     if not contaminant_indices:
         return None
     accumulator = None
@@ -348,7 +348,7 @@ def _create_contaminant_response(
     return xr.DataArray(accumulator, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
 
 
-def _validate_line_list(line_list):
+def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
     if not isinstance(line_list, xr.Dataset):
         msg = "line_list must be an xarray.Dataset"
         raise TypeError(msg)
@@ -419,7 +419,7 @@ def _validate_line_list(line_list):
     return line_list.assign(wavelength=wavelength, gofnt=gofnt)
 
 
-def _validate_main_lines(line_names, main_lines):
+def _validate_main_lines(line_names: tuple[str, ...], main_lines: Sequence[str] | None) -> tuple[str, ...]:
     if main_lines is None:
         return tuple(dict.fromkeys(line_names))
     if isinstance(main_lines, str) or not isinstance(main_lines, Sequence):
@@ -439,7 +439,7 @@ def _validate_main_lines(line_names, main_lines):
     return main_lines
 
 
-def _atomic_mass_from_atomic_number(atomic_number, elements, proton_mass):
+def _atomic_mass_from_atomic_number(atomic_number: xr.DataArray, elements, proton_mass: float) -> xr.DataArray:
     max_atomic_number = max(element.number for element in elements)
     if np.any(np.asarray(atomic_number) > max_atomic_number):
         msg = f"line_list.atomic_number must be between 1 and {max_atomic_number}"
@@ -451,14 +451,14 @@ def _atomic_mass_from_atomic_number(atomic_number, elements, proton_mass):
 
 
 def _evaluate_gaussian_response(
-    wavelength_grid,
-    line_center,
-    doppler_width,
-    gofnt,
-    gaussian_norm,
+    wavelength_grid: xr.DataArray,
+    line_center: xr.DataArray,
+    doppler_width: xr.DataArray,
+    gofnt: xr.DataArray,
+    gaussian_norm: float,
     *,
-    accumulator=None,
-):
+    accumulator: np.ndarray | None = None,
+) -> tuple[np.ndarray, xr.DataArray]:
     try:
         import numexpr  # noqa: PLC0415
     except ImportError:

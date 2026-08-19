@@ -2,6 +2,8 @@
 Radiometric unit conversions.
 """
 
+from fractions import Fraction
+
 import numpy as np
 import xarray as xr
 
@@ -16,9 +18,12 @@ from muse.variables import DEFAULTS_MUSE
 __all__ = ["transform_response_units"]
 
 
-def _unit_power(unit, base) -> float:
+def _unit_power(unit: u.UnitBase | str, base: u.UnitBase) -> float | Fraction:
     """
     Return the exponent of ``base`` in ``unit``, or zero when ``base`` is absent.
+
+    astropy stores non-integer exponents as `fractions.Fraction`, which must pass
+    through exactly so the downstream unit arithmetic stays symbolic.
     """
     unit = u.Unit(unit)
     return unit.powers[unit.bases.index(base)] if base in unit.bases else 0

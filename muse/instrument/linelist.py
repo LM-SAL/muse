@@ -11,6 +11,7 @@ from types import ModuleType, SimpleNamespace
 from numbers import Real
 from pathlib import Path
 from importlib import reload
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
@@ -170,7 +171,15 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
     return ChiantiPy.__version__, ch
 
 
-def _select_ions(temperature, wavelength_range, abundance_values, *, minAbund, ionList, elementList) -> list[str]:
+def _select_ions(
+    temperature: np.ndarray,
+    wavelength_range: tuple[float, float],
+    abundance_values: np.ndarray,
+    *,
+    minAbund: float | None,
+    ionList: list[str] | None,
+    elementList: list[str] | None,
+) -> list[str]:
     """
     Resolve the concrete ion set exactly as ``ChiantiPy.core.bunch`` would.
 
@@ -190,7 +199,7 @@ def _select_ions(temperature, wavelength_range, abundance_values, *, minAbund, i
 
 
 @contextlib.contextmanager
-def _single_threaded_native_pools():
+def _single_threaded_native_pools() -> Iterator[None]:
     """
     Temporarily pin native thread pools (BLAS, numexpr) to one thread.
 
@@ -219,7 +228,16 @@ def _single_threaded_native_pools():
             numexpr.set_num_threads(previous_numexpr)
 
 
-def _compute_ion_intensity(ion_name, temperature, density, abundance_value, em, all_lines, wavelength_range):
+def _compute_ion_intensity(
+    ion_name: str,
+    temperature: np.ndarray,
+    density: np.ndarray,
+    abundance_value: float,
+    em: float,
+    *,
+    all_lines: bool,
+    wavelength_range: tuple[float, float],
+) -> dict[str, np.ndarray] | None:
     """
     Compute one ion's line intensities in a worker process.
 
@@ -239,7 +257,18 @@ def _compute_ion_intensity(ion_name, temperature, density, abundance_value, em, 
 
 
 def _compute_bunch(
-    ch, temperature, density, wavelength_range, *, em, abundance, allLines, keepIons, minAbund, ionList, elementList
+    ch: ModuleType,
+    temperature: np.ndarray,
+    density: np.ndarray,
+    wavelength_range: tuple[float, float],
+    *,
+    em: float,
+    abundance: str | None,
+    allLines: bool,
+    keepIons: bool,
+    minAbund: float | None,
+    ionList: list[str] | None,
+    elementList: list[str] | None,
 ):
     """
     Compute a ``ch.bunch``-equivalent result, one worker process per ion when several
@@ -297,8 +326,8 @@ def _compute_bunch(
                 density,
                 float(abundance_values[chutil.convertName(ion)["Z"] - 1]),
                 em,
-                allLines,
-                wavelength_range,
+                all_lines=allLines,
+                wavelength_range=wavelength_range,
             )
             for ion in ions
         ]
@@ -378,7 +407,7 @@ def _validate_line_list_inputs(
     temperature: xr.DataArray,
     density: xr.DataArray | None,
     pressure: xr.DataArray | None,
-    wavelength_range,
+    wavelength_range: u.Quantity | None,
 ) -> tuple[xr.DataArray, xr.DataArray, tuple[float, float]]:
     if density is None and pressure is None:
         msg = "Specify density or pressure"
@@ -423,7 +452,9 @@ def _validate_wavelength_range(wavelength_range: u.Quantity | None) -> tuple[flo
     return float(lower), float(upper)
 
 
-def _validate_positive_data_array(values, name: str, unit, *, dimension: str | None = None) -> xr.DataArray:
+def _validate_positive_data_array(
+    values: xr.DataArray, name: str, unit: u.UnitBase, *, dimension: str | None = None
+) -> xr.DataArray:
     if not isinstance(values, xr.DataArray):
         msg = f"{name} must be an xarray.DataArray"
         raise TypeError(msg)
@@ -452,7 +483,7 @@ def _validate_positive_data_array(values, name: str, unit, *, dimension: str | N
     return values.copy(data=data)
 
 
-def _normalize_species_names(values, name, pattern):
+def _normalize_species_names(values: list[str] | tuple[str, ...], name: str, pattern: str) -> list[str]:
     if isinstance(values, str) or not isinstance(values, list | tuple):
         msg = f"{name} must be a list of strings"
         raise TypeError(msg)
@@ -472,8 +503,8 @@ def _normalize_species_names(values, name, pattern):
 
 
 def _validate_species_selection(
-    minimum_abundance, element_list, ion_list
-) -> tuple[float | None, list | None, list | None]:
+    minimum_abundance: float | None, element_list: list[str] | None, ion_list: list[str] | None
+) -> tuple[float | None, list[str] | None, list[str] | None]:
     """
     Require exactly one species selection and normalize it.
 
