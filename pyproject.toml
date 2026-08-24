@@ -1,6 +1,6 @@
 [project]
 name = "muse"
-description = "A library to analyze and reduce data from the MUSE Mission."
+description = "A library to reduce and analyze data from the MUSE Mission."
 readme = { file = "README.rst", content-type = "text/x-rst" }
 requires-python = ">=3.12"
 license-files = ["licenses/LICENSE.rst"]
@@ -46,7 +46,7 @@ optional-dependencies.docs = [
   "joblib>=1.5.0", # for parallel sphinx-gallery builds (MUSE_GALLERY_PARALLEL)
   "memory_profiler>=0.61.0", # for sphinx-gallery memory usage
   "packaging>=26.3",
-  "plasmacalcs[most]>=2026.3.0",
+  "plasmacalcs[most]>=2026.8.0",
   "pooch>=1.9.0",
   "pydata-sphinx-theme>=0.20.0",
   "sphinx-autodoc-typehints>=3.13.0",
@@ -123,4 +123,3 @@ type = [
   { directory = "doc", name = "Documentation", showcontent = true },
   { directory = "trivial", name = "Internal Changes", showcontent = true },
 ]
-
