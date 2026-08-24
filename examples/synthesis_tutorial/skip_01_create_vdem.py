@@ -14,7 +14,6 @@ A VDEM is the emission measure of the solar atmosphere as a function of temperat
 """
 
 import os
-import contextlib
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -49,18 +48,17 @@ pooch.retrieve(
     processor=pooch.Untar(extract_dir=simulation_path.parent),
 )
 
-# Due to a bug in the MURaM reader, we need to change the working directory to the simulation path.
-with contextlib.chdir(simulation_path):
-    muram_calc = MuramCalculator(dir=simulation_path, snap="0297000", units="cgs")
-    temperature = muram_calc("T")  # Temperature array in K
-    # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
-    r_per_nH_tot = 2.383931923587366e-24
-    ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
-    ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0)  # Zero out non-finite voxels so they cannot poison the VDEM
-    velocity = muram_calc("u", component="z") * 1e-5  # LOS velocity in km/s
-    cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # Grid spacing along the line of sight in cm
-    x_coord = muram_calc("maindims_x_coord")
-    y_coord = muram_calc("maindims_y_coord")
+muram_calc = MuramCalculator(dir=simulation_path, snap="0297000", units="cgs")
+muram_calc.eos_mode = "aux"
+temperature = muram_calc("T")  # Temperature array in K
+# Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
+r_per_nH_tot = 2.383931923587366e-24
+ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
+ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0)  # Zero out non-finite voxels so they cannot poison the VDEM
+velocity = muram_calc("u", component="z") * 1e-5  # LOS velocity in km/s
+cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # Grid spacing along the line of sight in cm
+x_coord = muram_calc("maindims_x_coord")
+y_coord = muram_calc("maindims_y_coord")
 velocity_axis = np.arange(-500, 510, 10)  # Velocity axis in km/s
 log_temperature_axis = np.arange(5.5, 7.6, 0.1)
 
