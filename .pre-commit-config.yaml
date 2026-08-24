@@ -15,7 +15,6 @@ repos:
       - id: ruff-check
         args: ["--fix", "--unsafe-fixes"]
         types: [python]
-<<<<<<<
         exclude: *exclude_dirs
       - id: ruff-format
         exclude: *exclude_dirs
@@ -25,10 +24,8 @@ repos:
       - id: isort
         types: [python]
         exclude: *exclude_dirs
-=======
         # Define here once and then reference using YAML anchor
         exclude: &exclude_dirs ^muse/(data|extern)/
->>>>>>>
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
