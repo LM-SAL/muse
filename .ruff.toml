@@ -11,16 +11,6 @@ lint.ignore = [
   "ANN202",  # Missing return type annotation for private function
   "ANN204",  # Missing return type annotation for special method `__getitem__
   "ANN205",  # Missing return type annotation for staticmethod
-<<<<<<<
-=======
-  "W",
-  "UP",
-  "PT",
-  "I",
-  "BLE",
-  "A",
-  "C4",
->>>>>>>
   "ANN206",  # Missing return type annotation for classmethod
   "C901",  # Function is too complex
   "COM812",  # May cause conflicts when used with the formatter
@@ -73,24 +63,15 @@ extend-exclude = [
   "N816",  # Variable `times_SG` in global scope should not be mixedCase"
 ]
 "docs/conf.py" = [
-<<<<<<<
-=======
   "E402", # Module imports not at top of file
   "I", # isort
 ]
 "docs/*.py" = [
   "INP001", # File is part of an implicit namespace package.
->>>>>>>
-  "INP001",  # conf.py is part of an implicit namespace package
-  "E402",  # Module level import not at top of file
-  "ERA001",  # Found commented-out code
-<<<<<<<
-=======
   "F401", # Unused import
   "F403", # from {name} import * used; unable to detect undefined names
   "F405", # {name} may be undefined, or defined from star imports
   "I", # isort
->>>>>>>
 ]
 "test_*.py" = [
   "S101",  # Use of `assert` detected
@@ -102,13 +83,12 @@ extend-exclude = [
 [lint.pydocstyle]
 convention = "numpy"
 
-<<<<<<<
 [format]
 docstring-code-format = true
 docstring-code-line-length = 80
 indent-style = "space"
 quote-style = "double"
-=======
+
 [lint.isort]
 default-section = "third-party"
 section-order = [
@@ -126,4 +106,3 @@ no-lines-before = ["local-folder"]
 [lint.isort.sections]
 "astropy" = ["astropy", "asdf", "gwcs", "reproject"]
 "sunpy" = ["sunpy"]
->>>>>>>
