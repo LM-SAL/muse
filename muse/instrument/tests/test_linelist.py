@@ -1,5 +1,8 @@
 import os
+import sys
+import textwrap
 import warnings
+import subprocess
 
 import numpy as np
 import pytest
@@ -9,6 +12,51 @@ import astropy.units as u
 
 from muse.instrument import linelist
 from muse.instrument.linelist import create_chianti_line_list
+
+
+@pytest.mark.parametrize(
+    ("platform", "main_file", "expected"),
+    [
+        ("darwin", None, "spawn"),
+        ("darwin", "example.py", None),
+        ("linux", "example.py", "fork"),
+    ],
+)
+def test_process_pool_context(monkeypatch, platform, main_file, expected):
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(sys.modules["__main__"], "__file__", main_file, raising=False)
+    monkeypatch.setattr(linelist.multiprocessing, "get_all_start_methods", lambda: ["fork", "spawn"])
+    monkeypatch.setattr(linelist.multiprocessing, "get_context", lambda method: method)
+
+    assert linelist._get_process_pool_context() == expected
+
+
+def test_spawned_worker_limits_native_threads():
+    code = textwrap.dedent(
+        """
+        import multiprocessing
+        import sys
+
+        import numexpr
+        from threadpoolctl import threadpool_info
+
+        from muse.instrument import linelist
+
+        context = multiprocessing.get_context("spawn")
+        if sys.platform == "darwin":
+            assert linelist._get_process_pool_context().get_start_method() == "spawn"
+        with linelist.ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=context,
+            initializer=linelist._limit_native_worker_threads,
+        ) as pool:
+            native_pools = pool.submit(threadpool_info).result()
+            numexpr_threads = pool.submit(numexpr.get_num_threads).result()
+        assert all(native_pool["num_threads"] == 1 for native_pool in native_pools)
+        assert numexpr_threads == 1
+        """
+    )
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=30)  # noqa: S603
 
 
 def test_rejects_missing_density_and_pressure():
