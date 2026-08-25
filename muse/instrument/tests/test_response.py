@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import dask.array as da
 import numpy as np
 import pytest
@@ -7,7 +5,6 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import linelist as linelist_module
 from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.linelist import create_chianti_line_list
 from muse.instrument.radiometry import transform_response_units
@@ -405,38 +402,15 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
     "ignore:numpy.ndarray size changed:RuntimeWarning",
     "ignore:Setting the shape on a NumPy array has been deprecated in NumPy:DeprecationWarning: ",
 )
-def test_public_response_workflow_composes_through_moment_analysis(monkeypatch, tmp_path):
-    generated_line_list = xr.Dataset(
-        {
-            "wavelength": ("trans_index", [171.073], {"units": "Angstrom"}),
-            "atomic_number": ("trans_index", [26]),
-            "gofnt": (
-                ("logT", "trans_index"),
-                [[1e-25]],
-                {"units": "erg cm3 / (s sr)"},
-            ),
-            "full_name": ("trans_index", ["Fe IX 171.073"]),
-        },
-        coords={"logT": [6.0]},
-    )
-
-    monkeypatch.setattr(linelist_module, "_initialize_chianti", lambda: ("test", object()))
-    monkeypatch.setattr(
-        linelist_module,
-        "_compute_bunch",
-        lambda *_args, **_kwargs: SimpleNamespace(AbundanceName="test.abund"),
-    )
-    monkeypatch.setattr(
-        linelist_module,
-        "_chianti_bunch_to_dataset",
-        lambda *_args, **_kwargs: generated_line_list.copy(deep=True),
-    )
+@pytest.mark.chianti
+def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
     line_list = create_chianti_line_list(
         xr.DataArray([1e6] * u.K, dims="logT"),
         pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+        abundance="sun_coronal_2021_chianti",
         wavelength_range=[170.0, 172.0] * u.AA,
         ion_list=["fe_9"],
-    )
+    ).isel(pressure=0, drop=True)
     effective_area = xr.DataArray(
         [10.0, 10.0],
         dims="wavelength",
@@ -499,7 +473,8 @@ def test_public_response_workflow_composes_through_moment_analysis(monkeypatch, 
     assert moments.attrs["HISTORY"] == [
         (
             "create_chianti_line_list(temperature=[1000000.0], density=None, pressure=[3000000000000000.0], "
-            "abundance=test, wavelength_range=(170.0, 172.0), minimum_abundance=None, element_list=None, "
+            "abundance=sun_coronal_2021_chianti, wavelength_range=(170.0, 172.0), minimum_abundance=None, "
+            "element_list=None, "
             "ion_list=['fe_9'])"
         ),
         (

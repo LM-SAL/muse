@@ -2,7 +2,6 @@ import importlib.util
 
 import numpy as np
 import pytest
-import torch
 
 from muse.synthesis._backends import _resolve_backend, numpy_to_torch, torch_to_numpy
 
@@ -27,11 +26,13 @@ def test_resolve_backend_accelerator_not_installed_raises(monkeypatch) -> None:
 
 
 def test_torch_numpy_round_trip() -> None:
+    pytest.importorskip("torch")
     array = np.arange(6.0).reshape(2, 3)
     np.testing.assert_array_equal(torch_to_numpy(numpy_to_torch(array)), array)
 
 
 def test_numpy_to_torch_caps_precision_at_float32() -> None:
+    torch = pytest.importorskip("torch")
     assert numpy_to_torch(np.ones(3, dtype=np.float64)).dtype == torch.float32  # Downcast
     assert numpy_to_torch(np.ones(3, dtype=np.float32)).dtype == torch.float32  # Unchanged
     assert numpy_to_torch(np.ones(3, dtype=np.float16)).dtype == torch.float16  # Narrower kept
@@ -39,6 +40,7 @@ def test_numpy_to_torch_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_torch_numpy_round_trip_cuda() -> None:
+    pytest.importorskip("torch")
     array = np.arange(6.0).reshape(2, 3)
     tensor = numpy_to_torch(array, cuda_device=0)
     assert tensor.is_cuda

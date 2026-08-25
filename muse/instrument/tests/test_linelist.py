@@ -134,13 +134,14 @@ def test_converts_units_for_chianti(monkeypatch):
         pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[17, 17.2] * u.nm,
-        minimum_abundance=np.float64(1e-5),
+        minimum_abundance=np.float64(1e-6),
     )
 
     np.testing.assert_allclose(captured["temperature"], [1e6])
     np.testing.assert_allclose(captured["density"], [3e9])
     np.testing.assert_allclose(captured["wavelength_range"], [170, 172])
     assert type(captured["minAbund"]) is float
+    assert captured["minAbund"] == 1e-6
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
 
 
@@ -166,35 +167,36 @@ def test_missing_xuvtop_raises(monkeypatch):
         create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
-@pytest.mark.remote_data
-def test_create_chianti_line_list_live(monkeypatch):
+@pytest.mark.chianti
+def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch):
     assert os.environ.get("XUVTOP")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         import ChiantiPy.tools.data as chdata  # noqa: PLC0415
 
     monkeypatch.delattr(chdata, "Defaults")
-    temperature = xr.DataArray(10 ** np.arange(5.6, 6.2, 0.2) * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+    temperature = xr.DataArray([1e6] * u.K, dims="logT")
+    density = xr.DataArray([1e9] / u.cm**3, dims="density")
     line_list = create_chianti_line_list(
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[170, 172] * u.AA,
         temperature=temperature,
-        pressure=pressure,
-        ion_list=["fe_9"],
+        density=density,
+        minimum_abundance=1e-6,
     )
+    assert line_list.gofnt.sizes == {"logT": 1, "logD": 1, "trans_index": line_list.sizes["trans_index"]}
     assert line_list.sizes["trans_index"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values
-    assert (line_list.wavelength > 170).all()
-    assert (line_list.wavelength < 172).all()
+    assert (line_list.wavelength >= 170).all()
+    assert (line_list.wavelength <= 172).all()
     assert {"ion_name", "atomic_number", "spectroscopic_name", "logT_peak"} <= set(line_list.data_vars)
-    assert set(line_list.ion_name.values) == {"fe_9"}
+    assert "fe_9" in line_list.ion_name.values
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
-    assert line_list.attrs["ion_list"] == ["fe_9"]
+    assert line_list.attrs["minimum_abundance"] == 1e-6
     assert "create_chianti_line_list(" in line_list.attrs["HISTORY"][0]
 
 
-@pytest.mark.remote_data
+@pytest.mark.chianti
 def test_create_chianti_line_list_live_density():
     assert os.environ.get("XUVTOP")
     temperature = xr.DataArray(10 ** np.arange(5.6, 6.2, 0.2) * u.K, dims="logT")

@@ -192,6 +192,7 @@ def _select_ions(
     gate = specTrails()
     gate.Defaults = chdata.Defaults
     gate.AbundAll = abundance_values
+    gate.Abundance = abundance_values
     gate.Temperature = np.asarray(temperature, dtype=float)
     gate.WvlRange = np.asarray(wavelength_range, dtype=float)
     gate.ionGate(elementList=elementList, ionList=ionList, minAbund=minAbund, doLines=1, doContinuum=0, verbose=False)
@@ -230,8 +231,8 @@ def _single_threaded_native_pools() -> Iterator[None]:
 
 def _compute_ion_intensity(
     ion_name: str,
-    temperature: np.ndarray,
-    density: np.ndarray,
+    temperature: np.ndarray | float,
+    density: np.ndarray | float,
     abundance_value: float,
     em: float,
     *,
@@ -296,14 +297,16 @@ def _compute_bunch(
     ions = _select_ions(
         temperature, wavelength_range, abundance_values, minAbund=minAbund, ionList=ionList, elementList=elementList
     )
+    chianti_temperature = temperature.item() if temperature.size == 1 else temperature
+    chianti_density = density.item() if density.size == 1 else density
     # Workers must fork: the spawn/forkserver methods re-import __main__, which
     # re-executes unguarded caller scripts (e.g. sphinx-gallery examples).
     can_fork = "fork" in multiprocessing.get_all_start_methods()
     max_workers = min(len(ions), os.cpu_count() or 1)
     if max_workers < 2 or not can_fork:
         return ch.bunch(
-            temperature,
-            density,
+            chianti_temperature,
+            chianti_density,
             wavelength_range,
             em=em,
             abundance=abundance,
@@ -322,8 +325,8 @@ def _compute_bunch(
             pool.submit(
                 _compute_ion_intensity,
                 ion,
-                temperature,
-                density,
+                chianti_temperature,
+                chianti_density,
                 float(abundance_values[chutil.convertName(ion)["Z"] - 1]),
                 em,
                 all_lines=allLines,

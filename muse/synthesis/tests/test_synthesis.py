@@ -198,10 +198,10 @@ def test_vdem_synthesis_torch_backend_matches_numpy(response, raster) -> None:
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
 
 
-@pytest.mark.cost
-def test_vdem_synthesis_cost_regression(response, raster) -> None:
+@pytest.mark.performance
+def test_vdem_synthesis_performance_regression(response, raster) -> None:
     if os.environ.get("PYTEST_XDIST_WORKER"):
-        pytest.skip("cost baselines need an uncontended machine; rerun with -n 0")
+        pytest.skip("performance baselines need an uncontended machine; rerun with -n 0")
     response = response.isel(detector_x_pixel=np.arange(1024) % response.sizes["detector_x_pixel"]).assign_coords(
         detector_x_pixel=np.arange(1024)
     )
