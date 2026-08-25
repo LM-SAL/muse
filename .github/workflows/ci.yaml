@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # event_name keeps a push to main from cancelling the scheduled cost-regression run.
+  # event_name keeps a push to main from cancelling the scheduled performance-regression run.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -35,8 +35,8 @@ jobs:
       envs: |
         - linux: py313
 
-  cost:
-    name: Synthesis cost regression
+  performance:
+    name: Synthesis performance regression
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@e5af21e4ae37af089a73bb032e10b78b0e746174 # v3.0.1
     with:
@@ -44,7 +44,7 @@ jobs:
       toxdeps: tox-pypi-filter
       envs: |
         - linux: py313
-          posargs: -m cost -n 0 --no-cov -q
+          posargs: -m performance -n 0 --no-cov
 
   chianti:
     name: CHIANTI and synthesis tutorial integration
@@ -85,8 +85,8 @@ jobs:
           uv pip install --system --editable '.[chianti]' \
             pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata \
             tox tox-uv tox-pypi-filter
-      - name: Test live CHIANTI line-list generation
-        run: python -m pytest muse/instrument/tests/test_linelist.py --remote-data=any -q
+      - name: Test live CHIANTI workflows
+        run: python -m pytest muse -m chianti
       - name: Build docs with the full synthesis tutorial gallery
         run: tox -e build_docs-fullgallery
       - name: Save CHIANTI 11.0.2 database
@@ -154,7 +154,7 @@ jobs:
     with:
       python-version: "3.13"
       test_extras: "all,tests"
-      test_command: 'pytest -p no:warnings --doctest-rst --pyargs muse -m "not mpl_image_compare and not cuda and not cost"'
+      test_command: 'pytest -p no:warnings --doctest-rst --pyargs muse -m "not mpl_image_compare and not cuda and not performance and not chianti"'
       submodules: false
       save_artifacts: true
       upload_to_pypi: false

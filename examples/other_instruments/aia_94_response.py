@@ -72,15 +72,18 @@ print(line_list)
 
 ##############################################################################
 # To include lines from every sufficiently abundant element instead of only
-# iron, generate the line list locally with CHIANTI as follows (this block is
-# documentation only and is not executed by the gallery):
+# iron, generate the line list locally with CHIANTI as follows:
+
+# .. note::
+#
+#     This code snippet is not run.
+#     We still only use the line list created in the previous step.
 #
 # .. code-block:: python
 #
-#     from muse.instrument import create_chianti_line_list
-#
 #     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
 #     pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+#     abundance = "sun_coronal_2021_chianti"
 #     line_list = create_chianti_line_list(
 #         temperature=temperature,
 #         pressure=pressure,
@@ -89,11 +92,13 @@ print(line_list)
 #         minimum_abundance=1e-6,
 #     )
 #
-# The temperature-response calculation below will then include every line in
+# The temperature-response calculation below would then include every line in
 # that list. For an all-line synthesis, pass ``main_lines=[]`` and
-# ``include_contaminants=True`` to ``create_spectral_response``; this combines
-# all transitions into one band component instead of materializing a separate
-# response for every line.
+# ``include_contaminants=True`` to :func:`muse.instrument.create_spectral_response` ;
+# this combines all transitions into one band component instead of materializing
+# a separate response for every line.
+#
+# But we will continue with our more focused line list.
 
 ##############################################################################
 # The temperature response of the channel is the sum over every line of its
@@ -119,8 +124,7 @@ plt.title("AIA 94 Å temperature response (Fe lines only)")
 # To see which lines drive that shape, we rank the transitions by their
 # radiometrically weighted peak contribution and build a Doppler-resolved
 # spectral response for the strongest ones. Repeated transitions sharing a
-# ``full_name`` are summed by ``create_spectral_response``.
-
+# ``full_name`` are summed by :func:`muse.instrument.create_spectral_response`.
 
 peak_weight = (line_list.gofnt.isel(pressure=0) * conversion_at_lines).max(dim="logT")
 ranked = line_list.full_name.values[np.argsort(-peak_weight.values)]

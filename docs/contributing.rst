@@ -64,7 +64,7 @@ Continuous integration
 
 Two CI systems share the work:
 
-* **GitHub Actions** (``.github/workflows/ci.yaml``) owns platform tests (the ``py312``/``py313``/``py314`` tox environments), packaging, documentation builds (``tox -e build_docs``), and the CHIANTI integration job, which downloads and caches the CHIANTI database to run the ``remote_data``-gated tests.
+* **GitHub Actions** (``.github/workflows/ci.yaml``) owns platform tests (the ``py312``/``py313``/``py314`` tox environments), packaging, documentation builds (``tox -e build_docs``), and the CHIANTI integration job, which downloads and caches the CHIANTI database to run the ``chianti``-marked tests.
 * **CircleCI** (``.circleci/config.yml``) owns the deterministic figure-comparison tests and publishes the reference images used as baselines.
 
 .. _issue tracker: https://github.com/LM-SAL/muse/issues
