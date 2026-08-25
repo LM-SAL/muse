@@ -4,6 +4,7 @@ CHIANTI line lists with contribution functions (GOFNT).
 
 import os
 import re
+import sys
 import warnings
 import contextlib
 import multiprocessing
@@ -229,6 +230,24 @@ def _single_threaded_native_pools() -> Iterator[None]:
             numexpr.set_num_threads(previous_numexpr)
 
 
+def _limit_native_worker_threads() -> None:
+    """
+    Pin native thread pools in workers that do not inherit the parent state.
+    """
+    try:
+        from threadpoolctl import threadpool_limits  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - threadpoolctl ships with the chianti extra
+        pass
+    else:
+        threadpool_limits(limits=1)
+    try:
+        import numexpr  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - numexpr ships with the chianti extra
+        pass
+    else:
+        numexpr.set_num_threads(1)
+
+
 def _compute_ion_intensity(
     ion_name: str,
     temperature: np.ndarray | float,
@@ -255,6 +274,19 @@ def _compute_ion_intensity(
     wavelength = np.asarray(intensity["wvl"])
     in_range = (wavelength >= wavelength_range[0]) & (wavelength <= wavelength_range[1])
     return {key: np.asarray(intensity[key])[..., in_range] for key in _INTENSITY_KEYS}
+
+
+def _get_process_pool_context():
+    """
+    Choose a safe process start method without re-running caller scripts.
+    """
+    if sys.platform == "darwin":
+        if getattr(sys.modules["__main__"], "__file__", None) is None:
+            return multiprocessing.get_context("spawn")
+        return None
+    if "fork" in multiprocessing.get_all_start_methods():
+        return multiprocessing.get_context("fork")
+    return None
 
 
 def _compute_bunch(
@@ -299,11 +331,9 @@ def _compute_bunch(
     )
     chianti_temperature = temperature.item() if temperature.size == 1 else temperature
     chianti_density = density.item() if density.size == 1 else density
-    # Workers must fork: the spawn/forkserver methods re-import __main__, which
-    # re-executes unguarded caller scripts (e.g. sphinx-gallery examples).
-    can_fork = "fork" in multiprocessing.get_all_start_methods()
+    pool_context = _get_process_pool_context()
     max_workers = min(len(ions), os.cpu_count() or 1)
-    if max_workers < 2 or not can_fork:
+    if max_workers < 2 or pool_context is None:
         return ch.bunch(
             chianti_temperature,
             chianti_density,
@@ -317,9 +347,10 @@ def _compute_bunch(
             elementList=elementList,
         )
 
+    initializer = _limit_native_worker_threads if pool_context.get_start_method() == "spawn" else None
     with (
         _single_threaded_native_pools(),
-        ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context("fork")) as pool,
+        ProcessPoolExecutor(max_workers=max_workers, mp_context=pool_context, initializer=initializer) as pool,
     ):
         futures = [
             pool.submit(
