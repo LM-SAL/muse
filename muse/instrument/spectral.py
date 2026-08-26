@@ -26,7 +26,7 @@ def create_spectral_response(
     line_list: xr.Dataset,
     wavelength_grid: u.Quantity,
     *,
-    main_lines: Sequence[str],
+    main_lines: Sequence[str] | None,
     instrumental_width: u.Quantity = 0 * u.AA,
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
@@ -43,10 +43,10 @@ def create_spectral_response(
         `muse.instrument.create_chianti_line_list`.
     wavelength_grid : `astropy.units.Quantity`
         One-dimensional wavelength samples for one channel and spectral order.
-    main_lines : sequence of `str`
+    main_lines : sequence of `str` or `None`
         Stable ``full_name`` values to retain, in output order. Repeated
-        transitions with the same name are summed. Unselected lines are not
-        returned.
+        transitions with the same name are summed. If `None` or empty, no
+        named lines are retained and ``include_contaminants`` must be `True`.
     instrumental_width : `astropy.units.Quantity`, optional
         Scalar instrumental-width sigma, by default 0 Angstrom.
     doppler_velocity : `astropy.units.Quantity`, optional
@@ -74,6 +74,7 @@ def create_spectral_response(
         the wavelength of each bin. Detector geometry is not added.
     """
     call_inputs = dict(locals())
+    main_lines = () if main_lines is None else main_lines
     response = _create_wavelength_response(
         line_list,
         wavelength_grid,
@@ -128,9 +129,9 @@ def _create_wavelength_response(
     line_names = tuple(str(name) for name in line_list.full_name.values)
     all_lines_requested = main_lines is None
     main_lines = _validate_main_lines(line_names, main_lines)
-    if all_lines_requested and len(main_lines) > 10:
+    if len(main_lines) > 10:
         logger.warning(
-            f"Building a spectral response for all {len(main_lines)} lines may take a while and use a lot of memory. "
+            f"Building a spectral response for {len(main_lines)} main lines may take a while and use a lot of memory. "
             "If you are only interested in a few lines, pass them in `main_lines`."
         )
     if not main_lines and not include_contaminants:
@@ -261,8 +262,8 @@ def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> x
         )
         raise TypeError(msg)
     if effective_area.ndim == 0:
-        # A scalar area (e.g. DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=...)) applies
-        # uniformly, so it stays zero-dimensional and simply multiplies the response.
+        # A scalar area applies uniformly, so it stays zero-dimensional
+        # and simply multiplies the response.
         data = effective_area.data
         units = effective_area.attrs.get("units")
         try:
