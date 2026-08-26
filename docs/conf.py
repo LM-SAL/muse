@@ -13,6 +13,8 @@ from packaging.version import Version
 # -- Read the Docs Specific Configuration --------------------------------------
 
 # This needs to be done before anything is imported
+# tqdm reads TQDM_* at import time; keep progress bars out of the captured gallery output.
+os.environ.setdefault("TQDM_DISABLE", "1")
 on_rtd = os.environ.get("READTHEDOCS", None) == "True"
 if on_rtd:
     os.environ["SUNPY_CONFIGDIR"] = "/home/docs/"
