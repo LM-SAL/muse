@@ -202,6 +202,17 @@ def _create_wavelength_response(
 
     if include_contaminants:
         contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
+        if contaminant_indices:
+            # A transition whose +-window (see _evaluate_gaussian_response) misses the grid
+            # contributes exactly zero, and a broad-band list is mostly such lines.
+            width_dims = [dim for dim in doppler_widths.dims if dim != "trans_index"]
+            center_dims = [dim for dim in line_centers.dims if dim != "trans_index"]
+            half_window = _GAUSSIAN_WINDOW_SIGMA * doppler_widths.max(dim=width_dims)
+            lower = line_centers.min(dim=center_dims) - half_window
+            upper = line_centers.max(dim=center_dims) + half_window
+            on_grid = ((upper >= wavelength_grid.min()) & (lower <= wavelength_grid.max())).values
+            # Keep one off-grid line so an all-off-grid list still yields a zero component.
+            contaminant_indices = [i for i in contaminant_indices if on_grid[i]] or contaminant_indices[:1]
         contaminant_response = _create_contaminant_response(
             line_list,
             contaminant_indices,

@@ -13,7 +13,9 @@ We will use the default per-channel effective areas
 
 .. note::
 
-    The provided effective areas currently apply only to the main lines, not contaminants.
+    The default effective areas are calibrated at each main line's wavelength and
+    are applied uniformly across the band, so contaminant counts away from the
+    main line are only approximate.
 
 To see how the response changes with other parameters — an electron-density
 grid instead of a fixed pressure, or nonthermal broadening from unresolved

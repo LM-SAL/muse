@@ -77,6 +77,30 @@ def test_public_contract_can_sum_all_lines_as_contaminants(main_lines):
     assert "component_kind" not in response.coords
 
 
+def test_off_grid_contaminants_are_skipped(monkeypatch):
+    calls = []
+    evaluate = spectral_module._evaluate_gaussian_response
+    monkeypatch.setattr(
+        spectral_module,
+        "_evaluate_gaussian_response",
+        lambda *args, **kwargs: (calls.append(1), evaluate(*args, **kwargs))[1],
+    )
+    ll = synthetic_line_list(wavelength=[171.0, 171.5, 200.0, 300.0])
+    main = str(ll.full_name.values[0])
+
+    response = _create_wavelength_response(ll, main_lines=[main], include_contaminants=True)
+
+    assert len(calls) == 2  # main line + the one contaminant whose window reaches the grid
+    assert response.line.values.tolist() == [main, "contaminants"]
+
+    calls.clear()
+    response = _create_wavelength_response(ll.isel(trans_index=[0, 2, 3]), main_lines=[main], include_contaminants=True)
+
+    assert len(calls) == 2  # one off-grid line is kept so the zero component still exists
+    assert response.line.values.tolist() == [main, "contaminants"]
+    assert float(response.spectral_response.sel(line="contaminants").max()) == 0.0
+
+
 def test_integral_matches_gofnt():
     ll = synthetic_line_list(1)
     response = _create_wavelength_response(
