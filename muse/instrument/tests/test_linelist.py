@@ -15,17 +15,18 @@ from muse.instrument.linelist import create_chianti_line_list
 
 
 @pytest.mark.parametrize(
-    ("platform", "main_file", "expected"),
+    ("platform", "main_file", "start_methods", "expected"),
     [
-        ("darwin", None, "spawn"),
-        ("darwin", "example.py", None),
-        ("linux", "example.py", "fork"),
+        ("darwin", None, ["fork", "spawn"], "spawn"),
+        ("darwin", "example.py", ["fork", "spawn"], None),
+        ("linux", "example.py", ["fork", "spawn"], "fork"),
+        ("win32", "example.py", ["spawn"], None),
     ],
 )
-def test_process_pool_context(monkeypatch, platform, main_file, expected):
+def test_process_pool_context(monkeypatch, platform, main_file, start_methods, expected):
     monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(sys.modules["__main__"], "__file__", main_file, raising=False)
-    monkeypatch.setattr(linelist.multiprocessing, "get_all_start_methods", lambda: ["fork", "spawn"])
+    monkeypatch.setattr(linelist.multiprocessing, "get_all_start_methods", lambda: start_methods)
     monkeypatch.setattr(linelist.multiprocessing, "get_context", lambda method: method)
 
     assert linelist._get_process_pool_context() == expected
@@ -52,6 +53,7 @@ def test_spawned_worker_limits_native_threads():
         ) as pool:
             native_pools = pool.submit(threadpool_info).result()
             numexpr_threads = pool.submit(numexpr.get_num_threads).result()
+        assert native_pools
         assert all(native_pool["num_threads"] == 1 for native_pool in native_pools)
         assert numexpr_threads == 1
         """

@@ -20,6 +20,7 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.log import logger
 from muse.utils.utils import add_history
 
 __all__ = ["create_chianti_line_list"]
@@ -207,9 +208,11 @@ def _single_threaded_native_pools() -> Iterator[None]:
 
     Entered in the parent before forking ion workers: each forked worker inherits the
     single-thread setting, so one worker per ion does not oversubscribe every core with
-    spinning BLAS threads. Applying the limit inside the workers instead is not safe --
+    spinning BLAS threads. Applying the limit inside forked workers instead is not safe --
     threadpoolctl inspects loaded libraries via ctypes, which aborts when many freshly
-    forked children do it concurrently.
+    forked children do it concurrently. Spawned workers do not inherit the setting and
+    pin their own pools via `_limit_native_worker_threads` (safe there: each is a fresh
+    process, not a concurrent fork).
     """
     try:
         from threadpoolctl import threadpool_limits  # noqa: PLC0415
@@ -276,9 +279,16 @@ def _compute_ion_intensity(
     return {key: np.asarray(intensity[key])[..., in_range] for key in _INTENSITY_KEYS}
 
 
-def _get_process_pool_context():
+def _get_process_pool_context() -> multiprocessing.context.BaseContext | None:
     """
     Choose a safe process start method without re-running caller scripts.
+
+    On macOS ``fork`` is unsafe (the ObjC runtime and Accelerate abort in forked
+    children), so use ``spawn`` when ``__main__`` has no ``__file__`` (REPL, Jupyter),
+    where spawn's re-import of ``__main__`` is a no-op. A script's ``__main__`` may be
+    unguarded (e.g. sphinx-gallery examples) and would be re-executed by ``spawn``, so
+    scripts fall back to serial. Elsewhere ``fork`` inherits the parent state, including
+    the native thread limits.
     """
     if sys.platform == "darwin":
         if getattr(sys.modules["__main__"], "__file__", None) is None:
@@ -333,6 +343,8 @@ def _compute_bunch(
     chianti_density = density.item() if density.size == 1 else density
     pool_context = _get_process_pool_context()
     max_workers = min(len(ions), os.cpu_count() or 1)
+    if pool_context is None and len(ions) >= 2:
+        logger.info("Computing {} ions serially: no safe process start method on this platform", len(ions))
     if max_workers < 2 or pool_context is None:
         return ch.bunch(
             chianti_temperature,
