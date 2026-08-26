@@ -79,6 +79,11 @@ for config in line_lists.values():
 ##############################################################################
 # Since both variants share the 171 Angstrom band configuration we can use the
 # same wavelength grid, instrumental width, and effective area.
+#
+# .. note::
+#
+#     The provided effective areas currently apply only to the main lines, not contaminants.
+#
 
 band = 171
 main_lines = ["Fe IX 171.073"]
@@ -120,7 +125,8 @@ plt.title("171 Angstrom response with electron density")
 # We go back to the fixed-pressure line list, we add a
 # ``nonthermal_velocity`` axis via the keyword. Each value adds in
 # quadrature to the thermal width, mimicking unresolved motions
-# such as Alfvén-wave turbulence.
+# such as Alfvén-wave turbulence; see
+# `Alfvén Wave Solar Models (AWSoM) <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__.
 
 waveband_response = create_spectral_response(
     line_lists["pressure"]["line_list"],

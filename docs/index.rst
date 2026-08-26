@@ -5,7 +5,7 @@
 **********************
 
 ``muse`` is an open-source Python package for the `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ mission.
-MUSE has not launched yet, so there are no observations to read; for now the package focuses on synthesizing MUSE observations of the main spectral lines from simulations.
+`MUSE <https://en.wikipedia.org/wiki/Multi-slit_Solar_Explorer>`__ has not launched yet, so there are no observations to read; for now the package focuses on synthesizing MUSE observations of the main spectral lines from simulations.
 Once MUSE data become available, `they will be publicly accessible together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__, and this package will provide the tools to read, manipulate, and visualize them.
 
 What ``muse`` can do today
