@@ -64,11 +64,12 @@ def test_spectral_response_uses_default_normalization(monkeypatch):
     assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
 
 
-def test_public_contract_can_sum_all_lines_as_contaminants():
+@pytest.mark.parametrize("main_lines", [[], None], ids=["empty", "none"])
+def test_public_contract_can_sum_all_lines_as_contaminants(main_lines):
     response = create_spectral_response(
         synthetic_line_list(2),
         DEFAULT_WAVELENGTH_GRID,
-        main_lines=[],
+        main_lines=main_lines,
         include_contaminants=True,
     )
 
@@ -540,11 +541,13 @@ def test_contaminant_progress(capsys):
     assert "Spectral contaminants" in capsys.readouterr().err
 
 
-def test_empty_main_lines_require_contaminant_opt_in():
+@pytest.mark.parametrize("main_lines", [[], None], ids=["empty", "none"])
+def test_no_main_lines_require_contaminant_opt_in(main_lines):
     with pytest.raises(ValueError, match="include_contaminants=True"):
-        _create_wavelength_response(
+        create_spectral_response(
             synthetic_line_list(2),
-            main_lines=[],
+            DEFAULT_WAVELENGTH_GRID,
+            main_lines=main_lines,
         )
 
 
