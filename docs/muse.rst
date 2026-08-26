@@ -4,9 +4,10 @@
 What is MUSE?
 *************
 
-**Multi-slit Solar Explorer (MUSE)** is a `NASA Medium-Class Explorers (MIDEX) <https://explorers.gsfc.nasa.gov/midex.html>`__ satellite.
-Managed by the Lockheed Martin Corporation Advanced Technology Center (LM ATC) and led by Principal Investigator (PI) Dr. Bart De Pontieu of the Lockheed Martin Solar & Astrophysics Laboratory (LMSAL).
-The MUSE Investigation builds on the success of IRIS but focuses on the Sun's corona instead of the chromosphere.
+`Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ is a NASA `Medium-Class Explorers (MIDEX) <https://explorers.gsfc.nasa.gov/midex.html>`__ satellite.
+Managed by the `Lockheed Martin Corporation Advanced Technology Center (LM ATC) <https://www.lockheedmartin.com/en-us/capabilities/space/atc.html>`__ and led by Principal Investigator (PI) Dr. Bart De Pontieu of the `Lockheed Martin Solar & Astrophysics Laboratory (LMSAL) <https://lmsal.com/>`__.
+
+The MUSE investigation builds on the success of IRIS but focuses on the Sun's corona instead of the chromosphere.
 MUSE's radically innovative instrumentation and state-of-the-art numerical modeling will provide a breakthrough in our understanding of the physical processes that heat the multi-million degree corona, accelerate the solar wind and drive solar activity (flares and CMEs) that impacts Earth.
 
 MUSE provides the unprecedented combination of simultaneous sub-arcsecond coronal spectroscopy (0.4") along 35 slits and imaging (0.33"), while increasing by 30 to 100x the coverage and cadence over previous spectrographs, enabled by a more than 30x higher telemetry rate.
@@ -14,8 +15,8 @@ The MUSE Investigation includes a vigorous numerical modeling component that lev
 
 The MUSE payload consists of:
 
-* The Multi-slit Spectrograph: collects line profiles in bright coronal lines (Fe IX 171 Å, Fe XV 284 Å, Fe XIX 108 Å, Fe XXI 108 Å), covering a large temperature range (0.7-12 MK) at the highest angular (0.4") and temporal resolution (1 s exposure time) ever achieved.
-* The Context Imager: based on the successful Hi-C rocket, collects high-resolution (0.33") images (Fe XII 195 Å and He II 304 Å) over a large field-of-view, showing transition region and coronal morphology and motions.
+* The Multi-slit Spectrograph: collects line profiles in bright coronal lines (Fe IX 171 Å, Fe XV 284 Å, Fe XIX 108 Å, Fe XXI 108 Å), covering a large temperature range (0.7-12 MK) at the highest angular (0.4") and temporal resolution (1 s exposure time) ever achieved. Its field of view (FOV) is 151 x 170 arcsec.
+* The Context Imager: based on the successful Hi-C rocket, collects high-resolution (0.33") images (Fe XII 195 Å and He II 304 Å) over a large field of view, showing transition-region and coronal morphology and motions. Its FOV is 580 x 290 arcsec.
 
 MUSE addresses all of NASA's Heliophysics Science Goals and enables advances in all Key Science Goals of the `Solar and Space Physics Decadal Survey <https://nap.nationalacademies.org/catalog/13060/solar-and-space-physics-a-science-for-a-technological-society>`__.
 MUSE will fill a crucial gap in the capabilities of the Heliophysics System Observatory and next generation instruments such as DKIST, EUVST, Parker Solar Probe and Solar Orbiter.

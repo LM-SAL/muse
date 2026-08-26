@@ -11,6 +11,10 @@ We will use the default per-channel effective areas
 (``DEFAULTS_MUSE.main_line_effective_area_SG``) and CHIANTI line lists from the
 :ref:`previous step <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`.
 
+.. note::
+
+    The provided effective areas currently apply only to the main lines, not contaminants.
+
 To see how the response changes with other parameters — an electron-density
 grid instead of a fixed pressure, or nonthermal broadening from unresolved
 motions such as Alfven-wave turbulence — see
