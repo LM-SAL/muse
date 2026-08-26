@@ -1,0 +1,1 @@
+Document the MUSE spectrograph and context-imager fields of view, add the Fe X 174.531/175.263 Å density diagnostic to the Hinode/EIS response example, and note that the default effective areas are calibrated only at the main-line wavelength.

@@ -66,8 +66,8 @@ print(vdem)
 # :func:`muse.synthesis.vdem_synthesis` pairs the VDEM and response grid
 # point by grid point without interpolating, so the response must be
 # evaluated on the VDEM's exact ``logT`` and ``doppler_velocity`` grids,
-# while the response example used wider display grids to show the full
-# response shape.
+# whereas the response example evaluated the aggregate spectrum at rest
+# wavelength on a wider display grid.
 
 channel = Channel(94 * u.angstrom)
 # With no ``obstime``, this uses the baseline calibration without a

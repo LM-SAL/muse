@@ -63,7 +63,6 @@ plt.title("AIA 94 Å radiometric conversion")
 # :ref:`CHIANTI preparation example
 # <sphx_glr_generated_gallery_other_instruments_skip_prepare_chianti_line_lists.py>`.
 
-abundance = "sun_coronal_2021_chianti"
 line_list_file = fetch_example_data("aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
 print(line_list)
@@ -71,7 +70,7 @@ print(line_list)
 ##############################################################################
 # To include lines from every sufficiently abundant element instead of only
 # iron, generate the line list locally with CHIANTI as follows:
-
+#
 # .. note::
 #
 #     This code snippet is not run.
@@ -145,7 +144,7 @@ print(response)
 
 all_line_spectrum = response.spectral_response.isel(pressure=0).sel(line="contaminants", logT=6.8, method="nearest")
 plt.figure()
-all_line_spectrum.plot()
+all_line_spectrum.plot(x="wavelength_grid")
 plt.ylabel(f"Response [{response.spectral_response.attrs['units']}]")
 plt.title("AIA 94 Å aggregate line response at logT = 6.8")
 
