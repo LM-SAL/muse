@@ -37,7 +37,6 @@ vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.logT, method="nearest", tolerance=0.05)
 line_list = line_list.assign_coords(logT=vdem.logT)
-line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 
 ##############################################################################
 # Build the wavelength-space response using a scalar CI effective area.

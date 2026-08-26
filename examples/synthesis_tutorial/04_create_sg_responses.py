@@ -120,7 +120,6 @@ for band, config in bands.items():
         )
     )
     line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
-    line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
     spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item()
     lower = band - 35 / spectral_order
     upper = band + 35 / spectral_order

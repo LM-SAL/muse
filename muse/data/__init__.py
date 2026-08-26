@@ -26,7 +26,7 @@ _REGISTRY = {
         "sha256:47d046bcfd2c8f4a6ca6417e5a3a26d0ce49abb5a4d3389720dd579a736c35b9",
         "chianti_line_lists",
     ),
-    "euvst_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc": (
+    "eis_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc": (
         f"{_SAMPLE_DATA_URL}euvst_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc",
         "sha256:c5ee652cee96c1224c338a526fedea631d85fe2bb37499c2ab6254991d9e081c",
         "chianti_line_lists",

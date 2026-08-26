@@ -25,14 +25,9 @@ from muse.instrument import create_spectral_response
 # Fe XII 195.119 Å is the strongest line in the SW band.
 # We select a narrow window that also contains the density-sensitive
 # Fe XII 195.179 Å blend.
-#
-# For a worked example of a line list computed on an electron-density grid
-# (which you would want to actually exploit that blend), see
-# :ref:`sphx_glr_generated_gallery_other_instruments_euvst_fe_x_response.py`.
 
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
-line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 print(line_list)
 
 ##############################################################################
@@ -110,5 +105,28 @@ for line in temperature_sensitivity.line.values:
     temperature_sensitivity.sel(line=line).plot(label=str(line))
 plt.title("EIS Fe XII temperature sensitivity")
 plt.legend()
+
+##############################################################################
+# EIS also observes the Fe X 174.531/175.263 Å pair which we will use
+# as an example of density diagnostics.
+
+density_line_list_file = fetch_example_data("eis_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc")
+density_line_list = xr.load_dataset(density_line_list_file, engine="h5netcdf")
+density_response = create_spectral_response(
+    density_line_list,
+    np.arange(174.0, 175.6, dispersion.to_value(u.AA)) * u.AA,
+    main_lines=["Fe X 174.531", "Fe X 175.263"],
+    instrumental_width=instrumental_width,
+    doppler_velocity=[0] * u.km / u.s,
+    effective_area=effective_area,
+)
+
+line_total = density_response.spectral_response.sel(doppler_velocity=0).sum(dim="wavelength_bin", keep_attrs=True)
+peak_logT = line_total.sel(line="Fe X 174.531").mean(dim="logD").idxmax(dim="logT")
+ratio = line_total.sel(line="Fe X 175.263", logT=peak_logT) / line_total.sel(line="Fe X 174.531", logT=peak_logT)
+plt.figure()
+ratio.plot(marker="o")
+plt.ylabel("Fe X 175.263 / 174.531")
+plt.title(f"EIS density diagnostic at logT = {peak_logT.values:.1f}")
 
 plt.show()
