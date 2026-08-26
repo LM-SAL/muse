@@ -8,10 +8,9 @@ SDO/AIA 94 Å channel by combining a precomputed CHIANTI line list with the
 wavelength response and plate scale from `aiapy`.
 
 Unlike a spectrograph, an imager integrates over its whole bandpass, so the
-main product is a temperature response rather than a line profile. We build
-that directly from the line list, then use
-:func:`muse.instrument.create_spectral_response` to resolve the dominant
-contributors in wavelength and Doppler velocity.
+main product is a temperature response rather than a line profile. We compute
+that response directly, then use :func:`muse.instrument.create_spectral_response`
+to combine every transition into one wavelength-space component.
 
 It requires `aiapy` (``pip install aiapy``) for the instrument response.
 """
@@ -91,23 +90,21 @@ print(line_list)
 #         minimum_abundance=1e-6,
 #     )
 #
-# The temperature-response calculation below would then include every line in
-# that list. For an all-line synthesis, pass ``main_lines=[]`` and
-# ``include_contaminants=True`` to :func:`muse.instrument.create_spectral_response` ;
-# this combines all transitions into one band component instead of materializing
-# a separate response for every line.
+# The response calculation below would then automatically include every line
+# in that list.
 #
 # But we will continue with our more focused line list.
 
 ##############################################################################
 # The temperature response of the channel is the sum over every line of its
 # contribution function weighted by the AIA radiometric conversion at that
-# line's wavelength. Note that this is the line contribution only: the continuum
-# (free-free, free-bound, two-photon) is not included, so a quantitative full
-# passband calculation must include those emissivity components as well.
+# line's wavelength. This direct integration avoids sampling narrow line
+# profiles on a wavelength grid.
 #
-# The result shows the familiar bimodal shape of the 94 Å channel,
-# peaking around logT of about 6.0 (Fe X) and about 6.8 (Fe XVIII).
+# The result shows the familiar bimodal shape of the 94 Å channel, peaking
+# around logT of about 6.0 (Fe X) and about 6.8 (Fe XVIII). It is the line
+# contribution only: a quantitative full-passband calculation must also
+# include free-free, free-bound, and two-photon continuum emission.
 
 conversion_at_lines = radiometric_conversion.interp(wavelength=line_list.wavelength).fillna(0.0).drop_vars("wavelength")
 temperature_response = (line_list.gofnt * conversion_at_lines).sum(dim="trans_index")
@@ -120,24 +117,17 @@ plt.ylabel(f"Line-only response [{temperature_response.attrs['units']}]")
 plt.title("AIA 94 Å temperature response (Fe lines only)")
 
 ##############################################################################
-# To see which lines drive that shape, we rank the transitions by their
-# radiometrically weighted peak contribution and build a Doppler-resolved
-# spectral response for the strongest ones. Repeated transitions sharing a
-# ``full_name`` are summed by :func:`muse.instrument.create_spectral_response`.
-
-peak_weight = (line_list.gofnt.isel(pressure=0) * conversion_at_lines).max(dim="logT")
-ranked = line_list.full_name.values[np.argsort(-peak_weight.values)]
-# We deliberately only use the top 5 otherwise the full band would
-# compute 1353983 profiles with contaminants.
-main_lines = list(dict.fromkeys(str(name) for name in ranked))[:5]
-print(f"Strongest contributors: {main_lines}")
+# Passing ``main_lines=None`` requests no named lines. Together with
+# ``include_contaminants=True``, this accumulates every transition into one
+# ``contaminants`` component, which is the natural representation for an
+# imager that does not resolve individual spectral lines. Here we build a
+# wavelength-space view around the peak of the channel response; the direct
+# sum above remains the quantitative broadband temperature response.
 
 response = create_spectral_response(
     line_list,
-    np.arange(91.0, 97.0, 0.02) * u.AA,
-    main_lines=main_lines,
-    doppler_velocity=np.arange(-300, 320, 20) * u.km / u.s,
-    # This can be slow.
+    np.arange(91.0, 97.02, 0.02) * u.AA,
+    main_lines=None,
     include_contaminants=True,
 )
 conversion_on_grid = (
@@ -151,16 +141,12 @@ response = response.assign(spectral_response=scaled_response)
 print(response)
 
 ##############################################################################
-# Finally, the per-line temperature sensitivity within the bandpass.
+# The single component shows the aggregate line spectrum near the hot peak.
 
-line_total = response.spectral_response.isel(pressure=0).sel(doppler_velocity=0).integrate("wavelength_grid")
-line_total.attrs["units"] = str(response_unit * u.AA)
+all_line_spectrum = response.spectral_response.isel(pressure=0).sel(line="contaminants", logT=6.8, method="nearest")
 plt.figure()
-for line in line_total.line.values:
-    line_total.sel(line=line).plot(label=str(line))
-plt.yscale("log")
-plt.ylim(line_total.max().item() / 1e4, None)
-plt.title("AIA 94 Å per-line temperature sensitivity")
-plt.legend()
+all_line_spectrum.plot()
+plt.ylabel(f"Response [{response.spectral_response.attrs['units']}]")
+plt.title("AIA 94 Å aggregate line response at logT = 6.8")
 
 plt.show()

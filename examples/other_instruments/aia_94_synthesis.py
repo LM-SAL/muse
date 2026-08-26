@@ -12,8 +12,10 @@ and synthesizes an AIA 94 Å image from the same VDEM used in the
 using :func:`muse.synthesis.vdem_synthesis`.
 
 AIA runs through the same pipeline stages as MUSE, with AIA's own
-calibration supplied at each step. As in the response example, this includes
-only the five strongest iron lines (no other lines or continuum).
+calibration supplied at each step. Unlike the response example's aggregated
+all-line calculation, this synthesis retains the five strongest iron lines
+separately so their images can be compared (other lines and continuum are not
+included).
 
 It requires `aiapy` (``pip install aiapy``) for the instrument response.
 """
