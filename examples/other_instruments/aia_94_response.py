@@ -116,12 +116,40 @@ plt.ylabel(f"Line-only response [{temperature_response.attrs['units']}]")
 plt.title("AIA 94 Å temperature response (Fe lines only)")
 
 ##############################################################################
+# Which lines make up that response? Grouping the per-transition contributions
+# by ion shows that the two peaks have very different origins. The hot peak is
+# almost entirely one transition, Fe XVIII 93.932 Å, whereas the cool peak is
+# the sum of thousands of weaker Fe VIII-Fe XII lines that no single transition
+# dominates. For an imager these are not "contaminants" to be removed; they
+# *are* the cool response of the channel.
+
+line_contribution = (line_list.gofnt * conversion_at_lines).isel(pressure=0)
+response_by_ion = line_contribution.groupby(line_list.spectroscopic_name).sum()
+response_by_ion.attrs["units"] = temperature_response.attrs["units"]
+# Name the ions that reach at least 2% of the peak response, ordered by where they peak.
+named_ions = response_by_ion.spectroscopic_name[response_by_ion.max(dim="logT") > temperature_response.max() / 50]
+named_ions = named_ions.sortby(response_by_ion.sel(spectroscopic_name=named_ions).idxmax(dim="logT"))
+plt.figure()
+temperature_response.isel(pressure=0).plot(color="k", lw=2, label="all lines")
+for ion in named_ions.values:
+    response_by_ion.sel(spectroscopic_name=ion).plot(label=str(ion))
+response_by_ion.drop_sel(spectroscopic_name=named_ions.values).sum(dim="spectroscopic_name").plot(
+    ls="--", color="gray", label="other ions"
+)
+plt.yscale("log")
+plt.ylim(temperature_response.max().item() / 1e4, None)
+plt.ylabel(f"Line-only response [{temperature_response.attrs['units']}]")
+plt.legend(fontsize=8)
+plt.title("AIA 94 Å temperature response by ion")
+
+##############################################################################
 # Passing ``main_lines=None`` requests no named lines. Together with
 # ``include_contaminants=True``, this accumulates every transition into one
 # ``contaminants`` component, which is the natural representation for an
-# imager that does not resolve individual spectral lines. Here we build a
-# wavelength-space view around the peak of the channel response; the direct
-# sum above remains the quantitative broadband temperature response.
+# imager that does not resolve individual spectral lines: all 26,000
+# transitions above collapse into a single wavelength-space profile that a
+# synthesis can sample, while the direct sum remains the quantitative
+# broadband temperature response.
 
 response = create_spectral_response(
     line_list,
@@ -138,14 +166,5 @@ scaled_response = (response.spectral_response * conversion_on_grid).assign_attrs
 )
 response = response.assign(spectral_response=scaled_response)
 print(response)
-
-##############################################################################
-# The single component shows the aggregate line spectrum near the hot peak.
-
-all_line_spectrum = response.spectral_response.isel(pressure=0).sel(line="contaminants", logT=6.8, method="nearest")
-plt.figure()
-all_line_spectrum.plot(x="wavelength_grid")
-plt.ylabel(f"Response [{response.spectral_response.attrs['units']}]")
-plt.title("AIA 94 Å aggregate line response at logT = 6.8")
 
 plt.show()
