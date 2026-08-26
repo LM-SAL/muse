@@ -4,28 +4,20 @@ CHIANTI line lists with contribution functions (GOFNT).
 
 import os
 import re
-import sys
 import warnings
-import contextlib
-import multiprocessing
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from numbers import Real
 from pathlib import Path
 from importlib import reload
-from collections.abc import Iterator
-from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import xarray as xr
 
 import astropy.units as u
 
-from muse.log import logger
 from muse.utils.utils import add_history
 
 __all__ = ["create_chianti_line_list"]
-
-_INTENSITY_KEYS = ("ionS", "wvl", "lvl1", "lvl2", "pretty1", "pretty2", "obs", "intensity")
 
 
 def create_chianti_line_list(
@@ -110,7 +102,10 @@ def create_chianti_line_list(
         "ionList": ion_list,
         "elementList": element_list,
     }
-    bunch = _compute_bunch(ch, temperature_flat, density_flat, wavelength_range, **chianti_kwargs)
+    # ChiantiPy cannot descale collision strengths for 1-element arrays; hand it scalars.
+    chianti_temperature = temperature_flat.item() if temperature_flat.size == 1 else temperature_flat
+    chianti_density = density_flat.item() if density_flat.size == 1 else density_flat
+    bunch = ch.bunch(chianti_temperature, chianti_density, wavelength_range, **chianti_kwargs)
     abundance = getattr(bunch, "AbundanceName", abundance)
     if abundance is not None:
         abundance = Path(abundance).stem
@@ -173,218 +168,6 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
     return ChiantiPy.__version__, ch
 
 
-def _select_ions(
-    temperature: np.ndarray,
-    wavelength_range: tuple[float, float],
-    abundance_values: np.ndarray,
-    *,
-    minAbund: float | None,
-    ionList: list[str] | None,
-    elementList: list[str] | None,
-) -> list[str]:
-    """
-    Resolve the concrete ion set exactly as ``ChiantiPy.core.bunch`` would.
-
-    Uses ChiantiPy's own ``ionGate`` (masterlist membership, ionization-equilibrium
-    temperature range, and wavelength-range gating) on a minimal host object.
-    """
-    import ChiantiPy.tools.data as chdata  # noqa: PLC0415
-    from ChiantiPy.base import specTrails  # noqa: PLC0415
-
-    gate = specTrails()
-    gate.Defaults = chdata.Defaults
-    gate.AbundAll = abundance_values
-    gate.Abundance = abundance_values
-    gate.Temperature = np.asarray(temperature, dtype=float)
-    gate.WvlRange = np.asarray(wavelength_range, dtype=float)
-    gate.ionGate(elementList=elementList, ionList=ionList, minAbund=minAbund, doLines=1, doContinuum=0, verbose=False)
-    return sorted(gate.Todo)
-
-
-@contextlib.contextmanager
-def _single_threaded_native_pools() -> Iterator[None]:
-    """
-    Temporarily pin native thread pools (BLAS, numexpr) to one thread.
-
-    Entered in the parent before forking ion workers: each forked worker inherits the
-    single-thread setting, so one worker per ion does not oversubscribe every core with
-    spinning BLAS threads. Applying the limit inside forked workers instead is not safe --
-    threadpoolctl inspects loaded libraries via ctypes, which aborts when many freshly
-    forked children do it concurrently. Spawned workers do not inherit the setting and
-    pin their own pools via `_limit_native_worker_threads` (safe there: each is a fresh
-    process, not a concurrent fork).
-    """
-    try:
-        from threadpoolctl import threadpool_limits  # noqa: PLC0415
-    except ImportError:  # pragma: no cover - threadpoolctl ships with the chianti extra
-        blas_limit = contextlib.nullcontext()
-    else:
-        blas_limit = threadpool_limits(limits=1)
-    try:
-        import numexpr  # noqa: PLC0415
-    except ImportError:  # pragma: no cover - numexpr ships with the chianti extra
-        numexpr = None
-    previous_numexpr = numexpr.set_num_threads(1) if numexpr is not None else None
-    try:
-        with blas_limit:
-            yield
-    finally:
-        if numexpr is not None:
-            numexpr.set_num_threads(previous_numexpr)
-
-
-def _limit_native_worker_threads() -> None:
-    """
-    Pin native thread pools in workers that do not inherit the parent state.
-    """
-    try:
-        from threadpoolctl import threadpool_limits  # noqa: PLC0415
-    except ImportError:  # pragma: no cover - threadpoolctl ships with the chianti extra
-        pass
-    else:
-        threadpool_limits(limits=1)
-    try:
-        import numexpr  # noqa: PLC0415
-    except ImportError:  # pragma: no cover - numexpr ships with the chianti extra
-        pass
-    else:
-        numexpr.set_num_threads(1)
-
-
-def _compute_ion_intensity(
-    ion_name: str,
-    temperature: np.ndarray | float,
-    density: np.ndarray | float,
-    abundance_value: float,
-    em: float,
-    *,
-    all_lines: bool,
-    wavelength_range: tuple[float, float],
-) -> dict[str, np.ndarray] | None:
-    """
-    Compute one ion's line intensities in a worker process.
-
-    Returns the ``Intensity`` fields the line list needs, restricted to
-    ``wavelength_range`` (the caller filters to the same range anyway), or `None` when
-    ChiantiPy reports no usable lines for the ion.
-    """
-    _, ch = _initialize_chianti()
-    ion = ch.ion(ion_name, temperature, density, abundance=abundance_value, em=em)
-    ion.intensity(allLines=all_lines)
-    intensity = getattr(ion, "Intensity", None)
-    if intensity is None or "errorMessage" in intensity:
-        return None
-    wavelength = np.asarray(intensity["wvl"])
-    in_range = (wavelength >= wavelength_range[0]) & (wavelength <= wavelength_range[1])
-    return {key: np.asarray(intensity[key])[..., in_range] for key in _INTENSITY_KEYS}
-
-
-def _get_process_pool_context() -> multiprocessing.context.BaseContext | None:
-    """
-    Choose a safe process start method without re-running caller scripts.
-
-    On macOS ``fork`` is unsafe (the ObjC runtime and Accelerate abort in forked
-    children), so use ``spawn`` when ``__main__`` has no ``__file__`` (REPL, Jupyter),
-    where spawn's re-import of ``__main__`` is a no-op. A script's ``__main__`` may be
-    unguarded (e.g. sphinx-gallery examples) and would be re-executed by ``spawn``, so
-    scripts fall back to serial. Elsewhere ``fork`` inherits the parent state, including
-    the native thread limits.
-    """
-    if sys.platform == "darwin":
-        if getattr(sys.modules["__main__"], "__file__", None) is None:
-            return multiprocessing.get_context("spawn")
-        return None
-    if "fork" in multiprocessing.get_all_start_methods():
-        return multiprocessing.get_context("fork")
-    return None
-
-
-def _compute_bunch(
-    ch: ModuleType,
-    temperature: np.ndarray,
-    density: np.ndarray,
-    wavelength_range: tuple[float, float],
-    *,
-    em: float,
-    abundance: str | None,
-    allLines: bool,
-    keepIons: bool,
-    minAbund: float | None,
-    ionList: list[str] | None,
-    elementList: list[str] | None,
-):
-    """
-    Compute a ``ch.bunch``-equivalent result, one worker process per ion when several
-    ions are selected.
-
-    Ions are independent, so the multi-ion case (e.g. a whole element over a broad band)
-    parallelizes across processes; each worker makes the same single-ion, full-grid call
-    that ``ch.bunch`` would. The single-ion case falls through to ``ch.bunch``
-    untouched, including ``keepIons``. The parallel result carries no ``IonInstances``
-    (the instances only ever exist inside the workers); per-ion metadata is derived from
-    ``ChiantiPy.tools.util.convertName`` instead.
-    """
-    import ChiantiPy.tools.data as chdata  # noqa: PLC0415
-    import ChiantiPy.tools.io as chio  # noqa: PLC0415
-    import ChiantiPy.tools.util as chutil  # noqa: PLC0415
-
-    if abundance is not None:
-        abundance_info = chio.abundanceRead(abundance)
-        abundance_name = abundance_info["abundancename"]
-        abundance_values = abundance_info["abundance"]
-    else:
-        abundance_name = chdata.Defaults["abundfile"]
-        abundance_values = chdata.Abundance[abundance_name]["abundance"]
-
-    ions = _select_ions(
-        temperature, wavelength_range, abundance_values, minAbund=minAbund, ionList=ionList, elementList=elementList
-    )
-    chianti_temperature = temperature.item() if temperature.size == 1 else temperature
-    chianti_density = density.item() if density.size == 1 else density
-    pool_context = _get_process_pool_context()
-    max_workers = min(len(ions), os.cpu_count() or 1)
-    if pool_context is None and len(ions) >= 2:
-        logger.info("Computing {} ions serially: no safe process start method on this platform", len(ions))
-    if max_workers < 2 or pool_context is None:
-        return ch.bunch(
-            chianti_temperature,
-            chianti_density,
-            wavelength_range,
-            em=em,
-            abundance=abundance,
-            allLines=allLines,
-            keepIons=keepIons,
-            minAbund=minAbund,
-            ionList=ionList,
-            elementList=elementList,
-        )
-
-    initializer = _limit_native_worker_threads if pool_context.get_start_method() == "spawn" else None
-    with (
-        _single_threaded_native_pools(),
-        ProcessPoolExecutor(max_workers=max_workers, mp_context=pool_context, initializer=initializer) as pool,
-    ):
-        futures = [
-            pool.submit(
-                _compute_ion_intensity,
-                ion,
-                chianti_temperature,
-                chianti_density,
-                float(abundance_values[chutil.convertName(ion)["Z"] - 1]),
-                em,
-                all_lines=allLines,
-                wavelength_range=wavelength_range,
-            )
-            for ion in ions
-        ]
-        results = [future.result() for future in futures]
-    results = [result for result in results if result is not None]
-    if not results:
-        return SimpleNamespace(Intensity=None, AbundanceName=abundance_name)
-    merged = {key: np.concatenate([result[key] for result in results], axis=-1) for key in _INTENSITY_KEYS}
-    return SimpleNamespace(Intensity=merged, AbundanceName=abundance_name)
-
-
 def _chianti_bunch_to_dataset(
     bunch,
     *,
@@ -399,20 +182,12 @@ def _chianti_bunch_to_dataset(
         raise ValueError(msg)
 
     import ChiantiPy.tools.io as chio  # noqa: PLC0415
-    import ChiantiPy.tools.util as chutil  # noqa: PLC0415
 
     ion_names = bunch.Intensity["ionS"]
-    ion_instances = getattr(bunch, "IonInstances", None)
-    if ion_instances is not None:
-        # The serial ch.bunch path keeps the ion instances (keepIons); read the names
-        # straight from them as before.
-        name_info = {
-            ion: {"spectroscopic": ion_instances[ion].Spectroscopic, "Z": ion_instances[ion].Z}
-            for ion in np.unique(ion_names)
-        }
-    else:
-        # The parallel path never builds instances; convertName yields the same values.
-        name_info = {ion: chutil.convertName(ion) for ion in np.unique(ion_names)}
+    name_info = {
+        ion: {"spectroscopic": bunch.IonInstances[ion].Spectroscopic, "Z": bunch.IonInstances[ion].Z}
+        for ion in np.unique(ion_names)
+    }
     per_transition = {
         "ion_name": ion_names,
         "wavelength": bunch.Intensity["wvl"],

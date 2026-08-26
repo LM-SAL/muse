@@ -1,8 +1,5 @@
 import os
-import sys
-import textwrap
 import warnings
-import subprocess
 
 import numpy as np
 import pytest
@@ -12,55 +9,6 @@ import astropy.units as u
 
 from muse.instrument import linelist
 from muse.instrument.linelist import create_chianti_line_list
-
-
-@pytest.mark.parametrize(
-    ("platform", "main_file", "start_methods", "expected"),
-    [
-        ("darwin", None, ["fork", "spawn"], "spawn"),
-        ("darwin", "example.py", ["fork", "spawn"], None),
-        ("linux", "example.py", ["fork", "spawn"], "fork"),
-        ("win32", "example.py", ["spawn"], None),
-    ],
-)
-def test_process_pool_context(monkeypatch, platform, main_file, start_methods, expected):
-    monkeypatch.setattr(sys, "platform", platform)
-    monkeypatch.setattr(sys.modules["__main__"], "__file__", main_file, raising=False)
-    monkeypatch.setattr(linelist.multiprocessing, "get_all_start_methods", lambda: start_methods)
-    monkeypatch.setattr(linelist.multiprocessing, "get_context", lambda method: method)
-
-    assert linelist._get_process_pool_context() == expected
-
-
-def test_spawned_worker_limits_native_threads():
-    code = textwrap.dedent(
-        """
-        import multiprocessing
-        import sys
-
-        import numexpr
-        from threadpoolctl import threadpool_info
-
-        from muse.instrument import linelist
-
-        context = multiprocessing.get_context("spawn")
-        if sys.platform == "darwin":
-            assert linelist._get_process_pool_context().get_start_method() == "spawn"
-        with linelist.ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=context,
-            initializer=linelist._limit_native_worker_threads,
-        ) as pool:
-            native_pools = pool.submit(threadpool_info).result()
-            numexpr_threads = pool.submit(numexpr.get_num_threads).result()
-        # threadpoolctl does not expose Apple's Accelerate backend.
-        if sys.platform != "darwin":
-            assert native_pools
-        assert all(native_pool["num_threads"] == 1 for native_pool in native_pools)
-        assert numexpr_threads == 1
-        """
-    )
-    subprocess.run([sys.executable, "-c", code], check=True, timeout=30)  # noqa: S603
 
 
 def test_rejects_missing_density_and_pressure():
@@ -169,12 +117,13 @@ def test_rejects_invalid_minimum_abundance(minimum_abundance, error, error_type)
 def test_converts_units_for_chianti(monkeypatch):
     captured = {}
 
-    def fake_compute_bunch(_ch, temperature, density, wavelength_range, **kwargs):
-        captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
-        return type("FakeBunch", (), {"AbundanceName": "chianti/sun_coronal_2021_chianti.abund"})()
+    class FakeChianti:
+        @staticmethod
+        def bunch(temperature, density, wavelength_range, **kwargs):
+            captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
+            return type("FakeBunch", (), {"AbundanceName": "chianti/sun_coronal_2021_chianti.abund"})()
 
-    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", object()))
-    monkeypatch.setattr(linelist, "_compute_bunch", fake_compute_bunch)
+    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
@@ -198,8 +147,12 @@ def test_converts_units_for_chianti(monkeypatch):
 
 
 def test_no_lines_raises(monkeypatch):
-    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", object()))
-    monkeypatch.setattr(linelist, "_compute_bunch", lambda *_args, **_kwargs: object())
+    class FakeChianti:
+        @staticmethod
+        def bunch(*_args, **_kwargs):
+            return object()
+
+    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
