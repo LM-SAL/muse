@@ -73,8 +73,7 @@ line_lists = {
 }
 for config in line_lists.values():
     file = Path(pooch.retrieve(url=config["url"], known_hash=config["hash"], fname=config["fname"], path=cache_dir))
-    line_list = xr.load_dataset(file, engine="h5netcdf")
-    config["line_list"] = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
+    config["line_list"] = xr.load_dataset(file, engine="h5netcdf")
 
 ##############################################################################
 # Since both variants share the 171 Angstrom band configuration we can use the

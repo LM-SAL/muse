@@ -40,7 +40,7 @@ output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples
 output_dir.mkdir(parents=True, exist_ok=True)
 
 ##############################################################################
-# AIA 94 Angstrom: retain iron lines across the channel bandpass.
+# AIA 94 Å: retain iron lines across the channel bandpass.
 
 line_list = create_chianti_line_list(
     temperature=temperature,
@@ -55,7 +55,7 @@ line_list.to_netcdf(output, engine="h5netcdf", encoding=encoding)
 print(f"AIA line list ready: {output.resolve()}")
 
 ##############################################################################
-# Hinode/EIS: the Fe XII 195.119 and 195.179 Angstrom window.
+# Hinode/EIS: the Fe XII 195.119 and 195.179 Å window.
 
 line_list = create_chianti_line_list(
     temperature=temperature,
@@ -70,7 +70,7 @@ line_list.to_netcdf(output, engine="h5netcdf", encoding=encoding)
 print(f"EIS line list ready: {output.resolve()}")
 
 ##############################################################################
-# Solar-C/EUVST: the density-sensitive Fe X 174.531/175.263 Angstrom pair.
+# Hinode/EIS: the density-sensitive Fe X 174.531/175.263 Å pair.
 
 density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
 line_list = create_chianti_line_list(
@@ -80,7 +80,7 @@ line_list = create_chianti_line_list(
     wavelength_range=[174.0, 175.6] * u.AA,
     ion_list=["fe_10"],
 )
-output = output_dir / f"euvst_chianti_line_list_174_175_FeX_{abundance}_density.nc"
+output = output_dir / f"eis_chianti_line_list_174_175_FeX_{abundance}_density.nc"
 encoding = {name: {"zlib": True, "complevel": 5} for name in line_list.data_vars}
 line_list.to_netcdf(output, engine="h5netcdf", encoding=encoding)
-print(f"EUVST line list ready: {output.resolve()}")
+print(f"EIS density line list ready: {output.resolve()}")

@@ -67,7 +67,6 @@ plt.title("AIA 94 Å radiometric conversion")
 abundance = "sun_coronal_2021_chianti"
 line_list_file = fetch_example_data("aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
-line_list = line_list.assign(wavelength=line_list.wavelength.assign_attrs(units=str(u.AA)))
 print(line_list)
 
 ##############################################################################

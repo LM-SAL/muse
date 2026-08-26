@@ -94,7 +94,7 @@ print(vdem_raster)
 # up the calculation. Please install it and set ``backend="torch"``.
 #
 # Note that :func:`muse.synthesis.vdem_synthesis` will work
-# for any response function (MUSE, EIS, EUVST etc).
+# for any response function (MUSE, EIS, etc.).
 # Similarly with any VDEM (or DEM for broadband filters, e.g., AIA)
 # This includes VDEM with original resolution, MUSE resolution or
 # with raster/step instead of x-axis.
