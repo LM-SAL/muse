@@ -108,11 +108,16 @@ line_moments = moments.sel(line="Fe XII 195.119").isel(pressure=0)
 intensity = line_moments["0th"]
 # Anchor the log scale to the data: median to max spans the quiet
 # background and the flare core without washing either out.
-intensity.plot(ax=axes[0], norm=colors.LogNorm(vmin=intensity.quantile(0.5).item(), vmax=intensity.max().item()))
+intensity.plot(
+    x="x",
+    y="y",
+    ax=axes[0],
+    norm=colors.LogNorm(vmin=intensity.quantile(0.5).item(), vmax=intensity.max().item()),
+)
 axes[0].set_title("0th moment (intensity)")
-line_moments["1st"].plot(ax=axes[1], cmap="RdBu_r", robust=True)
+line_moments["1st"].plot(x="x", y="y", ax=axes[1], cmap="RdBu_r", robust=True)
 axes[1].set_title("1st moment (Doppler shift)")
-line_moments["2nd"].plot(ax=axes[2], robust=True)
+line_moments["2nd"].plot(x="x", y="y", ax=axes[2], robust=True)
 axes[2].set_title("2nd moment (line width)")
 plt.tight_layout()
 

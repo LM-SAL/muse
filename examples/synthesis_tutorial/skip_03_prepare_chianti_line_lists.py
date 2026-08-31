@@ -6,11 +6,11 @@
 This tutorial demonstrates how to compute the CHIANTI line lists needed to
 create a MUSE response.
 
-It requires a local CHIANTI database configured with ``XUVTOP``.
+.. warning::
 
-.. note::
-
-    This example is skipped due to a lack of local CHIANTI database.
+    This example requires the optional CHIANTI dependencies and a local CHIANTI
+    database. Install them with ``pip install "muse[chianti]"`` and configure
+    ``XUVTOP`` before running the script.
 """
 
 import os

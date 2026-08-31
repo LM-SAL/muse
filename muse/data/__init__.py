@@ -63,13 +63,10 @@ def fetch_example_data(name):
     """
     Download and cache one of the example data files used by the documentation gallery.
 
-    An example VDEM already present in the synthesis-tutorial output directory
-    (``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``, defaulting to
-    ``examples/synthesis_tutorial/artifacts``) is returned without downloading,
-    so a VDEM regenerated locally with the tutorial wins over the published
-    one. Every other file always comes from the published copy: the gallery
-    itself writes some of them, and reading those back during a parallel
-    gallery build would race the writer.
+    A VDEM or synthetic spectrum already present in the synthesis-tutorial
+    output directory (``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``, defaulting to
+    ``examples/synthesis_tutorial/artifacts``) is returned without downloading.
+    Every other file comes from the published copy.
 
     Parameters
     ----------
@@ -84,6 +81,11 @@ def fetch_example_data(name):
     if name not in _REGISTRY:
         msg = f"{name!r} is not a known example data file, expected one of: {sorted(_REGISTRY)}"
         raise ValueError(msg)
+    if name in {"muse_example_vdem.zarr", "muse_synthetic_spectra.nc"}:
+        local_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
+        local_path = local_dir / name
+        if local_path.exists():
+            return local_path
     try:
         import pooch
     except ImportError:
@@ -91,11 +93,6 @@ def fetch_example_data(name):
         raise ImportError(msg) from None
     url, known_hash, subdir = _REGISTRY[name]
     cache = Path(pooch.os_cache("muse"))
-    if name == "muse_example_vdem.zarr":
-        local_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
-        local_path = local_dir / name
-        if local_path.exists():
-            return local_path
     if name.endswith(".zarr"):
         # Zarr stores are directories, published as tarballs; retrieve extracts once.
         pooch.retrieve(

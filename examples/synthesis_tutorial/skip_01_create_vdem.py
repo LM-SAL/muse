@@ -7,6 +7,11 @@ This tutorial demonstrates how to create a Velocity-Differential Emission Measur
 
 A VDEM is the emission measure of the solar atmosphere as a function of temperature, velocity, and spatial structure.
 
+.. warning::
+
+    This example requires the optional ``PlasmaCalcs`` package. Install it with
+    ``pip install "plasmacalcs[most]"`` before running the script.
+
 .. note::
 
     This example is skipped due to amount of RAM it requires to generate the VDEM.

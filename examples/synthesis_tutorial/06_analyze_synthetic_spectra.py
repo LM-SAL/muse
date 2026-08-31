@@ -17,10 +17,13 @@ from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
 
 ##############################################################################
-# Download the saved MUSE spectrum from the
+# Load the saved MUSE spectrum from the
 # :ref:`previous example <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
 #
-# If you have your own version locally, change ``spectrum_path``.
+# If the previous example wrote the spectrum to ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``
+# (or the default artifacts directory), that local file is used. Otherwise,
+# :func:`muse.data.fetch_example_data` downloads the published copy so this
+# example also works on its own.
 
 spectrum_path = fetch_example_data("muse_synthetic_spectra.nc")
 

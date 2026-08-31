@@ -110,8 +110,10 @@ spectrum = vdem_synthesis(
 )
 
 output = output_dir / "muse_synthetic_spectra.nc"
+temporary_output = output.with_suffix(".tmp.nc")
 encoding = {"flux": {"zlib": True, "complevel": 5}}
-spectrum.to_netcdf(output, engine="h5netcdf", encoding=encoding)
+spectrum.to_netcdf(temporary_output, engine="h5netcdf", encoding=encoding)
+temporary_output.replace(output)
 
 print(spectrum)
 print(f"Saved {output}")
