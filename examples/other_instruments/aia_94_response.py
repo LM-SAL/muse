@@ -12,7 +12,10 @@ main product is a temperature response rather than a line profile. We compute
 that response directly, then use :func:`muse.instrument.create_spectral_response`
 to combine every transition into one wavelength-space component.
 
-It requires `aiapy` (``pip install aiapy``) for the instrument response.
+.. warning::
+
+    This example requires the optional ``aiapy`` package. Install it with
+    ``pip install aiapy`` before running the script.
 """
 
 import matplotlib.pyplot as plt

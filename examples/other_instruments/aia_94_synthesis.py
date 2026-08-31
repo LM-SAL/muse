@@ -17,7 +17,10 @@ all-line calculation, this synthesis retains the five strongest iron lines
 separately so their images can be compared (other lines and continuum are not
 included).
 
-It requires `aiapy` (``pip install aiapy``) for the instrument response.
+.. warning::
+
+    This example requires the optional ``aiapy`` package. Install it with
+    ``pip install aiapy`` before running the script.
 """
 
 import os
@@ -147,7 +150,12 @@ image = per_line.sum(dim="line", keep_attrs=True)
 plt.figure()
 # Anchor the log scale to the data: median to max spans the background
 # arcade and the flare core without washing either out.
-image.plot(norm=colors.LogNorm(vmin=image.quantile(0.5).item(), vmax=image.max().item()), cmap="sdoaia94")
+image.plot(
+    x="x",
+    y="y",
+    norm=colors.LogNorm(vmin=image.quantile(0.5).item(), vmax=image.max().item()),
+    cmap="sdoaia94",
+)
 plt.title("Synthesized AIA 94 Å image (five Fe lines)")
 
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +173,7 @@ fig, axes = plt.subplots(nrows, 2, figsize=(10, 4 * nrows))
 for ax, line in zip(axes.flat, per_line.line.values, strict=False):
     data = per_line.sel(line=line)
     norm = colors.LogNorm(vmin=data.quantile(0.5).item(), vmax=data.max().item())
-    data.plot(ax=ax, norm=norm, cmap="sdoaia94", add_colorbar=False)
+    data.plot(x="x", y="y", ax=ax, norm=norm, cmap="sdoaia94", add_colorbar=False)
     ax.set_title(str(line))
 for ax in axes.flat[len(main_lines) :]:
     ax.set_visible(False)

@@ -77,6 +77,8 @@ print(spectrum)
 
 plt.figure()
 image.plot(
+    x="x",
+    y="y",
     norm=colors.LogNorm(vmin=image.quantile(0.5).item(), vmax=image.max().item()),
     cmap="inferno",
 )

@@ -45,9 +45,9 @@ original_intensity = vdem.vdem.sum(dim=["logT", "doppler_velocity"], skipna=Fals
 full_intensity = vdem_muse_fov.vdem.sum(dim=["logT", "doppler_velocity"], skipna=False).compute()
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
-original_intensity.plot(norm=colors.LogNorm(vmin=1), ax=ax1)
+original_intensity.plot(x="x", y="y", norm=colors.LogNorm(vmin=1), ax=ax1)
 ax1.set_title("Original VDEM")
-full_intensity.plot(norm=colors.LogNorm(vmin=1), ax=ax2)
+full_intensity.plot(x="x", y="y", norm=colors.LogNorm(vmin=1), ax=ax2)
 ax2.set_title("VDEM matched to MUSE FOV")
 
 ##############################################################################
@@ -85,9 +85,9 @@ step_mask = xr.DataArray(
 selected_slit = slit_step_intensity.sizes["slit"] // 2
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
-full_intensity.where(step_mask).plot(ax=axes[0], norm=colors.LogNorm(vmin=1e-3))
+full_intensity.where(step_mask).plot(x="x", y="y", ax=axes[0], norm=colors.LogNorm(vmin=1e-3))
 axes[0].set_title(f"All slits at raster step {selected_step}")
-slit_step_intensity.isel(slit=selected_slit).plot(ax=axes[1], x="y", norm=colors.LogNorm(vmin=1e-3))
+slit_step_intensity.isel(slit=selected_slit).plot(ax=axes[1], x="step", y="y", norm=colors.LogNorm(vmin=1e-3))
 axes[1].set_title(f"Slit {selected_slit} across raster steps")
 
 ##############################################################################

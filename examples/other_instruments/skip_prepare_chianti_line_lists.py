@@ -6,11 +6,11 @@ Prepare CHIANTI line lists
 This example computes the CHIANTI line lists used by the response examples in
 this section.
 
-It requires a local CHIANTI database configured with ``XUVTOP``.
+.. warning::
 
-.. note::
-
-    This example is skipped due to a lack of local CHIANTI database.
+    This example requires the optional CHIANTI dependencies and a local CHIANTI
+    database. Install them with ``pip install "muse[chianti]"`` and configure
+    ``XUVTOP`` before running the script.
 """
 
 import os
