@@ -1,3 +1,12 @@
+0.2.1 (2026-09-07)
+==================
+
+Internal Changes
+----------------
+
+- Declare Dask, Zarr, netCDF4, and SciPy explicitly instead of relying on xarray extras, and skip tests requiring unavailable optional science dependencies. (`#102 <https://github.com/LM-SAL/muse/pull/102>`__)
+
+
 0.2.0 (2026-09-07)
 ==================
 
