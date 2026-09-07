@@ -1,12 +1,13 @@
-<<<<<<<
 # Allow unused variables when underscore-prefixed.
-=======
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 target-version = "py312"
 line-length = 120
-exclude = [
-  ".git,",
->>>>>>>
-lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+extend-exclude = [
+  ".git",
+  "__pycache__",
+  "build",
+  "tools/**",
+]
 lint.extend-select = [
   "ALL",
 ]
@@ -52,14 +53,6 @@ lint.ignore = [
   "TD002",  # Missing author in TODO
   "TD003",  # Missing issue link on the line following this TODO
 ]
-target-version = "py312"
-line-length = 120
-extend-exclude = [
-  "__pycache__",
-  "build",
-  "tools/**",
-]
-
 [lint.per-file-ignores]
 "examples/*.py" = [
   "B018",  # Not print but display
