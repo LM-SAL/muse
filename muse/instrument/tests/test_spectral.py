@@ -130,7 +130,8 @@ def test_gaussian_window_matches_full_grid():
     expected = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
 
     response, _ = _evaluate_gaussian_response(wavelength_grid, line_center, doppler_width, gofnt, gaussian_norm)
-    np.testing.assert_allclose(response, expected, rtol=1e-15, atol=0)
+    # NumPy and numexpr can underflow differently in the subnormal Gaussian tails.
+    np.testing.assert_allclose(response, expected, rtol=1e-15, atol=np.finfo(expected.dtype).tiny)
 
     response, _ = _evaluate_gaussian_response(
         wavelength_grid,
