@@ -1,3 +1,0 @@
-A scalar ``effective_area`` is kept zero-dimensional instead of being expanded into a two-point
-flat curve and interpolated back onto the wavelength grid.
-The scaling it produces is unchanged.

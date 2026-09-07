@@ -1,1 +1,0 @@
-Skip contaminant transitions whose line window lies entirely outside the wavelength grid in ``create_spectral_response``; the output is unchanged and broad-band responses build about twice as fast.

@@ -1,3 +1,0 @@
-`muse.transforms.match_fov` now sources its ``mode`` and ``sub_interpolation`` defaults from
-``DEFAULTS_MUSE`` (``fov_mode`` and ``fov_sub_interpolation``) instead of hardcoded literals;
-the values are unchanged.

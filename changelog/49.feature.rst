@@ -1,1 +1,0 @@
-Added basic default effective areas for each band.

@@ -1,1 +1,0 @@
-Import the logger directly from `muse.log` in `muse.synthesis` instead of via the package ``__init__``.
