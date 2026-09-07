@@ -1,0 +1,1 @@
+Declare Dask, Zarr, netCDF4, and SciPy explicitly instead of relying on xarray extras, and skip tests requiring unavailable optional science dependencies.

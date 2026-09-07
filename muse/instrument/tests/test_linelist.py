@@ -165,6 +165,7 @@ def test_no_lines_raises(monkeypatch):
 
 
 def test_missing_xuvtop_raises(monkeypatch):
+    pytest.importorskip("ChiantiPy")
     monkeypatch.delenv("XUVTOP", raising=False)
     temperature = xr.DataArray([1e6] * u.K, dims="logT")
     pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
@@ -174,10 +175,11 @@ def test_missing_xuvtop_raises(monkeypatch):
 
 @pytest.mark.chianti
 def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch):
+    pytest.importorskip("ChiantiPy")
     assert os.environ.get("XUVTOP")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        import ChiantiPy.tools.data as chdata  # noqa: PLC0415
+        chdata = pytest.importorskip("ChiantiPy.tools.data")
 
     monkeypatch.delattr(chdata, "Defaults")
     temperature = xr.DataArray([1e6] * u.K, dims="logT")
@@ -203,6 +205,7 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
 
 @pytest.mark.chianti
 def test_create_chianti_line_list_live_density():
+    pytest.importorskip("ChiantiPy")
     assert os.environ.get("XUVTOP")
     temperature = xr.DataArray(10 ** np.arange(5.6, 6.2, 0.2) * u.K, dims="logT")
     density = xr.DataArray([1e8, 1e9] / u.cm**3, dims="density")

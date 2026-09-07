@@ -1,10 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 import astropy.units as u
 
 from muse.instrument.spectral import create_spectral_response
 from muse.tests.helpers import figure_test, synthetic_effective_area, synthetic_line_list
+
+pytest.importorskip("numexpr")
+pytest.importorskip("periodictable")
 
 WAVELENGTH_GRID = np.linspace(170.75, 171.25, 501) * u.AA
 

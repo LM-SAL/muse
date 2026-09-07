@@ -404,6 +404,9 @@ def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
 )
 @pytest.mark.chianti
 def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
+    pytest.importorskip("ChiantiPy")
+    pytest.importorskip("numexpr")
+    pytest.importorskip("periodictable")
     line_list = create_chianti_line_list(
         xr.DataArray([1e6] * u.K, dims="logT"),
         pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),

@@ -384,6 +384,7 @@ def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, raster)
 
 @pytest.mark.cuda
 def test_vdem_synthesis_cuda_matches_cpu(response, raster) -> None:
+    pytest.importorskip("torch")
     cpu = vdem_synthesis(raster, response)
     gpu = vdem_synthesis(raster, response, cuda_device=0, backend="torch")
     assert_dataset_structure(
