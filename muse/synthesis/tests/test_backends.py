@@ -40,7 +40,9 @@ def test_numpy_to_torch_caps_precision_at_float32() -> None:
 
 @pytest.mark.cuda
 def test_torch_numpy_round_trip_cuda() -> None:
-    pytest.importorskip("torch")
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is not available")
     array = np.arange(6.0).reshape(2, 3)
     tensor = numpy_to_torch(array, cuda_device=0)
     assert tensor.is_cuda

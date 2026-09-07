@@ -17,6 +17,9 @@ from muse.instrument.spectral import _evaluate_gaussian_response, create_spectra
 from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 
+pytest.importorskip("numexpr")
+pytest.importorskip("periodictable")
+
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
 DOPPLER_VELOCITY = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
@@ -127,7 +130,8 @@ def test_gaussian_window_matches_full_grid():
     expected = gofnt_scaled.data * np.exp(-0.5 * (shift.data / width.data) ** 2) / gaussian_norm / width.data
 
     response, _ = _evaluate_gaussian_response(wavelength_grid, line_center, doppler_width, gofnt, gaussian_norm)
-    np.testing.assert_allclose(response, expected, rtol=1e-15, atol=0)
+    # NumPy and numexpr can underflow differently in the subnormal Gaussian tails.
+    np.testing.assert_allclose(response, expected, rtol=1e-15, atol=np.finfo(expected.dtype).tiny)
 
     response, _ = _evaluate_gaussian_response(
         wavelength_grid,

@@ -27,10 +27,14 @@ urls."Source Code" = "https://github.com/LM-SAL/muse"
 dependencies = [
   "astropy>=8.0",
   "attrs>=26.1.0",
+  "dask[array]>=2026.8.0",
   "loguru>=0.7.3",
+  "netCDF4>=1.7.4",
   "numpy>=2.5.0",
+  "scipy>=1.18.1",
   "tqdm>=4.70",
-  "xarray[io,parallel]>=2026.7.0",
+  "xarray>=2026.7.0",
+  "zarr>=3.3.0",
 ]
 optional-dependencies.all = ["muse[chianti,torch]"]
 optional-dependencies.chianti = [
