@@ -1,4 +1,11 @@
+<<<<<<<
 # Allow unused variables when underscore-prefixed.
+=======
+target-version = "py312"
+line-length = 120
+exclude = [
+  ".git,",
+>>>>>>>
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 lint.extend-select = [
   "ALL",
