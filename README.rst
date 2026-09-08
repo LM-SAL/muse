@@ -2,11 +2,13 @@
 muse
 ****
 
-|Latest Version|
+|Latest Version| |DOI|
 
 .. |Latest Version| image:: https://img.shields.io/pypi/v/muse.svg
    :target: https://pypi.python.org/pypi/muse/
 
+.. |DOI| image:: https://zenodo.org/badge/1168788621.svg
+   :target: https://doi.org/10.5281/zenodo.22647387
 
 ``muse`` is a library for reading, writing, and analyzing data from the Multi-slit Solar Explorer (MUSE) mission.
 
@@ -26,9 +28,7 @@ When writing a paper about MUSE, please include the following statement in the a
    Lockheed Martin Advanced Technology Center, along with partner institutions, builds the MUSE instrument and spacecraft and University of California, Berkeley provides the mission operations center.
    MUSE benefits from international contributions supported by the Norwegian Space Agency (NOSA), the Italian Space Agency (ASI), the German Space Agency at DLR, and from the Max Planck Institute for Solar System Research (MPS).
 
-When writing a paper which uses the ``muse`` library, please cite the following paper:
-
-TBD
+When writing a paper which uses the ``muse`` library, for now, please cite |DOI|, in future we hope to have a JOSS paper.
 
 Usage of Generative AI
 ----------------------
