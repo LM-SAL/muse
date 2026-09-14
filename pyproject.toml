@@ -77,9 +77,17 @@ dynamic = ["version"]
 
 [build-system]
 requires = [
+<<<<<<<
   "setuptools>=84.0.0",
   "setuptools-scm[toml]>=10.2.0",
   "wheel>=0.47.0",
+=======
+  "setuptools>=62.1",
+  "setuptools_scm[toml]>=8.0.1",
+  "extension-helpers>=1.4,<2",
+  "numpy>=2.0.0rc1",
+  "cython",
+>>>>>>>
 ]
 build-backend = "setuptools.build_meta"
 
@@ -108,6 +116,19 @@ packages.find.exclude = ["muse._dev*"]
 
 [tool.setuptools_scm]
 version_file = "muse/_version.py"
+
+[tool.repo-review.ignore]
+PY003 = "The LICENSE file is in licenses/"
+PY005 = "The template packages tests inside muse/"
+PP006 = "We are not currently using dependency-groups"
+PP301 = "pytest config is in pytest.ini"
+PC110 = "ruff format not currently an option"
+PC140 = "No SunPy projects make heavy use of types"
+PC170 = "Not using pygrep"
+PC180 = "No markdown formatter required"
+PC901 = "Opt-out"
+PC902 = "Opt-out"
+MY = "No SunPy projects make heavy use of types"
 
 # TODO: This should be in towncrier.toml but Giles currently only works looks in
 # pyproject.toml we should move this back when it's fixed.
