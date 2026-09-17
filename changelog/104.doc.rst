@@ -1,0 +1,2 @@
+Updated the installation guide as conda-forge's packagae name is now ``musepy-lmsal`` whereas it is
+``muse`` from PyPI.
