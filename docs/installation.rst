@@ -5,7 +5,8 @@ Installation
 ************
 
 This is the first chapter in the ``muse`` tutorial, and by the end of it you should have a working installation of Python and ``muse``.
-For further information and alternative methods for installing ``muse`` beyond the recommended approach outlined below, refer to sunpy's documentation (:ref:`sunpy-topic-guide-installing`).
+
+For further information and alternative methods for installing ``muse`` beyond the recommended approach outlined below, refer to sunpy's documentation (:ref:`sunpy-topic-guide-installing`) and :ref:`muse-installing-pypi`.
 
 Installing Python
 =================
@@ -76,11 +77,11 @@ Then select your platform to install miniforge:
 
 In a new terminal (Miniforge Prompt on Windows) run ``conda list`` to test that the install has worked.
 
-Installing muse
-===============
+Installing muse from conda-forge
+================================
 
 To install ``muse``, start by launching a terminal (under a UNIX-like system) or the Miniforge Prompt (under Windows).
-Now we will create and activate a new virtual environment to install ``muse`` into:
+Now we will create and activate a new virtual environment to install ``muse`` into (using the latest version of Python):
 
 .. code-block:: bash
 
@@ -121,20 +122,36 @@ Now that we have a fresh virtual environment, we can proceed with installing ``m
 
 .. code-block:: bash
 
-    $ conda install muse
+    $ conda install -c conda-forge musepy-lmsal
 
 This will install ``muse`` and all of its dependencies.
+The conda-forge package is named ``musepy-lmsal``, but you still import it in Python as ``muse``.
 If you are planning on using muse in jupyter notebooks we also recommend you install the ``ipywidgets`` and ``itables`` packages.
 
 To ensure that ``muse`` was installed correctly, run the following command:
 
 .. code-block:: bash
 
-    $ conda list muse
+    $ conda list musepy-lmsal
 
 This checks if ``muse`` was installed correctly.
 
 If you want to install another package later, you can run ``conda install <package_name>``.
+
+.. _muse-installing-pypi:
+
+Installing muse from PyPI
+=========================
+
+If you are comfortable managing your own Python installation, virtual environments, and dependencies, you can install the ``muse`` package from PyPI.
+Use Python 3.12 or later and create a virtual environment with your preferred method and activate it the environment using the correct command for your platform.
+
+Install ``muse`` into the activated environment and check the installed package:
+
+.. code-block:: bash
+
+    $ python -m pip install muse
+    $ python -m pip show muse
 
 .. _muse-installing-torch:
 
@@ -142,9 +159,9 @@ Installing Torch (optional)
 ===========================
 
 ``muse`` synthesizes spectra with NumPy by default; `PyTorch <https://pytorch.org/>`__ is an optional accelerator backend (``vdem_synthesis(..., backend="torch")``).
-Torch is never selected implicitly and results do not change with what is installed, so you only need this section if you want the speed-up.
+Torch is never selected implicitly, so you only need this section if you want the speed-up.
 
-The right Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Apple Silicon), and the generic PyPI wheel is not always the one you want: on Linux it bundles the multi-gigabyte CUDA stack even on machines without a GPU.
+The correct Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Apple Silicon), and the generic PyPI wheel is not always the one you want: on Linux it bundles the multi-gigabyte CUDA stack even on machines without a GPU.
 
 .. tab-set::
 
