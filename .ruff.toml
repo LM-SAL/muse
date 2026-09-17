@@ -53,14 +53,15 @@ lint.ignore = [
   "TD002",  # Missing author in TODO
   "TD003",  # Missing issue link on the line following this TODO
 ]
+
 [lint.per-file-ignores]
-"examples/*.py" = [
+"examples/**.py" = [
   "B018",  # Not print but display
   "D400",  # First line should end with a period, question mark, or exclamation point
   "ERA001",  # Commented out code
-  "INP001",  # Implicit namespace package
-  "T201",  # Use print
   "N816",  # Variable `times_SG` in global scope should not be mixedCase"
+  "T201", # allow use of print in examples
+  "INP001", # File is part of an implicit namespace package.
 ]
 "docs/*.py" = [
   "E402",  # Module level import not at top of file
