@@ -13,11 +13,7 @@ repos:
     rev: "v0.16.5"
     hooks:
       - id: ruff-check
-<<<<<<<
-        args: ["--fix", "--unsafe-fixes"]
-=======
-        args: ["--fix", "--show-fixes"]
->>>>>>>
+        args: ["--fix", "--unsafe-fixes", "--show-fixes"]
         types: [python]
         exclude: *exclude_dirs
       - id: ruff-format

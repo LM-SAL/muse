@@ -12,16 +12,6 @@ lint.extend-select = [
   "ALL",
 ]
 lint.ignore = [
-<<<<<<<
-=======
-  "UP",
-  "PT",
-  "I",
-  "B",
-  "BLE",
-  "A",
-  "C4",
->>>>>>>
   "ANN001",  # Missing type annotation for function argument
   "ANN002",  # Missing type annotation for variable
   "ANN003",  # Missing type annotation for keyword
@@ -63,38 +53,15 @@ lint.ignore = [
   "TD002",  # Missing author in TODO
   "TD003",  # Missing issue link on the line following this TODO
 ]
-<<<<<<<
-=======
-ignore = [
-  # pycodestyle (E, W)
-  "E501", # ignore line length will use a formatter instead
-  # pytest (PT)
->>>>>>>
-<<<<<<<
-=======
-  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
-  "RUF013", # PEP 484 prohibits implicit `Optional`
-  "RUF015", # Prefer `next(iter(...))` over single element slice
-  # Bugbear (B)
-  "B9", # Very opinionated checks
-]
 
->>>>>>>
 [lint.per-file-ignores]
-"examples/*.py" = [
+"examples/**.py" = [
   "B018",  # Not print but display
   "D400",  # First line should end with a period, question mark, or exclamation point
   "ERA001",  # Commented out code
-  "INP001",  # Implicit namespace package
-  "T201",  # Use print
   "N816",  # Variable `times_SG` in global scope should not be mixedCase"
-<<<<<<<
-=======
-"examples/**.py" = [
   "T201", # allow use of print in examples
   "INP001", # File is part of an implicit namespace package.
-  "B018", # Found useless expression.
->>>>>>>
 ]
 "docs/*.py" = [
   "E402",  # Module level import not at top of file
