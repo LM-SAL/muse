@@ -1,3 +1,13 @@
+0.2.4 (2026-09-16)
+==================
+
+Documentation
+-------------
+
+- Updated the installation guide as conda-forge's packagae name is now ``musepy-lmsal`` whereas it is
+  ``muse`` from PyPI. (`#104 <https://github.com/LM-SAL/muse/pull/104>`__)
+
+
 0.2.1 (2026-09-07)
 ==================
 
