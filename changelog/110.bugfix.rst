@@ -1,0 +1,1 @@
+Fix `muse.transforms.reshape_slit_step_to_x` raising `~astropy.units.UnitConversionError` when the recorded step size is in physical units such as Mm or cm.
