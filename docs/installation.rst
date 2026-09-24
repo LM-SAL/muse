@@ -1,3 +1,6 @@
+.. meta::
+   :description: Install muse in an isolated Python environment using Miniforge and conda. Follow the setup guide for the MUSE solar synthesis package.
+
 .. _muse-installing:
 
 ************
