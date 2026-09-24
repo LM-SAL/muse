@@ -65,5 +65,7 @@ Getting help
 
 If you would like to get in touch with someone who works on ``muse`` **for any reason**, we suggest opening an issue on the `muse GitHub issue tracker <https://github.com/LM-SAL/muse/issues>`__.
 
+The source code is available in the `muse GitHub repository <https://github.com/LM-SAL/muse>`__.
+
 .. |DOI| image:: https://zenodo.org/badge/1168788621.svg
    :target: https://doi.org/10.5281/zenodo.22647387

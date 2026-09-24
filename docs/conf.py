@@ -138,6 +138,7 @@ html_theme = "pydata_sphinx_theme"
 
 html_title = f"muse {version}"
 html_theme_options = {
+    "github_url": "https://github.com/LM-SAL/muse",
     "header_links_before_dropdown": 4,
 }
 if is_development:
