@@ -1,15 +1,48 @@
+.. meta::
+   :description: Synthesize MUSE solar spectra from simulations with Python. Install muse, follow the synthesis tutorials, and explore the API reference.
+
 .. _muse-index:
 
-**********************
-``muse`` documentation
-**********************
+********************************************************
+``muse``: Python tools for the Multi-slit Solar Explorer
+********************************************************
 
 ``muse`` is an open-source Python package for the `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ mission.
-`MUSE <https://en.wikipedia.org/wiki/Multi-slit_Solar_Explorer>`__ has not launched yet, so there are no observations to read; for now the package focuses on synthesizing MUSE observations of the main spectral lines from simulations.
+Use it to build instrument responses, synthesize spectra from solar simulations, and analyze synthetic observations.
+The package is pre-alpha; tools for reading and reducing mission observations are planned.
 
-Once MUSE data become available, `they will be publicly accessible together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__, and this package will provide the tools to read, manipulate, and visualize them.
+.. grid:: 1 1 3 3
+    :gutter: 3
 
-When writing a paper which uses the ``muse`` library, for now, please cite |DOI|, in future we hope to have a JOSS paper.
+    .. grid-item-card:: Install
+        :link: installation
+        :link-type: doc
+
+        Set up Python and install ``muse``.
+
+    .. grid-item-card:: Examples
+        :link: generated/gallery/index
+        :link-type: doc
+
+        Follow the synthesis workflow step by step.
+
+    .. grid-item-card:: API reference
+        :link: reference/index
+        :link-type: doc
+
+        Explore the package's functions and data model.
+
+.. toctree::
+    :hidden:
+    :maxdepth: 1
+
+    muse
+    installation
+    generated/gallery/index
+    reference/index
+    contributing
+    design
+    changelog
 
 What ``muse`` can do today
 ==========================
@@ -23,47 +56,23 @@ The package is pre-alpha and currently focuses on synthesizing MUSE observations
 
 The :doc:`example gallery <generated/gallery/index>` walks through this pipeline end to end.
 
-Roadmap (not yet implemented)
-=============================
+Planned capabilities
+====================
 
-The longer-term goal of ``muse`` is to provide a set of classes for handling both imaging (context imager) and spectral observations (spectrograph).
-The classes will link the observations with various forms of supporting data including: measurement uncertainties; units; a data mask to mark pixels with unreliable or unphysical data values; WCS (World Coordinate System) transformations that describe the position, wavelengths, and times represented by the pixels; and general metadata.
-These classes will also provide methods for applying a number of calibration routines including exposure time correction and conversion between data number, photons, and energy units, referred to as radiometric calibration.
-Furthermore, it will allow you to plug in your own custom calibration routines and apply them to the level 2 data to generate level 3 data.
-None of this observation-handling functionality exists yet.
+Support for reading, calibrating, and visualizing MUSE imaging and spectroscopic observations is planned but not yet implemented.
+See the :ref:`observation-roadmap` for details and :doc:`muse` for an overview of the mission.
 
-.. grid:: 1 2 2 2
-    :gutter: 3
+Citing muse
+===========
 
-    .. grid-item-card::
-        :class-card: card
-
-        Getting started
-        ^^^^^^^^^^^^^^^
-        .. toctree::
-          :maxdepth: 1
-
-          muse
-          installation
-          generated/gallery/index
-
-    .. grid-item-card::
-        :class-card: card
-
-        Other info
-        ^^^^^^^^^^
-        .. toctree::
-          :maxdepth: 1
-
-          reference/index
-          contributing
-          design
-          changelog
+If you use ``muse`` in a paper, please cite |DOI|.
 
 Getting help
 ============
 
 If you would like to get in touch with someone who works on ``muse`` **for any reason**, we suggest opening an issue on the `muse GitHub issue tracker <https://github.com/LM-SAL/muse/issues>`__.
+
+The source code is available in the `muse GitHub repository <https://github.com/LM-SAL/muse>`__.
 
 .. |DOI| image:: https://zenodo.org/badge/1168788621.svg
    :target: https://doi.org/10.5281/zenodo.22647387

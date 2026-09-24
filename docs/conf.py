@@ -135,9 +135,11 @@ copybutton_prompt_is_regexp = True
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 html_theme = "pydata_sphinx_theme"
+html_show_sourcelink = False
 
 html_title = f"muse {version}"
 html_theme_options = {
+    "github_url": "https://github.com/LM-SAL/muse",
     "header_links_before_dropdown": 4,
 }
 if is_development:
