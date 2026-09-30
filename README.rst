@@ -14,7 +14,7 @@ muse
 
 `To learn more about MUSE, please visit the MUSE website <https://muse.lmsal.com>`__.
 
-`Our documentation is hosted by ReadTheDocs (RTD) <https://muse-lmsal.readthedocs.io/>`__.
+`Our documentation is hosted by ReadTheDocs (RTD) <https://muse.readthedocs.io/>`__.
 
 Acknowledging or Citing ``muse``
 ================================
