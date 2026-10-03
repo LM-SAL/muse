@@ -2,7 +2,7 @@
 name = "muse"
 description = "A library to reduce and analyze data from the MUSE Mission."
 readme = { file = "README.rst", content-type = "text/x-rst" }
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license-files = ["licenses/LICENSE.rst"]
 authors = [
   { name = "MUSE Instrument Team", email = "nfreij@seti.org" },
@@ -28,8 +28,8 @@ dependencies = [
   "astropy>=8.0",
   "attrs>=26.1.0",
   "dask[array]>=2026.8.0",
-  "loguru>=0.7.0",
-  "netCDF4>=1.7.0",
+  "loguru>=0.7.3",
+  "netCDF4>=1.7.2",
   "numpy>=2.5.0",
   "scipy>=1.18.0",
   "tqdm>=4.70",
@@ -67,9 +67,9 @@ optional-dependencies.tests = [
   "muse[all]",
   "matplotlib>=3.11.0",
   "pytest-doctestplus>=1.7.0",
-  "pytest-loguru>=0.4.0",
+  "pytest-loguru>=0.4.1",
   "pytest-mpl>=0.19.0",
-  "pytest-remotedata>=0.4.0",
+  "pytest-remotedata>=0.4.2",
   "pytest>=9.1.0",
 ]
 optional-dependencies.torch = ["torch>=2.13.0"]
