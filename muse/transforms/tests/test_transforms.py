@@ -293,7 +293,9 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
     assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
 
 
-def test_reshape_slit_step_to_x_round_trips(vdem) -> None:
+@pytest.mark.parametrize(("unit", "step_size"), [("arcsec", 0.7), ("Mm", 0.25), ("cm", 2.5e7)])
+def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
+    vdem = vdem.assign_coords(x=("x", np.arange(vdem.sizes["x"]) * step_size, {"units": unit}))
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
     assert_dataset_structure(
@@ -303,7 +305,7 @@ def test_reshape_slit_step_to_x_round_trips(vdem) -> None:
         sizes={"x": 385, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    assert out.x.attrs["units"] == "arcsec"
+    assert out.x.attrs["units"] == unit
     np.testing.assert_allclose(out.x.values, vdem.x.values)
     np.testing.assert_array_equal(out.vdem.transpose(*vdem.vdem.dims).values, vdem.vdem.values)
 

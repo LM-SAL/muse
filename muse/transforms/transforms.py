@@ -363,7 +363,7 @@ def reshape_slit_step_to_x(
             msg = f"{coord} coordinate is missing"
             raise ValueError(msg)
     step_units = ds.attrs.get("step_size units", "arcsec")
-    step_size = ds.attrs.get("step_size", DEFAULTS_MUSE.dx_pixel_SG.to_value(step_units))
+    step_size = ds.attrs["step_size"] if "step_size" in ds.attrs else DEFAULTS_MUSE.dx_pixel_SG.to_value(step_units)
     reshaped = ds.stack(x=("slit", "step"))
     reshaped = reshaped.drop_vars(["x", "slit", "step"])
     reshaped = reshaped.assign_coords(x=np.arange(reshaped.x.size) * step_size)
