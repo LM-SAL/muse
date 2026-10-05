@@ -14,12 +14,12 @@ Dev env = **micromamba** env named `muse` (under your `$MAMBA_ROOT_PREFIX/envs/`
 micromamba run -n muse python -m pytest muse/tests/test_variables.py -q   # one test file
 micromamba run -n muse python -m pytest muse -q                           # package tests
 micromamba activate muse                                                  # or activate the shell
-tox -e py314                                                              # full env (matrix: py312/313/314)
+tox -e py314                                                              # full env (matrix: py313/314)
 tox -e build_docs                                                         # build Sphinx docs
 ```
 
 - `.venv/` in repo is **not** dev env — transient venv created by `tox-uv` when running `tox`. Don't rely on it for ad-hoc commands.
-- Python ≥ 3.12 (CI runs 3.12, 3.13, 3.14). `tox` deps resolve via `uv.lock` (generated on first tox run, gitignored).
+- Python ≥ 3.13 (CI runs 3.13, 3.14). `tox` deps resolve via `uv.lock` (generated on first tox run, gitignored).
 - Lint/format = **ruff** (config in `.ruff.toml`), run via pre-commit:
   ```bash
   pre-commit run --all-files          # full hook list in .pre-commit-config.yaml

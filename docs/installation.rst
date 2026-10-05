@@ -147,7 +147,7 @@ Installing muse from PyPI
 =========================
 
 If you are comfortable managing your own Python installation, virtual environments, and dependencies, you can install the ``muse`` package from PyPI.
-Use Python 3.12 or later and create a virtual environment with your preferred method and activate it the environment using the correct command for your platform.
+Use Python 3.13 or later and create a virtual environment with your preferred method and activate it the environment using the correct command for your platform.
 
 Install ``muse`` into the activated environment and check the installed package:
 
