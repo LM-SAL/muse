@@ -46,7 +46,7 @@ from muse.synthesis import calculate_moments, create_simple_vdem
 
 simulation_path = Path(pooch.os_cache("muse")) / "flare_nature_astro"
 pooch.retrieve(
-    "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/flare_nature_astro.tar.gz",
+    "https://github.com/LM-SAL/muse-data/releases/download/v1/flare_nature_astro.tar.gz",
     known_hash="f14aaf1608033ff6c5ac39f053f1c5f0a48ba7cb9c522350d146ff9561d3b349",
     fname="flare_nature_astro.tar.gz",
     path=simulation_path.parent,
