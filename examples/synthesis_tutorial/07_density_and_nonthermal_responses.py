@@ -56,7 +56,7 @@ cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
 line_lists = {
     "pressure": {
         "url": (
-            "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
+            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
         ),
         "hash": "sha256:170993ad7bd2ebfc843561b9d0d46b2fffe04025617bc63eff39e55d69446cbf",
@@ -64,7 +64,7 @@ line_lists = {
     },
     "density": {
         "url": (
-            "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
+            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti_density.nc"
         ),
         "hash": "sha256:47205ccd3cf3c7f315bd9f7c38e78410a92611f2ce4779c39d70f34572232d0d",

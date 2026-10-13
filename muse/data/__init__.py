@@ -7,7 +7,7 @@ from pathlib import Path
 
 __all__ = ["fetch_example_data"]
 
-_SAMPLE_DATA_URL = "https://github.com/LM-SAL/muse-sample-data/releases/download/v1/"
+_SAMPLE_DATA_URL = "https://github.com/LM-SAL/muse-data/releases/download/v1/"
 
 #: File name -> (download URL, SHA-256 hash, cache subdirectory).
 _REGISTRY = {
