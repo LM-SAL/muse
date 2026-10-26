@@ -3,7 +3,7 @@ Functions whose scope is not limited to one part of the muse package.
 """
 
 import inspect
-import datetime
+import datetime as dt
 from collections.abc import Callable, Sequence
 
 import dask.array as da
@@ -164,7 +164,7 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
-    today = datetime.datetime.now(tz=datetime.UTC).strftime("%d-%b-%Y")
+    today = dt.datetime.now(tz=dt.UTC).strftime("%d-%b-%Y")
     ds.attrs["date modified" if "date created" in ds.attrs else "date created"] = today
     ds.attrs["version"] = _version
 
