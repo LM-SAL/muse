@@ -86,9 +86,9 @@ def _resolve_device(device: "str | torch.device | None" = None) -> "torch.device
     if device != "auto":
         return torch.device(device)
     if torch.cuda.is_available():
-        return torch.device("cuda")
+        return torch.device("cuda")  # pragma: no cover
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
+        return torch.device("mps")  # pragma: no cover
     return torch.device("cpu")
 
 
@@ -104,9 +104,9 @@ def _empty_device_cache(device: "torch.device") -> None:
     import torch  # NOQA: PLC0415
 
     if device.type == "mps":
-        torch.mps.empty_cache()
+        torch.mps.empty_cache()  # pragma: no cover
     elif device.type == "cuda":
-        torch.cuda.empty_cache()
+        torch.cuda.empty_cache()  # pragma: no cover
 
 
 def _available_memory_bytes(device: "torch.device") -> int:
@@ -127,11 +127,11 @@ def _available_memory_bytes(device: "torch.device") -> int:
     import psutil  # NOQA: PLC0415
     import torch  # NOQA: PLC0415
 
-    if device.type == "cuda":
+    if device.type == "cuda":  # pragma: no cover
         free, _ = torch.cuda.mem_get_info(device)
         return int(free)
     host_available = int(psutil.virtual_memory().available)
-    if device.type == "mps":
+    if device.type == "mps":  # pragma: no cover
         recommended = int(torch.mps.recommended_max_memory())
         allocated = int(torch.mps.driver_allocated_memory())
         return max(1, min(host_available, recommended - allocated))
@@ -240,7 +240,7 @@ def torch_einsum(
         product = torch_to_numpy(
             torch.einsum(chunk.to(target), vdem_indices, response_tensor, response_indices, output_indices)
         )
-        if target.type == "mps" and not product.any() and chunk.any() and response_tensor.any():
+        if target.type == "mps" and not product.any() and chunk.any() and response_tensor.any():  # pragma: no cover
             # Oversubscribed unified memory: the product is right on the GPU, its copy to the host is zeros.
             # ponytail: a chunk whose nonzero operands do not overlap along the summed axes trips this too;
             # if a real response ever does, compare one row against a CPU product before raising.

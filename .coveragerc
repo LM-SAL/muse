@@ -30,3 +30,6 @@ exclude_lines =
   if TYPE_CHECKING:
   # Ignore typing overloads
   @overload
+  # Hardware-only tests: no CI runner has a CUDA or Metal device
+  @pytest.mark.cuda
+  reason="no MPS device"

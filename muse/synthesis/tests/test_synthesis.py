@@ -2,7 +2,6 @@ import gc
 import os
 import time
 import tracemalloc
-import importlib.util
 
 import dask
 import dask.array as da
@@ -21,11 +20,10 @@ SPEED_OF_LIGHT_KMS = 299792.458
 
 
 def _mps_available() -> bool:
-    torch = importlib.util.find_spec("torch")
-    if torch is None:
+    try:
+        import torch  # NOQA: PLC0415
+    except ImportError:
         return False
-    import torch  # NOQA: PLC0415
-
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
 
