@@ -20,7 +20,7 @@ from muse.instrument.continuum import (
     create_chianti_continuum,
     create_fiasco_continuum,
 )
-from muse.instrument.spectral import log_wavelength_edges
+from muse.instrument.spectral import create_log_wavelength_edges
 from muse.tests.helpers import synthetic_effective_area
 
 NORMALIZATION = 1e-27
@@ -62,87 +62,91 @@ def _continuum_cube():
     )
 
 
-class TestBinAverage:
-    def test_linear_density_is_exact(self):
-        x = np.linspace(0.0, 10.0, 101)
-        values = xr.DataArray(2.0 + 0.5 * x, dims="wavelength_bin")
-        edges = np.array([0.0, 1.3, 2.0, 7.7, 10.0])
-        expected = [(2.0 * (b - a) + 0.25 * (b**2 - a**2)) / (b - a) for a, b in itertools.pairwise(edges)]
-        np.testing.assert_allclose(_bin_average(values, x, edges).values, expected, rtol=1e-12)
+def test_linear_density_is_exact():
+    x = np.linspace(0.0, 10.0, 101)
+    values = xr.DataArray(2.0 + 0.5 * x, dims="wavelength_bin")
+    edges = np.array([0.0, 1.3, 2.0, 7.7, 10.0])
+    expected = [(2.0 * (b - a) + 0.25 * (b**2 - a**2)) / (b - a) for a, b in itertools.pairwise(edges)]
+    np.testing.assert_allclose(_bin_average(values, x, edges).values, expected, rtol=1e-12)
 
-    def test_zero_outside_the_samples_and_conservative(self):
-        x = np.linspace(0.0, 10.0, 101)
-        y = np.exp(-0.5 * ((x - 4.0) / 1.5) ** 2)
-        edges = np.array([-2.0, 0.0, 3.3, 6.1, 10.0, 13.0])
-        out = _bin_average(xr.DataArray(y, dims="wavelength_bin"), x, edges)
-        assert out.values[0] == 0.0
-        assert out.values[-1] == 0.0
-        np.testing.assert_allclose((out.values * np.diff(edges)).sum(), np.trapezoid(y, x), rtol=1e-12)
 
-    def test_extra_dims_and_attrs_are_kept(self):
-        values = xr.DataArray(
-            np.outer([1.0, 2.0], np.ones(11)),
-            dims=("logT", "wavelength_bin"),
-            coords={"logT": [5.0, 6.0]},
-            attrs={"units": "u"},
+def test_zero_outside_the_samples_and_conservative():
+    x = np.linspace(0.0, 10.0, 101)
+    y = np.exp(-0.5 * ((x - 4.0) / 1.5) ** 2)
+    edges = np.array([-2.0, 0.0, 3.3, 6.1, 10.0, 13.0])
+    out = _bin_average(xr.DataArray(y, dims="wavelength_bin"), x, edges)
+    assert out.values[0] == 0.0
+    assert out.values[-1] == 0.0
+    np.testing.assert_allclose((out.values * np.diff(edges)).sum(), np.trapezoid(y, x), rtol=1e-12)
+
+
+def test_extra_dims_and_attrs_are_kept():
+    values = xr.DataArray(
+        np.outer([1.0, 2.0], np.ones(11)),
+        dims=("logT", "wavelength_bin"),
+        coords={"logT": [5.0, 6.0]},
+        attrs={"units": "u"},
+    )
+    out = _bin_average(values, np.linspace(0.0, 1.0, 11), np.array([0.0, 0.5, 1.0]))
+    assert out.dims == ("logT", "wavelength_bin")
+    assert out.attrs == {"units": "u"}
+    np.testing.assert_allclose(out.values, [[1.0, 1.0], [2.0, 2.0]])
+
+
+def test_total_matches_the_fine_integral():
+    area, wavelength, values = _stepped_effective_area()
+    edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
+    out = bin_continuum(_continuum_cube(), edges, effective_area=area)
+    assert out.spectral_response.dims == ("line", "logT", "wavelength_bin")
+    assert out.spectral_response.attrs["units"] == "1e-27 cm5 erg / (Angstrom s sr)"
+    assert out.spectral_response.attrs["effective_area_at"] == "bin average"
+    assert out.spectral_response.attrs["bin_method"] == "average"
+    np.testing.assert_allclose(out.wavelength_grid.values, 0.5 * (edges[1:] + edges[:-1]).value)
+    np.testing.assert_allclose(_bin_width(out).values, np.diff(edges.value))
+    assert "bin_continuum(" in out.attrs["HISTORY"][-1]
+    total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
+    x = np.linspace(edges[0].value, edges[-1].value, 200001)
+    for i_line, factor in enumerate([1.0, 0.5, 0.1]):
+        for i_t, scale in enumerate([1.0, 2.0, 3.0]):
+            expected = factor * scale * np.trapezoid((1.0 + 0.2 * (x - 165.0)) * np.interp(x, wavelength, values), x)
+            # the product of density and area is sampled on the 0.1 A grid and joined by
+            # straight lines; the reference integrates the exact quadratic product
+            np.testing.assert_allclose(float(total.isel(line=i_line, logT=i_t)), expected, rtol=2e-4)
+
+
+def test_doppler_shift():
+    area, _, _ = _stepped_effective_area()
+    edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
+    velocities = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
+    out = bin_continuum(_continuum_cube(), edges, effective_area=area, doppler_velocity=velocities)
+    assert out.spectral_response.dims == ("line", "doppler_velocity", "logT", "wavelength_bin")
+    assert out.doppler_velocity.attrs["units"] == "km / s"
+    still = bin_continuum(_continuum_cube(), edges, effective_area=area)
+    xr.testing.assert_allclose(
+        out.spectral_response.sel(doppler_velocity=0.0, drop=True), still.spectral_response, rtol=1e-12
+    )
+    total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
+    # the density rises with wavelength: light observed at lambda was emitted at
+    # lambda / (1 + v / c), so a redshift shows the fainter short-wavelength emission
+    assert (total.sel(doppler_velocity=200.0) < total.sel(doppler_velocity=0.0)).all()
+    assert (total.sel(doppler_velocity=-200.0) > total.sel(doppler_velocity=0.0)).all()
+    expected = -200.0 / const.c.to_value(u.km / u.s) * 171.0 * 0.2 / (1.0 + 0.2 * 6.0)
+    ratio = (total.sel(doppler_velocity=200.0) / total.sel(doppler_velocity=0.0) - 1.0).values
+    np.testing.assert_allclose(ratio, expected, rtol=0.1)
+
+
+def test_rejects_bad_inputs():
+    area, _, _ = _stepped_effective_area()
+    with pytest.raises(ValueError, match="increasing"):
+        bin_continuum(_continuum_cube(), np.array([170.0, 171.0, 170.5]) * u.AA, effective_area=area)
+    with pytest.raises(ValueError, match="wavelength coordinate"):
+        bin_continuum(
+            _continuum_cube(),
+            np.array([170.0, 171.0]) * u.AA,
+            effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}),
         )
-        out = _bin_average(values, np.linspace(0.0, 1.0, 11), np.array([0.0, 0.5, 1.0]))
-        assert out.dims == ("logT", "wavelength_bin")
-        assert out.attrs == {"units": "u"}
-        np.testing.assert_allclose(out.values, [[1.0, 1.0], [2.0, 2.0]])
-
-
-class TestBinContinuum:
-    def test_total_matches_the_fine_integral(self):
-        area, wavelength, values = _stepped_effective_area()
-        edges = log_wavelength_edges(170 * u.AA, 172 * u.AA, 0.005)
-        out = bin_continuum(_continuum_cube(), area, edges)
-        assert out.spectral_response.dims == ("line", "logT", "wavelength_bin")
-        assert out.spectral_response.attrs["units"] == "1e-27 cm5 erg / (Angstrom s sr)"
-        assert out.spectral_response.attrs["effective_area_at"] == "bin average"
-        assert out.spectral_response.attrs["profile"] == "integrate"
-        np.testing.assert_allclose(out.wavelength_grid.values, 0.5 * (edges[1:] + edges[:-1]).value)
-        np.testing.assert_allclose(_bin_width(out).values, np.diff(edges.value))
-        assert "bin_continuum(" in out.attrs["HISTORY"][-1]
-        total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
-        x = np.linspace(edges[0].value, edges[-1].value, 200001)
-        for i_line, factor in enumerate([1.0, 0.5, 0.1]):
-            for i_t, scale in enumerate([1.0, 2.0, 3.0]):
-                expected = (
-                    factor * scale * np.trapezoid((1.0 + 0.2 * (x - 165.0)) * np.interp(x, wavelength, values), x)
-                )
-                # the product of density and area is sampled on the 0.1 A grid and joined by
-                # straight lines; the reference integrates the exact quadratic product
-                np.testing.assert_allclose(float(total.isel(line=i_line, logT=i_t)), expected, rtol=2e-4)
-
-    def test_doppler_shift(self):
-        area, _, _ = _stepped_effective_area()
-        edges = log_wavelength_edges(170 * u.AA, 172 * u.AA, 0.005)
-        velocities = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
-        out = bin_continuum(_continuum_cube(), area, edges, doppler_velocity=velocities)
-        assert out.spectral_response.dims == ("line", "doppler_velocity", "logT", "wavelength_bin")
-        assert out.doppler_velocity.attrs["units"] == "km / s"
-        still = bin_continuum(_continuum_cube(), area, edges)
-        xr.testing.assert_allclose(
-            out.spectral_response.sel(doppler_velocity=0.0, drop=True), still.spectral_response, rtol=1e-12
-        )
-        total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
-        # the density rises with wavelength: light observed at lambda was emitted at
-        # lambda / (1 + v / c), so a redshift shows the fainter short-wavelength emission
-        assert (total.sel(doppler_velocity=200.0) < total.sel(doppler_velocity=0.0)).all()
-        assert (total.sel(doppler_velocity=-200.0) > total.sel(doppler_velocity=0.0)).all()
-        expected = -200.0 / const.c.to_value(u.km / u.s) * 171.0 * 0.2 / (1.0 + 0.2 * 6.0)
-        ratio = (total.sel(doppler_velocity=200.0) / total.sel(doppler_velocity=0.0) - 1.0).values
-        np.testing.assert_allclose(ratio, expected, rtol=0.1)
-
-    def test_rejects_bad_inputs(self):
-        area, _, _ = _stepped_effective_area()
-        with pytest.raises(ValueError, match="increasing"):
-            bin_continuum(_continuum_cube(), area, np.array([170.0, 171.0, 170.5]) * u.AA)
-        with pytest.raises(ValueError, match="wavelength coordinate"):
-            bin_continuum(_continuum_cube(), xr.DataArray(2.0, attrs={"units": "cm2"}), np.array([170.0, 171.0]) * u.AA)
-        with pytest.raises(ValueError, match="spectral_response"):
-            bin_continuum(xr.Dataset(), area, np.array([170.0, 171.0]) * u.AA)
+    with pytest.raises(ValueError, match="spectral_response"):
+        bin_continuum(xr.Dataset(), np.array([170.0, 171.0]) * u.AA, effective_area=area)
 
 
 def _fake_intensity(temperatures, wavelengths, scale):

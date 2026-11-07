@@ -60,6 +60,15 @@ def save_response(
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
     _validate_response(response, "response")
+    response_file = _check_destination(response_file)
+    chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
+    _write_chunked(chunked, response_file, "detector_response")
+
+
+def _check_destination(response_file: str | Path) -> Path:
+    """
+    The destination as a path, refusing an existing one or an unknown suffix.
+    """
     response_file = Path(response_file)
     if response_file.exists():
         msg = f"Refusing to overwrite existing response: {response_file}"
@@ -68,29 +77,27 @@ def save_response(
     if suffix != ".zarr" and suffix not in _NETCDF_SUFFIXES:
         msg = "response_file must end in .zarr, .nc, .ncdf, or .netcdf"
         raise ValueError(msg)
+    return response_file
 
-    chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
-    if suffix == ".zarr":
+
+def _write_chunked(chunked: xr.Dataset, response_file: Path, variable: str) -> None:
+    """
+    Write a chunked dataset as zarr (Blosc/Zstd level 3, bit-shuffle) or netCDF (zlib
+    level 1, shuffle).
+    """
+    if response_file.suffix.lower() == ".zarr":
         compressor = BloscCodec(cname="zstd", clevel=3, shuffle="bitshuffle")
         chunked.to_zarr(
             response_file,
             mode="w",
             zarr_format=3,
             consolidated=False,
-            encoding={"detector_response": {"compressors": (compressor,)}},
+            encoding={variable: {"compressors": (compressor,)}},
         )
         return
-    chunksizes = tuple(axis[0] for axis in chunked.detector_response.chunks)
+    chunksizes = tuple(axis[0] for axis in chunked[variable].chunks)
     chunked.to_netcdf(
-        response_file,
-        encoding={
-            "detector_response": {
-                "chunksizes": chunksizes,
-                "zlib": True,
-                "complevel": 1,
-                "shuffle": True,
-            }
-        },
+        response_file, encoding={variable: {"chunksizes": chunksizes, "zlib": True, "complevel": 1, "shuffle": True}}
     )
 
 
@@ -537,27 +544,9 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
     if missing:
         msg = f"response is missing required variables: {', '.join(missing)}"
         raise ValueError(msg)
-    response_file = Path(response_file)
-    if response_file.exists():
-        msg = f"Refusing to overwrite existing response: {response_file}"
-        raise ValueError(msg)
-    suffix = response_file.suffix.lower()
-    if suffix != ".zarr" and suffix not in _NETCDF_SUFFIXES:
-        msg = "response_file must end in .zarr, .nc, .ncdf, or .netcdf"
-        raise ValueError(msg)
+    response_file = _check_destination(response_file)
     chunks = {name: 1 for name in ("line", "logT", "pressure", "logD", "abundance") if name in response.dims}
-    chunked = response.drop_encoding().chunk(chunks)
-    if suffix == ".zarr":
-        compressor = BloscCodec(cname="zstd", clevel=3, shuffle="bitshuffle")
-        chunked.to_zarr(
-            response_file,
-            mode="w",
-            zarr_format=3,
-            consolidated=False,
-            encoding={"spectral_response": {"compressors": (compressor,)}},
-        )
-        return
-    chunked.to_netcdf(response_file, encoding={"spectral_response": {"zlib": True, "complevel": 1, "shuffle": True}})
+    _write_chunked(response.drop_encoding().chunk(chunks), response_file, "spectral_response")
 
 
 def read_spectral_response(response_file: str | Path) -> xr.Dataset:

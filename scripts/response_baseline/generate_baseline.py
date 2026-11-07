@@ -1,12 +1,11 @@
 """
 Generate the whole baseline locally, in one serial process.
 
-The local counterpart of the cluster drivers: the per-abundance line-list caches, every
-task of the table through the same run_task the array driver runs, then the plots, so
-the run directory is identical to a cluster run (cache/ SG/ CI/ manifest/ logs/ plots/).
+The local counterpart of the cluster drivers: the per-abundance line-list caches, every task
+of the table through the same run_task the array driver runs, then the plots, so the run
+directory is identical to a cluster run (cache/ SG/ CI/ manifest/ logs/ plots/)::
 
-python generate_baseline.py --run-dir RUN --effective-area-dir AREAS --author ABC
---effective-area-note coating
+    python generate_baseline.py --run-dir RUN --effective-area-dir AREAS --author ABC --effective-area-note coating
 """
 
 import sys
@@ -15,8 +14,7 @@ import argparse
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from run_config import (
-    DEFAULT_ABUNDANCES,
-    TEMPERATURE,
+    DEFAULT_TEMPERATURE,
     add_common_arguments,
     effective_area_files,
     plasma_grid,
@@ -25,7 +23,8 @@ from run_config import (
 )
 from run_response_pipeline import add_task_arguments, run_task
 
-from muse.instrument import get_line_list
+from muse.instrument import load_or_create_line_list
+from muse.instrument.pipeline import DEFAULT_ABUNDANCES
 
 
 def main(argv=None):
@@ -34,14 +33,14 @@ def main(argv=None):
     add_task_arguments(parser)
     parser.add_argument("--skip-plots", action="store_true")
     args = parser.parse_args(argv)
-    sg, ci = effective_area_files(args)
+    sg_files, ci_files = effective_area_files(args)
     if args.line_list_file is None:
         for abundance in args.abundance or DEFAULT_ABUNDANCES:
-            get_line_list(
+            load_or_create_line_list(
                 args.run_dir / "cache",
                 abundance=abundance,
-                wavelength_range=wavelength_range(sg + ci),
-                temperature=TEMPERATURE,
+                wavelength_range=wavelength_range(sg_files + ci_files),
+                temperature=DEFAULT_TEMPERATURE,
                 minimum_abundance=args.minimum_abundance,
                 backend=args.line_list_backend,
                 workers=args.workers,

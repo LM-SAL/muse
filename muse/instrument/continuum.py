@@ -13,7 +13,7 @@ from muse.instrument.linelist import (
     _import_fiasco,
     _initialize_chianti,
     _over_ion_chunks,
-    _validate_positive_data_array,
+    _validate_plasma_inputs,
 )
 from muse.instrument.spectral import (
     _centers_to_edges,
@@ -38,7 +38,7 @@ def create_chianti_continuum(
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
-    minimum_abundance: float = 1e-7,
+    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
 ) -> xr.Dataset:
     """
     Compute the continuum with ChiantiPy, summed over every ion of every abundant
@@ -68,7 +68,8 @@ def create_chianti_continuum(
     abundance : `str`, optional
         CHIANTI abundance name; ChiantiPy's default applies when omitted.
     minimum_abundance : `float`, optional
-        Elements with an abundance relative to hydrogen below this are skipped, by default 1e-7.
+        Elements with an abundance relative to hydrogen below this are skipped, by default
+        ``DEFAULTS_MUSE.minimum_abundance``.
 
     Returns
     -------
@@ -114,13 +115,13 @@ def create_chianti_continuum(
             except Exception:  # noqa: BLE001, S112 - ions the database lacks
                 continue
             free_free_part = _chianti_component(
-                continuum.freeFree, grid, temperatures.size, includeAbund=True, includeIoneq=True
+                continuum.freeFree, "FreeFree", grid, temperatures.size, includeAbund=True, includeIoneq=True
             )
             if free_free_part is not None:
                 free_free += free_free_part
                 contributing["free-free"] += 1
             free_bound_part = _chianti_component(
-                continuum.freeBound, grid, temperatures.size, includeAbund=True, includeIoneq=True
+                continuum.freeBound, "FreeBound", grid, temperatures.size, includeAbund=True, includeIoneq=True
             )
             if free_bound_part is not None:
                 free_bound += free_bound_part
@@ -128,19 +129,19 @@ def create_chianti_continuum(
             if stage not in (z, z - 1):
                 continue
             counted = False
-            for i_plasma, electron_density in enumerate(densities):
+            for plasma_index, electron_density in enumerate(densities):
                 try:
                     ion = ch.ion(
                         ion_name,
                         temperature=chianti_temperatures,
-                        eDensity=_repeat_like(electron_density, chianti_temperatures),
+                        eDensity=_match_doubled_grid(electron_density, chianti_temperatures),
                         abundance=abundance,
                     )
                 except Exception:  # noqa: BLE001, S112 - ions the database lacks
                     continue
-                result = _chianti_component(ion.twoPhoton, grid, temperatures.size)
-                if result is not None:
-                    two_photon[i_plasma] += result
+                two_photon_part = _chianti_component(ion.twoPhoton, "TwoPhoton", grid, temperatures.size)
+                if two_photon_part is not None:
+                    two_photon[plasma_index] += two_photon_part
                     counted = True
             contributing["two-photon"] += counted
     logger.info(f"ChiantiPy continuum: ions contributing {contributing}")
@@ -172,7 +173,7 @@ def create_fiasco_continuum(
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
-    minimum_abundance: float = 1e-7,
+    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
     workers: int = 1,
     hdf5_dbase_root=None,
 ) -> xr.Dataset:
@@ -206,7 +207,7 @@ def create_fiasco_continuum(
     """
     call_inputs = dict(locals())
     temperature, plasma_grid, grid = _validate_continuum_inputs(temperature, density, pressure, wavelength_grid)
-    fiasco = _import_fiasco(line_lists=False)
+    fiasco = _import_fiasco(require_line_lists=False)
     temperature_bc, density_bc, extra_coords = _broadcast_plasma_grid(
         temperature, plasma_grid, by_density=density is not None
     )
@@ -237,16 +238,16 @@ def create_fiasco_continuum(
     free_free = sum(_over_ion_chunks(_fiasco_component, ions, workers, "free_free", wavelengths)) / (4 * np.pi)
     free_bound = sum(_over_ion_chunks(_fiasco_component, ions, workers, "free_bound", wavelengths)) / (4 * np.pi)
     two_photon = np.zeros((len(densities), temperatures.size, grid.size))
-    for i_plasma, electron_density in enumerate(densities):
+    for plasma_index, electron_density in enumerate(densities):
         # One density per temperature on a pressure grid: the collection evaluates the full
         # temperature x density grid, of which the diagonal is wanted.
-        unique = np.unique(electron_density)
+        unique_densities = np.unique(electron_density)
         parts = _over_ion_chunks(
-            _fiasco_component, two_photon_ions, workers, "two_photon", wavelengths, unique * u.cm**-3
+            _fiasco_component, two_photon_ions, workers, "two_photon", wavelengths, unique_densities * u.cm**-3
         )
-        cube = sum(parts) / (4 * np.pi)
-        columns = np.searchsorted(unique, _repeat_like(electron_density, temperatures))
-        two_photon[i_plasma] = cube[np.arange(temperatures.size), columns, :]
+        two_photon_grid = sum(parts) / (4 * np.pi)
+        columns = np.searchsorted(unique_densities, electron_density)
+        two_photon[plasma_index] = two_photon_grid[np.arange(temperatures.size), columns, :]
     logger.info(f"fiasco continuum: {len(ions)} ions, {len(two_photon_ions)} hydrogen- or helium-like")
 
     continuum = _continuum_dataset(
@@ -266,9 +267,9 @@ def create_fiasco_continuum(
 @u.quantity_input(wavelength_edges=u.AA, doppler_velocity=u.km / u.s)
 def bin_continuum(
     continuum: xr.Dataset,
-    effective_area: xr.DataArray,
     wavelength_edges: u.Quantity,
     *,
+    effective_area: xr.DataArray,
     doppler_velocity: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
@@ -277,7 +278,7 @@ def bin_continuum(
     For every Doppler velocity the continuum is shifted (light observed at a wavelength was
     emitted at that wavelength over ``1 + v / c``), multiplied by the area at the observed
     wavelength and averaged over each bin, so a bin keeps the structure of the area inside it.
-    The result has the layout of `create_spectral_response` with ``profile="integrate"`` and
+    The result has the layout of `create_spectral_response` with ``bin_method="average"`` and
     concatenates with a line response along ``line``.
 
     Parameters
@@ -285,10 +286,10 @@ def bin_continuum(
     continuum : `xarray.Dataset`
         From `create_chianti_continuum` or `create_fiasco_continuum`, on a grid fine enough
         to resolve the effective area.
-    effective_area : `xarray.DataArray`
-        A curve with a ``wavelength`` coordinate, in units convertible to cm2.
     wavelength_edges : `astropy.units.Quantity`
         Strictly increasing bin edges, one more than the number of bins.
+    effective_area : `xarray.DataArray`
+        A curve with a ``wavelength`` coordinate, in units convertible to cm2.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional bulk velocities; adds a ``doppler_velocity`` dimension.
 
@@ -309,29 +310,31 @@ def bin_continuum(
     _require_increasing_axis(edges, "wavelength_edges", positive=True)
     grid = np.asarray(coord_as_unit(continuum, "wavelength_grid", u.AA, "continuum.wavelength_grid"), dtype=float)
     response_unit = require_unit(continuum, "spectral_response", "continuum.spectral_response")
-    area = _effective_area_in_canonical_units(effective_area)
-    if "wavelength" not in area.dims:
+    area_curve = _effective_area_in_canonical_units(effective_area)
+    if "wavelength" not in area_curve.dims:
         msg = "effective_area must be a curve with a wavelength coordinate"
         raise ValueError(msg)
-    area = area.interp(wavelength=xr.DataArray(grid, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
+    area_on_grid = (
+        area_curve.interp(wavelength=xr.DataArray(grid, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
+    )
     rest = continuum.spectral_response.assign_coords(wavelength_bin=grid)
 
     if doppler_velocity is None:
-        binned = _bin_average(rest * area, grid, edges)
+        binned = _bin_average(rest * area_on_grid, grid, edges)
     else:
         velocities = np.atleast_1d(doppler_velocity.to_value(u.km / u.s)).astype(float)
         speed_of_light = const.c.to_value(u.km / u.s)
         pieces = []
         for velocity in velocities:
             shifted = rest.interp(wavelength_bin=grid / (1 + velocity / speed_of_light), kwargs={"fill_value": 0.0})
-            pieces.append(_bin_average(shifted.assign_coords(wavelength_bin=grid) * area, grid, edges))
+            pieces.append(_bin_average(shifted.assign_coords(wavelength_bin=grid) * area_on_grid, grid, edges))
         axis = xr.DataArray(velocities, dims="doppler_velocity", attrs={"units": str(u.km / u.s)})
         binned = xr.concat(pieces, dim=axis).transpose("line", "doppler_velocity", ...)
     binned.attrs = {
         **continuum.spectral_response.attrs,
         "units": str(response_unit * u.cm**2),
         "effective_area_at": "bin average",
-        "profile": "integrate",
+        "bin_method": "average",
     }
     centers = _wavelength_grid_in_angstrom(0.5 * (edges[1:] + edges[:-1]) * u.AA)
     bounds = xr.DataArray(
@@ -346,21 +349,11 @@ def bin_continuum(
 
 
 def _validate_continuum_inputs(temperature, density, pressure, wavelength_grid):
-    if density is None and pressure is None:
-        msg = "Specify density or pressure"
-        raise ValueError(msg)
-    if density is not None and pressure is not None:
-        msg = "density and pressure are mutually exclusive"
-        raise ValueError(msg)
-    temperature = _validate_positive_data_array(temperature, "temperature", u.K, dimension="logT")
-    if density is not None:
-        plasma_grid = _validate_positive_data_array(density, "density", u.cm**-3)
-    else:
-        plasma_grid = _validate_positive_data_array(pressure, "pressure", u.K / u.cm**3)
-    if plasma_grid.dims[0] == "logT":
-        msg = "the plasma grid dimension must not be named 'logT'"
-        raise ValueError(msg)
+    temperature, plasma_grid = _validate_plasma_inputs(temperature, density, pressure)
     grid = np.asarray(wavelength_grid.to_value(u.AA), dtype=float).reshape(-1)
+    if grid.size < 2:
+        msg = "wavelength_grid must hold at least two wavelengths"
+        raise ValueError(msg)
     _require_increasing_axis(grid, "wavelength_grid", positive=True)
     return temperature, plasma_grid, grid
 
@@ -373,31 +366,31 @@ def _densities_by_plasma_point(density_bc: xr.DataArray, temperature_bc: xr.Data
     return [np.asarray(row.data, dtype=float) for row in density_bc.transpose(plasma_dim, "logT")]
 
 
-def _repeat_like(values: np.ndarray, temperatures: np.ndarray) -> np.ndarray:
+def _match_doubled_grid(values: np.ndarray, chianti_temperatures: np.ndarray) -> np.ndarray:
     """
-    ``values`` repeated to the length of a doubled one-element temperature grid.
+    ``values`` repeated when the one-element temperature grid was doubled for ChiantiPy.
     """
-    return np.repeat(values, 2) if temperatures.size == 2 * values.size else values
+    return np.repeat(values, 2) if chianti_temperatures.size == 2 * values.size else values
 
 
-def _chianti_component(method, grid: np.ndarray, n_temperatures: int, **kwargs) -> np.ndarray | None:
+def _chianti_component(
+    method, result_name: str, grid: np.ndarray, number_of_temperatures: int, **kwargs
+) -> np.ndarray | None:
     """
     One ChiantiPy continuum component as ``(temperature, wavelength)``, or `None` if the
-    ion lacks it.
+    ion lacks it; ``method`` stores its result on its object under ``result_name``.
     """
     try:
         method(grid, **kwargs)
     except Exception:  # noqa: BLE001 - ChiantiPy raises assorted errors for ions without data
         return None
-    result = getattr(
-        method.__self__, {"freeFree": "FreeFree", "freeBound": "FreeBound", "twoPhoton": "TwoPhoton"}[method.__name__]
-    )
+    result = getattr(method.__self__, result_name)
     if "errorMessage" in result:
         return None
     intensity = np.atleast_2d(result["intensity"])
-    if intensity.shape[0] != max(n_temperatures, 2):
+    if intensity.shape[0] != max(number_of_temperatures, 2):
         intensity = intensity.T
-    return intensity[:n_temperatures]
+    return intensity[:number_of_temperatures]
 
 
 def _fiasco_component(ions: list, method: str, wavelengths: u.Quantity, *args) -> np.ndarray:
@@ -429,7 +422,7 @@ def _continuum_dataset(
     spectral_response.attrs["units"] = str(normalization * u.erg * u.cm**3 / u.s / u.sr / u.AA)
     if "logD" in spectral_response.coords:
         spectral_response.logD.attrs["units"] = str(u.dex(u.cm**-3))
-    edges = _centers_to_edges(grid) if grid.size > 1 else np.array([grid[0], grid[0]])
+    edges = _centers_to_edges(grid)
     bounds = xr.DataArray(
         np.stack([edges[:-1], edges[1:]], axis=-1), dims=("wavelength_bin", "bound"), attrs={"units": str(u.AA)}
     )

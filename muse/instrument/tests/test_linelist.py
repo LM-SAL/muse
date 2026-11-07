@@ -14,7 +14,7 @@ from muse.instrument.linelist import (
     create_chianti_line_list,
     create_fiasco_line_list,
     rank_line_list,
-    select_lines,
+    select_transitions,
 )
 from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
 
@@ -416,7 +416,7 @@ def test_rank_line_list_orders_by_peak_times_area():
         rank_line_list(line_list, statistic="median")
 
 
-def test_select_lines():
+def test_select_transitions():
     line_list = xr.Dataset(
         {
             "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
@@ -426,8 +426,8 @@ def test_select_lines():
             "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
         }
     )
-    doublet = select_lines(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
+    doublet = select_transitions(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
     assert doublet.wavelength.values.tolist() == [303.786, 303.785]
     assert doublet.attrs["line_selection"] == '["he_2 1-3", "he_2 1-4"]'
     with pytest.raises(ValueError, match="0 transitions match fe_9 1-5"):
-        select_lines(line_list, [("fe_9", 1, 5)])
+        select_transitions(line_list, [("fe_9", 1, 5)])

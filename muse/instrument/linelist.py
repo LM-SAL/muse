@@ -10,6 +10,7 @@ from types import ModuleType
 from numbers import Real
 from pathlib import Path
 from importlib import reload
+from collections.abc import Iterable
 
 import numpy as np
 import xarray as xr
@@ -17,8 +18,15 @@ import xarray as xr
 import astropy.units as u
 
 from muse.utils.utils import add_history
+from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["apply_line_boosts", "create_chianti_line_list", "create_fiasco_line_list", "rank_line_list", "select_lines"]
+__all__ = [
+    "apply_line_boosts",
+    "create_chianti_line_list",
+    "create_fiasco_line_list",
+    "rank_line_list",
+    "select_transitions",
+]
 
 
 def create_chianti_line_list(
@@ -264,6 +272,17 @@ def _validate_line_list_inputs(
     pressure: xr.DataArray | None,
     wavelength_range: u.Quantity | None,
 ) -> tuple[xr.DataArray, xr.DataArray, tuple[float, float]]:
+    temperature, plasma_grid = _validate_plasma_inputs(temperature, density, pressure)
+    return temperature, plasma_grid, _validate_wavelength_range(wavelength_range)
+
+
+def _validate_plasma_inputs(
+    temperature: xr.DataArray, density: xr.DataArray | None, pressure: xr.DataArray | None
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """
+    The temperature in K and the density in cm^-3 or the pressure in K cm^-3, as plain
+    values.
+    """
     if density is None and pressure is None:
         msg = "Specify density or pressure"
         raise ValueError(msg)
@@ -281,8 +300,7 @@ def _validate_line_list_inputs(
     if plasma_grid.dims[0] in ("logT", "trans_index"):
         msg = f"{name} dimension must not be named {plasma_grid.dims[0]!r}"
         raise ValueError(msg)
-
-    return temperature, plasma_grid, _validate_wavelength_range(wavelength_range)
+    return temperature, plasma_grid
 
 
 def _validate_wavelength_range(wavelength_range: u.Quantity | None) -> tuple[float, float]:
@@ -397,13 +415,13 @@ def _validate_species_selection(
 
 def create_fiasco_line_list(
     temperature: xr.DataArray,
+    *,
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
     wavelength_range: u.Quantity | None = None,
-    minimum_abundance: float | None = None,
+    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
     ion_list: list[str] | None = None,
-    *,
     workers: int = 1,
     hdf5_dbase_root: str | Path | None = None,
 ) -> xr.Dataset:
@@ -434,9 +452,9 @@ def create_fiasco_line_list(
     wavelength_range : `astropy.units.Quantity`
         Two-element wavelength range convertible to Angstroms.
     minimum_abundance : `float`, optional
-        Ions of elements with an abundance below this are skipped; by default
-        every element is kept. Unlike `create_chianti_line_list` this combines
-        with ``ion_list``.
+        Ions of elements with an abundance below this are skipped, by default
+        ``DEFAULTS_MUSE.minimum_abundance``. Unlike `create_chianti_line_list` this
+        combines with ``ion_list``.
     ion_list : `list` of `str`, optional
         fiasco ion names to include, such as ``"fe_9"``; by default every ion in
         the database.
@@ -453,8 +471,8 @@ def create_fiasco_line_list(
 
     Notes
     -----
-    Needs a fiasco newer than 0.8.3 (``IonCollection.build_line_list``, merged
-    2026-10-23) and joblib when ``workers`` is not 1.
+    Needs a fiasco with ``IonCollection.build_line_list``, newer than 0.8.3, and joblib
+    when ``workers`` is not 1.
     """
     call_inputs = dict(locals())
     temperature, plasma_grid, wavelength_range = _validate_line_list_inputs(
@@ -462,7 +480,7 @@ def create_fiasco_line_list(
     )
     if ion_list is not None:
         ion_list = _normalize_species_names(ion_list, "ion_list", r"[a-z]{1,2}_[1-9][0-9]*d?")
-    minimum_abundance = 0.0 if minimum_abundance is None else float(minimum_abundance)
+    minimum_abundance = float(minimum_abundance)
     if not np.isfinite(minimum_abundance) or minimum_abundance < 0:
         msg = "minimum_abundance must be finite and non-negative"
         raise ValueError(msg)
@@ -535,13 +553,13 @@ def create_fiasco_line_list(
     return line_list
 
 
-def _import_fiasco(*, line_lists: bool = True):
+def _import_fiasco(*, require_line_lists: bool = True):
     try:
         import fiasco  # noqa: PLC0415
     except ImportError:
         msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
-    if line_lists and not hasattr(fiasco.IonCollection, "build_line_list"):
+    if require_line_lists and not hasattr(fiasco.IonCollection, "build_line_list"):
         msg = "fiasco.IonCollection.build_line_list is required; install a fiasco newer than 0.8.3"
         raise ImportError(msg)
     return fiasco
@@ -608,16 +626,8 @@ def apply_line_boosts(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
         If a key matches no transition or more than one.
     """
     factor = xr.ones_like(line_list.wavelength, dtype=float)
-    for (ion_name, lower, upper), value in boosts.items():
-        matches = (
-            (line_list.ion_name == ion_name)
-            & (line_list.lower_level_index == lower)
-            & (line_list.upper_level_index == upper)
-        )
-        if int(matches.sum()) != 1:
-            msg = f"{int(matches.sum())} transitions match {ion_name} {lower}-{upper}, expected exactly one"
-            raise ValueError(msg)
-        factor = factor.where(~matches, value)
+    for transition, value in boosts.items():
+        factor = factor.where(~_match_transition(line_list, transition), value)
     boosted = line_list.copy()
     boosted["gofnt"] = (line_list.gofnt * factor).assign_attrs(line_list.gofnt.attrs)
     boosted.attrs["line_boosts"] = json.dumps(
@@ -654,15 +664,17 @@ def rank_line_list(
         raise ValueError(msg)
     brightness = getattr(line_list.gofnt, statistic)(dim=[dim for dim in line_list.gofnt.dims if dim != "trans_index"])
     if effective_area is not None:
-        area = effective_area.interp(wavelength=line_list.wavelength).fillna(0).drop_vars("wavelength", errors="ignore")
-        brightness = brightness * area
+        area_at_lines = (
+            effective_area.interp(wavelength=line_list.wavelength).fillna(0).drop_vars("wavelength", errors="ignore")
+        )
+        brightness = brightness * area_at_lines
     order = np.argsort(-np.asarray(brightness), kind="stable")
     ranked = line_list.isel(trans_index=order)
     ranked["brightness"] = ("trans_index", np.asarray(brightness)[order])
     return ranked
 
 
-def select_lines(line_list: xr.Dataset, lines) -> xr.Dataset:
+def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, int, int]]) -> xr.Dataset:
     """
     Keep only the chosen transitions of a line list.
 
@@ -670,7 +682,7 @@ def select_lines(line_list: xr.Dataset, lines) -> xr.Dataset:
     ----------
     line_list : `xarray.Dataset`
         A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
-    lines : iterable of `tuple`
+    transitions : iterable of `tuple`
         ``(ion_name, lower_level_index, upper_level_index)`` per transition, the levels
         numbered as in the line list, e.g. ``[("he_2", 1, 3), ("he_2", 1, 4)]`` for the
         He II doublet at 303.78 A.
@@ -685,17 +697,26 @@ def select_lines(line_list: xr.Dataset, lines) -> xr.Dataset:
     ValueError
         If a key matches no transition or more than one.
     """
+    transitions = list(transitions)
     keep = xr.zeros_like(line_list.wavelength, dtype=bool)
-    for ion_name, lower, upper in lines:
-        matches = (
-            (line_list.ion_name == ion_name)
-            & (line_list.lower_level_index == lower)
-            & (line_list.upper_level_index == upper)
-        )
-        if int(matches.sum()) != 1:
-            msg = f"{int(matches.sum())} transitions match {ion_name} {lower}-{upper}, expected exactly one"
-            raise ValueError(msg)
-        keep = keep | matches
+    for transition in transitions:
+        keep = keep | _match_transition(line_list, transition)
     selected = line_list.isel(trans_index=keep.values)
-    selected.attrs["line_selection"] = json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in lines])
+    selected.attrs["line_selection"] = json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in transitions])
     return selected
+
+
+def _match_transition(line_list: xr.Dataset, transition: tuple[str, int, int]) -> xr.DataArray:
+    """
+    The mask of the one transition ``(ion_name, lower_level_index, upper_level_index)``.
+    """
+    ion_name, lower, upper = transition
+    matches = (
+        (line_list.ion_name == ion_name)
+        & (line_list.lower_level_index == lower)
+        & (line_list.upper_level_index == upper)
+    )
+    if int(matches.sum()) != 1:
+        msg = f"{int(matches.sum())} transitions match {ion_name} {lower}-{upper}, expected exactly one"
+        raise ValueError(msg)
+    return matches

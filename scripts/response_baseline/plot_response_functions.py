@@ -1,12 +1,12 @@
 """
-Draw the diagnostic plots of a run directory from its saved products.
+Draw the diagnostic plots of a run directory from its saved products::
 
-python plot_response_functions.py --run-dir RUN --effective-area-dir AREAS
+    python plot_response_functions.py --run-dir RUN --effective-area-dir AREAS
 
 Per band and abundance: the main-line cubes against velocity, the main and contaminant
 detector responses, the detector wavelengths per slit, a logT summary across bands, the
-effective areas, and the bright-line scatter plots from the cached line lists. The plots
-land in RUN/plots.
+effective areas, and the bright-line scatter plots from the cached line lists. The plots land
+in RUN/plots.
 """
 
 import os
@@ -16,10 +16,6 @@ import pathlib
 import argparse
 from collections import defaultdict
 
-import matplotlib as mpl
-
-mpl.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
@@ -29,22 +25,22 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from run_config import DEFAULT_CI_BANDS, DEFAULT_SG_BANDS, effective_area_file
 
 from muse.instrument import (
-    effective_area_curve,
     rank_line_list,
     read_effective_area,
     read_response,
     read_spectral_response,
+    select_effective_area_curve,
 )
 from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
-change_logging_level("WARNING")
 PRODUCT = re.compile(r"respfunc_(?P<band>\d+|ci)_(?P<rest>.+)\.zarr$")
 
 
 def discover(run_dir: pathlib.Path) -> dict:
     """
-    Group the products by (band, abundance, plasma tag) and kind from the file names.
+    Group the products by (band, abundance, plasma tag) and kind, from the file names
+    and attributes.
     """
     groups = defaultdict(lambda: defaultdict(list))
     for path in sorted((run_dir / "SG").glob("respfunc_*.zarr")) + sorted((run_dir / "CI").glob("respfunc_*.zarr")):
@@ -52,7 +48,7 @@ def discover(run_dir: pathlib.Path) -> dict:
         if not match:
             continue
         band, rest = match.group("band"), match.group("rest")
-        abundance = re.search(r"sun_[a-z]+_\d{4}_[a-z]+", rest)
+        abundance = xr.open_zarr(path, consolidated=False).attrs.get("abundance", "unknown")
         plasma = re.search(r"(pressure_[0-9.eE+\-]+|density)", rest)
         if rest.startswith("nomainlines_waveband"):
             kind = "contaminant_cube"
@@ -64,9 +60,7 @@ def discover(run_dir: pathlib.Path) -> dict:
             kind = "main"
         else:
             kind = "ci"
-        groups[(band, abundance.group(0) if abundance else "unknown", plasma.group(1) if plasma else "?")][kind].append(
-            path
-        )
+        groups[(band, abundance, plasma.group(1) if plasma else "?")][kind].append(path)
     return groups
 
 
@@ -83,6 +77,8 @@ def _load(path):
 
 
 def velocity_plots(groups, plot_dir):
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
     for (band, _abundance, _plasma), kinds in groups.items():
         if band == "ci" or not kinds.get("main_cube"):
             continue
@@ -101,6 +97,8 @@ def velocity_plots(groups, plot_dir):
 
 
 def main_contaminant_and_plate_scale(groups, plot_dir):
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
     for (band, _abundance, _plasma), kinds in groups.items():
         if band == "ci" or not kinds.get("main") or not kinds.get("contaminants"):
             continue
@@ -127,14 +125,18 @@ def main_contaminant_and_plate_scale(groups, plot_dir):
         plt.close(fig)
 
 
-def summary_logt(groups, plot_dir, run_label):
-    bands = sorted({band for (band, _a, _p), kinds in groups.items() if kinds.get("main_cube") or kinds.get("ci")})
+def logT_summary(groups, plot_dir, run_label):
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    bands = sorted(
+        {band for (band, _abundance, _plasma), kinds in groups.items() if kinds.get("main_cube") or kinds.get("ci")}
+    )
     if not bands:
         return
     fig, axes = plt.subplots(len(bands), 1, figsize=(15, 6 * len(bands)), squeeze=False)
     for ax, band in zip(axes.flatten(), bands, strict=True):
-        for (b, abundance, plasma), kinds in groups.items():
-            if b != band:
+        for (group_band, abundance, plasma), kinds in groups.items():
+            if group_band != band:
                 continue
             for path in kinds.get("ci", []):
                 _peak(_load(path).detector_response.sel(doppler_velocity=0, method="nearest"), {"logT"}).plot(
@@ -158,10 +160,12 @@ def summary_logt(groups, plot_dir, run_label):
 
 
 def effective_area_overview(area_files, plot_dir, run_label):
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
     fig, ax = plt.subplots(figsize=(15, 8))
     for path in area_files:
-        area = read_effective_area(path)
-        effective_area_curve(area).plot(ax=ax, label=int(area.band[0]))
+        effective_area = read_effective_area(path)
+        select_effective_area_curve(effective_area).plot(ax=ax, label=int(effective_area.band[0]))
     ax.legend()
     ax.set_title("Effective area")
     ax.set_yscale("log")
@@ -190,25 +194,42 @@ def _annotate(ax, x, y, names, n=20):
         ax.annotate(str(name), (float(xi), float(yi)), fontsize=6)
 
 
+def _folded_scatter(ax, wavelengths, brightness, names, separation):
+    """
+    Scatter the lines folded into the slit of the brightest one, coloured by the slits
+    away.
+    """
+    offset = wavelengths - wavelengths[0]
+    folds = np.round(offset / separation)
+    scatter = ax.scatter(offset - folds * separation, brightness, c=np.abs(folds), cmap="viridis", s=24)
+    _annotate(ax, offset - folds * separation, brightness, names)
+    ax.figure.colorbar(scatter, ax=ax, label="slits away")
+    ax.set_yscale("log")
+    ax.set_xlim(-separation / 2, separation / 2)
+    ax.set_xlabel("offset within the slit of the brightest line [A]")
+
+
 def bright_line_scatters(run_dir, area_files, groups, plot_dir):
     """
     The brightest lines of every band from the cached line lists: by logT, by
     wavelength, and folded into one slit.
     """
-    bands_present = {band for (band, _a, _p) in groups}
-    areas = {}
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    bands_present = {band for (band, _abundance, _plasma) in groups}
+    area_curves = {}
     for path in area_files:
-        area = read_effective_area(path)
-        areas[int(area.band[0])] = effective_area_curve(area)
+        effective_area = read_effective_area(path)
+        area_curves[int(effective_area.band[0])] = select_effective_area_curve(effective_area)
     separation = DEFAULTS_MUSE.spectral_slit_separation_SG.to_value(u.AA)
+    half_width = DEFAULTS_MUSE.waveband_half_width_SG.to_value(u.AA)
     for list_file in sorted((run_dir / "cache").glob("line_list_*.nc")):
         line_list = xr.load_dataset(list_file)
-        for band, curve in areas.items():
+        for band, area_curve in area_curves.items():
             if str(band) not in bands_present or band not in DEFAULTS_MUSE.channel_spectral_order_SG.channel.values:
                 continue
-            order = int(DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band))
-            half = 35 / order
-            # one plasma point so every per-line field is a scalar
+            half = half_width / int(DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band))
+            # one plasma point, so every per-line field is a scalar
             plasma = next((dim for dim in line_list.gofnt.dims if dim not in ("logT", "trans_index")), None)
             subset = line_list.isel({plasma: line_list.sizes[plasma] // 2}) if plasma else line_list
             subset = subset.isel(
@@ -216,11 +237,11 @@ def bright_line_scatters(run_dir, area_files, groups, plot_dir):
             )
             if subset.sizes["trans_index"] == 0:
                 continue
-            ranked = rank_line_list(subset, curve)
+            ranked = rank_line_list(subset, area_curve)
             bright = ranked.isel(trans_index=(ranked.brightness > ranked.brightness.max() / 1e3).values)
             stem = f"{band}_{list_file.stem}"
             names = bright.full_name.values
-            label = "peak gofnt x effective area (brightness proxy)"
+            brightness_label = "peak gofnt x effective area (brightness proxy)"
             logT_peak = bright.logT.values[np.asarray(bright.gofnt.argmax("logT"))]
             for x, x_label, suffix in (
                 (logT_peak, "logT of the peak", "logT"),
@@ -231,44 +252,27 @@ def bright_line_scatters(run_dir, area_files, groups, plot_dir):
                 _annotate(ax, x, bright.brightness.values, names)
                 ax.set_yscale("log")
                 ax.set_xlabel(x_label)
-                ax.set_ylabel(label)
+                ax.set_ylabel(brightness_label)
                 ax.set_title(str(band))
                 fig.savefig(plot_dir / f"{stem}_lines_{suffix}.png")
                 plt.close(fig)
-            # the slits tile the band in steps of the slit separation: fold every bright line into the slit of the brightest
-            offset = bright.wavelength.values - float(bright.wavelength[0])
-            folds = np.round(offset / separation)
             fig, ax = plt.subplots()
-            scatter = ax.scatter(
-                offset - folds * separation, bright.brightness.values, c=np.abs(folds), cmap="viridis", s=24
-            )
-            _annotate(ax, offset - folds * separation, bright.brightness.values, names)
-            fig.colorbar(scatter, ax=ax, label="slits away")
-            ax.set_yscale("log")
-            ax.set_xlim(-separation / 2, separation / 2)
-            ax.set_xlabel("offset within the slit of the brightest line [A]")
-            ax.set_ylabel(label)
+            _folded_scatter(ax, bright.wavelength.values, bright.brightness.values, names, separation)
+            ax.set_ylabel(brightness_label)
             ax.set_title(f"{band}: bright lines folded into one slit")
             fig.savefig(plot_dir / f"{stem}_lines_folded.png")
             plt.close(fig)
             weight = dem_weight(subset.logT.values)
             if weight is None:
                 continue
-            radiance = (subset.gofnt * xr.DataArray(weight, dims="logT")).sum("logT") * curve.interp(
+            radiance = (subset.gofnt * xr.DataArray(weight, dims="logT")).sum("logT") * area_curve.interp(
                 wavelength=subset.wavelength
             ).fillna(0).values
             top = np.argsort(-radiance.values)[:20]
-            offset = subset.wavelength.values[top] - subset.wavelength.values[top][0]
-            folds = np.round(offset / separation)
             fig, ax = plt.subplots()
-            scatter = ax.scatter(
-                offset - folds * separation, radiance.values[top], c=np.abs(folds), cmap="viridis", s=24
+            _folded_scatter(
+                ax, subset.wavelength.values[top], radiance.values[top], subset.full_name.values[top], separation
             )
-            _annotate(ax, offset - folds * separation, radiance.values[top], subset.full_name.values[top])
-            fig.colorbar(scatter, ax=ax, label="slits away")
-            ax.set_yscale("log")
-            ax.set_xlim(-separation / 2, separation / 2)
-            ax.set_xlabel("offset within the slit of the brightest line [A]")
             ax.set_ylabel("active-region DEM radiance x effective area [erg / (s sr)]")
             ax.set_title(f"{band}: brightest lines weighted by the active-region DEM")
             fig.savefig(plot_dir / f"{stem}_lines_folded_dem.png")
@@ -276,6 +280,10 @@ def bright_line_scatters(run_dir, area_files, groups, plot_dir):
 
 
 def main(argv=None):
+    import matplotlib as mpl  # noqa: PLC0415
+
+    mpl.use("Agg")
+    change_logging_level("WARNING")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-dir", type=pathlib.Path, required=True)
     parser.add_argument("--effective-area-dir", type=pathlib.Path, default=None)
@@ -287,10 +295,11 @@ def main(argv=None):
     plot_dir.mkdir(parents=True, exist_ok=True)
     groups = discover(args.run_dir)
     if not groups:
+        print(f"no respfunc products under {args.run_dir}/SG or /CI")
         return
     velocity_plots(groups, plot_dir)
     main_contaminant_and_plate_scale(groups, plot_dir)
-    summary_logt(groups, plot_dir, args.run_dir.name)
+    logT_summary(groups, plot_dir, args.run_dir.name)
     if args.effective_area_dir is not None:
         sg_bands = args.sg_band if args.sg_band is not None else DEFAULT_SG_BANDS
         ci_bands = args.ci_band if args.ci_band is not None else DEFAULT_CI_BANDS
@@ -299,6 +308,7 @@ def main(argv=None):
             effective_area_overview(area_files, plot_dir, args.run_dir.name)
             if not args.skip_scatters:
                 bright_line_scatters(args.run_dir, area_files, groups, plot_dir)
+    print(f"plots written to {plot_dir}")
 
 
 if __name__ == "__main__":
