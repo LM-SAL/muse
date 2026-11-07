@@ -7,6 +7,7 @@ seconds.
 import numpy as np
 import pytest
 import xarray as xr
+from threadpoolctl import threadpool_info
 
 import astropy.constants as const
 import astropy.units as u
@@ -541,8 +542,6 @@ def test_generate_responses_live_chianti(tmp_path):
 
 def test_limited_threads_caps_the_pools_and_restores_them():
     numexpr = pytest.importorskip("numexpr")
-    from threadpoolctl import threadpool_info
-
     before = numexpr.set_num_threads(3)
     numexpr.set_num_threads(before)
     with pipeline._limited_threads(2):
