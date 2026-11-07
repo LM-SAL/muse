@@ -147,7 +147,8 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
 
 
 def _open_response_file(response_file: Path, *, chunked: bool = False) -> xr.Dataset:
-    kwargs = {"chunks": {}} if chunked else {}
+    # open_zarr chunks with dask by default; eager means the file's own lazy arrays, as for netCDF.
+    kwargs = {"chunks": {} if chunked else None}
     if response_file.suffix == ".zip":
         # Reads lazily like a directory. xarray closes only the stores it opens itself, and
         # zarr reopens the archive on demand after a close.
@@ -301,6 +302,17 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     """
     if axis is None:
         return r
+    # The requested axis is taken in the response's units when it carries none and converted to
+    # them when it does, so the range check, the resampling and the result share one unit.
+    response_unit = require_unit(r, name, f"response.{name}", coord_only=True)
+    axis_attrs = dict(r[name].attrs)
+    if "units" in axis.attrs:
+        try:
+            converted = u.Unit(axis.attrs["units"]).to(response_unit, np.asarray(axis.values, dtype=float))
+        except (TypeError, ValueError, u.UnitConversionError) as exc:
+            msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
+            raise ValueError(msg) from exc
+        axis = axis.copy(data=converted)
     in_range = (axis >= r[name].min()) & (axis <= r[name].max())
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
@@ -326,7 +338,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
         # dask chunk per selected point, which shatters downstream synthesis graphs.
         # Consolidate the resampled axis into a single chunk.
         r = r.chunk({name: -1})
-    return r.assign_coords({name: axis})
+    return r.assign_coords({name: axis.assign_attrs(axis_attrs)})
 
 
 def align_response_and_vdem(

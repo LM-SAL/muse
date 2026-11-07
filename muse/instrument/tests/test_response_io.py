@@ -277,6 +277,33 @@ def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked)
     assert "detector_wavelength" in zipped.coords
 
 
+def test_read_response_eager_zarr_is_not_dask_backed(tmp_path) -> None:
+    path = _write(fake_response_file(), tmp_path / "resp.zarr", "zarr")
+    assert read_response(path).detector_response.chunks is None
+    assert read_response(path, chunked=True).detector_response.chunks is not None
+
+
+def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
+    # The file's velocity axis is in m/s at -300e3..300e3; its samples sit every 100e3 m/s.
+    src = fake_response_file()
+    src = src.assign_coords(doppler_velocity=src.doppler_velocity * 1000.0)
+    src.doppler_velocity.attrs["units"] = "m / s"
+    path = _write(src, tmp_path / "resp.nc", "nc")
+
+    plain = read_response(path, doppler_velocity=xr.DataArray([-100e3, 0.0, 100e3], dims="doppler_velocity"))
+    np.testing.assert_array_equal(plain.doppler_velocity.values, [-100e3, 0.0, 100e3])
+    assert plain.doppler_velocity.attrs["units"] == "m / s"  # a plain axis is read in the response's units
+
+    in_km_s = xr.DataArray([-100.0, 0.0, 100.0], dims="doppler_velocity", attrs={"units": "km / s", "long_name": "v"})
+    converted = read_response(path, doppler_velocity=in_km_s)
+    np.testing.assert_array_equal(converted.doppler_velocity.values, [-100e3, 0.0, 100e3])
+    assert converted.doppler_velocity.attrs["units"] == "m / s"  # converted into the response's units
+    np.testing.assert_array_equal(converted.detector_response.values, plain.detector_response.values)
+
+    with pytest.raises(ValueError, match="not convertible"):
+        read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity", attrs={"units": "K"}))
+
+
 def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
     path = tmp_path / "response.zarr"
     fake_response_file().to_zarr(path, zarr_format=3, consolidated=False)

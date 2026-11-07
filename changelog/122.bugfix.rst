@@ -1,0 +1,1 @@
+``read_response`` opens a zarr store without dask when ``chunked`` is `False`, as it does a netCDF file, and resamples in the response's axis units: a requested ``logT`` or ``doppler_velocity`` axis without units is read in them, one with units is converted into them, and the result keeps them.
