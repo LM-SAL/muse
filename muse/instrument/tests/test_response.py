@@ -499,7 +499,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         ),
         (
             "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'doppler_velocity'), "
-            "cuda_device=None, backend=numpy)"
+            "device=None, backend=numpy)"
         ),
         "wavelength_to_doppler(response=response)",
         (

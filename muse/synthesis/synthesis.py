@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from collections.abc import Sequence
 
 import dask.array as da
@@ -7,10 +8,13 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
-from muse.synthesis._backends import _resolve_backend, numpy_to_torch, torch_to_numpy
+from muse.synthesis._backends import _resolve_backend, torch_einsum
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
+
+if TYPE_CHECKING:
+    import torch
 
 __all__ = ["vdem_synthesis"]
 
@@ -102,7 +106,7 @@ def vdem_synthesis(
     response: xr.Dataset,
     *,
     sum_over: Sequence[str] = DEFAULTS_MUSE.sum_over_dims_synthesis,
-    cuda_device: int | None = None,
+    device: "str | torch.device | None" = None,
     backend: str = "numpy",
 ) -> xr.Dataset:
     """
@@ -130,12 +134,15 @@ def vdem_synthesis(
         ``"slit"`` is dropped from this when neither input has a slit
         dimension, so the MUSE default works for single-slit responses.
     cuda_device : `int`, optional
-        CUDA device index for GPU use (requires ``backend="torch"``), defaults to None (CPU).
+        Torch device of the product (requires ``backend="torch"``): ``"cpu"``,
+        ``"cuda:0"``, ``"mps"``, or ``"auto"`` for the first of CUDA, MPS and the
+        CPU that is available. Defaults to `None`, the CPU.
     backend : `str`, optional
         ``"numpy"`` (default) or ``"torch"``. Torch is opt-in: it is never
         selected implicitly, so results do not change with what is installed.
-        The Torch path downcasts float64 inputs to float32; the NumPy path
-        keeps the input dtype.
+        The Torch path downcasts float64 inputs to float32 and computes the
+        product in chunks sized to half of the free device and host memory; the
+        NumPy path keeps the input dtype.
 
     Returns
     -------
@@ -153,6 +160,9 @@ def vdem_synthesis(
         from the response, or a shared dimension indexed on only one input), or
         if shared indexed coordinates do not match exactly — regrid with
         `muse.instrument.align_response_and_vdem`.
+    MemoryError
+        With ``backend="torch"`` on an accelerator, if one row of the product does
+        not fit next to the response.
     """
     renames = {
         old: new
@@ -175,7 +185,7 @@ def vdem_synthesis(
     response_indices = [dim_indices[dim] for dim in response.detector_response.dims]
     output_dims = [dim for dim in dim_indices if dim not in sum_over]
     output_indices = [dim_indices[dim] for dim in output_dims]
-    backend = _resolve_backend(cuda_device, backend)
+    backend = _resolve_backend(device, backend)
     logger.debug(
         f"Using {backend} to contract vdem{np.shape(raster.vdem.data)} and "
         f"detector_response{np.shape(response.detector_response.data)} over {tuple(sum_over)} "
@@ -190,17 +200,7 @@ def vdem_synthesis(
             detector_response if isinstance(detector_response, da.Array) else np.asarray(detector_response)
         )
         if backend == "torch":
-            import torch  # NOQA: PLC0415
-
-            return torch_to_numpy(
-                torch.einsum(
-                    numpy_to_torch(vdem, cuda_device=cuda_device),
-                    raster_indices,
-                    numpy_to_torch(detector_response, cuda_device=cuda_device),
-                    response_indices,
-                    output_indices,
-                )
-            )
+            return torch_einsum(vdem, detector_response, raster_indices, response_indices, output_indices, device)
         return np.einsum(vdem, raster_indices, detector_response, response_indices, output_indices, optimize=True)
 
     try:
