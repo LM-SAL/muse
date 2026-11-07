@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import xarray as xr
+from scipy.special import erf
 from tqdm import tqdm
 
 import astropy.constants as const
@@ -15,16 +16,46 @@ from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["create_spectral_response"]
+__all__ = ["create_spectral_response", "log_wavelength_edges"]
 
 # The Gaussian is exactly zero beyond this point in float64.
 _GAUSSIAN_WINDOW_SIGMA = 40
 _GAUSSIAN_EXPRESSION = "scaled * exp(-0.5 * (shift / width) ** 2) / gaussian_norm / width"
+_PROFILES = ("sample", "integrate")
+
+
+@u.quantity_input(lower=u.AA, upper=u.AA)
+def log_wavelength_edges(lower: u.Quantity, upper: u.Quantity, fractional_width: float) -> u.Quantity:
+    """
+    Edges of logarithmically spaced wavelength bins covering ``[lower, upper]``.
+
+    Each bin is ``fractional_width`` wide relative to its lower edge, so every bin spans the
+    same velocity width; pass the result to `create_spectral_response` as ``wavelength_edges``
+    for a coarse imager grid.
+
+    Parameters
+    ----------
+    lower, upper : `astropy.units.Quantity`
+        Wavelength range to cover; the last edge is at or beyond ``upper``.
+    fractional_width : `float`
+        Bin width relative to its lower edge, e.g. ``0.01``.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        The bin edges in Angstrom, one more than the number of bins.
+    """
+    lower_value, upper_value = lower.to_value(u.AA), upper.to_value(u.AA)
+    if not (0 < lower_value < upper_value) or not fractional_width > 0:
+        msg = "log_wavelength_edges needs 0 < lower < upper and a positive fractional_width"
+        raise ValueError(msg)
+    n_bins = int(np.ceil(np.log(upper_value / lower_value) / np.log1p(fractional_width)))
+    return lower_value * (1 + fractional_width) ** np.arange(n_bins + 1) * u.AA
 
 
 def create_spectral_response(
     line_list: xr.Dataset,
-    wavelength_grid: u.Quantity,
+    wavelength_grid: u.Quantity | None = None,
     *,
     main_lines: Sequence[str] | None,
     instrumental_width: u.Quantity = 0 * u.AA,
@@ -32,6 +63,8 @@ def create_spectral_response(
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
     include_contaminants: bool = False,
+    wavelength_edges: u.Quantity | None = None,
+    profile: str = "sample",
 ) -> xr.Dataset:
     """
     Create an instrument-neutral wavelength-space spectral response.
@@ -41,8 +74,9 @@ def create_spectral_response(
     line_list : `xarray.Dataset`
         CHIANTI line list with its ``logT`` coordinate in ``dex(K)``, e.g. from
         `muse.instrument.create_chianti_line_list`.
-    wavelength_grid : `astropy.units.Quantity`
-        One-dimensional wavelength samples for one channel and spectral order.
+    wavelength_grid : `astropy.units.Quantity`, optional
+        One-dimensional wavelength samples for one channel and spectral order; the bins
+        extend halfway to the neighbouring samples. Either this or ``wavelength_edges``.
     main_lines : sequence of `str` or `None`
         Stable ``full_name`` values to retain, in output order. Repeated
         transitions with the same name are summed. If `None` or empty, no
@@ -65,13 +99,26 @@ def create_spectral_response(
     include_contaminants : `bool`, optional
         If `True`, include all lines not in ``main_lines`` in a single
         ``contaminants`` line. If `False`, only the main lines are returned.
+    wavelength_edges : `astropy.units.Quantity`, optional
+        Strictly increasing bin edges, one more than the number of bins, instead of
+        ``wavelength_grid``; the bin centers become ``wavelength_grid``. Coarse or
+        non-uniform bins, such as `log_wavelength_edges` for an imager, need
+        ``profile="integrate"``.
+    profile : {"sample", "integrate"}, optional
+        ``"sample"`` (default) evaluates each line's Gaussian at the bin center, the
+        midpoint rule, which under-counts lines narrower than about half a bin.
+        ``"integrate"`` stores each bin's average of the Gaussian (its integral over the
+        bin divided by the bin width), so the line area is conserved on any grid; a
+        curve ``effective_area`` then weights every line by the area at its own
+        Doppler-shifted center instead of the area at the bin center.
 
     Returns
     -------
     `xarray.Dataset`
         Dataset containing ``spectral_response`` with temperature, velocity,
         line, and ``wavelength_bin`` dimensions. ``wavelength_grid`` contains
-        the wavelength of each bin. Detector geometry is not added.
+        the wavelength of each bin and ``wavelength_bounds`` its two edges.
+        Detector geometry is not added.
     """
     call_inputs = dict(locals())
     main_lines = () if main_lines is None else main_lines
@@ -84,6 +131,8 @@ def create_spectral_response(
         effective_area=effective_area,
         main_lines=main_lines,
         include_contaminants=include_contaminants,
+        wavelength_edges=wavelength_edges,
+        profile=profile,
     )
     response = response.drop_vars("component_kind")
     update_attrs(response, line_list, **response.attrs)
@@ -96,10 +145,11 @@ def create_spectral_response(
     instrumental_width=u.AA,
     doppler_velocity=u.km / u.s,
     nonthermal_velocity=u.km / u.s,
+    wavelength_edges=u.AA,
 )
 def _create_wavelength_response(
     line_list: xr.Dataset,
-    wavelength_grid: u.Quantity,
+    wavelength_grid: u.Quantity | None = None,
     *,
     instrumental_width: u.Quantity = 0 * u.AA,
     doppler_velocity: u.Quantity | None = None,
@@ -107,12 +157,19 @@ def _create_wavelength_response(
     effective_area: xr.DataArray | None = None,
     main_lines: Sequence[str] | None = None,
     include_contaminants: bool = False,
+    wavelength_edges: u.Quantity | None = None,
+    profile: str = "sample",
     progress: bool = True,
 ) -> xr.Dataset:
     """
     Build the wavelength-space response, optionally including contaminants.
     """
-    wavelength_grid = _wavelength_grid_in_angstrom(wavelength_grid)
+    if profile not in _PROFILES:
+        msg = f"profile must be one of {_PROFILES}, got {profile!r}"
+        raise ValueError(msg)
+    wavelength_grid, edges = _wavelength_bins(wavelength_grid, wavelength_edges)
+    # The integral over a bin needs its edges; the midpoint rule does not.
+    bin_edges = edges if profile == "integrate" else None
     instrumental_width = _instrumental_width_in_angstrom(instrumental_width)
     if doppler_velocity is not None:
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
@@ -173,6 +230,13 @@ def _create_wavelength_response(
     doppler_widths = np.sqrt(doppler_widths_squared)
     gaussian_norm = np.sqrt(2 * np.pi)
 
+    # A curve applied at each line's own center; a scalar or sampled area scales the grid below.
+    area_at_center = None
+    if bin_edges is not None and effective_area is not None and "wavelength" in effective_area.dims:
+        area_at_center = (
+            effective_area.interp(wavelength=line_centers).fillna(0).drop_vars("wavelength", errors="ignore")
+        )
+
     main_response_parts = {name: [] for name in main_lines}
     for i, line_name in enumerate(line_names):
         if line_name not in main_response_parts:
@@ -183,6 +247,8 @@ def _create_wavelength_response(
             doppler_widths.isel(trans_index=i),
             line_list.gofnt.isel(trans_index=i),
             gaussian_norm,
+            edges=bin_edges,
+            area=None if area_at_center is None else area_at_center.isel(trans_index=i),
         )
         line_response = xr.DataArray(line_response, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
         line_response = line_response.expand_dims(line=[line_name])
@@ -210,7 +276,7 @@ def _create_wavelength_response(
             half_window = _GAUSSIAN_WINDOW_SIGMA * doppler_widths.max(dim=width_dims)
             lower = line_centers.min(dim=center_dims) - half_window
             upper = line_centers.max(dim=center_dims) + half_window
-            on_grid = ((upper >= wavelength_grid.min()) & (lower <= wavelength_grid.max())).values
+            on_grid = ((upper >= edges[0]) & (lower <= edges[-1])).values
             # Keep one off-grid line so an all-off-grid list still yields a zero component.
             contaminant_indices = [i for i in contaminant_indices if on_grid[i]] or contaminant_indices[:1]
         contaminant_response = _create_contaminant_response(
@@ -220,6 +286,8 @@ def _create_wavelength_response(
             line_centers,
             doppler_widths,
             gaussian_norm,
+            edges=bin_edges,
+            area_at_center=area_at_center,
             progress=progress,
         )
     else:
@@ -237,19 +305,65 @@ def _create_wavelength_response(
     ds = xr.Dataset({"spectral_response": responses})
 
     if effective_area is not None:
-        # A curve is resampled onto the grid; a zero-dimensional area needs no resampling.
-        scaling = effective_area
-        if "wavelength" in effective_area.dims:
-            scaling = effective_area.interp(wavelength=wavelength_grid).fillna(0).rename(wavelength="wavelength_grid")
-        ds["spectral_response"] = ds.spectral_response * scaling
+        if area_at_center is None:
+            # A curve is resampled onto the grid; a zero-dimensional area needs no resampling.
+            scaling = effective_area
+            if "wavelength" in effective_area.dims:
+                scaling = (
+                    effective_area.interp(wavelength=wavelength_grid).fillna(0).rename(wavelength="wavelength_grid")
+                )
+            ds["spectral_response"] = ds.spectral_response * scaling
         ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**5 / u.s / u.sr / u.AA)
+        ds.spectral_response.attrs["effective_area_at"] = "bin center" if area_at_center is None else "line center"
     else:
         ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**3 / u.s / u.sr / u.AA)
+    ds.spectral_response.attrs["profile"] = profile
 
-    ds = ds.assign_coords(wavelength_grid=wavelength_grid.assign_attrs(units=str(u.AA)))
+    bounds = xr.DataArray(
+        np.stack([edges[:-1], edges[1:]], axis=-1), dims=("wavelength_bin", "bound"), attrs={"units": str(u.AA)}
+    )
+    ds = ds.assign_coords(
+        wavelength_grid=wavelength_grid.assign_attrs(units=str(u.AA), bounds="wavelength_bounds"),
+        wavelength_bounds=bounds,
+    )
 
     ds.attrs["normalization"] = DEFAULTS_MUSE.normalization
     return ds
+
+
+def _wavelength_bins(
+    wavelength_grid: u.Quantity | None, wavelength_edges: u.Quantity | None
+) -> tuple[xr.DataArray, np.ndarray]:
+    """
+    The bin centers as a ``wavelength_bin`` array and the bin edges, from either input.
+    """
+    if (wavelength_grid is None) == (wavelength_edges is None):
+        msg = "pass exactly one of wavelength_grid and wavelength_edges"
+        raise ValueError(msg)
+    if wavelength_edges is not None:
+        edges = np.asarray(wavelength_edges.to_value(u.AA), dtype=float)
+        if edges.ndim != 1 or edges.size < 2:
+            msg = "wavelength_edges must hold at least two bin edges"
+            raise ValueError(msg)
+        _require_increasing_axis(edges, "wavelength_edges", positive=True)
+        return _wavelength_grid_in_angstrom(0.5 * (edges[1:] + edges[:-1]) * u.AA), edges
+    grid = _wavelength_grid_in_angstrom(wavelength_grid)
+    return grid, _centers_to_edges(grid.data)
+
+
+def _centers_to_edges(centers: np.ndarray) -> np.ndarray:
+    """
+    Edges halfway between neighbouring centers, extrapolated by half a bin at the ends.
+    """
+    centers = np.asarray(centers, dtype=float)
+    if centers.size < 2:
+        msg = "at least two bin centers are needed to infer bin edges"
+        raise ValueError(msg)
+    edges = np.empty(centers.size + 1)
+    edges[1:-1] = 0.5 * (centers[:-1] + centers[1:])
+    edges[0] = centers[0] - 0.5 * (centers[1] - centers[0])
+    edges[-1] = centers[-1] + 0.5 * (centers[-1] - centers[-2])
+    return edges
 
 
 def _instrumental_width_in_angstrom(instrumental_width: u.Quantity) -> float:
@@ -342,6 +456,8 @@ def _create_contaminant_response(
     doppler_widths: xr.DataArray,
     gaussian_norm: float,
     *,
+    edges: np.ndarray | None = None,
+    area_at_center: xr.DataArray | None = None,
     progress: bool,
 ) -> xr.DataArray | None:
     if not contaminant_indices:
@@ -356,6 +472,8 @@ def _create_contaminant_response(
             line_list.gofnt.isel(trans_index=i),
             gaussian_norm,
             accumulator=accumulator,
+            edges=edges,
+            area=None if area_at_center is None else area_at_center.isel(trans_index=i),
         )
     return xr.DataArray(accumulator, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
 
@@ -471,7 +589,16 @@ def _evaluate_gaussian_response(
     gaussian_norm: float,
     *,
     accumulator: np.ndarray | None = None,
+    edges: np.ndarray | None = None,
+    area: xr.DataArray | None = None,
 ) -> tuple[np.ndarray, xr.DataArray]:
+    """
+    Add one line's Gaussian to ``accumulator`` (a new full-grid array when `None`).
+
+    Without ``edges`` the Gaussian is sampled at the bin centers; with them each bin
+    holds its average of the Gaussian, and ``area`` (the effective area at the line
+    center, which may vary with the Doppler velocity) scales the line.
+    """
     try:
         import numexpr  # noqa: PLC0415
     except ImportError:
@@ -480,32 +607,63 @@ def _evaluate_gaussian_response(
 
     center, width_for_bounds = xr.broadcast(line_center, doppler_width)
     half_window = _GAUSSIAN_WINDOW_SIGMA * width_for_bounds
-    start = np.searchsorted(wavelength_grid.data, np.min((center - half_window).data), side="left")
-    stop = np.searchsorted(wavelength_grid.data, np.max((center + half_window).data), side="right")
+    lower, upper = np.min((center - half_window).data), np.max((center + half_window).data)
+    if edges is None:
+        start = np.searchsorted(wavelength_grid.data, lower, side="left")
+        stop = np.searchsorted(wavelength_grid.data, upper, side="right")
+    else:
+        # Every bin overlapping the window, so a line narrower than a bin lands in the bin holding it.
+        start = max(0, int(np.searchsorted(edges, lower, side="right")) - 1)
+        stop = min(wavelength_grid.size, int(np.searchsorted(edges, upper, side="left")))
 
     # Broadcast only the +-window slice of the grid: the Gaussian is exactly zero
     # outside it, and broadcasting the full grid first materializes several
     # (logT x doppler x wavelength) float64 temporaries per line (~5 GB for the
     # 108 band) where the window needs a small fraction of that.
-    window_grid = wavelength_grid.isel(wavelength_bin=slice(start, stop))
-    shift = (window_grid - line_center).broadcast_like(gofnt)
+    points = wavelength_grid.isel(wavelength_bin=slice(start, stop))
+    if edges is not None:
+        points = xr.DataArray(edges[start : stop + 1], dims="wavelength_bin")
+    shift = (points - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(doppler_width, shift)
     gofnt_scaled = (gofnt / DEFAULTS_MUSE.normalization).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     wavelength_axis = gofnt_scaled.get_axis_num("wavelength_bin")
+    if edges is None:
+        block = numexpr.evaluate(
+            _GAUSSIAN_EXPRESSION,
+            local_dict={
+                "scaled": gofnt_scaled.data,
+                "shift": shift.data,
+                "width": width.data,
+                "gaussian_norm": gaussian_norm,
+            },
+        )
+    else:
+        # The integral of the Gaussian over each bin: erf differences at the edges over the width.
+        cumulative = erf(shift.data / (width.data * np.sqrt(2)))
+        lo = [slice(None)] * cumulative.ndim
+        hi = [slice(None)] * cumulative.ndim
+        lo[wavelength_axis], hi[wavelength_axis] = slice(None, -1), slice(1, None)
+        bin_width = np.diff(edges[start : stop + 1]).reshape(
+            [-1 if i == wavelength_axis else 1 for i in range(cumulative.ndim)]
+        )
+        gofnt_scaled = gofnt_scaled.isel(wavelength_bin=slice(None, -1))
+        block = numexpr.evaluate(
+            "scaled * 0.5 * (hi - lo) / bin_width",
+            local_dict={
+                "scaled": gofnt_scaled.data,
+                "hi": cumulative[tuple(hi)],
+                "lo": cumulative[tuple(lo)],
+                "bin_width": bin_width,
+            },
+        )
+    if area is not None:
+        block = block * area.broadcast_like(gofnt_scaled).transpose(*gofnt_scaled.dims).data
     if accumulator is None:
         full_shape = list(gofnt_scaled.shape)
         full_shape[wavelength_axis] = wavelength_grid.size
         accumulator = np.zeros(tuple(full_shape), dtype=gofnt_scaled.dtype)
     index = [slice(None)] * accumulator.ndim
     index[wavelength_axis] = slice(start, stop)
-    accumulator[tuple(index)] += numexpr.evaluate(
-        _GAUSSIAN_EXPRESSION,
-        local_dict={
-            "scaled": gofnt_scaled.data,
-            "shift": shift.data,
-            "width": width.data,
-            "gaussian_norm": gaussian_norm,
-        },
-    )
+    accumulator[tuple(index)] += block
     return accumulator, gofnt_scaled

@@ -7,13 +7,14 @@ from muse.instrument.response_io import (
     read_response,
     save_response,
 )
-from muse.instrument.spectral import create_spectral_response
+from muse.instrument.spectral import create_spectral_response, log_wavelength_edges
 
 __all__ = [
     "align_response_and_vdem",
     "create_chianti_line_list",
     "create_spectral_response",
     "load_and_concat_responses",
+    "log_wavelength_edges",
     "map_response_to_ci_detector",
     "map_response_to_sg_detector",
     "read_response",

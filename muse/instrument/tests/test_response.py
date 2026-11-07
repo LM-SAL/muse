@@ -9,8 +9,9 @@ from muse.instrument import map_response_to_ci_detector, map_response_to_sg_dete
 from muse.instrument.linelist import create_chianti_line_list
 from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response_io import read_response
-from muse.instrument.spectral import create_spectral_response
+from muse.instrument.spectral import create_spectral_response, log_wavelength_edges
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
+from muse.tests.helpers import synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -507,3 +508,19 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
             "doppler_name=doppler_velocity, vmax=None, vmask=None)"
         ),
     ]
+
+
+def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
+    line_list = synthetic_line_list(1)
+    response = create_spectral_response(
+        line_list,
+        main_lines=[line_list.full_name[0].item()],
+        doppler_velocity=np.array([-200.0, 0.0, 200.0]) * u.km / u.s,
+        wavelength_edges=log_wavelength_edges(100 * u.AA, 300 * u.AA, 0.01),
+        profile="integrate",
+    )
+    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+    expected = line_list.gofnt.isel(trans_index=0) / response.attrs["normalization"]
+    np.testing.assert_allclose((mapped.detector_response.isel(line=0) / expected).values, 1.0, rtol=1e-12)
+    assert "bound" not in mapped.dims
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA
