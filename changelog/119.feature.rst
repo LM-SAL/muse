@@ -1,0 +1,1 @@
+``read_response``, ``load_and_concat_responses`` and ``migrate_response`` accept a zipped zarr store (a ``.zip`` path), read lazily like a zarr directory.
