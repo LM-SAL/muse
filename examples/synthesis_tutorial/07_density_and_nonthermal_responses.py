@@ -59,7 +59,7 @@ line_lists = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
         ),
-        "hash": "sha256:170993ad7bd2ebfc843561b9d0d46b2fffe04025617bc63eff39e55d69446cbf",
+        "hash": "sha256:975330698fe7e0c1d74df3e7a46a34d3acecdf1d5a5de7072f63c0dba9407e4c",
         "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
     },
     "density": {
