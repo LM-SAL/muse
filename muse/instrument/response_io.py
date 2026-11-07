@@ -10,7 +10,7 @@ from zarr.storage import ZipStore
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history, coord_as_unit, update_attrs
+from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import FrozenDict
 
@@ -52,9 +52,7 @@ def save_response(
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
-    if "detector_response" not in response.data_vars:
-        msg = "response must contain detector_response"
-        raise ValueError(msg)
+    _validate_response(response, "response")
     response_file = Path(response_file)
     if response_file.exists():
         msg = f"Refusing to overwrite existing response: {response_file}"
@@ -112,6 +110,40 @@ def _response_chunks(response: xr.Dataset, overrides: Mapping[str, int] | None) 
             raise ValueError(msg)
         chunks[name] = min(int(size), response.sizes[name])
     return chunks
+
+
+def _validate_response(response: xr.Dataset, label: str) -> None:
+    """
+    Reject a response that is not in the layout `save_response` writes.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        The response to check: ``detector_response``, ``logT`` and ``doppler_velocity``
+        coordinates in temperature and velocity units, a ``line`` or ``channel`` dimension,
+        ``line_wavelength`` in a wavelength unit, and ``detector_wavelength`` likewise when present.
+    label : `str`
+        Name of the dataset in error messages.
+
+    Raises
+    ------
+    ValueError
+        With the first failing requirement; a file in the legacy MUSE layout is named as such.
+    """
+    if "detector_response" not in response.data_vars:
+        hint = " (the legacy MUSE names; migrate the file first)" if "SG_resp" in response else ""
+        msg = f"{label} must contain detector_response{hint}"
+        raise ValueError(msg)
+    require_unit(response, "logT", f"{label}.logT", coord_only=True, convertible_to=u.dex(u.K))
+    require_unit(response, "doppler_velocity", f"{label}.doppler_velocity", coord_only=True, convertible_to=u.km / u.s)
+    if "line" not in response.dims and "channel" not in response.dims:
+        msg = f"{label} must have a line or channel dimension"
+        raise ValueError(msg)
+    require_unit(response, "line_wavelength", f"{label}.line_wavelength", coord_only=True, convertible_to=u.AA)
+    if "detector_wavelength" in response.coords:
+        require_unit(
+            response, "detector_wavelength", f"{label}.detector_wavelength", coord_only=True, convertible_to=u.AA
+        )
 
 
 def _open_response_file(response_file: Path, *, chunked: bool = False) -> xr.Dataset:
@@ -200,13 +232,7 @@ def read_response(
 
     r = _open_response_file(response_file, chunked=chunked)
 
-    if "detector_response" not in r.data_vars:
-        msg = "Response dataset must contain 'detector_response' variable"
-        raise ValueError(msg)
-    for name in ("logT", "doppler_velocity"):
-        if name not in r.coords and name not in r.dims:
-            msg = f"Response must have {name} coordinate"
-            raise ValueError(msg)
+    _validate_response(r, "response")
 
     r = _resample_axis(r, "logT", logT, logT_method)
     r = _resample_axis(r, "doppler_velocity", doppler_velocity, doppler_velocity_method)
@@ -218,10 +244,6 @@ def read_response(
 
     if "channel" not in r.dims and "line" not in r.dims:
         r = r.expand_dims("line")
-
-    if "line_wavelength" not in r:
-        msg = "Response must define line_wavelength"
-        raise ValueError(msg)
 
     gain_unit = u.electron / u.DN
     if gain is None:

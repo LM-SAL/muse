@@ -146,6 +146,8 @@ def test_save_response_refuses_to_overwrite(tmp_path) -> None:
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, "must contain detector_response"),
+        ("missing_line_wavelength", ValueError, "line_wavelength is missing"),
+        ("unitless_axis", ValueError, "logT must define units"),
         ("bad_suffix", ValueError, "must end in"),
     ],
 )
@@ -156,6 +158,11 @@ def test_save_response_validates_the_response(tmp_path, case, error, match) -> N
         response = None
     elif case == "missing_variable":
         response = response.drop_vars("detector_response")
+    elif case == "missing_line_wavelength":
+        response = response.drop_vars("line_wavelength")
+    elif case == "unitless_axis":
+        response = response.assign_coords(logT=response.logT.assign_attrs({}))
+        del response.logT.attrs["units"]
     else:
         path = tmp_path / "response.txt"
 
@@ -222,7 +229,7 @@ def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, droppe
     src = fake_response_file().isel({dropped: 0}, drop=True)
     path = _write(src, tmp_path / f"resp.{fmt}", fmt)
 
-    with pytest.raises(ValueError, match=f"Response must have {expected} coordinate"):
+    with pytest.raises(ValueError, match=rf"response\.{expected} is missing"):
         read_response(path)
 
 
@@ -301,7 +308,7 @@ def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
 def test_read_response_rejects_missing_line_wavelength(tmp_path) -> None:
     path = _write(fake_response_file().drop_vars("line_wavelength"), tmp_path / "resp.zarr", "zarr")
 
-    with pytest.raises(ValueError, match="must define line_wavelength"):
+    with pytest.raises(ValueError, match="line_wavelength is missing"):
         read_response(path)
 
 
@@ -356,6 +363,13 @@ def test_read_response_validates_the_logT_axis(response_path, logT, match) -> No
         read_response(response_path, logT=xr.DataArray(np.array(logT), dims="logT"))
 
 
+def test_read_response_names_the_legacy_layout(tmp_path) -> None:
+    legacy = fake_response_file().rename({"detector_response": "SG_resp"})
+    path = _write(legacy, tmp_path / "resp.nc", "nc")
+    with pytest.raises(ValueError, match="legacy MUSE names"):
+        read_response(path)
+
+
 def test_read_response_requires_detector_response(tmp_path) -> None:
     path = _write(fake_response_file().drop_vars("detector_response"), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="detector_response"):
@@ -372,19 +386,19 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         [
             fake_response_file().assign_coords(
                 line=("line", ["Fe XIX 108.355"]),
-                line_wavelength=("line", [108.355]),
+                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
             fake_response_file().assign_coords(
                 line=("line", ["Fe XXI 108.117"]),
-                line_wavelength=("line", [108.117]),
+                line_wavelength=("line", [108.117], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
             fake_response_file().assign_coords(
                 line=("line", ["contaminants"]),
-                line_wavelength=("line", [108.355]),
+                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["contaminants"]),
             ),
@@ -401,7 +415,7 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         fake_response_file()
         .assign_coords(
             line=("line", ["Fe XV 284.163"]),
-            line_wavelength=("line", [284.163]),
+            line_wavelength=("line", [284.163], {"units": "Angstrom"}),
             channel=("line", [284]),
             component_kind=("line", ["line"]),
         )
