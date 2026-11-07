@@ -102,6 +102,7 @@ def run_task(task: dict, task_id: int, args) -> None:
             include_continuum=not args.no_continuum,
             continuum_backend=args.continuum_backend,
             workers=args.workers,
+            threads=args.threads,
             **plasma,
         )
     except Exception as exc:

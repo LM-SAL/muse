@@ -4,12 +4,14 @@ of every band, abundance and plasma point.
 """
 
 import os
+import contextlib
 from pathlib import Path
 from datetime import UTC, datetime
 from collections.abc import Mapping, Iterable, Sequence
 
 import numpy as np
 import xarray as xr
+from threadpoolctl import threadpool_limits
 
 import astropy.units as u
 
@@ -42,6 +44,7 @@ __all__ = [
     "DEFAULT_DOPPLER_VELOCITY",
     "DEFAULT_PRESSURE",
     "DEFAULT_TEMPERATURE",
+    "DEFAULT_THREADS",
     "LINE_LIST_BACKENDS",
     "generate_continuum_responses",
     "generate_responses",
@@ -59,10 +62,37 @@ DEFAULT_PRESSURE = xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressu
 DEFAULT_TEMPERATURE = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
 DEFAULT_DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
 DEFAULT_CONTINUUM_DOPPLER_VELOCITY = np.arange(-1000, 1000, 200) * u.km / u.s
+#: Threads the BLAS and numexpr pools may use during a run: a few are enough for the small
+#: matrices and windows involved, and every core per process made two runs crawl together.
+DEFAULT_THREADS = 4
 PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
 _SG_CHANNELS = [int(channel) for channel in DEFAULTS_MUSE.channel_spectral_order_SG.channel.values]
 _MAIN_LINES_SG = dict(zip(_SG_CHANNELS, DEFAULTS_MUSE.main_lines_SG, strict=True))
+
+
+@contextlib.contextmanager
+def _limited_threads(threads: int):
+    """
+    Cap the BLAS, OpenMP and numexpr thread pools at ``threads`` for the block,
+    restoring them after.
+    """
+    if not isinstance(threads, int) or threads < 1:
+        msg = f"threads must be a positive integer, got {threads!r}"
+        raise ValueError(msg)
+    previous = None
+    try:
+        import numexpr  # noqa: PLC0415
+
+        previous = numexpr.set_num_threads(threads)
+    except ImportError:
+        pass
+    try:
+        with threadpool_limits(limits=threads):
+            yield
+    finally:
+        if previous is not None:
+            numexpr.set_num_threads(previous)
 
 
 def load_or_create_line_list(
@@ -77,6 +107,7 @@ def load_or_create_line_list(
     backend: str = "chianti",
     compute_if_missing: bool = True,
     workers: int = 1,
+    threads: int = DEFAULT_THREADS,
 ) -> xr.Dataset:
     """
     The line list of one abundance over a wavelength range, cached in
@@ -95,46 +126,50 @@ def load_or_create_line_list(
         fails fast when the preparation step was skipped.
     workers : `int`, optional
         Processes for the fiasco backend.
+    threads : `int`, optional
+        Threads the BLAS and numexpr pools may use meanwhile, by default 4; every core per
+        process oversubscribes the machine.
 
     Returns
     -------
     `xarray.Dataset`
         The line list.
     """
-    if backend not in LINE_LIST_BACKENDS:
-        msg = f"backend must be one of {sorted(LINE_LIST_BACKENDS)}, got {backend!r}"
-        raise ValueError(msg)
-    path = _line_list_cache_path(
-        cache_directory, backend, abundance, wavelength_range, density_dependent=density is not None
-    )
-    if path.exists():
-        logger.info(f"Loading the line list from {path}")
-        return xr.load_dataset(path)
-    if not compute_if_missing:
-        msg = f"line-list cache {path} does not exist; run the preparation step first"
-        raise FileNotFoundError(msg)
-    logger.info(f"Computing the {backend} line list for {abundance} over {wavelength_range}")
-    kwargs = {"workers": workers} if backend == "fiasco" else {}
-    line_list = LINE_LIST_BACKENDS[backend](
-        temperature,
-        density=density,
-        pressure=pressure,
-        abundance=abundance,
-        wavelength_range=wavelength_range,
-        minimum_abundance=minimum_abundance,
-        **kwargs,
-    )
-    # Written beside the destination and renamed, so a task racing on the same missing cache
-    # never reads a half-written file.
-    staging_path = _staging_path(path)
-    encoding = {
-        name: {"zlib": True, "complevel": 5}
-        for name, variable in line_list.data_vars.items()
-        if variable.dtype.kind in "fiu"
-    }
-    line_list.to_netcdf(staging_path, encoding=encoding)
-    staging_path.replace(path)
-    return line_list
+    with _limited_threads(threads):
+        if backend not in LINE_LIST_BACKENDS:
+            msg = f"backend must be one of {sorted(LINE_LIST_BACKENDS)}, got {backend!r}"
+            raise ValueError(msg)
+        path = _line_list_cache_path(
+            cache_directory, backend, abundance, wavelength_range, density_dependent=density is not None
+        )
+        if path.exists():
+            logger.info(f"Loading the line list from {path}")
+            return xr.load_dataset(path)
+        if not compute_if_missing:
+            msg = f"line-list cache {path} does not exist; run the preparation step first"
+            raise FileNotFoundError(msg)
+        logger.info(f"Computing the {backend} line list for {abundance} over {wavelength_range}")
+        kwargs = {"workers": workers} if backend == "fiasco" else {}
+        line_list = LINE_LIST_BACKENDS[backend](
+            temperature,
+            density=density,
+            pressure=pressure,
+            abundance=abundance,
+            wavelength_range=wavelength_range,
+            minimum_abundance=minimum_abundance,
+            **kwargs,
+        )
+        # Written beside the destination and renamed, so a task racing on the same missing cache
+        # never reads a half-written file.
+        staging_path = _staging_path(path)
+        encoding = {
+            name: {"zlib": True, "complevel": 5}
+            for name, variable in line_list.data_vars.items()
+            if variable.dtype.kind in "fiu"
+        }
+        line_list.to_netcdf(staging_path, encoding=encoding)
+        staging_path.replace(path)
+        return line_list
 
 
 def load_or_create_continuum(
@@ -149,6 +184,7 @@ def load_or_create_continuum(
     backend: str = "fiasco",
     compute_if_missing: bool = True,
     workers: int = 1,
+    threads: int = DEFAULT_THREADS,
 ) -> xr.Dataset:
     """
     The rest-frame continuum of one abundance on one wavelength grid, cached in
@@ -171,57 +207,63 @@ def load_or_create_continuum(
         If `False`, a missing cache raises instead of being computed.
     workers : `int`, optional
         Processes for the fiasco backend.
+    threads : `int`, optional
+        Threads the BLAS and numexpr pools may use meanwhile, by default 4; every core per
+        process oversubscribes the machine.
 
     Returns
     -------
     `xarray.Dataset`
         The continuum on exactly the requested grids.
     """
-    if backend not in CONTINUUM_BACKENDS:
-        msg = f"backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {backend!r}"
-        raise ValueError(msg)
-    if (pressure is None) == (density is None):
-        msg = "Specify pressure or density"
-        raise ValueError(msg)
-    logT = np.log10(_validate_positive_data_array(temperature, "temperature", u.K, dimension="logT").data.reshape(-1))
-    if density is None:
-        plasma_dim = "pressure"
-        requested_values = _validate_positive_data_array(pressure, "pressure", u.K / u.cm**3).data.reshape(-1)
-    else:
-        plasma_dim = "logD"
-        requested_values = np.log10(_validate_positive_data_array(density, "density", u.cm**-3).data.reshape(-1))
-    grid = np.asarray(wavelength_grid.to_value(u.AA), dtype=float)
-    path = _continuum_cache_path(
-        cache_directory, backend, abundance, wavelength_grid, density_dependent=density is not None
-    )
-    if path.exists():
-        # Closed after loading, so a recompute can replace the file on Windows too.
-        with read_spectral_response(path) as opened:
-            cached = opened.load()
-        if _continuum_cache_matches(cached, logT, grid, plasma_dim, requested_values, minimum_abundance):
-            logger.info(f"Loading the continuum from {path}")
-            return cached.assign_coords(logT=cached.logT.copy(data=logT)).sel(
-                {plasma_dim: requested_values}, method="nearest"
-            )
-        logger.warning(f"{path} was computed on another grid or abundance cut; recomputing it")
-    elif not compute_if_missing:
-        msg = f"continuum cache {path} does not exist; run the preparation step first"
-        raise FileNotFoundError(msg)
-    logger.info(f"Computing the {backend} continuum for {abundance} on {grid.size} wavelengths")
-    kwargs = {"workers": workers} if backend == "fiasco" else {}
-    continuum = CONTINUUM_BACKENDS[backend](
-        temperature,
-        wavelength_grid,
-        density=density,
-        pressure=pressure,
-        abundance=abundance,
-        minimum_abundance=minimum_abundance,
-        **kwargs,
-    )
-    staging_path = _staging_path(path)
-    save_spectral_response(continuum, staging_path)
-    staging_path.replace(path)
-    return continuum
+    with _limited_threads(threads):
+        if backend not in CONTINUUM_BACKENDS:
+            msg = f"backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {backend!r}"
+            raise ValueError(msg)
+        if (pressure is None) == (density is None):
+            msg = "Specify pressure or density"
+            raise ValueError(msg)
+        logT = np.log10(
+            _validate_positive_data_array(temperature, "temperature", u.K, dimension="logT").data.reshape(-1)
+        )
+        if density is None:
+            plasma_dim = "pressure"
+            requested_values = _validate_positive_data_array(pressure, "pressure", u.K / u.cm**3).data.reshape(-1)
+        else:
+            plasma_dim = "logD"
+            requested_values = np.log10(_validate_positive_data_array(density, "density", u.cm**-3).data.reshape(-1))
+        grid = np.asarray(wavelength_grid.to_value(u.AA), dtype=float)
+        path = _continuum_cache_path(
+            cache_directory, backend, abundance, wavelength_grid, density_dependent=density is not None
+        )
+        if path.exists():
+            # Closed after loading, so a recompute can replace the file on Windows too.
+            with read_spectral_response(path) as opened:
+                cached = opened.load()
+            if _continuum_cache_matches(cached, logT, grid, plasma_dim, requested_values, minimum_abundance):
+                logger.info(f"Loading the continuum from {path}")
+                return cached.assign_coords(logT=cached.logT.copy(data=logT)).sel(
+                    {plasma_dim: requested_values}, method="nearest"
+                )
+            logger.warning(f"{path} was computed on another grid or abundance cut; recomputing it")
+        elif not compute_if_missing:
+            msg = f"continuum cache {path} does not exist; run the preparation step first"
+            raise FileNotFoundError(msg)
+        logger.info(f"Computing the {backend} continuum for {abundance} on {grid.size} wavelengths")
+        kwargs = {"workers": workers} if backend == "fiasco" else {}
+        continuum = CONTINUUM_BACKENDS[backend](
+            temperature,
+            wavelength_grid,
+            density=density,
+            pressure=pressure,
+            abundance=abundance,
+            minimum_abundance=minimum_abundance,
+            **kwargs,
+        )
+        staging_path = _staging_path(path)
+        save_spectral_response(continuum, staging_path)
+        staging_path.replace(path)
+        return continuum
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s)
@@ -255,6 +297,7 @@ def generate_responses(
     ci_units_kwargs: Mapping[str, object] | None = None,
     cache_directory: str | Path | None = None,
     workers: int = 1,
+    threads: int = DEFAULT_THREADS,
 ) -> list[Path]:
     """
     Generate the response products of every effective-area file, abundance and plasma
@@ -322,6 +365,9 @@ def generate_responses(
         Where the line lists and continua are cached, by default ``output_directory / "cache"``.
     workers : `int`, optional
         Processes for the fiasco backends.
+    threads : `int`, optional
+        Threads the BLAS and numexpr pools may use meanwhile, by default 4; every core per
+        process oversubscribes the machine.
 
     Returns
     -------
@@ -332,125 +378,131 @@ def generate_responses(
         holds ``spectral_response`` with ``wavelength_bin`` in place of the detector axes. Every
         product carries the band's ``effective_area`` curve.
     """
-    for name, value in (("author", author), ("effective_area_note", effective_area_note)):
-        if not isinstance(value, str) or not value.strip():
-            msg = f"{name} must be a non-empty string"
+    with _limited_threads(threads):
+        for name, value in (("author", author), ("effective_area_note", effective_area_note)):
+            if not isinstance(value, str) or not value.strip():
+                msg = f"{name} must be a non-empty string"
+                raise ValueError(msg)
+        ci_units = tuple(ci_units)
+        if not ci_units or set(ci_units) - {"ph", "DN"}:
+            msg = f"ci_units must be a non-empty subset of ('ph', 'DN'), got {ci_units!r}"
             raise ValueError(msg)
-    ci_units = tuple(ci_units)
-    if not ci_units or set(ci_units) - {"ph", "DN"}:
-        msg = f"ci_units must be a non-empty subset of ('ph', 'DN'), got {ci_units!r}"
-        raise ValueError(msg)
-    if line_list_backend not in LINE_LIST_BACKENDS:
-        msg = f"line_list_backend must be one of {sorted(LINE_LIST_BACKENDS)}, got {line_list_backend!r}"
-        raise ValueError(msg)
-    if continuum_backend not in CONTINUUM_BACKENDS:
-        msg = f"continuum_backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {continuum_backend!r}"
-        raise ValueError(msg)
-    run = _RunInputs.resolve(output_directory, cache_directory, pressure, density)
-    temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
-    doppler_velocity = DEFAULT_DOPPLER_VELOCITY if doppler_velocity is None else doppler_velocity
-    sg_areas = [read_effective_area(path) for path in sg_effective_areas]
-    ci_areas = [read_effective_area(path) for path in ci_effective_areas]
-    if not sg_areas and not ci_areas:
-        msg = "pass at least one effective-area file"
-        raise ValueError(msg)
-    wavelength_range = effective_area_wavelength_range([*sg_areas, *ci_areas])
+        if line_list_backend not in LINE_LIST_BACKENDS:
+            msg = f"line_list_backend must be one of {sorted(LINE_LIST_BACKENDS)}, got {line_list_backend!r}"
+            raise ValueError(msg)
+        if continuum_backend not in CONTINUUM_BACKENDS:
+            msg = f"continuum_backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {continuum_backend!r}"
+            raise ValueError(msg)
+        run = _RunInputs.resolve(output_directory, cache_directory, pressure, density)
+        temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
+        doppler_velocity = DEFAULT_DOPPLER_VELOCITY if doppler_velocity is None else doppler_velocity
+        sg_areas = [read_effective_area(path) for path in sg_effective_areas]
+        ci_areas = [read_effective_area(path) for path in ci_effective_areas]
+        if not sg_areas and not ci_areas:
+            msg = "pass at least one effective-area file"
+            raise ValueError(msg)
+        wavelength_range = effective_area_wavelength_range([*sg_areas, *ci_areas])
 
-    products = []
-    for abundance in abundances:
-        if line_list_file is not None:
-            line_list = xr.load_dataset(line_list_file)
-        else:
-            line_list = load_or_create_line_list(
-                run.cache_directory,
-                abundance=abundance,
-                wavelength_range=wavelength_range,
-                temperature=temperature,
-                pressure=run.pressure,
-                density=run.density,
-                minimum_abundance=minimum_abundance,
-                backend=line_list_backend,
-                workers=workers,
-            )
-        if line_boosts:
-            line_list = apply_line_boosts(line_list, line_boosts)
-        if line_selection:
-            line_list = select_transitions(line_list, line_selection)
-        provenance = {
-            "abundance": abundance,
-            "line_list_backend": line_list_backend,
-            "author": author,
-            "effective_area_note": effective_area_note,
-            "minimum_abundance": minimum_abundance,
-            **{
-                key: line_list.attrs[key]
-                for key in ("Chianti", "Chiantipy", "fiasco", "line_boosts", "line_selection")
-                if key in line_list.attrs
-            },
-        }
-        for effective_area in sg_areas:
-            band = _nominal_band(effective_area)
-            band_settings = {
-                "main_lines": list(_per_band(main_lines_by_band, band, _MAIN_LINES_SG, "main_lines_by_band")),
-                "spectral_order": int(
-                    _per_band(
-                        spectral_order_by_band, band, DEFAULTS_MUSE.channel_spectral_order_SG, "spectral_order_by_band"
-                    )
-                ),
-                "instrumental_width": u.Quantity(
-                    _per_band(
-                        instrumental_width_by_band,
-                        band,
-                        DEFAULTS_MUSE.instrumental_width_SG,
-                        "instrumental_width_by_band",
-                    )
-                ),
-            }
-            for plasma_index in range(run.number_of_plasma_points):
-                products += _sg_band_products(
-                    run,
-                    line_list,
-                    effective_area,
-                    plasma_index,
-                    **band_settings,
-                    doppler_velocity=doppler_velocity,
-                    maximum_contaminants=maximum_contaminants,
-                    sg_detector_kwargs=sg_detector_kwargs or {},
-                    sg_units_kwargs=sg_units_kwargs or {},
-                    name_tail=f"{abundance}_{effective_area_note}_{{plasma}}_{author}_{run.date}",
-                    provenance=provenance,
-                )
-        for effective_area in ci_areas:
-            continuum = None
-            if include_continuum:
-                continuum = load_or_create_continuum(
+        products = []
+        for abundance in abundances:
+            if line_list_file is not None:
+                line_list = xr.load_dataset(line_list_file)
+            else:
+                line_list = load_or_create_line_list(
                     run.cache_directory,
                     abundance=abundance,
-                    wavelength_grid=effective_area.wavelength.values * u.AA,
+                    wavelength_range=wavelength_range,
                     temperature=temperature,
                     pressure=run.pressure,
                     density=run.density,
                     minimum_abundance=minimum_abundance,
-                    backend=continuum_backend,
+                    backend=line_list_backend,
                     workers=workers,
+                    threads=threads,
                 )
-            for plasma_index in range(run.number_of_plasma_points):
-                products += _ci_band_products(
-                    run,
-                    line_list,
-                    effective_area,
-                    plasma_index,
-                    continuum=continuum,
-                    continuum_note=f"{continuum_backend} free-free + free-bound + two-photon, minimum abundance {minimum_abundance}",
-                    doppler_velocity=doppler_velocity,
-                    maximum_contaminants=maximum_contaminants,
-                    ci_fractional_width=ci_fractional_width,
-                    ci_units=ci_units,
-                    ci_units_kwargs=ci_units_kwargs or {},
-                    name_tail=f"{abundance}_{effective_area_note}_{{plasma}}_{author}_{run.date}",
-                    provenance=provenance,
-                )
-    return products
+            if line_boosts:
+                line_list = apply_line_boosts(line_list, line_boosts)
+            if line_selection:
+                line_list = select_transitions(line_list, line_selection)
+            provenance = {
+                "abundance": abundance,
+                "line_list_backend": line_list_backend,
+                "author": author,
+                "effective_area_note": effective_area_note,
+                "minimum_abundance": minimum_abundance,
+                **{
+                    key: line_list.attrs[key]
+                    for key in ("Chianti", "Chiantipy", "fiasco", "line_boosts", "line_selection")
+                    if key in line_list.attrs
+                },
+            }
+            for effective_area in sg_areas:
+                band = _nominal_band(effective_area)
+                band_settings = {
+                    "main_lines": list(_per_band(main_lines_by_band, band, _MAIN_LINES_SG, "main_lines_by_band")),
+                    "spectral_order": int(
+                        _per_band(
+                            spectral_order_by_band,
+                            band,
+                            DEFAULTS_MUSE.channel_spectral_order_SG,
+                            "spectral_order_by_band",
+                        )
+                    ),
+                    "instrumental_width": u.Quantity(
+                        _per_band(
+                            instrumental_width_by_band,
+                            band,
+                            DEFAULTS_MUSE.instrumental_width_SG,
+                            "instrumental_width_by_band",
+                        )
+                    ),
+                }
+                for plasma_index in range(run.number_of_plasma_points):
+                    products += _sg_band_products(
+                        run,
+                        line_list,
+                        effective_area,
+                        plasma_index,
+                        **band_settings,
+                        doppler_velocity=doppler_velocity,
+                        maximum_contaminants=maximum_contaminants,
+                        sg_detector_kwargs=sg_detector_kwargs or {},
+                        sg_units_kwargs=sg_units_kwargs or {},
+                        name_tail=f"{abundance}_{effective_area_note}_{{plasma}}_{author}_{run.date}",
+                        provenance=provenance,
+                    )
+            for effective_area in ci_areas:
+                continuum = None
+                if include_continuum:
+                    continuum = load_or_create_continuum(
+                        run.cache_directory,
+                        abundance=abundance,
+                        wavelength_grid=effective_area.wavelength.values * u.AA,
+                        temperature=temperature,
+                        pressure=run.pressure,
+                        density=run.density,
+                        minimum_abundance=minimum_abundance,
+                        backend=continuum_backend,
+                        workers=workers,
+                        threads=threads,
+                    )
+                for plasma_index in range(run.number_of_plasma_points):
+                    products += _ci_band_products(
+                        run,
+                        line_list,
+                        effective_area,
+                        plasma_index,
+                        continuum=continuum,
+                        continuum_note=f"{continuum_backend} free-free + free-bound + two-photon, minimum abundance {minimum_abundance}",
+                        doppler_velocity=doppler_velocity,
+                        maximum_contaminants=maximum_contaminants,
+                        ci_fractional_width=ci_fractional_width,
+                        ci_units=ci_units,
+                        ci_units_kwargs=ci_units_kwargs or {},
+                        name_tail=f"{abundance}_{effective_area_note}_{{plasma}}_{author}_{run.date}",
+                        provenance=provenance,
+                    )
+        return products
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s, wavelength_step=u.AA)
@@ -473,6 +525,7 @@ def generate_continuum_responses(
     sg_units_kwargs: Mapping[str, object] | None = None,
     cache_directory: str | Path | None = None,
     workers: int = 1,
+    threads: int = DEFAULT_THREADS,
 ) -> list[Path]:
     """
     Generate the SG continuum response of every band: the continuum alone on the
@@ -497,6 +550,9 @@ def generate_continuum_responses(
         By default -1000 to 800 km/s in steps of 200.
     wavelength_step : `astropy.units.Quantity`, optional
         Sampling of the fine grid, by default 0.01 Angstrom.
+    threads : `int`, optional
+        Threads the BLAS and numexpr pools may use meanwhile, by default 4; every core per
+        process oversubscribes the machine.
 
     Returns
     -------
@@ -504,57 +560,61 @@ def generate_continuum_responses(
         The products written, named ``respfunc_<band>_continuum_<backend>_...`` like the line
         products, with the three continuum components as ``line`` and the SG detector axes.
     """
-    if backend not in CONTINUUM_BACKENDS:
-        msg = f"backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {backend!r}"
-        raise ValueError(msg)
-    run = _RunInputs.resolve(output_directory, cache_directory, pressure, density)
-    temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
-    doppler_velocity = DEFAULT_CONTINUUM_DOPPLER_VELOCITY if doppler_velocity is None else doppler_velocity
-    step = wavelength_step.to_value(u.AA)
-    plasma_tag = run.plasma_tag(0) if run.number_of_plasma_points == 1 else "pressure"
-    provenance = {
-        "abundance": abundance,
-        "continuum_backend": backend,
-        "author": author,
-        "effective_area_note": effective_area_note,
-        "minimum_abundance": minimum_abundance,
-    }
-    products = []
-    for path in sg_effective_areas:
-        effective_area = read_effective_area(path)
-        band = _nominal_band(effective_area)
-        area_curve = select_effective_area_curve(effective_area)
-        spectral_order = int(
-            _per_band(spectral_order_by_band, band, DEFAULTS_MUSE.channel_spectral_order_SG, "spectral_order_by_band")
-        )
-        half_width = DEFAULTS_MUSE.waveband_half_width_SG.to_value(u.AA) / spectral_order
-        grid = np.arange(band - half_width, band + half_width, step) * u.AA
-        continuum = load_or_create_continuum(
-            run.cache_directory,
-            abundance=abundance,
-            wavelength_grid=grid,
-            temperature=temperature,
-            pressure=run.pressure,
-            density=density,
-            minimum_abundance=minimum_abundance,
-            backend=backend,
-            workers=workers,
-        )
-        binned_continuum = bin_continuum(
-            continuum,
-            _centers_to_edges(grid.value) * u.AA,
-            effective_area=area_curve,
-            doppler_velocity=doppler_velocity,
-        )
-        photons = transform_response_units(
-            binned_continuum, PHOTON_UNITS, band * u.AA, detector="SG", **(sg_units_kwargs or {})
-        )
-        detector_response = map_response_to_sg_detector(
-            photons, channel=band * u.AA, **(sg_detector_kwargs or {})
-        ).assign(effective_area=area_curve)
-        name = f"respfunc_{band}_continuum_{backend}_{_sg_geometry_tag(sg_detector_kwargs)}_{abundance}_{effective_area_note}_{plasma_tag}_{author}_{run.date}.zarr"
-        products.append(_write_product(detector_response, run.output_directory / name, provenance, save_response))
-    return products
+    with _limited_threads(threads):
+        if backend not in CONTINUUM_BACKENDS:
+            msg = f"backend must be one of {sorted(CONTINUUM_BACKENDS)}, got {backend!r}"
+            raise ValueError(msg)
+        run = _RunInputs.resolve(output_directory, cache_directory, pressure, density)
+        temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
+        doppler_velocity = DEFAULT_CONTINUUM_DOPPLER_VELOCITY if doppler_velocity is None else doppler_velocity
+        step = wavelength_step.to_value(u.AA)
+        plasma_tag = run.plasma_tag(0) if run.number_of_plasma_points == 1 else "pressure"
+        provenance = {
+            "abundance": abundance,
+            "continuum_backend": backend,
+            "author": author,
+            "effective_area_note": effective_area_note,
+            "minimum_abundance": minimum_abundance,
+        }
+        products = []
+        for path in sg_effective_areas:
+            effective_area = read_effective_area(path)
+            band = _nominal_band(effective_area)
+            area_curve = select_effective_area_curve(effective_area)
+            spectral_order = int(
+                _per_band(
+                    spectral_order_by_band, band, DEFAULTS_MUSE.channel_spectral_order_SG, "spectral_order_by_band"
+                )
+            )
+            half_width = DEFAULTS_MUSE.waveband_half_width_SG.to_value(u.AA) / spectral_order
+            grid = np.arange(band - half_width, band + half_width, step) * u.AA
+            continuum = load_or_create_continuum(
+                run.cache_directory,
+                abundance=abundance,
+                wavelength_grid=grid,
+                temperature=temperature,
+                pressure=run.pressure,
+                density=density,
+                minimum_abundance=minimum_abundance,
+                backend=backend,
+                workers=workers,
+                threads=threads,
+            )
+            binned_continuum = bin_continuum(
+                continuum,
+                _centers_to_edges(grid.value) * u.AA,
+                effective_area=area_curve,
+                doppler_velocity=doppler_velocity,
+            )
+            photons = transform_response_units(
+                binned_continuum, PHOTON_UNITS, band * u.AA, detector="SG", **(sg_units_kwargs or {})
+            )
+            detector_response = map_response_to_sg_detector(
+                photons, channel=band * u.AA, **(sg_detector_kwargs or {})
+            ).assign(effective_area=area_curve)
+            name = f"respfunc_{band}_continuum_{backend}_{_sg_geometry_tag(sg_detector_kwargs)}_{abundance}_{effective_area_note}_{plasma_tag}_{author}_{run.date}.zarr"
+            products.append(_write_product(detector_response, run.output_directory / name, provenance, save_response))
+        return products
 
 
 class _RunInputs:

@@ -47,6 +47,7 @@ def main(argv=None):
             minimum_abundance=args.minimum_abundance,
             backend=args.line_list_backend,
             workers=args.workers,
+            threads=args.threads,
             **plasma_grid(args),
         )
         print(f"line list ready for {abundance}")

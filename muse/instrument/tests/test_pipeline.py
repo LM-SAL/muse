@@ -537,3 +537,17 @@ def test_generate_responses_live_chianti(tmp_path):
     assert list(cube.line.values) == ["171 remaining 3 lines"]
     assert float(cube.spectral_response.max()) > 0
     assert (tmp_path / "run" / "cache" / "line_list_chianti_165-178A_sun_coronal_2021_chianti.nc").is_file()
+
+
+def test_limited_threads_caps_the_pools_and_restores_them():
+    numexpr = pytest.importorskip("numexpr")
+    from threadpoolctl import threadpool_info
+
+    before = numexpr.set_num_threads(3)
+    numexpr.set_num_threads(before)
+    with pipeline._limited_threads(2):
+        assert numexpr.set_num_threads(2) == 2
+        assert all(pool["num_threads"] <= 2 for pool in threadpool_info())
+    assert numexpr.set_num_threads(before) == before
+    with pytest.raises(ValueError, match="threads"), pipeline._limited_threads(0):
+        pass

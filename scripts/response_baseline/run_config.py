@@ -13,7 +13,12 @@ import argparse
 import astropy.units as u
 
 from muse.instrument import effective_area_wavelength_range, read_effective_area
-from muse.instrument.pipeline import DEFAULT_ABUNDANCES, DEFAULT_PRESSURE, DEFAULT_TEMPERATURE
+from muse.instrument.pipeline import (
+    DEFAULT_ABUNDANCES,
+    DEFAULT_PRESSURE,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_THREADS,
+)
 from muse.variables import DEFAULTS_MUSE
 
 DEFAULT_SG_BANDS = [108, 171, 284]
@@ -57,6 +62,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--minimum-abundance", type=float, default=DEFAULTS_MUSE.minimum_abundance)
     parser.add_argument("--line-list-backend", choices=["chianti", "fiasco"], default="chianti")
     parser.add_argument("--workers", type=int, default=1, help="Processes for the fiasco backends; -1 uses every core.")
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=int(os.environ.get("SLURM_CPUS_PER_TASK", DEFAULT_THREADS)),
+        help="Threads the BLAS and numexpr pools may use, by default the job's SLURM_CPUS_PER_TASK or 4.",
+    )
 
 
 def effective_area_file(directory: pathlib.Path, band: int) -> pathlib.Path:

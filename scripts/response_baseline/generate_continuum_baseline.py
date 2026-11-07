@@ -35,6 +35,7 @@ def main(argv=None):
             temperature=DEFAULT_TEMPERATURE,
             minimum_abundance=args.minimum_abundance,
             workers=args.workers,
+            threads=args.threads,
             **plasma_grid(args),
         )
         print(f"{abundance}: {len(written)} continuum products")
