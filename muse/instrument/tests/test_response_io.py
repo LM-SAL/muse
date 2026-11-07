@@ -11,7 +11,7 @@ import astropy.units as u
 
 from muse.instrument import align_response_and_vdem, response_io
 from muse.instrument.response_io import load_and_concat_responses, read_response, save_response
-from muse.tests.helpers import fake_legacy_response_file, fake_response, fake_vdem
+from muse.tests.helpers import fake_response, fake_response_file, fake_vdem
 from muse.variables import DEFAULTS_MUSE
 
 pytestmark = [
@@ -50,9 +50,9 @@ def _open(path, fmt: str) -> xr.Dataset:
 
 
 @pytest.fixture
-def legacy_path(tmp_path):
+def response_path(tmp_path):
     # For tests reading a pristine legacy file where the on-disk format is irrelevant.
-    return _write(fake_legacy_response_file(), tmp_path / "resp.nc", "nc")
+    return _write(fake_response_file(), tmp_path / "resp.nc", "nc")
 
 
 def _small_response() -> xr.Dataset:
@@ -146,6 +146,8 @@ def test_save_response_refuses_to_overwrite(tmp_path) -> None:
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, "must contain detector_response"),
+        ("missing_line_wavelength", ValueError, "line_wavelength is missing"),
+        ("unitless_axis", ValueError, "logT must define units"),
         ("bad_suffix", ValueError, "must end in"),
     ],
 )
@@ -156,6 +158,11 @@ def test_save_response_validates_the_response(tmp_path, case, error, match) -> N
         response = None
     elif case == "missing_variable":
         response = response.drop_vars("detector_response")
+    elif case == "missing_line_wavelength":
+        response = response.drop_vars("line_wavelength")
+    elif case == "unitless_axis":
+        response = response.assign_coords(logT=response.logT.assign_attrs({}))
+        del response.logT.attrs["units"]
     else:
         path = tmp_path / "response.txt"
 
@@ -178,7 +185,7 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / f"resp.{fmt}", fmt)
+    path = _write(fake_response_file(), tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
     doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity")
 
@@ -191,10 +198,9 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
-    # The reader injects Angstrom because the on-disk files carry no wavelength units (for now).
+    # The file carries its wavelength units and the reader keeps them.
     assert r.line_wavelength.attrs["units"] == str(u.AA)
     assert r.detector_wavelength.attrs["units"] == str(u.AA)
-    assert not {"SG_resp", "SG_wvl", "SG_xpixel", "line_wvl", "vdop"} & set(r.variables)
     np.testing.assert_array_equal(
         r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=r.channel).data).to_value(u.electron / u.DN)
     )
@@ -204,9 +210,9 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # Files with non-0-based slit numbering must come back 0-based so downstream
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
-    src = fake_legacy_response_file()
+    src = fake_response_file()
     src = src.assign_coords(slit=src.slit.values + 1)
-    expected = src.SG_resp.isel(slit=slice(3)).values
+    expected = src.detector_response.isel(slit=slice(3)).values
     path = _write(src, tmp_path / "resp.nc", "nc")
 
     r = read_response(path, slit=_slit(3))
@@ -216,20 +222,20 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
-@pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("vdop", "doppler_velocity")])
+@pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("doppler_velocity", "doppler_velocity")])
 def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
     # be rejected on load rather than failing somewhere downstream.
-    src = fake_legacy_response_file().isel({dropped: 0}, drop=True)
+    src = fake_response_file().isel({dropped: 0}, drop=True)
     path = _write(src, tmp_path / f"resp.{fmt}", fmt)
 
-    with pytest.raises(ValueError, match=f"Response must have {expected} coordinate"):
+    with pytest.raises(ValueError, match=rf"response\.{expected} is missing"):
         read_response(path)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> None:
-    path = _write(fake_legacy_response_file(), tmp_path / f"resp.{fmt}", fmt)
+    path = _write(fake_response_file(), tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
     doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity")
     kwargs = {
@@ -249,7 +255,7 @@ def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> No
 
 def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
     for name in ("a.nc", "b.nc"):
-        fake_legacy_response_file().to_netcdf(tmp_path / name)
+        fake_response_file().to_netcdf(tmp_path / name)
 
     response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171], chunked=True)
 
@@ -259,7 +265,7 @@ def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
 @pytest.mark.parametrize("zarr_format", [2, 3])
 @pytest.mark.parametrize("chunked", [False, True])
 def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked) -> None:
-    legacy = fake_legacy_response_file()
+    legacy = fake_response_file()
     expected = read_response(_write(legacy, tmp_path / "resp.nc", "nc"))
     legacy.to_zarr(tmp_path / "resp.zarr", zarr_format=zarr_format, consolidated=False)
     # The archives in use were made by zipping a store, so the entries sit at the archive root.
@@ -273,7 +279,7 @@ def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked)
 
 def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
     path = tmp_path / "response.zarr"
-    fake_legacy_response_file().to_zarr(path, zarr_format=3, consolidated=False)
+    fake_response_file().to_zarr(path, zarr_format=3, consolidated=False)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -282,90 +288,44 @@ def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_
     assert "detector_response" in response
 
 
-def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(legacy_path) -> None:
+def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(response_path) -> None:
     # A grid offset from the source logT forces real interpolation rather than nearest selection.
     logT = _axis(np.linspace(5.1, 6.9, 9), "logT")
 
-    r = read_response(legacy_path, logT=logT, logT_method="linear")
+    r = read_response(response_path, logT=logT, logT_method="linear")
 
     np.testing.assert_allclose(r.logT.values, logT.values)
     assert bool((r.detector_response >= 0).all())  # interp path clamps negatives to zero
 
 
-def test_read_response_expands_line_dim_and_fills_line_wavelength_from_attr(tmp_path) -> None:
-    # Drop the line dimension and line_wvl to hit the expand_dims + attribute-fallback branches.
-    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
-    src.attrs["MAIN_LINE_WVL"] = 171.073
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
-
-    # Without a channel coordinate the per-channel default gain cannot be selected.
-    r = read_response(path, gain=10 * u.electron / u.DN)
-
-    assert "line" in r.dims
-    assert float(r.line_wavelength) == pytest.approx(171.073)
-    assert r.line_wavelength.attrs["units"] == str(u.AA)
-
-
 def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
-    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", "channel"])
-    src.attrs["MAIN_LINE_WVL"] = 171.073
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
+    path = _write(fake_response_file().drop_vars("channel"), tmp_path / "resp.zarr", "zarr")
 
     with pytest.raises(ValueError, match="pass gain explicitly"):
         read_response(path)
 
 
-@pytest.mark.parametrize(("dropped", "match"), [(["channel"], "metadata$"), ([], "a band label")])
-def test_read_response_rejects_missing_line_wavelength(tmp_path, dropped, match) -> None:
-    # The channel label (171) is not the line wavelength (171.073), so a response carrying one
-    # still fails, and says so; without a channel the plain error stands.
-    src = fake_legacy_response_file().isel(line=0).drop_vars(["line", "line_wvl", *dropped])
-    assert ("channel" in src.coords) == (not dropped)
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
+def test_read_response_rejects_missing_line_wavelength(tmp_path) -> None:
+    path = _write(fake_response_file().drop_vars("line_wavelength"), tmp_path / "resp.zarr", "zarr")
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(ValueError, match="line_wavelength is missing"):
         read_response(path)
 
 
-def test_read_response_assigns_missing_coordinate_units(legacy_path, caplog) -> None:
-    # The fixture mirrors the real files, which do not carry units on every coordinate.
-    r = read_response(legacy_path)
-
-    assert "missing the 'units' attribute" in caplog.text
-    assert r.logT.attrs["units"] == str(u.dex(u.K))
-    assert r.doppler_velocity.attrs["units"] == str(u.km / u.s)
-    assert r.line_wavelength.attrs["units"] == str(u.AA)  # Angstrom assumed for now
-    assert r.detector_wavelength.attrs["units"] == str(u.AA)
-
-
-def test_read_response_keeps_existing_wavelength_units(tmp_path, caplog) -> None:
-    src = fake_legacy_response_file()
-    src.line_wvl.attrs["units"] = "nm"
-    src.SG_wvl.attrs["units"] = "nm"
+def test_read_response_keeps_existing_wavelength_units(tmp_path) -> None:
+    src = fake_response_file()
+    src.line_wavelength.attrs["units"] = "nm"
+    src.detector_wavelength.attrs["units"] = "nm"
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
     r = read_response(path)
 
-    assert "Response line_wavelength is missing the 'units' attribute" not in caplog.text
-    assert "Response detector_wavelength is missing the 'units' attribute" not in caplog.text
     assert r.line_wavelength.attrs["units"] == "nm"  # present units left untouched
     assert r.detector_wavelength.attrs["units"] == "nm"
 
 
-def test_read_response_prefers_legacy_line_wvl_when_both_names_exist(tmp_path) -> None:
-    src = fake_legacy_response_file().assign_coords(
-        line_wavelength=("line", [999.0], {"units": "Angstrom"}),
-    )
-    path = _write(src, tmp_path / "resp.nc", "nc")
-
-    r = read_response(path)
-
-    np.testing.assert_allclose(r.line_wavelength, [171.073])
-    assert "line_wvl" not in r
-
-
-def test_read_response_gain_accepts_quantity(legacy_path) -> None:
-    r = read_response(legacy_path, gain=5.0 * u.electron / u.DN)
+def test_read_response_gain_accepts_quantity(response_path) -> None:
+    r = read_response(response_path, gain=5.0 * u.electron / u.DN)
 
     np.testing.assert_array_equal(r.gain.values, [5.0])
     assert r.gain.attrs["units"] == str(u.electron / u.DN)
@@ -377,7 +337,7 @@ def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
-    src = fake_legacy_response_file().assign_coords(channel=("line", [284]))
+    src = fake_response_file().assign_coords(channel=("line", [284]))
     path = _write(src, tmp_path / "resp.zarr", "zarr")
 
     r = read_response(path)
@@ -385,9 +345,9 @@ def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
     np.testing.assert_array_equal(r.gain.values, [12.0])
 
 
-def test_read_response_gain_rejects_wrong_units(legacy_path) -> None:
+def test_read_response_gain_rejects_wrong_units(response_path) -> None:
     with pytest.raises(u.UnitsError):
-        read_response(legacy_path, gain=5.0 * u.second)
+        read_response(response_path, gain=5.0 * u.second)
 
 
 @pytest.mark.parametrize(
@@ -398,13 +358,20 @@ def test_read_response_gain_rejects_wrong_units(legacy_path) -> None:
         ([8.0, 8.5], "no overlap"),
     ],
 )
-def test_read_response_validates_the_logT_axis(legacy_path, logT, match) -> None:
+def test_read_response_validates_the_logT_axis(response_path, logT, match) -> None:
     with pytest.raises(ValueError, match=match):
-        read_response(legacy_path, logT=xr.DataArray(np.array(logT), dims="logT"))
+        read_response(response_path, logT=xr.DataArray(np.array(logT), dims="logT"))
+
+
+def test_read_response_names_the_legacy_layout(tmp_path) -> None:
+    legacy = fake_response_file().rename({"detector_response": "SG_resp"})
+    path = _write(legacy, tmp_path / "resp.nc", "nc")
+    with pytest.raises(ValueError, match="legacy MUSE names"):
+        read_response(path)
 
 
 def test_read_response_requires_detector_response(tmp_path) -> None:
-    path = _write(fake_legacy_response_file().drop_vars("SG_resp"), tmp_path / "resp.nc", "nc")
+    path = _write(fake_response_file().drop_vars("detector_response"), tmp_path / "resp.nc", "nc")
     with pytest.raises(ValueError, match="detector_response"):
         read_response(path)
 
@@ -417,21 +384,21 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     )
     first = xr.concat(
         [
-            fake_legacy_response_file().assign_coords(
+            fake_response_file().assign_coords(
                 line=("line", ["Fe XIX 108.355"]),
-                line_wvl=("line", [108.355]),
+                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
-            fake_legacy_response_file().assign_coords(
+            fake_response_file().assign_coords(
                 line=("line", ["Fe XXI 108.117"]),
-                line_wvl=("line", [108.117]),
+                line_wavelength=("line", [108.117], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["line"]),
             ),
-            fake_legacy_response_file().assign_coords(
+            fake_response_file().assign_coords(
                 line=("line", ["contaminants"]),
-                line_wvl=("line", [108.355]),
+                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
                 channel=("line", [108]),
                 component_kind=("line", ["contaminants"]),
             ),
@@ -445,10 +412,10 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         conflicting_attr="first",
     )
     second = (
-        fake_legacy_response_file()
+        fake_response_file()
         .assign_coords(
             line=("line", ["Fe XV 284.163"]),
-            line_wvl=("line", [284.163]),
+            line_wavelength=("line", [284.163], {"units": "Angstrom"}),
             channel=("line", [284]),
             component_kind=("line", ["line"]),
         )
@@ -491,9 +458,9 @@ def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
     # join="exact" in the line concat must refuse responses on different
     # logT/doppler_velocity grids (when no target grid is given) instead of silently
     # outer-joining them with NaN fill.
-    _write(fake_legacy_response_file(), tmp_path / "a.nc", "nc")
-    shifted = fake_legacy_response_file()
-    _write(shifted.assign_coords(vdop=shifted.vdop + 5.0), tmp_path / "b.nc", "nc")
+    _write(fake_response_file(), tmp_path / "a.nc", "nc")
+    shifted = fake_response_file()
+    _write(shifted.assign_coords(doppler_velocity=shifted.doppler_velocity + 5.0), tmp_path / "b.nc", "nc")
 
     with pytest.raises(ValueError, match=r"align|exact"):
         load_and_concat_responses(
@@ -504,7 +471,7 @@ def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
 
 
 def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
-    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
+    _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
     with pytest.raises(ValueError, match=r"channels .* must match the number of response_files"):
         load_and_concat_responses(
             response_directory=tmp_path,
@@ -515,21 +482,21 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
 
 def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
-    legacy = fake_legacy_response_file()
+    legacy = fake_response_file()
     path = _write(legacy.assign_coords(channel=("line", [195] * legacy.sizes["line"])), tmp_path / "ci.nc", "nc")
     np.testing.assert_allclose(read_response(path).gain.values, 7.0)
 
 
 def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
-    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
+    _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
     response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
     np.testing.assert_allclose(response.gain.values, 7.0)
     assert response.channel.values.tolist() == [195]
 
 
 def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None:
-    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
+    _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
 
     with pytest.raises(ValueError, match=r"unsupported MUSE channel\(s\) \[999\]"):
         load_and_concat_responses(tmp_path, ["a.zarr"], channels=[999])
