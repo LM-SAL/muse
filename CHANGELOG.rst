@@ -1,3 +1,28 @@
+0.3.0 (2026-11-06)
+==================
+
+Breaking Changes
+----------------
+
+- Dropped support for Python 3.12, following SPEC 0. The minimum supported Python is now 3.13.
+  The minimum versions of ``loguru`` (0.7.3) and ``netCDF4`` (1.7.2) were raised, along with
+  ``pytest-loguru`` (0.4.1) and ``pytest-remotedata`` (0.4.2) for the test dependencies. (`#108 <https://github.com/LM-SAL/muse/pull/108>`__)
+- ``vdem_synthesis`` takes ``device`` (``"cpu"``, ``"cuda:0"``, ``"mps"``, a ``torch.device`` or ``"auto"``) instead of ``cuda_device``, and its Torch backend empties the allocator cache and computes the product in chunks sized to the free device and host memory. ``numpy_to_torch``, which nothing used, is removed, and ``psutil`` joins the ``torch`` extra. (`#120 <https://github.com/LM-SAL/muse/pull/120>`__)
+
+
+New Features
+------------
+
+- ``read_response`` and ``load_and_concat_responses`` select the default camera gain from ``DEFAULTS_MUSE.ccd_gain_CI`` for CI channels, so a CI response no longer needs an explicit ``gain``. (`#118 <https://github.com/LM-SAL/muse/pull/118>`__)
+- ``read_response``, ``load_and_concat_responses`` and ``migrate_response`` accept a zipped zarr store (a ``.zip`` path), read lazily like a zarr directory. (`#119 <https://github.com/LM-SAL/muse/pull/119>`__)
+
+
+Bug Fixes
+---------
+
+- Fix `muse.transforms.reshape_slit_step_to_x` raising `~astropy.units.UnitConversionError` when the recorded step size is in physical units such as Mm or cm. (`#110 <https://github.com/LM-SAL/muse/pull/110>`__)
+
+
 0.2.4 (2026-09-16)
 ==================
 

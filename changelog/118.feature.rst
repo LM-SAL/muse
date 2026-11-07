@@ -1,1 +1,0 @@
-``read_response`` and ``load_and_concat_responses`` select the default camera gain from ``DEFAULTS_MUSE.ccd_gain_CI`` for CI channels, so a CI response no longer needs an explicit ``gain``.
