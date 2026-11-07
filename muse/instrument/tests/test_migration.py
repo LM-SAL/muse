@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 import xarray as xr
 
@@ -29,6 +31,20 @@ def test_migrate_response_returns_and_verifies_schema(tmp_path, suffix) -> None:
         xr.testing.assert_identical(migrated.load(), expected)
     with xr.open_dataset(source) as unchanged:
         assert "SG_resp" in unchanged
+
+
+def test_migrate_response_unpacks_a_zipped_store(tmp_path) -> None:
+    source_response = fake_legacy_response_file()
+    source_response.to_zarr(tmp_path / "legacy.zarr", zarr_format=2, consolidated=False)
+    shutil.make_archive(str(tmp_path / "legacy.zarr"), "zip", root_dir=tmp_path / "legacy.zarr")
+    shutil.rmtree(tmp_path / "legacy.zarr")
+    destination = tmp_path / "canonical.zarr"
+    before, after = migration.migrate_response(tmp_path / "legacy.zarr.zip", destination)
+    assert "SG_resp" in before
+    assert "detector_response" in after
+    with migration.response_io._open_response_file(destination) as migrated:
+        expected = migration.response_io._canonicalize_response_names(source_response)
+        xr.testing.assert_identical(migrated.load(), expected)
 
 
 def test_migrate_response_leaves_no_destination_when_verification_fails(tmp_path, monkeypatch) -> None:

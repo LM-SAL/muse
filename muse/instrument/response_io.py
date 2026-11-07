@@ -5,6 +5,7 @@ import dask
 import numpy as np
 import xarray as xr
 from zarr.codecs import BloscCname, BloscCodec, BloscShuffle
+from zarr.storage import ZipStore
 
 import astropy.units as u
 
@@ -122,6 +123,13 @@ def _response_chunks(response: xr.Dataset, overrides: Mapping[str, int] | None) 
 
 def _open_response_file(response_file: Path, *, chunked: bool = False) -> xr.Dataset:
     kwargs = {"chunks": {}} if chunked else {}
+    if response_file.suffix == ".zip":
+        # Reads lazily like a directory. xarray closes only the stores it opens itself, and
+        # zarr reopens the archive on demand after a close.
+        store = ZipStore(response_file, mode="r")
+        response = xr.open_zarr(store, consolidated=False, **kwargs)
+        response.set_close(store.close)
+        return response
     # One call covers both zarr layouts, v3 (zarr.json) and v2 (.zgroup); consolidated=False
     # also stops the missing-consolidated-metadata fallback warning from firing.
     if response_file.is_dir():
@@ -177,6 +185,7 @@ def read_response(
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
         peak memory stays bounded by the chunks. By default `False` (eager).
+        A zipped zarr store (``.zip``) behaves like a zarr directory.
 
     Returns
     -------
