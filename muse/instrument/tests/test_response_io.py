@@ -9,6 +9,8 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.instrument.response_io import read_spectral_response, save_spectral_response
+
 from muse.instrument import align_response_and_vdem, response_io
 from muse.instrument.response_io import load_and_concat_responses, read_response, save_response
 from muse.tests.helpers import fake_response, fake_response_file, fake_vdem
@@ -628,3 +630,44 @@ def test_align_response_and_vdem_rejects_nonoverlapping_coordinates() -> None:
 
     with pytest.raises(ValueError, match="Requested logT axis has no overlap with the response range"):
         align_response_and_vdem(response, fake_vdem())
+
+
+@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+def test_spectral_response_round_trip(tmp_path, suffix):
+    response = xr.Dataset(
+        {
+            "spectral_response": (
+                ("line", "logT", "wavelength_bin"),
+                np.arange(12.0).reshape(1, 3, 4),
+                {"units": "1e-27 cm3 erg / (Angstrom s sr)"},
+            )
+        },
+        coords={
+            "line": ["contaminants"],
+            "logT": ("logT", [5.0, 6.0, 7.0], {"units": "dex(K)"}),
+            "wavelength_grid": (
+                "wavelength_bin",
+                [170.0, 170.1, 170.2, 170.3],
+                {"units": "Angstrom", "bounds": "wavelength_bounds"},
+            ),
+            "wavelength_bounds": (
+                ("wavelength_bin", "bound"),
+                np.array([[169.95, 170.05], [170.05, 170.15], [170.15, 170.25], [170.25, 170.35]]),
+                {"units": "Angstrom"},
+            ),
+            "line_wavelength": ("line", [np.nan], {"units": "Angstrom"}),
+        },
+        attrs={"normalization": 1e-27},
+    )
+    path = tmp_path / f"cube{suffix}"
+    save_spectral_response(response, path)
+    back = read_spectral_response(path).load()
+    xr.testing.assert_allclose(back.spectral_response, response.spectral_response)
+    assert "wavelength_bounds" in back.coords
+    np.testing.assert_array_equal(back.wavelength_bounds.values, response.wavelength_bounds.values)
+    with pytest.raises(ValueError, match="Refusing to overwrite"):
+        save_spectral_response(response, path)
+    with pytest.raises(ValueError, match="missing required variables"):
+        save_spectral_response(response.drop_vars("line_wavelength"), tmp_path / f"other{suffix}")
+    with pytest.raises(ValueError, match="end in"):
+        save_spectral_response(response, tmp_path / "cube.txt")

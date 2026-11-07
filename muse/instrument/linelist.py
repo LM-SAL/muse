@@ -18,7 +18,7 @@ import astropy.units as u
 
 from muse.utils.utils import add_history
 
-__all__ = ["apply_line_boosts", "create_chianti_line_list", "create_fiasco_line_list", "rank_line_list"]
+__all__ = ["apply_line_boosts", "create_chianti_line_list", "create_fiasco_line_list", "rank_line_list", "select_lines"]
 
 
 def create_chianti_line_list(
@@ -660,3 +660,42 @@ def rank_line_list(
     ranked = line_list.isel(trans_index=order)
     ranked["brightness"] = ("trans_index", np.asarray(brightness)[order])
     return ranked
+
+
+def select_lines(line_list: xr.Dataset, lines) -> xr.Dataset:
+    """
+    Keep only the chosen transitions of a line list.
+
+    Parameters
+    ----------
+    line_list : `xarray.Dataset`
+        A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
+    lines : iterable of `tuple`
+        ``(ion_name, lower_level_index, upper_level_index)`` per transition, the levels
+        numbered as in the line list, e.g. ``[("he_2", 1, 3), ("he_2", 1, 4)]`` for the
+        He II doublet at 303.78 A.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        The line list reduced to those transitions, in the list's order.
+
+    Raises
+    ------
+    ValueError
+        If a key matches no transition or more than one.
+    """
+    keep = xr.zeros_like(line_list.wavelength, dtype=bool)
+    for ion_name, lower, upper in lines:
+        matches = (
+            (line_list.ion_name == ion_name)
+            & (line_list.lower_level_index == lower)
+            & (line_list.upper_level_index == upper)
+        )
+        if int(matches.sum()) != 1:
+            msg = f"{int(matches.sum())} transitions match {ion_name} {lower}-{upper}, expected exactly one"
+            raise ValueError(msg)
+        keep = keep | matches
+    selected = line_list.isel(trans_index=keep.values)
+    selected.attrs["line_selection"] = json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in lines])
+    return selected
