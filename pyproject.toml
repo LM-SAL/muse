@@ -71,7 +71,7 @@ optional-dependencies.tests = [
   "pytest-remotedata>=0.4.2",
   "pytest>=9.1.0",
 ]
-optional-dependencies.torch = ["torch>=2.13.0"]
+optional-dependencies.torch = ["psutil>=5.9", "torch>=2.13.0"]
 dynamic = ["version"]
 
 [build-system]

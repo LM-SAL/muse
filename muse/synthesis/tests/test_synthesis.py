@@ -11,11 +11,20 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.synthesis import _backends
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_doppler_velocity
 from muse.transforms.transforms import reshape_x_to_slit_step
 
 SPEED_OF_LIGHT_KMS = 299792.458
+
+
+def _mps_available() -> bool:
+    try:
+        import torch  # NOQA: PLC0415
+    except ImportError:
+        return False
+    return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
 
 def test_vdem_synthesis(response, raster) -> None:
@@ -33,7 +42,7 @@ def test_vdem_synthesis(response, raster) -> None:
         "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
         (
             "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'doppler_velocity', 'slit'), "
-            "cuda_device=None, backend=numpy)"
+            "device=None, backend=numpy)"
         ),
     ]
     np.testing.assert_array_equal(
@@ -196,6 +205,120 @@ def test_vdem_synthesis_torch_backend_matches_numpy(response, raster) -> None:
 
     assert isinstance(accel_flux.data, np.ndarray)
     np.testing.assert_allclose(accel_flux.values, numpy_flux.values, rtol=1e-4)
+
+
+def _torch_budget(raster, response, flux, rows: int) -> int:
+    """
+    A budget whose half, minus the response, holds ``rows`` rows of the product along y.
+    """
+    per_row = 8 * (raster.vdem.size + flux.size) // raster.sizes["y"]
+    return 2 * (rows * per_row + 8 * response.detector_response.size)
+
+
+def test_vdem_synthesis_torch_in_chunks_matches_one_product(response, raster, monkeypatch) -> None:
+    """
+    A budget of three rows splits the product along y; the pieces must equal the single
+    product.
+    """
+    pytest.importorskip("torch")
+    expected = vdem_synthesis(raster, response, backend="torch").flux
+    monkeypatch.setattr(
+        _backends, "_available_memory_bytes", lambda _device: _torch_budget(raster, response, expected, 3)
+    )
+    result = vdem_synthesis(raster, response, backend="torch").flux
+    np.testing.assert_allclose(result.values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max()))
+
+
+def test_vdem_synthesis_torch_on_the_cpu_runs_a_row_at_a_time_below_the_budget(response, raster, monkeypatch) -> None:
+    """
+    The host pages rather than failing, so a budget below one row still gives the
+    product on the CPU.
+    """
+    pytest.importorskip("torch")
+    expected = vdem_synthesis(raster, response, backend="torch").flux
+    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda _device: 1)
+    result = vdem_synthesis(raster, response, backend="torch").flux
+    np.testing.assert_allclose(result.values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max()))
+
+
+def test_vdem_synthesis_torch_chunks_a_slit_first_raster_along_a_raster_only_axis(
+    response, raster, monkeypatch
+) -> None:
+    """
+    An inverted VDEM has slit before y; slit is shared with the response, so the chunks
+    are cut along y.
+    """
+    pytest.importorskip("torch")
+    expected = vdem_synthesis(raster, response, backend="torch").flux
+    slit_first = raster.transpose("logT", "doppler_velocity", "slit", "y", "step")
+    monkeypatch.setattr(
+        _backends, "_available_memory_bytes", lambda _device: _torch_budget(slit_first, response, expected, 3)
+    )
+    result = vdem_synthesis(slit_first, response, backend="torch").flux
+    np.testing.assert_allclose(
+        result.transpose(*expected.dims).values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max())
+    )
+
+
+def test_vdem_synthesis_torch_refuses_a_budget_below_one_row_on_an_accelerator(response, raster, monkeypatch) -> None:
+    """
+    The accelerator branch needs no accelerator: the budget is refused before any tensor
+    is placed, so this runs where the MPS tests skip.
+    """
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(_backends, "_resolve_device", lambda _device: torch.device("mps"))
+    monkeypatch.setattr(_backends, "_empty_device_cache", lambda _device: None)
+    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda _device: 1)
+    with pytest.raises(MemoryError, match="does not fit"):
+        vdem_synthesis(raster, response, device="mps", backend="torch")
+
+
+@pytest.mark.skipif(not _mps_available(), reason="no MPS device")
+def test_vdem_synthesis_torch_on_mps_refuses_a_budget_below_one_row(response, raster, monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.mps, "recommended_max_memory", lambda: 1)
+    with pytest.raises(MemoryError, match="does not fit"):
+        vdem_synthesis(raster, response, device="mps", backend="torch")
+
+
+@pytest.mark.skipif(not _mps_available(), reason="no MPS device")
+def test_vdem_synthesis_torch_on_mps_refuses_an_all_zero_product(response, raster, monkeypatch) -> None:
+    """
+    Metal returns zeros instead of raising when it runs out of memory; the synthesis
+    must not pass them on.
+    """
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch, "einsum", lambda *_args, **_kwargs: torch.zeros(1, device="mps"))
+    with pytest.raises(RuntimeError, match="all zero"):
+        vdem_synthesis(raster, response, device="mps", backend="torch")
+
+
+@pytest.mark.skipif(not _mps_available(), reason="no MPS device")
+def test_vdem_synthesis_torch_on_mps_empties_the_cache_before_sizing_its_chunks(response, raster, monkeypatch) -> None:
+    """
+    The MPS allocator's cached blocks count as allocated, so a solve run just before
+    would leave no budget.
+    """
+    torch = pytest.importorskip("torch")
+    calls = []
+    monkeypatch.setattr(torch.mps, "empty_cache", lambda: calls.append(True))
+    vdem_synthesis(raster, response, device="mps", backend="torch")
+    assert calls
+
+
+@pytest.mark.cuda
+def test_vdem_synthesis_torch_on_cuda_empties_the_cache_before_sizing_its_chunks(response, raster, monkeypatch) -> None:
+    """
+    The CUDA allocator keeps the blocks a solve reserved, which mem_get_info counts as
+    used.
+    """
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is not available")
+    calls = []
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: calls.append(True))
+    vdem_synthesis(raster, response, device="cuda", backend="torch")
+    assert calls
 
 
 @pytest.mark.performance
@@ -388,7 +511,7 @@ def test_vdem_synthesis_cuda_matches_cpu(response, raster) -> None:
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
     cpu = vdem_synthesis(raster, response)
-    gpu = vdem_synthesis(raster, response, cuda_device=0, backend="torch")
+    gpu = vdem_synthesis(raster, response, device="cuda:0", backend="torch")
     assert_dataset_structure(
         gpu,
         data_vars=("flux",),

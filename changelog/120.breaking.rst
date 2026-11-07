@@ -1,0 +1,1 @@
+``vdem_synthesis`` takes ``device`` (``"cpu"``, ``"cuda:0"``, ``"mps"``, a ``torch.device`` or ``"auto"``) instead of ``cuda_device``, and its Torch backend empties the allocator cache and computes the product in chunks sized to the free device and host memory. ``numpy_to_torch``, which nothing used, is removed, and ``psutil`` joins the ``torch`` extra.
