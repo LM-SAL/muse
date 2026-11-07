@@ -535,13 +535,13 @@ def create_fiasco_line_list(
     return line_list
 
 
-def _import_fiasco():
+def _import_fiasco(*, line_lists: bool = True):
     try:
         import fiasco  # noqa: PLC0415
     except ImportError:
         msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
-    if not hasattr(fiasco.IonCollection, "build_line_list"):
+    if line_lists and not hasattr(fiasco.IonCollection, "build_line_list"):
         msg = "fiasco.IonCollection.build_line_list is required; install a fiasco newer than 0.8.3"
         raise ImportError(msg)
     return fiasco
