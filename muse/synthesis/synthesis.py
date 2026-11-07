@@ -133,7 +133,7 @@ def vdem_synthesis(
         Dimensions to sum over, by default {sum_over}.
         ``"slit"`` is dropped from this when neither input has a slit
         dimension, so the MUSE default works for single-slit responses.
-    cuda_device : `int`, optional
+    device : `str`, `torch.device` or `None`, optional
         Torch device of the product (requires ``backend="torch"``): ``"cpu"``,
         ``"cuda:0"``, ``"mps"``, or ``"auto"`` for the first of CUDA, MPS and the
         CPU that is available. Defaults to `None`, the CPU.

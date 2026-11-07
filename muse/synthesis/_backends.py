@@ -1,7 +1,7 @@
 """
 Private array-backend bridge for synthesis.
 
-`vdem_synthesis` is the only production consumer of the Torch conversion helpers, the
+`vdem_synthesis` is the only production consumer of the Torch conversion helper, the
 device resolution and the memory-budgeted product, so they live here rather than in the
 public ``muse.utils`` surface.
 """
@@ -37,8 +37,8 @@ def _resolve_backend(device: "str | torch.device | None" = None, backend: str = 
     Raises
     ------
     ValueError
-        For an unknown ``backend``, an accelerator backend that is not installed, or
-        NumPy asked for a device. A device Torch cannot serve is reported later, when
+        For an unknown ``backend``, an accelerator backend or its psutil that is not
+        installed, or NumPy asked for a device. A device Torch cannot serve is reported later, when
         the arrays are placed.
     """
     if backend not in ("numpy", "torch"):
@@ -55,6 +55,9 @@ def _resolve_backend(device: "str | torch.device | None" = None, backend: str = 
             "matching your hardware (https://pytorch.org/get-started/locally/, or "
             "`conda install pytorch`), then retry."
         )
+        raise ValueError(msg)
+    if importlib.util.find_spec("psutil") is None:
+        msg = f"backend={backend!r} needs psutil for the host memory budget; install the extra: pip install muse[torch]"
         raise ValueError(msg)
     return backend
 
@@ -159,35 +162,6 @@ def torch_to_numpy(torch_tensor: "torch.Tensor") -> np.ndarray:
         return np.array(tensor.tolist())
 
 
-def numpy_to_torch(numpy_array: np.ndarray, device: "str | torch.device | None" = None) -> "torch.Tensor":
-    """
-    Convert a `numpy.ndarray` to a `torch.Tensor`.
-
-    Floating-point precision is capped at float32: ``float64`` input is downcast
-    to ``float32``, while narrower dtypes (``float16``, integers) are left as-is.
-
-    Parameters
-    ----------
-    numpy_array : `numpy.ndarray`
-        The array to convert.
-    device : `str`, `torch.device` or `None`, optional
-        If provided, place the tensor on this device, as for `_resolve_device`.
-
-    Returns
-    -------
-    `torch.Tensor`
-        The converted Torch tensor.
-    """
-    import torch  # NOQA: PLC0415
-
-    tensor = torch.tensor(numpy_array)
-    if tensor.dtype == torch.float64:
-        tensor = tensor.float()
-    if device is not None:
-        return tensor.to(_resolve_device(device))
-    return tensor
-
-
 def torch_einsum(
     vdem: np.ndarray,
     detector_response: np.ndarray,
@@ -233,10 +207,11 @@ def torch_einsum(
     target = _resolve_device(device)
     vdem_indices, response_indices, output_indices = list(vdem_indices), list(response_indices), list(output_indices)
     logger.debug(f"Synthesis einsum on {target}")
-    # One float32 copy each, made in NumPy: MPS has no float64, and a float64 tensor cast
-    # afterwards would hold the VDEM three times over on the host.
-    vdem_tensor = torch.from_numpy(np.array(vdem, dtype=np.float32))
-    response_tensor = torch.from_numpy(np.array(detector_response, dtype=np.float32))
+    # At most one float32 copy each, made in NumPy: MPS has no float64, a float64 tensor cast
+    # afterwards would hold the VDEM three times over on the host, and a contiguous writable
+    # float32 input is used as is.
+    vdem_tensor = torch.from_numpy(np.require(vdem, dtype=np.float32, requirements="CW"))
+    response_tensor = torch.from_numpy(np.require(detector_response, dtype=np.float32, requirements="CW"))
     sizes = dict(zip((*vdem_indices, *response_indices), (*vdem_tensor.shape, *response_tensor.shape), strict=True))
     out = np.empty([sizes[index] for index in output_indices], dtype=np.float32)
     # Not along an axis the response shares (slit): only the VDEM operand is sliced.
@@ -267,6 +242,8 @@ def torch_einsum(
         )
         if target.type == "mps" and not product.any() and chunk.any() and response_tensor.any():
             # Oversubscribed unified memory: the product is right on the GPU, its copy to the host is zeros.
+            # ponytail: a chunk whose nonzero operands do not overlap along the summed axes trips this too;
+            # if a real response ever does, compare one row against a CPU product before raising.
             msg = "The synthesis copied back from MPS is all zero, which happens when memory runs out; use device='cpu'"
             raise RuntimeError(msg)
         index = [slice(None)] * out.ndim
