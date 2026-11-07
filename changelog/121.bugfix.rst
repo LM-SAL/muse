@@ -1,0 +1,1 @@
+``save_response`` passes the Blosc codec names as strings, so zarr 3.4 no longer warns about deprecated enums.
