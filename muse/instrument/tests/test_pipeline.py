@@ -67,9 +67,7 @@ def _line_list_file(directory):
     return path
 
 
-def fake_continuum(
-    temperature, wavelength_grid, *, density=None, pressure=None, abundance=None, minimum_abundance=None, **_kwargs
-):
+def fake_continuum(temperature, wavelength_grid, *, pressure=None, abundance=None, minimum_abundance=None, **_kwargs):
     """
     A flat continuum: free-free 1e-24, free-bound half of it, two-photon a tenth, per
     plasma point.
@@ -389,16 +387,7 @@ class TestCaches:
     def test_continuum_cache_matches_the_request(self, tmp_path, monkeypatch, grid, initial, requested, expected_calls):
         calls = []
 
-        def backend(
-            temperature,
-            wavelength_grid,
-            *,
-            density=None,
-            pressure=None,
-            abundance=None,
-            minimum_abundance=None,
-            **_kwargs,
-        ):
+        def backend(temperature, wavelength_grid, *, density=None, pressure=None, minimum_abundance=None, **_kwargs):
             plasma = density if density is not None else pressure
             calls.append(plasma.values.copy())
             temperature = _validate_positive_data_array(temperature, "temperature", u.K, dimension="logT")
@@ -475,3 +464,40 @@ def test_continuum_response_pipeline(inputs, tmp_path):
         wavelength_step=0.1 * u.AA,
     )
     assert "_pressure_TEST_" in several[0].name
+
+
+@pytest.mark.chianti
+def test_response_pipeline_live_chianti(tmp_path):
+    """
+    The whole chain on real CHIANTI data: a 171 band, the abundant elements, one
+    pressure, no continuum.
+    """
+    pytest.importorskip("ChiantiPy")
+    area = _area_file(tmp_path)
+    written = response_pipeline(
+        output_dir=tmp_path / "run",
+        author="TEST",
+        effective_area_note="testea",
+        sg_effective_areas=[area],
+        ci_effective_areas=[area],
+        abundances=["sun_coronal_2021_chianti"],
+        main_lines={BAND: [MAIN_LINE]},
+        pressure=PRESSURE,
+        temperature=TEMPERATURE,
+        doppler_velocity=DOPPLER_VELOCITY,
+        n_contaminants=3,
+        minimum_abundance=3e-5,
+        include_continuum=False,
+        ci_units=("ph",),
+        ci_radiometry=CI_RADIOMETRY,
+    )
+    assert len(written) == 6
+    main = read_response(_one(written, "FeIX171.073_nslits"))
+    assert float(main.detector_response.max()) > 0
+    # Fe IX 171.073 peaks near logT 5.9: the middle temperature of the grid is the brightest
+    by_temperature = main.detector_response.sel(doppler_velocity=0).sum(["slit", "detector_x_pixel"]).squeeze().values
+    assert np.argmax(by_temperature) == 1
+    cube = read_spectral_response(_one(written, "ci_171_waveband"))
+    assert list(cube.line.values) == ["171 remaining 3 lines"]
+    assert float(cube.spectral_response.max()) > 0
+    assert (tmp_path / "run" / "cache" / "line_list_chianti_150-192A_sun_coronal_2021_chianti.nc").is_file()

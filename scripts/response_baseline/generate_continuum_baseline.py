@@ -1,0 +1,49 @@
+"""
+Generate the SG continuum responses of the baseline: one product per band and abundance.
+
+python generate_continuum_baseline.py --run-dir RUN --effective-area-dir AREAS --author
+ABC --effective-area-note coating
+"""
+
+import sys
+import pathlib
+import argparse
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from run_config import (
+    DEFAULT_ABUNDANCES,
+    TEMPERATURE,
+    add_common_arguments,
+    effective_area_files,
+    plasma_grid,
+)
+
+from muse.instrument import continuum_response_pipeline
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_common_arguments(parser)
+    parser.add_argument("--author", required=True)
+    parser.add_argument("--effective-area-note", required=True)
+    parser.add_argument("--backend", choices=["chianti", "fiasco"], default="fiasco")
+    args = parser.parse_args(argv)
+    sg, _ = effective_area_files(args)
+    for abundance in args.abundance or DEFAULT_ABUNDANCES:
+        continuum_response_pipeline(
+            output_dir=args.run_dir / "continuum",
+            cache_dir=args.run_dir / "cache",
+            author=args.author,
+            effective_area_note=args.effective_area_note,
+            sg_effective_areas=sg,
+            abundance=abundance,
+            backend=args.backend,
+            temperature=TEMPERATURE,
+            minimum_abundance=args.minimum_abundance,
+            workers=args.workers,
+            **plasma_grid(args),
+        )
+
+
+if __name__ == "__main__":
+    main()

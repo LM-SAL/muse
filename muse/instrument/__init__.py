@@ -5,6 +5,15 @@ from muse.instrument.linelist import (
     create_chianti_line_list,
     create_fiasco_line_list,
     rank_line_list,
+    select_lines,
+)
+from muse.instrument.pipeline import (
+    continuum_response_pipeline,
+    enumerate_tasks,
+    get_continuum,
+    get_line_list,
+    response_pipeline,
+    task_id_from_environment,
 )
 from muse.instrument.radiometry import transform_response_units
 from muse.instrument.response import map_response_to_ci_detector, map_response_to_sg_detector

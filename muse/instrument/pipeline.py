@@ -638,7 +638,7 @@ def response_pipeline(
                     folded = folded.assign_coords(line=[f"{band} continuum {name}" for name in folded.line.values])
                     parts.append(folded.transpose(*lines.spectral_response.dims, "bound", missing_dims="ignore"))
                     label += " + continuum"
-                cube = xr.concat(parts, dim="line", combine_attrs="override")
+                cube = xr.concat(parts, dim="line", data_vars="all", combine_attrs="override")
                 cube.attrs.update(lines.attrs)
                 if continuum is not None:
                     cube.attrs["continuum"] = (
