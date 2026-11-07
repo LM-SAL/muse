@@ -253,15 +253,16 @@ def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
 
 @pytest.mark.parametrize("zarr_format", [2, 3])
 @pytest.mark.parametrize("chunked", [False, True])
-def test_read_response_reads_a_zipped_zarr_store_into_memory(tmp_path, zarr_format, chunked) -> None:
+def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked) -> None:
     legacy = fake_legacy_response_file()
     expected = read_response(_write(legacy, tmp_path / "resp.nc", "nc"))
     legacy.to_zarr(tmp_path / "resp.zarr", zarr_format=zarr_format, consolidated=False)
     # The archives in use were made by zipping a store, so the entries sit at the archive root.
     shutil.make_archive(str(tmp_path / "resp.zarr"), "zip", root_dir=tmp_path / "resp.zarr")
     zipped = read_response(tmp_path / "resp.zarr.zip", chunked=chunked)
+    if chunked:
+        assert isinstance(zipped.detector_response.data, da.Array)
     np.testing.assert_allclose(zipped.detector_response.values, expected.detector_response.values)
-    assert zipped.detector_response.chunks is None
     assert "detector_wavelength" in zipped.coords
 
 
