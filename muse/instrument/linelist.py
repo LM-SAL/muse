@@ -411,7 +411,7 @@ def create_fiasco_line_list(
     Generate a line list with contribution functions using fiasco.
 
     The counterpart of `create_chianti_line_list` built on
-    `fiasco.IonCollection.build_line_list`, returning the same layout, so the two are
+    ``fiasco.IonCollection.build_line_list``, returning the same layout, so the two are
     interchangeable downstream.
 
     Parameters

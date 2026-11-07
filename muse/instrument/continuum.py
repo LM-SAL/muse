@@ -180,7 +180,7 @@ def create_fiasco_continuum(
     Compute the continuum with fiasco, summed over every ion of every abundant element.
 
     The counterpart of `create_chianti_continuum` with the same output, built on
-    `fiasco.IonCollection`, whose methods include the abundance and the ionization fraction
+    ``fiasco.IonCollection``, whose methods include the abundance and the ionization fraction
     like ChiantiPy's ``includeAbund`` and ``includeIoneq``. fiasco's continuum emission is
     not per steradian (its free-free emission since fiasco 0.9), so every component is
     divided by 4 pi to match ChiantiPy.

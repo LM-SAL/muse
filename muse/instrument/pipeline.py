@@ -63,9 +63,9 @@ def enumerate_tasks(*, sg_effective_areas, ci_effective_areas, abundances, n_pre
 
     Parameters
     ----------
-    sg_effective_areas, ci_effective_areas : sequence of path-like
+    sg_effective_areas, ci_effective_areas : `list` of path-like
         The SG and CI effective-area files.
-    abundances : sequence of `str`
+    abundances : `list` of `str`
         CHIANTI abundance names.
     n_pressure : `int`
         Number of pressures, 1 for a density run.
@@ -144,7 +144,7 @@ def get_line_list(
     Parameters
     ----------
     cache_dir : path-like
-        Directory of the cache files, named by `line_list_cache_path`.
+        Directory of the cache files, named by ``line_list_cache_path``.
     abundance, wavelength_range, temperature, pressure, density, minimum_abundance
         As for `create_chianti_line_list` and `create_fiasco_line_list`.
     backend : {"chianti", "fiasco"}, optional
@@ -227,7 +227,7 @@ def get_continuum(
     Parameters
     ----------
     cache_dir : path-like
-        Directory of the cache files, named by `continuum_cache_path`.
+        Directory of the cache files, named by ``continuum_cache_path``.
     abundance, wavelength_grid, temperature, pressure, density, minimum_abundance
         As for `create_chianti_continuum` and `create_fiasco_continuum`.
     backend : {"chianti", "fiasco"}, optional
@@ -354,10 +354,10 @@ def response_pipeline(
         Initials recorded in the names and attributes.
     effective_area_note : `str`
         Tag of the effective areas in the names, e.g. the coating.
-    sg_effective_areas, ci_effective_areas : sequence of path-like
+    sg_effective_areas, ci_effective_areas : `list` of path-like
         Effective-area files, one band each, as `create_effective_area` writes them. A CI
         area in cm2 DN / ph carries the camera gain, so only DN products exist for it.
-    abundances : sequence of `str`, optional
+    abundances : `list` of `str`, optional
         CHIANTI abundance names, by default the coronal and photospheric 2021 sets.
     temperature : `xarray.DataArray`, optional
         Temperatures with a ``logT`` dimension, by default ``logT`` 4.5 to 7.9 in steps of 0.1.
@@ -390,7 +390,7 @@ def response_pipeline(
         Fold the continuum into the CI products, by default `True`.
     continuum_backend : {"chianti", "fiasco"}, optional
         Calculator of a missing continuum, by default fiasco.
-    ci_units : sequence of `str`, optional
+    ci_units : `list` of `str`, optional
         The CI products to write, a non-empty subset of ``("ph", "DN")``.
     sg_geometry : `dict`, optional
         Keyword arguments of `map_response_to_sg_detector` other than ``channel``.
@@ -701,8 +701,9 @@ def continuum_response_pipeline(
 
     Parameters
     ----------
-    output_dir, author, effective_area_note, sg_effective_areas, temperature, pressure, density,
-    minimum_abundance, spectral_order, sg_geometry, sg_radiometry, cache_dir, workers
+    output_dir, author, effective_area_note, sg_effective_areas
+        As for `response_pipeline`.
+    temperature, pressure, density, minimum_abundance, spectral_order, sg_geometry, sg_radiometry, cache_dir, workers
         As for `response_pipeline`.
     abundance : `str`, optional
         One CHIANTI abundance name.
