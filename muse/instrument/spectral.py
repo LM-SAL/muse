@@ -39,7 +39,7 @@ def create_spectral_response(
     Parameters
     ----------
     line_list : `xarray.Dataset`
-        CHIANTI line list, e.g. from
+        CHIANTI line list with its ``logT`` coordinate in ``dex(K)``, e.g. from
         `muse.instrument.create_chianti_line_list`.
     wavelength_grid : `astropy.units.Quantity`
         One-dimensional wavelength samples for one channel and spectral order.
@@ -421,6 +421,7 @@ def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
         "line_list.gofnt",
         convertible_to=u.erg * u.cm**3 / (u.s * u.sr),
     )
+    require_unit(line_list, "logT", "line_list.logT", coord_only=True, convertible_to=u.dex(u.K))
     wavelength = (line_list.wavelength * wavelength_unit.to(u.AA)).assign_attrs(
         {**line_list.wavelength.attrs, "units": str(u.AA)}
     )

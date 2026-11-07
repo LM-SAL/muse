@@ -40,7 +40,7 @@ def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
             "gofnt": (("logT", "trans_index"), gofnt, {"units": "erg cm3 / (s sr)"}),
             "full_name": ("trans_index", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
         },
-        coords={"logT": logT},
+        coords={"logT": ("logT", logT, {"units": "dex(K)"})},
     )
 
 

@@ -33,17 +33,17 @@ _REGISTRY = {
     ),
     "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr": (
         f"{_SAMPLE_DATA_URL}muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:dccba701ae6bbf9043d2d1a29ed6794dc3e88c00c6f757efecb3be2ce6cf10c9",
+        "sha256:cafddf127568ec769caf9ffa6786757e8d78f75c032d24214d3892eef50b6009",
         "synthesis_tutorial",
     ),
     "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr": (
         f"{_SAMPLE_DATA_URL}muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:d93ae1eae64de9d1e33964c3a834374fae2af0d04d5a5378c487cf7379de5e16",
+        "sha256:5760826306bfffd1023b0e97a3a24b1d251a470edccdaf13bcb98e2d406f1477",
         "synthesis_tutorial",
     ),
     "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr": (
         f"{_SAMPLE_DATA_URL}muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:79b58e21d44aa0b92250fad69a90c095d687d4cc72078c80e0cdbe178e1aea98",
+        "sha256:cbc21e89fbcd90d599a2976dc9bcac4c5af0b18ae1cf6beb8022f2d4aadf80d9",
         "synthesis_tutorial",
     ),
     "EIS_EffArea_B.005": (

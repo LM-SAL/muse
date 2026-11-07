@@ -228,6 +228,8 @@ def test_line_list_units_convert_without_mutating_input():
         ("wavelength", "km / s"),
         ("gofnt", None),
         ("gofnt", "Angstrom"),
+        ("logT", None),
+        ("logT", "Angstrom"),
     ],
 )
 def test_line_list_requires_physical_units(name, units):
