@@ -102,8 +102,7 @@ def create_chianti_continuum(
 
     abundances = chio.abundanceRead(abundance)["abundance"] if abundance else chdata.AbundanceDefault["abundance"]
     elements = [z for z in range(1, min(30, len(abundances)) + 1) if abundances[z - 1] >= minimum_abundance]
-    free_free = np.zeros((temperatures.size, grid.size))
-    free_bound = np.zeros_like(free_free)
+    totals = {component: np.zeros((temperatures.size, grid.size)) for component in ("free-free", "free-bound")}
     two_photon = np.zeros((len(densities), temperatures.size, grid.size))
     contributing = dict.fromkeys(_COMPONENTS, 0)
     for z in elements:
@@ -114,18 +113,16 @@ def create_chianti_continuum(
                 continuum = ch.continuum(ion_name, chianti_temperatures, abundance=abundance)
             except Exception:  # noqa: BLE001, S112 - ions the database lacks
                 continue
-            free_free_part = _chianti_component(
-                continuum.freeFree, "FreeFree", grid, temperatures.size, includeAbund=True, includeIoneq=True
-            )
-            if free_free_part is not None:
-                free_free += free_free_part
-                contributing["free-free"] += 1
-            free_bound_part = _chianti_component(
-                continuum.freeBound, "FreeBound", grid, temperatures.size, includeAbund=True, includeIoneq=True
-            )
-            if free_bound_part is not None:
-                free_bound += free_bound_part
-                contributing["free-bound"] += 1
+            for component, method, result_name in (
+                ("free-free", continuum.freeFree, "FreeFree"),
+                ("free-bound", continuum.freeBound, "FreeBound"),
+            ):
+                part = _chianti_component(
+                    method, result_name, grid, temperatures.size, includeAbund=True, includeIoneq=True
+                )
+                if part is not None:
+                    totals[component] += part
+                    contributing[component] += 1
             if stage not in (z, z - 1):
                 continue
             counted = False
@@ -152,8 +149,8 @@ def create_chianti_continuum(
         logger.warning("The two-photon continuum is zero: no hydrogen- or helium-like ion contributed")
 
     continuum = _continuum_dataset(
-        free_free,
-        free_bound,
+        totals["free-free"],
+        totals["free-bound"],
         two_photon,
         temperature=temperature,
         temperature_bc=temperature_bc,
