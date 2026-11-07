@@ -4,6 +4,7 @@ CHIANTI line lists with contribution functions (GOFNT).
 
 import os
 import re
+import json
 import warnings
 from types import ModuleType
 from numbers import Real
@@ -17,7 +18,7 @@ import astropy.units as u
 
 from muse.utils.utils import add_history
 
-__all__ = ["create_chianti_line_list"]
+__all__ = ["apply_line_boosts", "create_chianti_line_list", "create_fiasco_line_list", "rank_line_list"]
 
 
 def create_chianti_line_list(
@@ -80,16 +81,9 @@ def create_chianti_line_list(
 
     chiantipy_version, ch = _initialize_chianti()
 
-    if density is not None:
-        plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})
-        temperature_bc, density_bc = xr.broadcast(temperature, plasma_grid)
-        extra_coord_name = "logD"
-        extra_coord = np.log10(plasma_grid.data)
-    else:
-        density_bc = plasma_grid / temperature
-        temperature_bc = temperature.broadcast_like(density_bc)
-        extra_coord_name = plasma_grid.dims[0]
-        extra_coord = plasma_grid.data
+    temperature_bc, density_bc, extra_coords = _broadcast_plasma_grid(
+        temperature, plasma_grid, by_density=density is not None
+    )
     temperature_flat = temperature_bc.data.reshape(-1)
     density_flat = density_bc.data.reshape(-1)
 
@@ -114,7 +108,7 @@ def create_chianti_line_list(
         bunch,
         temperature=temperature,
         temperature_bc=temperature_bc,
-        extra_coords={extra_coord_name: extra_coord},
+        extra_coords=extra_coords,
         wavelength_range=wavelength_range,
         chiantipy_version=chiantipy_version,
     )
@@ -199,9 +193,50 @@ def _chianti_bunch_to_dataset(
         "atomic_number": np.array([name_info[ion]["Z"] for ion in ion_names]),
         "observed": bunch.Intensity["obs"] == "Y",
     }
-    line_list = xr.Dataset({name: ("trans_index", values) for name, values in per_transition.items()})
-
     gofnt_values = bunch.Intensity["intensity"].reshape((*temperature_bc.data.shape, -1))
+    return _line_list_dataset(
+        per_transition,
+        gofnt_values,
+        temperature=temperature,
+        temperature_bc=temperature_bc,
+        extra_coords=extra_coords,
+        wavelength_range=wavelength_range,
+        attrs={"Chiantipy": chiantipy_version, "Chianti": chio.versionRead()},
+    )
+
+
+def _broadcast_plasma_grid(
+    temperature: xr.DataArray, plasma_grid: xr.DataArray, *, by_density: bool
+) -> tuple[xr.DataArray, xr.DataArray, dict[str, np.ndarray]]:
+    """
+    Temperature and density on the full grid, and the coordinate of the plasma axis.
+
+    A density grid becomes a ``logD`` axis holding ``log10(density)``; a pressure grid
+    keeps its dimension and the density at each temperature is ``pressure /
+    temperature``.
+    """
+    if by_density:
+        plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})
+        temperature_bc, density_bc = xr.broadcast(temperature, plasma_grid)
+        return temperature_bc, density_bc, {"logD": np.log10(plasma_grid.data)}
+    density_bc = plasma_grid / temperature
+    return temperature.broadcast_like(density_bc), density_bc, {plasma_grid.dims[0]: plasma_grid.data}
+
+
+def _line_list_dataset(
+    per_transition: dict[str, np.ndarray],
+    gofnt_values: np.ndarray,
+    *,
+    temperature: xr.DataArray,
+    temperature_bc: xr.DataArray,
+    extra_coords: dict[str, np.ndarray],
+    wavelength_range: tuple[float, float],
+    attrs: dict,
+) -> xr.Dataset:
+    """
+    The line-list layout both backends return, restricted to ``wavelength_range``.
+    """
+    line_list = xr.Dataset({name: ("trans_index", values) for name, values in per_transition.items()})
     line_list["gofnt"] = xr.DataArray(
         gofnt_values,
         dims=(*temperature_bc.dims, "trans_index"),
@@ -212,8 +247,7 @@ def _chianti_bunch_to_dataset(
         line_list.spectroscopic_name.astype(object) + " " + line_list.wavelength.astype(str).astype(object)
     )
 
-    line_list.attrs["Chiantipy"] = chiantipy_version
-    line_list.attrs["Chianti"] = chio.versionRead()
+    line_list.attrs.update(attrs)
     line_list.wavelength.attrs["units"] = str(u.AA)
     line_list.gofnt.attrs["units"] = "erg cm3 / (s sr)"
     line_list.logT.attrs["units"] = str(u.dex(u.K))
@@ -359,3 +393,270 @@ def _validate_species_selection(
         msg = "minimum_abundance must be finite and positive"
         raise ValueError(msg)
     return minimum_abundance, None, None
+
+
+def create_fiasco_line_list(
+    temperature: xr.DataArray,
+    density: xr.DataArray | None = None,
+    pressure: xr.DataArray | None = None,
+    abundance: str | None = None,
+    wavelength_range: u.Quantity | None = None,
+    minimum_abundance: float | None = None,
+    ion_list: list[str] | None = None,
+    *,
+    workers: int = 1,
+    hdf5_dbase_root: str | Path | None = None,
+) -> xr.Dataset:
+    """
+    Generate a line list with contribution functions using fiasco.
+
+    The counterpart of `create_chianti_line_list` built on
+    `fiasco.IonCollection.build_line_list`, returning the same layout, so the two are
+    interchangeable downstream.
+
+    Parameters
+    ----------
+    temperature : `xarray.DataArray`
+        Temperature array with an `astropy.units.Quantity` payload convertible
+        to K and a ``logT`` dimension.
+    density : `xarray.DataArray`, optional
+        Electron density array with an `astropy.units.Quantity` payload
+        convertible to cm^-3. Mutually exclusive with ``pressure``. The output
+        carries this grid on a ``logD`` dimension whose coordinate is
+        ``log10(density)``.
+    pressure : `xarray.DataArray`, optional
+        Electron pressure array with an `astropy.units.Quantity` payload
+        convertible to K cm^-3. Mutually exclusive with ``density``.
+    abundance : `str`, optional
+        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``; fiasco's
+        default applies when omitted. The resolved name is recorded in the
+        ``abundance`` attribute.
+    wavelength_range : `astropy.units.Quantity`
+        Two-element wavelength range convertible to Angstroms.
+    minimum_abundance : `float`, optional
+        Ions of elements with an abundance below this are skipped; by default
+        every element is kept. Unlike `create_chianti_line_list` this combines
+        with ``ion_list``.
+    ion_list : `list` of `str`, optional
+        fiasco ion names to include, such as ``"fe_9"``; by default every ion in
+        the database.
+    workers : `int`, optional
+        Processes the ions are split over, by default 1; ``-1`` uses every core.
+        Each worker holds the level populations of its ions on the whole grid.
+    hdf5_dbase_root : `str` or `pathlib.Path`, optional
+        fiasco's HDF5 database; by default its configured one.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        Line list with contribution functions and per-transition metadata.
+
+    Notes
+    -----
+    Needs a fiasco newer than 0.8.3 (``IonCollection.build_line_list``, merged
+    2026-10-23) and joblib when ``workers`` is not 1.
+    """
+    call_inputs = dict(locals())
+    temperature, plasma_grid, wavelength_range = _validate_line_list_inputs(
+        temperature, density, pressure, wavelength_range
+    )
+    if ion_list is not None:
+        ion_list = _normalize_species_names(ion_list, "ion_list", r"[a-z]{1,2}_[1-9][0-9]*d?")
+    minimum_abundance = 0.0 if minimum_abundance is None else float(minimum_abundance)
+    if not np.isfinite(minimum_abundance) or minimum_abundance < 0:
+        msg = "minimum_abundance must be finite and non-negative"
+        raise ValueError(msg)
+    fiasco = _import_fiasco()
+
+    temperature_bc, density_bc, extra_coords = _broadcast_plasma_grid(
+        temperature, plasma_grid, by_density=density is not None
+    )
+    temperature_flat = temperature_bc.data.reshape(-1) * u.K
+    density_flat = density_bc.data.reshape(-1) * u.cm**-3
+    ion_kwargs = {
+        key: value
+        for key, value in (("abundance", abundance), ("hdf5_dbase_root", hdf5_dbase_root))
+        if value is not None
+    }
+    # The proton-to-electron ratio depends only on the temperature grid and the datasets.
+    proton_electron_ratio = fiasco.proton_electron_ratio(temperature_flat, **ion_kwargs)
+    ions = [
+        fiasco.Ion(name, temperature_flat, proton_electron_ratio=proton_electron_ratio, **ion_kwargs)
+        for name in (ion_list or fiasco.list_ions(hdf5_dbase_root=hdf5_dbase_root))
+    ]
+    tables = [
+        table
+        for table in _over_ion_chunks(
+            _fiasco_line_table,
+            ions,
+            workers,
+            density_flat,
+            minimum_abundance=minimum_abundance,
+            wavelength_range=u.Quantity(wavelength_range, u.AA),
+        )
+        if table is not None
+    ]
+    if not tables:
+        msg = "fiasco found no lines; check wavelength_range and the ion selection"
+        raise ValueError(msg)
+    from astropy.table import vstack  # noqa: PLC0415
+
+    table = vstack(tables)
+    roman_to_name = {ion.ion_name_roman: ion._ion_name for ion in ions}
+    spectroscopic_name = np.asarray(table["ion name"]).astype(str)
+    per_transition = {
+        "ion_name": np.array([roman_to_name[name] for name in spectroscopic_name]),
+        "wavelength": table["wavelength"].to_value(u.AA),
+        "lower_level_label": np.asarray(table["lower label"]).astype(str),
+        "upper_level_label": np.asarray(table["upper label"]).astype(str),
+        "lower_level_index": np.asarray(table["lower level"]),
+        "upper_level_index": np.asarray(table["upper level"]),
+        "spectroscopic_name": spectroscopic_name,
+        "atomic_number": np.asarray(table["atomic number"]),
+        "observed": np.asarray(table["is observed"], dtype=bool),
+    }
+    # (trans_index, grid point, 1) -> (*grid dims, trans_index), per steradian
+    gofnt = (table["contribution function"][:, :, 0] / (4 * np.pi * u.sr)).to_value(u.erg * u.cm**3 / (u.s * u.sr))
+    gofnt_values = np.moveaxis(gofnt, 0, -1).reshape((*temperature_bc.data.shape, -1))
+    line_list = _line_list_dataset(
+        per_transition,
+        gofnt_values,
+        temperature=temperature,
+        temperature_bc=temperature_bc,
+        extra_coords=extra_coords,
+        wavelength_range=wavelength_range,
+        attrs={"fiasco": table.meta["fiasco_version"], "Chianti": table.meta["chianti_version"]},
+    )
+    if line_list.sizes["trans_index"] == 0:
+        msg = "fiasco found no lines; check wavelength_range and the ion selection"
+        raise ValueError(msg)
+    abundance = getattr(ions[0], "_dset_names", {}).get("abundance", abundance)
+    add_history(line_list, {**call_inputs, "abundance": abundance}, create_fiasco_line_list)
+    return line_list
+
+
+def _import_fiasco():
+    try:
+        import fiasco  # noqa: PLC0415
+    except ImportError:
+        msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
+        raise ImportError(msg) from None
+    if not hasattr(fiasco.IonCollection, "build_line_list"):
+        msg = "fiasco.IonCollection.build_line_list is required; install a fiasco newer than 0.8.3"
+        raise ImportError(msg)
+    return fiasco
+
+
+def _fiasco_line_table(ions: list, density: u.Quantity, **kwargs):
+    """
+    The line table of one chunk of ions, or `None` when fiasco finds no lines in it.
+    """
+    from fiasco import IonCollection  # noqa: PLC0415
+
+    try:
+        return IonCollection(*ions).build_line_list(density, couple_density_to_temperature=True, **kwargs)
+    except ValueError as exc:
+        if not str(exc).startswith("No lines found"):
+            raise
+        return None
+
+
+def _over_ion_chunks(function, ions: list, workers: int, *args, **kwargs) -> list:
+    """
+    ``function(chunk, *args, **kwargs)`` for every chunk of ``ions``, in parallel when
+    ``workers`` is not 1.
+    """
+    if workers == -1:
+        workers = os.cpu_count() or 1
+    if workers == 1 or len(ions) <= 1:
+        return [function(list(ions), *args, **kwargs)]
+    try:
+        from joblib import Parallel, delayed  # noqa: PLC0415
+    except ImportError:
+        msg = "joblib is required for workers != 1, install it with `pip install muse[fiasco]`"
+        raise ImportError(msg) from None
+    chunks = [
+        list(chunk) for chunk in np.array_split(np.array(ions, dtype=object), min(workers, len(ions))) if len(chunk)
+    ]
+    return Parallel(n_jobs=workers)(delayed(function)(chunk, *args, **kwargs) for chunk in chunks)
+
+
+def apply_line_boosts(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], float]) -> xr.Dataset:
+    """
+    Multiply the contribution functions of chosen transitions by a factor.
+
+    SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 A line by 20 to stand
+    in for its optical depth, and every SolarSoft AIA temperature response carries that
+    factor; a response meant to be compared with them needs the same.
+
+    Parameters
+    ----------
+    line_list : `xarray.Dataset`
+        A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
+    boosts : `dict`
+        ``{(ion_name, lower_level_index, upper_level_index): factor}``, the levels numbered
+        as in the line list (CHIANTI's ``elvlc`` order), e.g. ``{("he_2", 1, 3): 20}``.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A copy with ``gofnt`` scaled; the input is untouched.
+
+    Raises
+    ------
+    ValueError
+        If a key matches no transition or more than one.
+    """
+    factor = xr.ones_like(line_list.wavelength, dtype=float)
+    for (ion_name, lower, upper), value in boosts.items():
+        matches = (
+            (line_list.ion_name == ion_name)
+            & (line_list.lower_level_index == lower)
+            & (line_list.upper_level_index == upper)
+        )
+        if int(matches.sum()) != 1:
+            msg = f"{int(matches.sum())} transitions match {ion_name} {lower}-{upper}, expected exactly one"
+            raise ValueError(msg)
+        factor = factor.where(~matches, value)
+    boosted = line_list.copy()
+    boosted["gofnt"] = (line_list.gofnt * factor).assign_attrs(line_list.gofnt.attrs)
+    boosted.attrs["line_boosts"] = json.dumps(
+        {f"{ion} {lower}-{upper}": value for (ion, lower, upper), value in boosts.items()}
+    )
+    return boosted
+
+
+def rank_line_list(
+    line_list: xr.Dataset, effective_area: xr.DataArray | None = None, *, statistic: str = "max"
+) -> xr.Dataset:
+    """
+    Sort the transitions by brightness, brightest first.
+
+    Parameters
+    ----------
+    line_list : `xarray.Dataset`
+        A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
+    effective_area : `xarray.DataArray`, optional
+        A curve with a ``wavelength`` coordinate in Angstrom; each transition is weighted
+        by the area at its wavelength, zero outside the curve.
+    statistic : {"max", "sum"}, optional
+        How ``gofnt`` is collapsed over temperature and the plasma axis before weighting:
+        its peak (default, as the response baseline ranks contaminants) or its sum.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        The line list reordered along ``trans_index``, with a ``brightness`` variable
+        holding the ranking proxy.
+    """
+    if statistic not in ("max", "sum"):
+        msg = f"statistic must be 'max' or 'sum', got {statistic!r}"
+        raise ValueError(msg)
+    brightness = getattr(line_list.gofnt, statistic)(dim=[dim for dim in line_list.gofnt.dims if dim != "trans_index"])
+    if effective_area is not None:
+        area = effective_area.interp(wavelength=line_list.wavelength).fillna(0).drop_vars("wavelength", errors="ignore")
+        brightness = brightness * area
+    order = np.argsort(-np.asarray(brightness), kind="stable")
+    ranked = line_list.isel(trans_index=order)
+    ranked["brightness"] = ("trans_index", np.asarray(brightness)[order])
+    return ranked
