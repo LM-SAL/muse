@@ -1,5 +1,6 @@
 import warnings
 
+import attrs
 import dask.array as da
 import numpy as np
 import pytest
@@ -7,7 +8,7 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import align_response_and_vdem
+from muse.instrument import align_response_and_vdem, response_io
 from muse.instrument.response_io import load_and_concat_responses, read_response, save_response
 from muse.tests.helpers import fake_legacy_response_file, fake_response, fake_vdem
 from muse.variables import DEFAULTS_MUSE
@@ -18,6 +19,10 @@ pytestmark = [
     pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning"),
     pytest.mark.filterwarnings("ignore:Setting the shape on a NumPy array:DeprecationWarning"),
 ]
+
+
+# The shipped SG and CI gains are equal, so only a CI table that differs proves the CI table was read.
+_CI_GAIN = xr.DataArray(np.array([7.0, 7.0]) * u.electron / u.DN, coords={"channel": [195, 304]}, dims="channel")
 
 
 def _write(ds: xr.Dataset, path, fmt: str) -> str:
@@ -492,21 +497,18 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
         )
 
 
-def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path) -> None:
+def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
     legacy = fake_legacy_response_file()
     path = _write(legacy.assign_coords(channel=("line", [195] * legacy.sizes["line"])), tmp_path / "ci.nc", "nc")
-    r = read_response(path)
-    np.testing.assert_allclose(
-        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_CI.sel(channel=195).data).to_value(u.electron / u.DN)
-    )
+    np.testing.assert_allclose(read_response(path).gain.values, 7.0)
 
 
-def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path) -> None:
+def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
     _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
     response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
-    np.testing.assert_allclose(
-        response.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_CI.sel(channel=195).data).to_value(u.electron / u.DN)
-    )
+    np.testing.assert_allclose(response.gain.values, 7.0)
     assert response.channel.values.tolist() == [195]
 
 

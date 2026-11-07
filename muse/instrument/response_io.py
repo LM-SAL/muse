@@ -292,7 +292,7 @@ def _default_gain(channel) -> u.Quantity:
         except KeyError:
             continue
     channels = np.unique(np.atleast_1d(getattr(channel, "values", channel))).tolist()
-    msg = f"unsupported MUSE channel(s) {channels}; pass gain explicitly"
+    msg = f"unsupported MUSE channel(s) {channels}; pass gain explicitly to read_response"
     raise ValueError(msg)
 
 
