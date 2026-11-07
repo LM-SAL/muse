@@ -14,8 +14,8 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
     "assert_dataset_structure",
-    "fake_legacy_response_file",
     "fake_response",
+    "fake_response_file",
     "fake_vdem",
     "fake_vdem_offgrid",
     "fake_vdem_single_doppler_velocity",
@@ -339,14 +339,14 @@ def fake_response():
     return response.assign_coords(channel=("line", channel))
 
 
-def fake_legacy_response_file():
+def fake_response_file():
     """
-    Response dataset shaped like the real on-disk MUSE response files, for IO tests.
+    Response dataset shaped like the on-disk MUSE response files, for IO tests.
 
-    Deliberately uses the pre-canonical names (``SG_resp``, ``SG_wvl``, ``SG_xpixel``,
-    ``line_wvl``, ``vdop``): reading it is what exercises
-    `muse.instrument.response_io._canonicalize_response_names`, so do not modernize them here.
-    Build canonical files with ``save_response(fake_response(), path)`` instead.
+    Carries the public names and units, as `muse.instrument.save_response` writes them,
+    and the ``pressure``, ``abundance`` and ``effective_area`` extras the files have, in
+    the files' dimension order (pressure, logT, line, doppler_velocity, abundance, slit,
+    detector_x_pixel).
     """
     n_logT, n_vdop, n_slit, n_pixel, n_wave = 5, 7, 4, 8, 6
     logT_axis = np.linspace(5.0, 7.0, n_logT)
@@ -355,13 +355,11 @@ def fake_legacy_response_file():
     sg_xpixel = np.arange(n_pixel)
     wavelength = np.linspace(160.0, 180.0, n_wave)
 
-    # Smooth, non-negative response: Gaussian in logT x vdop, gently modulated by slit/pixel.
+    # Smooth, non-negative response: Gaussian in logT x velocity, gently modulated by slit/pixel.
     logT_profile = np.exp(-(((logT_axis - 6.0) / 0.4) ** 2))
     vdop_profile = np.exp(-((vdop_axis / 150.0) ** 2))
     slit_profile = 1.0 + 0.05 * np.cos(np.pi * slit_axis / n_slit)
     pixel_profile = np.exp(-(((sg_xpixel - n_pixel / 2.0) / 3.0) ** 2))
-    # Dimension order matches the real files:
-    # (pressure, logT, line, vdop, abundance, slit, SG_xpixel).
     sg_resp = (
         logT_profile[None, :, None, None, None, None, None]
         * vdop_profile[None, None, None, :, None, None, None]
@@ -373,25 +371,26 @@ def fake_legacy_response_file():
 
     response = xr.Dataset(
         data_vars={
-            "SG_resp": (["pressure", "logT", "line", "vdop", "abundance", "slit", "SG_xpixel"], sg_resp),
-            "effective_area": (["pressure", "wavelength"], effective_area),
+            "detector_response": (
+                ["pressure", "logT", "line", "doppler_velocity", "abundance", "slit", "detector_x_pixel"],
+                sg_resp,
+                {"units": "1e-27 cm5 ph / s"},
+            ),
+            "effective_area": (["pressure", "wavelength"], effective_area, {"units": "cm2"}),
         },
         coords={
-            "logT": logT_axis,
-            "vdop": vdop_axis,
+            "logT": ("logT", logT_axis, {"units": "dex(K)"}),
+            "doppler_velocity": ("doppler_velocity", vdop_axis, {"units": "km / s"}),
             "slit": slit_axis,
-            "SG_xpixel": sg_xpixel,
-            "wavelength": wavelength,
+            "detector_x_pixel": sg_xpixel,
+            "wavelength": ("wavelength", wavelength, {"units": "Angstrom"}),
             "pressure": [3.0e15],
             "abundance": ["sun_coronal_2021_chianti"],
             "line": ["Fe IX 171.073"],
         },
     )
-    response = response.assign_coords(
-        line_wvl=("line", [171.073]),
+    return response.assign_coords(
+        line_wavelength=("line", [171.073], {"units": "Angstrom"}),
         channel=("line", [171]),
-        SG_wvl=(["SG_xpixel", "slit"], sg_wvl),
+        detector_wavelength=(["detector_x_pixel", "slit"], sg_wvl, {"units": "Angstrom"}),
     )
-    # Real files carry no units on line_wvl/SG_wvl; the reader is expected to inject Angstrom.
-    response.SG_resp.attrs["units"] = "1e-27 cm5 ph / s"
-    return response
