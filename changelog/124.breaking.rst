@@ -1,0 +1,1 @@
+``map_response_to_ci_detector`` sums the bins of a response that carries ``wavelength_bounds`` (every response ``create_spectral_response`` now returns) instead of integrating the trapezoid over its bin centers, so an imager response changes by the half-bin at each end of the grid.
