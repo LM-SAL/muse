@@ -170,8 +170,9 @@ def read_response(
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_SG`
-        selected by the response's ``channel`` coordinate.
+        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_SG` or
+        `~muse.variables_schema.InstrumentDefaults.ccd_gain_CI` selected by the
+        response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
@@ -239,11 +240,7 @@ def read_response(
         if "channel" not in r.coords:
             msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
             raise ValueError(msg)
-        try:
-            gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=r.channel).data)
-        except KeyError:
-            msg = f"unsupported MUSE SG channel(s) {np.unique(r.channel.values).tolist()}; pass gain explicitly"
-            raise ValueError(msg) from None
+        gain = _default_gain(r.channel)
     gain = gain.to(gain_unit)  # a statement so add_history records the converted value
     gain_dim = "channel" if "channel" in r.dims else "line"
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
@@ -267,6 +264,36 @@ def read_response(
 
     add_history(r, locals(), read_response)
     return r
+
+
+def _default_gain(channel) -> u.Quantity:
+    """
+    The default camera gain of ``channel``, an SG or CI channel, from the instrument
+    defaults.
+
+    Parameters
+    ----------
+    channel : `int` or `xarray.DataArray`
+        One channel, or the per-line channel coordinate of a response.
+
+    Returns
+    -------
+    `astropy.units.Quantity`
+        Gain in electron/DN, one value per entry of ``channel``.
+
+    Raises
+    ------
+    ValueError
+        If a channel is neither an SG nor a CI channel of the instrument defaults.
+    """
+    for gains in (DEFAULTS_MUSE.ccd_gain_SG, DEFAULTS_MUSE.ccd_gain_CI):
+        try:
+            return u.Quantity(gains.sel(channel=channel).data)
+        except KeyError:
+            continue
+    channels = np.unique(np.atleast_1d(getattr(channel, "values", channel))).tolist()
+    msg = f"unsupported MUSE channel(s) {channels}; pass gain explicitly"
+    raise ValueError(msg)
 
 
 def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
@@ -407,8 +434,8 @@ def load_and_concat_responses(
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
     channels : `Sequence` of `int`
-        One MUSE SG channel per response file. Selects the per-channel default
-        gain and is repeated for every line when a file contains multiple lines.
+        One MUSE SG or CI channel per response file. Selects the per-channel
+        default gain and is repeated for every line when a file contains multiple lines.
     logT : `xarray.DataArray`, optional
         Temperature axis to (re)sample onto. Passed to `muse.instrument.read_response`.
     doppler_velocity : `xarray.DataArray`, optional
@@ -444,11 +471,7 @@ def load_and_concat_responses(
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
         for filename, channel in zip(response_files, channels, strict=True):
-            try:
-                gain = u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=channel).data)
-            except KeyError:
-                msg = f"unsupported MUSE SG channel {channel}"
-                raise ValueError(msg) from None
+            gain = _default_gain(channel)
             dataset = read_response(
                 Path(response_directory) / filename,
                 logT=logT,

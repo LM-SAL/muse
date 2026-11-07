@@ -492,11 +492,29 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
         )
 
 
+def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path) -> None:
+    legacy = fake_legacy_response_file()
+    path = _write(legacy.assign_coords(channel=("line", [195] * legacy.sizes["line"])), tmp_path / "ci.nc", "nc")
+    r = read_response(path)
+    np.testing.assert_allclose(
+        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_CI.sel(channel=195).data).to_value(u.electron / u.DN)
+    )
+
+
+def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path) -> None:
+    _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
+    response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
+    np.testing.assert_allclose(
+        response.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_CI.sel(channel=195).data).to_value(u.electron / u.DN)
+    )
+    assert response.channel.values.tolist() == [195]
+
+
 def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None:
     _write(fake_legacy_response_file(), tmp_path / "a.zarr", "zarr")
 
-    with pytest.raises(ValueError, match="unsupported MUSE SG channel 195"):
-        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
+    with pytest.raises(ValueError, match=r"unsupported MUSE channel\(s\) \[999\]"):
+        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[999])
 
 
 def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:
