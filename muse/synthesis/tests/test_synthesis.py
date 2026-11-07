@@ -262,11 +262,10 @@ def test_vdem_synthesis_torch_chunks_a_slit_first_raster_along_a_raster_only_axi
     )
 
 
-def test_vdem_synthesis_torch_refuses_a_budget_below_one_row_on_an_accelerator(response, raster, monkeypatch) -> None:
+@pytest.mark.skipif(not _mps_available(), reason="no MPS device")
+def test_vdem_synthesis_torch_on_mps_refuses_a_budget_below_one_row(response, raster, monkeypatch) -> None:
     torch = pytest.importorskip("torch")
-    monkeypatch.setattr(_backends, "_resolve_device", lambda _device: torch.device("mps"))
-    monkeypatch.setattr(_backends, "_empty_device_cache", lambda _device: None)
-    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda _device: 1)
+    monkeypatch.setattr(torch.mps, "recommended_max_memory", lambda: 1)
     with pytest.raises(MemoryError, match="does not fit"):
         vdem_synthesis(raster, response, device="mps", backend="torch")
 
