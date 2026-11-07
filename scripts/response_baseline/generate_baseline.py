@@ -51,7 +51,9 @@ def main(argv=None):
     if not args.skip_plots:
         from plot_response_functions import main as make_plots  # noqa: PLC0415
 
-        make_plots(["--run-dir", str(args.run_dir), "--effective-area-dir", str(args.effective_area_dir)])
+        bands = [] if args.sg_band is None else ["--sg-band", *map(str, args.sg_band)]
+        bands += [] if args.ci_band is None else ["--ci-band", *map(str, args.ci_band)]
+        make_plots(["--run-dir", str(args.run_dir), "--effective-area-dir", str(args.effective_area_dir), *bands])
 
 
 if __name__ == "__main__":
