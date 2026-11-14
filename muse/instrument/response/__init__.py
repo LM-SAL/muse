@@ -1,5 +1,6 @@
 """
-Response functions: building them in wavelength space, mapping them onto a detector, their units and their files.
+Response functions: building them in wavelength space, mapping them onto a detector,
+their units and their files.
 """
 
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
