@@ -7,7 +7,7 @@ import astropy.constants as const
 import astropy.units as u
 
 from muse.instrument import radiometry as radiometry_module
-from muse.instrument.radiometry import transform_response_units
+from muse.instrument.radiometry import transform_flux_units, transform_response_units
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -245,3 +245,100 @@ def test_transform_response_units_selects_detector_calibration(monkeypatch):
         * (sg_gain / (20.0 * u.electron / u.DN)).to_value(u.dimensionless_unscaled)
     )
     np.testing.assert_allclose(ci.spectral_response / sg.spectral_response, expected_ratio)
+
+
+def _spectrum(units="ph / s", *, dim="line", channel=(171, 284)):
+    # Two lines, three pixels: every value is one, so the result is the conversion factor itself.
+    flux = xr.DataArray(np.ones((2, 3)), dims=(dim, "detector_x_pixel"), attrs={"units": units})
+    coords = {"line_wavelength": (dim, [171.073, 284.163], {"units": "Angstrom"})}
+    if channel is not None:
+        coords["channel"] = (dim, list(channel))
+    return xr.Dataset({"flux": flux}, coords=coords)
+
+
+def _electrons_per_photon(wavelength, pair_energy=3.65):
+    # h c = 12398.42 eV Angstrom
+    return (const.h * const.c).to_value(u.eV * u.AA) / np.asarray(wavelength) / pair_energy
+
+
+def test_transform_flux_units_photons_to_data_numbers_line_by_line():
+    spectrum = _spectrum()
+
+    out = transform_flux_units(spectrum, "DN / s", gain=8 * u.electron / u.DN, pair_energy=3.65 * u.eV / u.electron)
+
+    expected = _electrons_per_photon([171.073, 284.163]) / 8
+    np.testing.assert_allclose(out.flux.values, np.repeat(expected[:, None], 3, axis=1), rtol=1e-12)
+    assert u.Unit(out.flux.attrs["units"]) == u.DN / u.s
+    assert spectrum.flux.attrs["units"] == "ph / s"  # the input is untouched
+    assert out.attrs["HISTORY"][-1].startswith("transform_flux_units(")
+
+
+def test_transform_flux_units_takes_the_calibration_of_each_channel_by_default():
+    out = transform_flux_units(_spectrum(), "DN / s")
+
+    explicit = transform_flux_units(
+        _spectrum(), "DN / s", gain=[10, 10] * u.electron / u.DN, pair_energy=[3.65, 3.65] * u.eV / u.electron
+    )
+    np.testing.assert_allclose(out.flux.values, explicit.flux.values, rtol=1e-12)
+
+
+def test_transform_flux_units_prefers_the_gain_coordinate_of_the_spectrum():
+    spectrum = _spectrum().assign_coords(gain=("line", [5.0, 20.0], {"units": "electron / DN"}))
+
+    out = transform_flux_units(spectrum, "DN / s")
+
+    expected = _electrons_per_photon([171.073, 284.163]) / np.array([5.0, 20.0])
+    np.testing.assert_allclose(out.flux.isel(detector_x_pixel=0).values, expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize("intermediate", ["electron / s", "DN / s"])
+def test_transform_flux_units_round_trips(intermediate):
+    spectrum = _spectrum()
+
+    back = transform_flux_units(transform_flux_units(spectrum, intermediate), "ph / s")
+
+    np.testing.assert_allclose(back.flux.values, spectrum.flux.values, rtol=1e-12)
+    assert u.Unit(back.flux.attrs["units"]) == u.ph / u.s
+
+
+def test_transform_flux_units_electrons_to_data_numbers_needs_only_the_gain():
+    out = transform_flux_units(_spectrum("electron"), "DN", gain=4 * u.electron / u.DN)
+
+    np.testing.assert_allclose(out.flux.values, 0.25)
+
+
+def test_transform_flux_units_works_along_channel_as_sum_lines_per_channel_returns():
+    out = transform_flux_units(_spectrum(dim="channel", channel=None).assign_coords(channel=[171, 284]), "electron / s")
+
+    np.testing.assert_allclose(
+        out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]), rtol=1e-12
+    )
+
+
+def test_transform_flux_units_selects_the_detector_calibration(monkeypatch):
+    ci_gain = xr.DataArray(np.array([2.0, 2.0]) * u.electron / u.DN, coords={"channel": [195, 304]}, dims="channel")
+    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=ci_gain))
+    spectrum = _spectrum(channel=(195, 304))
+
+    out = transform_flux_units(spectrum, "DN / s", detector="ci")
+
+    np.testing.assert_allclose(
+        out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]) / 2, rtol=1e-12
+    )
+    with pytest.raises(ValueError, match="unsupported MUSE SG channel among"):
+        transform_flux_units(spectrum, "DN / s")
+
+
+@pytest.mark.parametrize(
+    ("spectrum", "new_units", "kwargs", "match"),
+    [
+        (_spectrum(), "DN", {}, "are not convertible to DN along the detector chain"),
+        (_spectrum(channel=None), "DN / s", {}, "no channel coordinate"),
+        (_spectrum(), "DN / s", {"detector": "XX"}, "detector must be 'SG' or 'CI'"),
+        (_spectrum().assign(flux=_spectrum().flux.assign_attrs(units=None)), "DN / s", {}, "spectrum.flux"),
+        (_spectrum().drop_vars("line_wavelength"), "DN / s", {}, "line_wavelength"),
+    ],
+)
+def test_transform_flux_units_rejects_invalid_inputs(spectrum, new_units, kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        transform_flux_units(spectrum, new_units, **kwargs)

@@ -1,5 +1,5 @@
 from muse.instrument.linelist import create_chianti_line_list
-from muse.instrument.radiometry import transform_response_units
+from muse.instrument.radiometry import transform_flux_units, transform_response_units
 from muse.instrument.response import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.response_io import (
     align_response_and_vdem,
@@ -18,5 +18,6 @@ __all__ = [
     "map_response_to_sg_detector",
     "read_response",
     "save_response",
+    "transform_flux_units",
     "transform_response_units",
 ]
