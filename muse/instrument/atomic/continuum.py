@@ -12,7 +12,7 @@ from muse.instrument.atomic.backends import (
     _fiasco_ion_kwargs,
     _import_fiasco,
     _initialize_chianti,
-    _over_ion_chunks,
+    _over_ions,
     _plasma_axis_units,
     _validate_plasma_inputs,
 )
@@ -223,13 +223,13 @@ def create_fiasco_continuum(
     if not ions:
         msg = "fiasco loaded no ion, so the continuum would be all zero; check its HDF5 database (hdf5_dbase_root)"
         raise RuntimeError(msg)
-    free_free = sum(_over_ion_chunks(_fiasco_component, ions, workers, "free_free", wavelengths))
-    free_bound = sum(_over_ion_chunks(_fiasco_component, ions, workers, "free_bound", wavelengths))
+    free_free = sum(_over_ions(_fiasco_component, ions, workers, "free_free", wavelengths))
+    free_bound = sum(_over_ions(_fiasco_component, ions, workers, "free_bound", wavelengths))
     two_photon = np.zeros((len(densities), temperatures.size, grid.size))
     for plasma_index, electron_density in enumerate(densities):
         # One density per temperature: fiasco pairs them itself and repeats the result along
         # its density axis, so any column of it is the answer.
-        parts = _over_ion_chunks(
+        parts = _over_ions(
             _fiasco_component,
             two_photon_ions,
             workers,

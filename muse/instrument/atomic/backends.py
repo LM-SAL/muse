@@ -167,13 +167,17 @@ def _fiasco_ion_kwargs(abundance: str | None, hdf5_dbase_root: str | Path | None
     return {key: value for key, value in options.items() if value is not None}
 
 
-def _over_ion_chunks(function, ions: list, workers: int, *args, **kwargs) -> list:
+def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = False, **kwargs) -> list:
     """
-    ``function(chunk, *args, **kwargs)`` for every chunk of ``ions``, in parallel when
-    ``workers`` is not 1.
+    ``function(ions, *args, **kwargs)`` on all of ``ions`` at once when ``workers`` is
+    1, and otherwise on groups of them in ``workers`` processes.
 
-    A chunk holds every n-th ion, so the results are not in the order of ``ions``: a
-    caller that keeps an order has to restore it.
+    A group is every n-th ion, one group per worker: the ions of one element sit together and
+    differ in cost, so blocks of neighbours would leave one worker with most of the work. With
+    ``single_ions`` a group is one ion, those with the most levels first, and a free worker
+    takes the next: for work whose cost grows with the levels, as a line list's does, where
+    even groups are still uneven. The results are not in the order of ``ions``: a caller that
+    keeps an order has to restore it.
     """
     if workers < 1 and workers != -1:
         msg = f"workers must be at least 1, or -1 for every CPU this process may use, got {workers}"
@@ -189,8 +193,17 @@ def _over_ion_chunks(function, ions: list, workers: int, *args, **kwargs) -> lis
     except ImportError:
         msg = "joblib is required for workers != 1, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
-    # Every n-th ion to a worker: the ions of one element sit together and differ widely in
-    # cost, so blocks of neighbours leave one worker with a large share of the work.
-    number_of_chunks = min(workers, len(ions))
-    chunks = [list(ions[first::number_of_chunks]) for first in range(number_of_chunks)]
-    return Parallel(n_jobs=workers)(delayed(function)(chunk, *args, **kwargs) for chunk in chunks)
+    if single_ions:
+        # fiasco's number of levels of an ion, zero for one without data, ranks its cost well
+        # enough to order the queue; the split itself then needs no estimate.
+        groups = [[ion] for ion in sorted(ions, key=lambda ion: getattr(ion, "n_levels", 0), reverse=True)]
+    else:
+        number_of_groups = min(workers, len(ions))
+        groups = [list(ions[first::number_of_groups]) for first in range(number_of_groups)]
+    with warnings.catch_warnings():
+        # loky restarts a worker whose memory grew, as it does when a worker first loads the
+        # database, and says so in a warning. Where warnings are errors, that error is raised in
+        # loky's own thread and the run waits for ever.
+        warnings.filterwarnings("ignore", "A worker stopped while some jobs were given to the executor", UserWarning)
+        # batch_size=1: joblib would otherwise bundle short tasks, and a bundle is a block of neighbours again.
+        return Parallel(n_jobs=workers, batch_size=1)(delayed(function)(group, *args, **kwargs) for group in groups)

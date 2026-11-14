@@ -18,7 +18,7 @@ from muse.instrument.atomic.backends import (
     _fiasco_ion_kwargs,
     _import_fiasco,
     _initialize_chianti,
-    _over_ion_chunks,
+    _over_ions,
     _plasma_axis_units,
     _validate_plasma_inputs,
 )
@@ -376,11 +376,12 @@ def create_fiasco_line_list(
     ]
     tables = [
         table
-        for table in _over_ion_chunks(
+        for table in _over_ions(
             _fiasco_line_table,
             ions,
             workers,
             density_flat,
+            single_ions=True,
             minimum_abundance=minimum_abundance,
             wavelength_range=u.Quantity(wavelength_range, u.AA),
         )
@@ -392,8 +393,8 @@ def create_fiasco_line_list(
     from astropy.table import vstack  # noqa: PLC0415
 
     table = vstack(tables)
-    # The workers take every n-th ion, so the rows are put back in the order of the ions: the
-    # line list is then the same whatever the number of workers.
+    # The workers take the ions one by one, those with the most levels first, so the rows are
+    # put back in the order of the ions: the line list is the same for any number of workers.
     ion_order = {ion.ion_name_roman: index for index, ion in enumerate(ions)}
     table = table[np.argsort([ion_order[name] for name in np.asarray(table["ion name"]).astype(str)], kind="stable")]
     # CHIANTI's name of an ion, fe_9, from fiasco's public attributes; list_ions gives "Fe 9".
