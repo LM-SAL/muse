@@ -172,8 +172,8 @@ def _over_ion_chunks(function, ions: list, workers: int, *args, **kwargs) -> lis
     ``function(chunk, *args, **kwargs)`` for every chunk of ``ions``, in parallel when
     ``workers`` is not 1.
 
-    A chunk holds every n-th ion, so the results are not in the order of ``ions``: a caller
-    that keeps an order has to restore it.
+    A chunk holds every n-th ion, so the results are not in the order of ``ions``: a
+    caller that keeps an order has to restore it.
     """
     if workers < 1 and workers != -1:
         msg = f"workers must be at least 1, or -1 for every CPU this process may use, got {workers}"

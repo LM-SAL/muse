@@ -213,8 +213,8 @@ def create_aia_effective_area(
 
 def _validated(effective_area: xr.Dataset, label: str) -> xr.Dataset:
     """
-    ``effective_area`` with its wavelength and channel in Angstrom, after checking the layout
-    `create_effective_area` gives.
+    ``effective_area`` with its wavelength and channel in Angstrom, after checking the
+    layout `create_effective_area` gives.
     """
     if "effective_area" not in effective_area.data_vars or "channel" not in effective_area.coords:
         msg = f"{label} must carry effective_area and a channel coordinate"
