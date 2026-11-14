@@ -16,7 +16,7 @@ from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["create_log_wavelength_edges", "create_spectral_response"]
+__all__ = ["create_continuum_response", "create_log_wavelength_edges", "create_spectral_response"]
 
 # The Gaussian is exactly zero beyond this point in float64.
 _GAUSSIAN_WINDOW_SIGMA = 40
@@ -701,3 +701,105 @@ def _bin_averaged_gaussian(
             "bin_width": bin_widths.reshape(shape),
         },
     )
+
+
+@u.quantity_input(wavelength_edges=u.AA, doppler_velocity=u.km / u.s)
+def create_continuum_response(
+    continuum: xr.Dataset,
+    wavelength_edges: u.Quantity,
+    *,
+    effective_area: xr.DataArray,
+    doppler_velocity: u.Quantity | None = None,
+) -> xr.Dataset:
+    """
+    Fold a rest-frame continuum through an effective area onto wavelength bins.
+
+    For every Doppler velocity the continuum is shifted (light observed at a wavelength was
+    emitted at that wavelength over ``1 + v / c``), multiplied by the area at the observed
+    wavelength and averaged over each bin, so a bin keeps the structure of the area inside it.
+    The result has the layout of `create_spectral_response` with ``bin_method="average"`` and
+    concatenates with a line response along ``line``.
+
+    Parameters
+    ----------
+    continuum : `xarray.Dataset`
+        From `muse.instrument.create_chianti_continuum` or
+        `muse.instrument.create_fiasco_continuum`, on a grid fine enough to resolve the
+        effective area.
+    wavelength_edges : `astropy.units.Quantity`
+        Strictly increasing bin edges, one more than the number of bins.
+    effective_area : `xarray.DataArray`
+        A curve with a ``wavelength`` coordinate, or one value that holds at every
+        wavelength, in units convertible to cm2, as for `create_spectral_response`.
+    doppler_velocity : `astropy.units.Quantity`, optional
+        Scalar or one-dimensional bulk velocities; adds a ``doppler_velocity`` dimension.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        ``spectral_response`` on the bins in the continuum's units times cm2, with
+        ``wavelength_grid`` at the bin centers and ``wavelength_bounds``.
+    """
+    call_inputs = dict(locals())
+    response_unit = require_unit(continuum, "spectral_response", "continuum.spectral_response")
+    grid = np.asarray(coord_as_unit(continuum, "wavelength_grid", u.AA, "continuum.wavelength_grid"), dtype=float)
+    centers, edges = _wavelength_bins(None, wavelength_edges)
+    if effective_area is None:
+        msg = "effective_area is required: a continuum response is the continuum seen through an area"
+        raise ValueError(msg)
+    area_on_grid = _effective_area_in_canonical_units(effective_area)
+    if area_on_grid.ndim:
+        area_on_grid = (
+            area_on_grid.interp(wavelength=xr.DataArray(grid, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
+        )
+    rest = continuum.spectral_response.assign_coords(wavelength_bin=grid)
+
+    if doppler_velocity is None:
+        binned = _bin_average(rest * area_on_grid, grid, edges)
+    else:
+        velocities = np.atleast_1d(doppler_velocity.to_value(u.km / u.s)).astype(float)
+        speed_of_light = const.c.to_value(u.km / u.s)
+        pieces = []
+        for velocity in velocities:
+            shifted = rest.interp(wavelength_bin=grid / (1 + velocity / speed_of_light), kwargs={"fill_value": 0.0})
+            pieces.append(_bin_average(shifted.assign_coords(wavelength_bin=grid) * area_on_grid, grid, edges))
+        axis = xr.DataArray(velocities, dims="doppler_velocity", attrs={"units": str(u.km / u.s)})
+        binned = xr.concat(pieces, dim=axis).transpose("line", "doppler_velocity", ...)
+    binned.attrs = {
+        **continuum.spectral_response.attrs,
+        "units": str(response_unit * u.cm**2),
+        "effective_area_at": "bin average",
+        "bin_method": "average",
+    }
+    result = xr.Dataset({"spectral_response": binned}, attrs=dict(continuum.attrs)).assign_coords(
+        _wavelength_bin_coords(centers, edges)
+    )
+    add_history(result, call_inputs, create_continuum_response, sources=(continuum,))
+    return result
+
+
+def _bin_average(values: xr.DataArray, x: np.ndarray, edges: np.ndarray) -> xr.DataArray:
+    """
+    Average a density sampled at ``x`` (the ``wavelength_bin`` axis) over the bins
+    between ``edges``.
+
+    The samples are joined by straight lines and that piecewise-linear density is
+    integrated exactly over every bin; the density is zero outside the sampled range.
+    """
+    if x.size < 2:
+        msg = "the continuum needs at least two wavelength samples to average over bins"
+        raise ValueError(msg)
+    y = np.moveaxis(np.asarray(values.data, dtype=float), values.get_axis_num("wavelength_bin"), -1)
+    dx = np.diff(x)
+    cumulative = np.zeros(y.shape)
+    cumulative[..., 1:] = np.cumsum(0.5 * (y[..., 1:] + y[..., :-1]) * dx, axis=-1)
+    # The integral up to every edge: the cumulative value at the sample before it plus the
+    # exact integral of the linear segment up to the edge.
+    index = np.clip(np.searchsorted(x, edges, side="right") - 1, 0, x.size - 2)
+    t = np.clip(edges - x[index], 0.0, dx[index])
+    slope = (y[..., index + 1] - y[..., index]) / dx[index]
+    at_edges = cumulative[..., index] + y[..., index] * t + 0.5 * slope * t**2
+    averaged = np.diff(at_edges, axis=-1) / np.diff(edges)
+    averaged = np.moveaxis(averaged, -1, values.get_axis_num("wavelength_bin"))
+    coords = {name: coord for name, coord in values.coords.items() if "wavelength_bin" not in coord.dims}
+    return xr.DataArray(averaged, dims=values.dims, coords=coords, attrs=values.attrs)

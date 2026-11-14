@@ -11,10 +11,15 @@ from muse.instrument.response.io import (
     save_response,
 )
 from muse.instrument.response.radiometry import transform_response_units
-from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
+from muse.instrument.response.spectral import (
+    create_continuum_response,
+    create_log_wavelength_edges,
+    create_spectral_response,
+)
 
 __all__ = [
     "align_response_and_vdem",
+    "create_continuum_response",
     "create_log_wavelength_edges",
     "create_spectral_response",
     "load_and_concat_responses",
