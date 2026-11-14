@@ -392,6 +392,10 @@ def create_fiasco_line_list(
     from astropy.table import vstack  # noqa: PLC0415
 
     table = vstack(tables)
+    # The workers take every n-th ion, so the rows are put back in the order of the ions: the
+    # line list is then the same whatever the number of workers.
+    ion_order = {ion.ion_name_roman: index for index, ion in enumerate(ions)}
+    table = table[np.argsort([ion_order[name] for name in np.asarray(table["ion name"]).astype(str)], kind="stable")]
     # CHIANTI's name of an ion, fe_9, from fiasco's public attributes; list_ions gives "Fe 9".
     roman_to_name = {ion.ion_name_roman: f"{ion.atomic_symbol.lower()}_{ion.ionization_stage}" for ion in ions}
     spectroscopic_name = np.asarray(table["ion name"]).astype(str)

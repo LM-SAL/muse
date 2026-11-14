@@ -1,6 +1,7 @@
 import os
 import warnings
 from types import SimpleNamespace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -380,6 +381,35 @@ def test_over_ion_chunks_runs_every_chunk():
     parallel = linelist._over_ion_chunks(_chunk_sum, [1, 2, 3, 4, 5], 2, 10)
     assert serial == [25]
     assert sorted(parallel) == [10 + 1 + 2 + 3, 10 + 4 + 5]
+
+
+def _chunk_itself(chunk):
+    return chunk
+
+
+def test_over_ion_chunks_gives_every_worker_every_nth_ion():
+    pytest.importorskip("joblib")
+    # Neighbours go to different workers, as the ions of one element differ widely in cost.
+    assert linelist._over_ion_chunks(_chunk_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
+
+
+def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
+    fiasco = pytest.importorskip("fiasco")
+    pytest.importorskip("joblib")
+    if not Path(fiasco.defaults["hdf5_dbase_root"]).is_file():
+        pytest.skip("fiasco's HDF5 database is not available")
+    kwargs = {
+        "pressure": xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+        "wavelength_range": [170, 175] * u.AA,
+        "ion_list": ["o_5", "fe_9", "o_6", "fe_10"],
+    }
+    temperature = xr.DataArray(10 ** np.array([5.8, 6.0]) * u.K, dims="logT")
+
+    serial = create_fiasco_line_list(temperature, workers=1, **kwargs)
+    parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
+
+    assert parallel.full_name.values.tolist() == serial.full_name.values.tolist()
+    np.testing.assert_array_equal(parallel.gofnt.values, serial.gofnt.values)
 
 
 def test_over_ion_chunks_rejects_a_worker_count_below_one():
