@@ -14,7 +14,14 @@ from muse.utils.utils import add_history, coord_as_unit, require_unit, update_at
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import FrozenDict
 
-__all__ = ["align_response_and_vdem", "load_and_concat_responses", "read_response", "save_response"]
+__all__ = [
+    "align_response_and_vdem",
+    "load_and_concat_responses",
+    "read_response",
+    "read_spectral_response",
+    "save_response",
+    "save_spectral_response",
+]
 
 _DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
@@ -53,6 +60,15 @@ def save_response(
         msg = "response must be an xarray.Dataset"
         raise TypeError(msg)
     _validate_response(response, "response")
+    response_file = _check_destination(response_file)
+    chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
+    _write_chunked(chunked, response_file, "detector_response")
+
+
+def _check_destination(response_file: str | Path) -> Path:
+    """
+    The destination as a path, refusing an existing one or an unknown suffix.
+    """
     response_file = Path(response_file)
     if response_file.exists():
         msg = f"Refusing to overwrite existing response: {response_file}"
@@ -61,29 +77,26 @@ def save_response(
     if suffix != ".zarr" and suffix not in _NETCDF_SUFFIXES:
         msg = "response_file must end in .zarr, .nc, .ncdf, or .netcdf"
         raise ValueError(msg)
+    return response_file
 
-    chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
-    if suffix == ".zarr":
+
+def _write_chunked(chunked: xr.Dataset, response_file: Path, variable: str) -> None:
+    """
+    Write a chunked dataset with the compression every response file gets.
+    """
+    if response_file.suffix.lower() == ".zarr":
         compressor = BloscCodec(cname="zstd", clevel=3, shuffle="bitshuffle")
         chunked.to_zarr(
             response_file,
             mode="w",
             zarr_format=3,
             consolidated=False,
-            encoding={"detector_response": {"compressors": (compressor,)}},
+            encoding={variable: {"compressors": (compressor,)}},
         )
         return
-    chunksizes = tuple(axis[0] for axis in chunked.detector_response.chunks)
+    chunksizes = tuple(axis[0] for axis in chunked[variable].chunks)
     chunked.to_netcdf(
-        response_file,
-        encoding={
-            "detector_response": {
-                "chunksizes": chunksizes,
-                "zlib": True,
-                "complevel": 1,
-                "shuffle": True,
-            }
-        },
+        response_file, encoding={variable: {"chunksizes": chunksizes, "zlib": True, "complevel": 1, "shuffle": True}}
     )
 
 
@@ -506,3 +519,55 @@ def load_and_concat_responses(
     update_attrs(result, response)
     add_history(result, locals(), load_and_concat_responses, sources=datasets)
     return result
+
+
+def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> None:
+    """
+    Save a wavelength-space response, e.g. a waveband cube from
+    `create_spectral_response`.
+
+    Parameters
+    ----------
+    response : `xarray.Dataset`
+        Dataset containing ``spectral_response``, ``wavelength_grid`` and ``line_wavelength``.
+    response_file : `str` or `pathlib.Path`
+        Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
+        destinations are not overwritten.
+    """
+    if not isinstance(response, xr.Dataset):
+        msg = "response must be an xarray.Dataset"
+        raise TypeError(msg)
+    missing = [
+        name for name in ("spectral_response", "wavelength_grid", "line_wavelength") if name not in response.variables
+    ]
+    if missing:
+        msg = f"response is missing required variables: {', '.join(missing)}"
+        raise ValueError(msg)
+    response_file = _check_destination(response_file)
+    chunks = {name: 1 for name in ("line", "logT", "pressure", "logD", "abundance") if name in response.dims}
+    _write_chunked(response.drop_encoding().chunk(chunks), response_file, "spectral_response")
+
+
+def read_spectral_response(response_file: str | Path) -> xr.Dataset:
+    """
+    Read a wavelength-space response saved by `save_spectral_response`.
+
+    Parameters
+    ----------
+    response_file : `str` or `pathlib.Path`
+        A zarr store or a netCDF file.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        The response with its ``wavelength_bounds`` restored as a coordinate.
+    """
+    response_file = Path(response_file)
+    if response_file.suffix.lower() == ".zarr":
+        response = xr.open_zarr(response_file, consolidated=False, chunks=None, decode_coords="all")
+    else:
+        response = xr.open_dataset(response_file, decode_coords="all")
+    if "spectral_response" not in response:
+        msg = f"{response_file} does not contain spectral_response"
+        raise ValueError(msg)
+    return response
