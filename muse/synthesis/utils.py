@@ -294,7 +294,7 @@ def calculate_moments(
     *,
     moment_dim: str = "detector_x_pixel",
     integration_name: str = "flux",
-    doppler_name: str = "doppler_velocity",
+    doppler_name: str = "detector_doppler_velocity",
     vmax: float | None = None,
     vmask: float | None = None,
 ) -> xr.Dataset:
@@ -315,8 +315,8 @@ def calculate_moments(
         Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
     doppler_name : `str`, optional
         Name of the Doppler-velocity coordinate in ``spectrum``, by default
-        ``"doppler_velocity"``. Its dimensions must be a subset of the dimensions
-        of ``integration_name``.
+        ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds. Its
+        dimensions must be a subset of the dimensions of ``integration_name``.
     vmax : `float` or None, optional
         Maximum absolute velocity (km/s) to include in the integration, by default None.
     vmask : `float` or None, optional
@@ -394,7 +394,10 @@ def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
     Returns
     -------
     `xarray.Dataset`
-        A new dataset with an added ``doppler_velocity`` coordinate in km/s.
+        A new dataset with an added ``detector_doppler_velocity`` coordinate in
+        km/s: the Doppler shift of each detector pixel from the line. It is not
+        the ``doppler_velocity`` axis of a VDEM or a response, which stays as
+        it is.
     """
     c_kms = speed_of_light.to_value(u.km / u.s)
     detector_wavelength = coord_as_unit(
@@ -406,19 +409,23 @@ def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
     line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
     doppler_velocity = (detector_wavelength / line_wavelength - 1) * c_kms
     doppler_velocity.attrs["units"] = str(u.km / u.s)
-    response = response.assign_coords(doppler_velocity=doppler_velocity)
+    response = response.assign_coords(detector_doppler_velocity=doppler_velocity)
     add_history(response, locals(), wavelength_to_doppler)
     return response
 
 
-def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
+def doppler_to_wavelength(response: xr.Dataset, *, doppler_name: str = "detector_doppler_velocity") -> xr.Dataset:
     """
     Add a wavelength coordinate in Angstrom derived from a Doppler shift.
 
     Parameters
     ----------
     response : `xarray.Dataset`
-        Must include ``doppler_velocity`` and ``line_wavelength`` coordinates.
+        Must include the ``doppler_name`` and ``line_wavelength`` coordinates.
+    doppler_name : `str`, optional
+        Name of the Doppler-velocity coordinate to convert, by default
+        ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds.
+        Pass ``"doppler_velocity"`` for the velocity axis of a response.
 
     Returns
     -------
@@ -428,12 +435,7 @@ def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     """
     c_kms = speed_of_light.to_value(u.km / u.s)
     line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
-    doppler_velocity = coord_as_unit(
-        response,
-        "doppler_velocity",
-        u.km / u.s,
-        "response.doppler_velocity",
-    )
+    doppler_velocity = coord_as_unit(response, doppler_name, u.km / u.s, f"response.{doppler_name}")
     detector_wavelength = line_wavelength * (1 + doppler_velocity / c_kms)
     detector_wavelength.attrs["units"] = str(u.AA)
     response = response.assign_coords(detector_wavelength=detector_wavelength)

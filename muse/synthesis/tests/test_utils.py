@@ -40,7 +40,7 @@ def _tiny_moment_spectrum():
         },
         coords={
             "detector_x_pixel": [0, 1, 2, 3, 4],
-            "doppler_velocity": (
+            "detector_doppler_velocity": (
                 ("detector_x_pixel",),
                 [-200.0, -100.0, 0.0, 100.0, 200.0],
                 {"units": "km/s"},
@@ -53,12 +53,36 @@ def test_wavelength_doppler_round_trip() -> None:
     resp = _tiny_response()
     with_vel = synthesis_utils.wavelength_to_doppler(resp)
 
-    assert u.Unit(with_vel.doppler_velocity.attrs["units"]) == u.km / u.s
-    assert "doppler_velocity" not in resp.coords  # input must not be mutated
+    assert u.Unit(with_vel.detector_doppler_velocity.attrs["units"]) == u.km / u.s
+    assert "detector_doppler_velocity" not in resp.coords  # input must not be mutated
 
     back = synthesis_utils.doppler_to_wavelength(with_vel)
     np.testing.assert_allclose(back.detector_wavelength.values, resp.detector_wavelength.values, rtol=1e-10)
     assert u.Unit(back.detector_wavelength.attrs["units"]) == u.AA
+
+
+def test_wavelength_to_doppler_leaves_the_velocity_axis_of_a_response_alone() -> None:
+    # A response has a doppler_velocity axis of its own; the per-pixel shift must not replace it.
+    axis = ("doppler_velocity", [-10.0, 0.0, 10.0], {"units": "km / s"})
+    resp = _tiny_response().assign_coords(doppler_velocity=axis)
+
+    with_vel = synthesis_utils.wavelength_to_doppler(resp)
+
+    np.testing.assert_array_equal(with_vel.doppler_velocity.values, [-10.0, 0.0, 10.0])
+    assert with_vel.detector_doppler_velocity.dims == ("line", "detector_x_pixel")
+
+
+def test_doppler_to_wavelength_converts_the_coordinate_it_is_given() -> None:
+    axis = ("doppler_velocity", [-300.0, 0.0, 300.0], {"units": "km / s"})
+    resp = _tiny_response().drop_vars("detector_wavelength").assign_coords(doppler_velocity=axis)
+
+    out = synthesis_utils.doppler_to_wavelength(resp, doppler_name="doppler_velocity")
+
+    assert out.detector_wavelength.sizes == {"line": 2, "doppler_velocity": 3}
+    np.testing.assert_allclose(out.detector_wavelength.sel(doppler_velocity=0.0), resp.line_wavelength)
+    np.testing.assert_allclose(
+        out.detector_wavelength.isel(line=1, doppler_velocity=2), 171.073 * (1 + 300 / 299792.458)
+    )
 
 
 def test_wavelength_to_doppler_normalizes_units() -> None:
@@ -70,8 +94,8 @@ def test_wavelength_to_doppler_normalizes_units() -> None:
     angstrom = synthesis_utils.wavelength_to_doppler(resp)
     nanometer = synthesis_utils.wavelength_to_doppler(resp_nm)
     np.testing.assert_allclose(
-        angstrom.doppler_velocity.values,
-        nanometer.doppler_velocity.values,
+        angstrom.detector_doppler_velocity.values,
+        nanometer.detector_doppler_velocity.values,
         rtol=1e-9,
         atol=1e-6,
     )
@@ -135,7 +159,7 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
         data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
         coords={
             "detector_x_pixel": [0, 1],
-            "doppler_velocity": (("detector_x_pixel",), [np.nan, 100.0], {"units": "km/s"}),
+            "detector_doppler_velocity": (("detector_x_pixel",), [np.nan, 100.0], {"units": "km/s"}),
         },
     )
 
@@ -150,7 +174,7 @@ def test_calculate_moments_rejects_unrelated_doppler_dim(vmax) -> None:
         data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
         coords={
             "detector_x_pixel": [0, 1],
-            "doppler_velocity": (("other",), [0.0, 100.0], {"units": "km/s"}),
+            "detector_doppler_velocity": (("other",), [0.0, 100.0], {"units": "km/s"}),
         },
     )
 
@@ -171,11 +195,11 @@ def test_calculate_moments_vmask_keeps_peak_window() -> None:
 def test_calculate_moments_does_not_mutate_input(response, raster) -> None:
     spectrum = _spectrum(response, raster)
     before_attrs = dict(spectrum.attrs)
-    before_dopp = spectrum.doppler_velocity.values.copy()
+    before_dopp = spectrum.detector_doppler_velocity.values.copy()
     synthesis_utils.calculate_moments(spectrum)
     # provenance/normalization must land on the result, not leak back into the caller
     assert dict(spectrum.attrs) == before_attrs
-    np.testing.assert_array_equal(spectrum.doppler_velocity.values, before_dopp)
+    np.testing.assert_array_equal(spectrum.detector_doppler_velocity.values, before_dopp)
 
 
 def test_calculate_moments_rejects_bad_moment_dim(response, raster) -> None:

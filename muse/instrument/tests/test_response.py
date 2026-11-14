@@ -504,6 +504,6 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         "wavelength_to_doppler(response=response)",
         (
             "calculate_moments(spectrum=spectrum, moment_dim=detector_x_pixel, integration_name=flux, "
-            "doppler_name=doppler_velocity, vmax=None, vmask=None)"
+            "doppler_name=detector_doppler_velocity, vmax=None, vmask=None)"
         ),
     ]
