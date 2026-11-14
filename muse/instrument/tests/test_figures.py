@@ -4,7 +4,7 @@ import pytest
 
 import astropy.units as u
 
-from muse.instrument.spectral import create_spectral_response
+from muse.instrument.response.spectral import create_spectral_response
 from muse.tests.helpers import figure_test, synthetic_effective_area, synthetic_line_list
 
 pytest.importorskip("numexpr")

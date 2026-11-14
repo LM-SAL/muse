@@ -11,9 +11,9 @@ import xarray as xr
 
 import astropy.units as u
 
-import muse.instrument.spectral as spectral_module
-from muse.instrument.spectral import _create_wavelength_response as _create_wavelength_response_impl
-from muse.instrument.spectral import _evaluate_gaussian_response, create_spectral_response
+import muse.instrument.response.spectral as spectral_module
+from muse.instrument.response.spectral import _create_wavelength_response as _create_wavelength_response_impl
+from muse.instrument.response.spectral import _evaluate_gaussian_response, create_spectral_response
 from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 

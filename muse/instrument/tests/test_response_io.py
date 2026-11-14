@@ -9,8 +9,9 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import align_response_and_vdem, response_io
-from muse.instrument.response_io import load_and_concat_responses, read_response, save_response
+from muse.instrument import align_response_and_vdem
+from muse.instrument.response import io as response_io
+from muse.instrument.response.io import load_and_concat_responses, read_response, save_response
 from muse.tests.helpers import fake_response, fake_response_file, fake_vdem
 from muse.variables import DEFAULTS_MUSE
 
