@@ -430,7 +430,12 @@ def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> x
         msg = "effective_area must be one-dimensional with wavelength as its only dimension"
         raise ValueError(msg)
     dataset = xr.Dataset({"effective_area": effective_area})
-    area_unit = require_unit(dataset, "effective_area", "effective_area", convertible_to=u.cm**2)
+    area_unit = require_unit(dataset, "effective_area", "effective_area")
+    if not area_unit.is_equivalent(u.cm**2):
+        carries_gain = area_unit.is_equivalent(u.cm**2 * u.DN / u.ph)
+        hint = "; an area that carries the camera gain is not taken here, build it without the gain" * carries_gain
+        msg = f"effective_area units must be convertible to cm2{hint}"
+        raise ValueError(msg)
     wavelength = coord_as_unit(dataset, "wavelength", u.AA, "effective_area wavelength coordinate")
     converted = (effective_area * area_unit.to(u.cm**2)).assign_attrs({**effective_area.attrs, "units": str(u.cm**2)})
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):

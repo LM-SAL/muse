@@ -353,6 +353,14 @@ def test_scalar_effective_area_matches_flat_curve():
     xr.testing.assert_allclose(from_attrs_m2, from_curve)
 
 
+def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():
+    # create_aia_effective_area gives cm2 DN / ph by default; the response builders take cm2.
+    with_gain = synthetic_effective_area(area_units="cm2 DN / ph")
+
+    with pytest.raises(ValueError, match="convertible to cm2; an area that carries the camera gain"):
+        _create_wavelength_response(synthetic_line_list(1), effective_area=with_gain)
+
+
 def test_scalar_effective_area_is_validated():
     line_list = synthetic_line_list(1)
     with pytest.raises(TypeError, match=r"effective_area must be an xarray\.DataArray"):
