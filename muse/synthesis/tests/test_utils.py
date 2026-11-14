@@ -346,3 +346,66 @@ def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
 
     with pytest.raises(ValueError, match=match):
         synthesis_utils.create_simple_vdem(**inputs)
+
+
+def _rate_spectrum(units="ph / s"):
+    flux = xr.DataArray(np.array([[1.0, 2.0], [3.0, 4.0]]), dims=("line", "detector_x_pixel"), attrs={"units": units})
+    return xr.Dataset({"flux": flux}, attrs={"HISTORY": ["vdem_synthesis()"]})
+
+
+def test_apply_exposure_time_turns_a_rate_into_counts() -> None:
+    spectrum = _rate_spectrum()
+
+    out = synthesis_utils.apply_exposure_time(spectrum, 1.5 * u.s)
+
+    np.testing.assert_allclose(out.flux.values, 1.5 * spectrum.flux.values)
+    assert u.Unit(out.flux.attrs["units"]) == u.ph
+    assert float(out.exposure_time) == 1.5
+    assert out.exposure_time.attrs["units"] == "s"
+    assert out.attrs["HISTORY"] == ["vdem_synthesis()", "apply_exposure_time(spectrum=spectrum, exposure_time=1.5)"]
+    # The input is left as it was.
+    assert spectrum.flux.attrs["units"] == "ph / s"
+    assert "exposure_time" not in spectrum.coords
+    assert spectrum.attrs["HISTORY"] == ["vdem_synthesis()"]
+
+
+def test_apply_exposure_time_converts_the_time_to_the_unit_of_the_rate() -> None:
+    # 1500 ms of a rate per millisecond, with the time still recorded in seconds.
+    out = synthesis_utils.apply_exposure_time(_rate_spectrum("DN / ms"), 1.5 * u.s)
+
+    np.testing.assert_allclose(out.flux.values, 1500 * _rate_spectrum().flux.values)
+    assert u.Unit(out.flux.attrs["units"]) == u.DN
+    assert float(out.exposure_time) == 1.5
+
+
+def test_remove_exposure_time_undoes_apply_exposure_time() -> None:
+    spectrum = _rate_spectrum()
+
+    back = synthesis_utils.remove_exposure_time(synthesis_utils.apply_exposure_time(spectrum, 300 * u.ms))
+
+    np.testing.assert_allclose(back.flux.values, spectrum.flux.values)
+    assert u.Unit(back.flux.attrs["units"]) == u.ph / u.s
+    assert "exposure_time" not in back.coords
+
+
+@pytest.mark.parametrize(
+    ("spectrum", "exposure_time", "match"),
+    [
+        (_rate_spectrum("ph"), 1 * u.s, "not a rate"),
+        (
+            _rate_spectrum().assign_coords(exposure_time=((), 2.0, {"units": "s"})),
+            1 * u.s,
+            "already has an exposure time",
+        ),
+        (_rate_spectrum(), [1, 2] * u.s, "must be a scalar"),
+        (_rate_spectrum().assign(flux=_rate_spectrum().flux.assign_attrs(units=None)), 1 * u.s, "spectrum.flux"),
+    ],
+)
+def test_apply_exposure_time_rejects_what_it_cannot_integrate(spectrum, exposure_time, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        synthesis_utils.apply_exposure_time(spectrum, exposure_time)
+
+
+def test_remove_exposure_time_requires_a_recorded_time() -> None:
+    with pytest.raises(ValueError, match="no exposure_time coordinate"):
+        synthesis_utils.remove_exposure_time(_rate_spectrum("ph"))

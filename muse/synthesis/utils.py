@@ -10,7 +10,14 @@ from astropy.constants import c as speed_of_light
 from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 
-__all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
+__all__ = [
+    "apply_exposure_time",
+    "calculate_moments",
+    "create_simple_vdem",
+    "doppler_to_wavelength",
+    "remove_exposure_time",
+    "wavelength_to_doppler",
+]
 
 # Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (per-slice temporaries
 # scale with worker count) and this runs nested under gallery/CI parallelism on
@@ -439,3 +446,96 @@ def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     response = response.assign_coords(detector_wavelength=detector_wavelength)
     add_history(response, locals(), doppler_to_wavelength)
     return response
+
+
+def _time_base(unit: u.UnitBase) -> u.UnitBase | None:
+    """
+    The time unit that ``unit`` is per, e.g. ``s`` for ``ph / s``, or `None` when
+    ``unit`` is not a rate.
+    """
+    for base, power in zip(unit.bases, unit.powers, strict=True):
+        if base.physical_type == "time" and power == -1:
+            return base
+    return None
+
+
+@u.quantity_input(exposure_time=u.s)
+def apply_exposure_time(spectrum: xr.Dataset, exposure_time: u.Quantity) -> xr.Dataset:
+    """
+    Integrate a spectrum over an exposure, turning a rate into the counts of one
+    exposure.
+
+    Parameters
+    ----------
+    spectrum : `xarray.Dataset`
+        Spectrum whose ``flux`` is a rate, such as ``ph / s``. ``flux`` must
+        define units in the attrs.
+    exposure_time : `astropy.units.Quantity`
+        Length of the exposure, a scalar convertible to seconds.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset whose ``flux`` is multiplied by the exposure time and no
+        longer per unit time, e.g. ``ph`` for ``ph / s``. The time is recorded
+        as the scalar coordinate ``exposure_time`` in seconds, which
+        `remove_exposure_time` reads.
+
+    Raises
+    ------
+    ValueError
+        If ``flux`` has no units or is not per unit time, if ``exposure_time``
+        is not a scalar, or if the spectrum already carries an exposure time.
+    """
+    flux_unit = require_unit(spectrum, "flux", "spectrum.flux")
+    if "exposure_time" in spectrum.coords:
+        msg = "spectrum already has an exposure time applied; call remove_exposure_time first"
+        raise ValueError(msg)
+    time_base = _time_base(flux_unit)
+    if time_base is None:
+        msg = f"spectrum.flux is in {flux_unit}, which is not a rate: its unit must be per unit time, such as 'ph / s'"
+        raise ValueError(msg)
+    if not exposure_time.isscalar:
+        msg = "exposure_time must be a scalar"
+        raise ValueError(msg)
+    flux = (spectrum.flux * exposure_time.to_value(time_base)).assign_attrs(
+        {**spectrum.flux.attrs, "units": str(flux_unit * time_base)}
+    )
+    result = spectrum.assign(flux=flux).assign_coords(
+        exposure_time=((), exposure_time.to_value(u.s), {"units": str(u.s)})
+    )
+    add_history(result, locals(), apply_exposure_time)
+    return result
+
+
+def remove_exposure_time(spectrum: xr.Dataset) -> xr.Dataset:
+    """
+    Divide the exposure time back out of a spectrum, turning counts into a rate.
+
+    Parameters
+    ----------
+    spectrum : `xarray.Dataset`
+        Spectrum returned by `apply_exposure_time`: its ``flux`` must define
+        units and it must carry the ``exposure_time`` coordinate.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset whose ``flux`` is divided by the exposure time and per
+        second, e.g. ``ph / s`` for ``ph``, without the ``exposure_time``
+        coordinate.
+
+    Raises
+    ------
+    ValueError
+        If ``flux`` has no units or the spectrum carries no exposure time.
+    """
+    flux_unit = require_unit(spectrum, "flux", "spectrum.flux")
+    if "exposure_time" not in spectrum.coords:
+        msg = "spectrum has no exposure_time coordinate; apply_exposure_time records it"
+        raise ValueError(msg)
+    seconds = float(coord_as_unit(spectrum, "exposure_time", u.s, "spectrum.exposure_time"))
+    flux = (spectrum.flux / seconds).assign_attrs({**spectrum.flux.attrs, "units": str(flux_unit / u.s)})
+    result = spectrum.assign(flux=flux).drop_vars("exposure_time")
+    add_history(result, locals(), remove_exposure_time)
+    return result
