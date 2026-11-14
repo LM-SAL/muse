@@ -10,7 +10,13 @@ from astropy.constants import c as speed_of_light
 from muse.log import logger
 from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
 
-__all__ = ["calculate_moments", "create_simple_vdem", "doppler_to_wavelength", "wavelength_to_doppler"]
+__all__ = [
+    "calculate_moments",
+    "create_simple_vdem",
+    "doppler_to_wavelength",
+    "sum_lines_per_channel",
+    "wavelength_to_doppler",
+]
 
 # Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (per-slice temporaries
 # scale with worker count) and this runs nested under gallery/CI parallelism on
@@ -439,3 +445,50 @@ def doppler_to_wavelength(response: xr.Dataset) -> xr.Dataset:
     response = response.assign_coords(detector_wavelength=detector_wavelength)
     add_history(response, locals(), doppler_to_wavelength)
     return response
+
+
+def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Dataset:
+    """
+    Sum the lines of each channel, which the detector records on the same pixels.
+
+    Parameters
+    ----------
+    data : `xarray.Dataset`
+        A spectrum or a response with a ``line`` dimension and a ``channel``
+        coordinate along it.
+    sum_slits : `bool`, optional
+        Also sum over ``slit`` when the data has that dimension, by default
+        `False`.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset in which ``channel`` replaces ``line``. Every data
+        variable along ``line`` is the sum of the lines of the channel, and a
+        NaN in a line stays a NaN in the sum. Every coordinate along ``line``,
+        such as ``line_wavelength`` and ``gain``, takes the value of the first
+        line of the channel. The channels keep the order in which they first
+        appear. With ``sum_slits``, the coordinates along ``slit`` are dropped.
+
+    Raises
+    ------
+    ValueError
+        If ``data`` has no ``line`` dimension or no ``channel`` coordinate along
+        it.
+    """
+    if "line" not in data.dims or "channel" not in data.coords or data.channel.dims != ("line",):
+        msg = "data must have a line dimension and a channel coordinate along it"
+        raise ValueError(msg)
+    channels, first_line = np.unique(data.channel.values, return_index=True)
+    channels, first_line = channels[np.argsort(first_line)], np.sort(first_line)
+    # The first line of each channel gives the coordinates; the sums then replace its variables.
+    result = data.isel(line=first_line).swap_dims(line="channel").drop_vars("line")
+    for name, variable in data.data_vars.items():
+        if "line" not in variable.dims:
+            continue
+        summed = variable.groupby("channel").sum(skipna=False, keep_attrs=True).sel(channel=channels)
+        result[name] = summed.transpose(*("channel" if dim == "line" else dim for dim in variable.dims))
+    if sum_slits and "slit" in result.dims:
+        result = result.sum("slit", skipna=False, keep_attrs=True)
+    add_history(result, locals(), sum_lines_per_channel)
+    return result

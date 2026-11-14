@@ -346,3 +346,65 @@ def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
 
     with pytest.raises(ValueError, match=match):
         synthesis_utils.create_simple_vdem(**inputs)
+
+
+def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
+    out = synthesis_utils.sum_lines_per_channel(response)
+
+    channels = list(dict.fromkeys(response.channel.values.tolist()))
+    assert len(channels) < response.sizes["line"]  # the fixture has several lines in a channel
+    assert out.channel.values.tolist() == channels
+    assert "line" not in out.dims
+    assert out.detector_response.dims == tuple(
+        "channel" if dim == "line" else dim for dim in response.detector_response.dims
+    )
+    assert out.detector_response.attrs["units"] == response.detector_response.attrs["units"]
+    for channel in channels:
+        lines = np.flatnonzero(response.channel.values == channel)
+        expected = response.detector_response.isel(line=lines).sum("line")
+        np.testing.assert_allclose(out.detector_response.sel(channel=channel).values, expected.values)
+        # The first line of the channel gives its coordinates.
+        assert float(out.line_wavelength.sel(channel=channel)) == float(response.line_wavelength[lines[0]])
+    assert out.attrs["HISTORY"][-1] == "sum_lines_per_channel(data=data, sum_slits=False)"
+    assert "line" in response.dims  # the input is untouched
+
+
+def test_sum_lines_per_channel_keeps_the_order_in_which_channels_first_appear(response) -> None:
+    reversed_lines = response.isel(line=slice(None, None, -1))
+
+    out = synthesis_utils.sum_lines_per_channel(reversed_lines)
+
+    assert out.channel.values.tolist() == list(dict.fromkeys(reversed_lines.channel.values.tolist()))
+    xr.testing.assert_allclose(
+        out.detector_response.sortby("channel"),
+        synthesis_utils.sum_lines_per_channel(response).detector_response.sortby("channel"),
+    )
+
+
+def test_sum_lines_per_channel_sums_the_slits_on_request(response, raster) -> None:
+    # Keep slit in the spectrum, so that the sum over slits is this function's.
+    spectrum = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+
+    out = synthesis_utils.sum_lines_per_channel(spectrum, sum_slits=True)
+
+    assert "slit" not in out.dims
+    assert "detector_wavelength" not in out.coords  # it is per slit, so it goes with the slits
+    expected = synthesis_utils.sum_lines_per_channel(spectrum).flux.sum("slit")
+    xr.testing.assert_allclose(out.flux, expected)
+    assert u.Unit(out.flux.attrs["units"]) == u.Unit(spectrum.flux.attrs["units"])
+
+
+def test_sum_lines_per_channel_keeps_a_nan_in_the_sum(response) -> None:
+    holed = response.copy(deep=True)
+    holed.detector_response[{"line": 0, "logT": 0}] = np.nan
+
+    out = synthesis_utils.sum_lines_per_channel(holed)
+
+    first_channel = out.detector_response.isel(channel=0)
+    assert bool(np.isnan(first_channel.isel(logT=0)).all())
+    assert bool(np.isfinite(first_channel.isel(logT=1)).all())
+
+
+def test_sum_lines_per_channel_requires_a_channel_along_line(response) -> None:
+    with pytest.raises(ValueError, match="channel coordinate along it"):
+        synthesis_utils.sum_lines_per_channel(response.drop_vars("channel"))
