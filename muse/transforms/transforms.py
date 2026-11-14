@@ -130,6 +130,24 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     return ds.drop_dims(axis).assign(resampled).assign_coords({axis: centers})
 
 
+def _fit_axis(ds: xr.Dataset, axis: str, size: int, mode: str, *, extend: bool) -> xr.Dataset:
+    """``ds`` cropped to ``size`` points along ``axis``, or extended to it with ``mode`` when ``extend``."""
+    n = ds.sizes[axis]
+    if n > size:
+        return ds.isel({axis: np.arange(size)})
+    if n == size or not extend:
+        return ds
+    if mode == "wrap":
+        # dask.array.pad silently clips a wrap pad wider than the axis; modular
+        # indexing tiles any width and works on both numpy and dask backends.
+        return ds.isel({axis: np.arange(size) % n})
+    # xarray.pad defaults constant_values to NaN, which would poison every
+    # downstream sum; a padded VDEM pixel means "no emission here", so fill
+    # with zeros. Only "constant" accepts the argument.
+    fill = {"constant_values": 0} if mode == "constant" else {}
+    return ds.pad({axis: (0, size - n)}, mode=mode, **fill)
+
+
 @format_docstring(
     "DEFAULTS_MUSE",
     dx_pix="dx_pixel_SG",
@@ -152,6 +170,7 @@ def match_fov(
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate: bool = False,
+    nrows: int | None = None,
 ) -> xr.Dataset:
     """
     Match a VDEM's spatial resolution and available extent to the MUSE FOV.
@@ -186,12 +205,18 @@ def match_fov(
         Does a subgrid interpolation, by default {sub_interpolation},
     rotate: `bool`
         Rotates 90 degrees the FOV, by default False.
+    nrows : `int`, optional
+        Number of rows along y, counted in output pixels. An input with more
+        rows is cropped to the first ``nrows``. One with fewer is extended with
+        ``mode`` when ``x_extent="tile"``, as x is, and keeps its rows otherwise.
+        A single row is kept, as a slit position has no extent along y to fit.
+        By default `None`, which leaves the rows as they are.
 
     Returns
     -------
     `xarray.Dataset`
         VDEM data resampled to the requested pixel sizes and cropped or extended
-        along x as described by ``x_extent``.
+        along x as described by ``x_extent``, and along y when ``nrows`` is given.
 
     Notes
     -----
@@ -213,9 +238,15 @@ def match_fov(
        entirely when ``x_extent="keep"``.
     5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
        extent is extended when ``x_extent="tile"`` and otherwise retained.
+    6. **Match the rows** - with ``nrows``, an output of more than one row is
+       cropped or extended along y by the rule of step 4, after the
+       resampling, so the count is in output pixels.
     """
     if x_extent not in ("tile", "crop", "keep"):
         msg = f"Unsupported x_extent {x_extent!r}; use 'tile', 'crop', or 'keep'"
+        raise ValueError(msg)
+    if nrows is not None and nrows < 1:
+        msg = f"nrows must be at least 1, got {nrows}"
         raise ValueError(msg)
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
@@ -236,8 +267,11 @@ def match_fov(
         or vdem.coords["x"].size == target_width
         or (x_extent == "crop" and vdem.coords["x"].size < target_width)
     )
-    if not rotate and resolution_matches and width_needs_no_change:
-        logger.info("vdem already has the requested pixel size and needs no x-extent change")
+    # Decided on the input rows: this path is only taken when no resampling changes their number.
+    ny = vdem.coords["y"].size
+    rows_need_no_change = nrows is None or ny in (1, nrows) or (ny < nrows and x_extent != "tile")
+    if not rotate and resolution_matches and width_needs_no_change and rows_need_no_change:
+        logger.info("vdem already has the requested pixel size and needs no extent change")
         return vdem
 
     # Shallow copy: every transform below returns a new object; the copy only isolates
@@ -251,21 +285,10 @@ def match_fov(
         # variable's original dimension order so downstream plots keep their orientation.
         vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
-    nx = vdem_xr.x.size
     if x_extent != "keep":
-        if nx > target_width:
-            vdem_xr = vdem_xr.isel(x=np.arange(target_width))
-        elif x_extent == "tile" and nx < target_width:
-            if mode == "wrap":
-                # dask.array.pad silently clips a wrap pad wider than the axis; modular
-                # indexing tiles any width and works on both numpy and dask backends.
-                vdem_xr = vdem_xr.isel(x=np.arange(target_width) % nx)
-            else:
-                # xarray.pad defaults constant_values to NaN, which would poison every
-                # downstream sum; a padded VDEM column means "no emission here", so fill
-                # with zeros. Only "constant" accepts the argument.
-                fill = {"constant_values": 0} if mode == "constant" else {}
-                vdem_xr = vdem_xr.pad(x=(0, target_width - nx), mode=mode, **fill)
+        vdem_xr = _fit_axis(vdem_xr, "x", target_width, mode, extend=x_extent == "tile")
+    if nrows is not None and vdem_xr.y.size > 1:
+        vdem_xr = _fit_axis(vdem_xr, "y", nrows, mode, extend=x_extent == "tile")
 
     vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value

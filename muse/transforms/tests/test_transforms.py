@@ -205,6 +205,51 @@ def test_match_fov_tiles_single_x_column(vdem) -> None:
     np.testing.assert_array_equal(out.vdem.isel(x=0), out.vdem.isel(x=-1))
 
 
+def test_match_fov_crops_rows_to_nrows(vdem) -> None:
+    out = match_fov(vdem, nrows=20)
+
+    assert out.y.size == 20
+    np.testing.assert_array_equal(out.vdem.values, vdem.vdem.isel(y=slice(0, 20)).values)
+
+
+@pytest.mark.parametrize("mode", ["wrap", "constant"])
+def test_match_fov_extends_rows_to_nrows_when_tiling(vdem, mode) -> None:
+    # Rows follow the rule of the x extent: "wrap" repeats the field, "constant" adds rows without emission.
+    out = match_fov(vdem, nrows=40, mode=mode)
+
+    assert out.y.size == 40
+    np.testing.assert_array_equal(out.vdem.isel(y=slice(0, 32)).values, vdem.vdem.values)
+    added = out.vdem.isel(y=slice(32, None)).values
+    np.testing.assert_array_equal(added, vdem.vdem.isel(y=slice(0, 8)).values if mode == "wrap" else 0.0)
+    np.testing.assert_allclose(np.diff(out.y.values), np.diff(vdem.y.values)[0], rtol=5e-3)
+
+
+def test_match_fov_without_tiling_keeps_fewer_rows(vdem) -> None:
+    # Nothing is left to change, so the input comes back untouched.
+    assert match_fov(vdem, x_extent="crop", nrows=40) is vdem
+
+
+def test_match_fov_keeps_a_single_row_whatever_nrows(vdem) -> None:
+    single_row = vdem.isel(y=[0])
+
+    assert match_fov(single_row, nrows=40) is single_row
+
+
+def test_match_fov_counts_nrows_in_output_pixels(vdem_offgrid) -> None:
+    # The coarse input is resampled to more rows than it has, and nrows crops those.
+    resampled_rows = match_fov(vdem_offgrid).y.size
+
+    out = match_fov(vdem_offgrid, nrows=resampled_rows - 5)
+
+    assert resampled_rows > vdem_offgrid.y.size
+    assert out.y.size == resampled_rows - 5
+
+
+def test_match_fov_rejects_nrows_below_one(vdem) -> None:
+    with pytest.raises(ValueError, match="nrows must be at least 1"):
+        match_fov(vdem, nrows=0)
+
+
 def test_match_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
     # Very coarse target pixels exercise the integer-factor averaging branch.
     out = match_fov(vdem_offgrid, dx_pix=4.0 * u.arcsec)
