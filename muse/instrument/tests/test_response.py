@@ -6,10 +6,10 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
-from muse.instrument.linelist import create_chianti_line_list
-from muse.instrument.radiometry import transform_response_units
-from muse.instrument.response_io import read_response
-from muse.instrument.spectral import create_spectral_response
+from muse.instrument.atomic.linelist import create_chianti_line_list
+from muse.instrument.response.io import read_response
+from muse.instrument.response.radiometry import transform_response_units
+from muse.instrument.response.spectral import create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
 from muse.variables import DEFAULTS_MUSE
 

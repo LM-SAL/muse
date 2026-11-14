@@ -6,8 +6,8 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
-from muse.instrument import radiometry as radiometry_module
-from muse.instrument.radiometry import transform_response_units
+from muse.instrument.response import radiometry as radiometry_module
+from muse.instrument.response.radiometry import transform_response_units
 from muse.variables import DEFAULTS_MUSE
 
 

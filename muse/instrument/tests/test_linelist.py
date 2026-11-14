@@ -7,8 +7,8 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.instrument import linelist
-from muse.instrument.linelist import create_chianti_line_list
+from muse.instrument.atomic import linelist
+from muse.instrument.atomic.linelist import create_chianti_line_list
 
 
 def test_rejects_missing_density_and_pressure():
