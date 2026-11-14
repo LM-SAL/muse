@@ -1,0 +1,1 @@
+``map_response_to_ci_detector`` sums over the wavelength bins instead of integrating between the bin centers, so imager responses change slightly at the two ends of the grid.

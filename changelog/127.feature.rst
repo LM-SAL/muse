@@ -1,0 +1,1 @@
+``create_spectral_response`` takes ``wavelength_edges`` for coarse or uneven bins, such as those from ``create_log_wavelength_edges``, and then stores the average of each line over its bin.

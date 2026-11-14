@@ -1,0 +1,1 @@
+Added ``save_spectral_response`` and ``read_spectral_response`` for wavelength-space responses, such as the waveband cubes of ``create_spectral_response``.
