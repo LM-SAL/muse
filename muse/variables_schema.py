@@ -338,6 +338,21 @@ class InstrumentDefaults:
     Normalized to Angstroms.
     """
 
+    waveband_half_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    """
+    Half of the wavelength range an SG band covers at first order; divide by the
+    spectral order.
+
+    Normalized to Angstroms.
+    """
+
+    wavelength_step_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    """
+    Sampling of the wavelength grid an SG spectral response is built on.
+
+    Normalized to Angstroms.
+    """
+
     steps_per_raster_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of steps per raster for the SG.

@@ -6,13 +6,17 @@ import astropy.constants as const
 import astropy.units as u
 from astropy.time import Time
 
+from muse.instrument import generate_responses, read_response
 from muse.instrument.effective_area import (
+    _DETECTOR_ATTRS,
     create_aia_effective_area,
     create_effective_area,
     effective_area_wavelength_range,
     read_effective_area,
     select_effective_area_curve,
 )
+from muse.tests.helpers import synthetic_line_list
+from muse.variables import DEFAULTS_MUSE
 
 WAVELENGTH = np.linspace(160.0, 180.0, 5) * u.AA
 
@@ -156,6 +160,44 @@ def test_create_aia_effective_area_switches():
     assert effective_area.attrs["obstime"] == "2014-01-01T00:00:00.000"
     with pytest.raises(ValueError, match="units"):
         create_aia_effective_area(304 * u.AA, units="electrons")
+
+
+@pytest.mark.usefixtures("fake_aiapy")
+def test_an_aia_file_brings_its_detector_to_the_pipeline(tmp_path):
+    """
+    What `create_aia_effective_area` writes is what `generate_responses` reads: without
+    the detector attributes the same area is converted with the MUSE pixel instead.
+    """
+    pytest.importorskip("numexpr")
+    area = create_aia_effective_area(195 * u.AA, units="ph")
+    area.to_zarr(tmp_path / "aia.zarr", consolidated=False)
+    bare = area.copy()
+    for name in _DETECTOR_ATTRS:
+        del bare.attrs[name]
+    bare.to_zarr(tmp_path / "bare.zarr", consolidated=False)
+    line_list = synthetic_line_list(1, wavelength=[170.0], logT=np.array([5.5, 6.0, 6.5]))
+    line_list["gofnt"] = line_list.gofnt.expand_dims(pressure=[3e15]).transpose("pressure", "logT", "trans_index")
+    line_list.to_netcdf(tmp_path / "lines.nc")
+
+    def photons(area_file):
+        written = generate_responses(
+            output_directory=tmp_path / area_file.stem,
+            author="T",
+            effective_area_note="n",
+            ci_effective_area_files=[area_file],
+            abundances=["sun_coronal_2021_chianti"],
+            temperature=xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT"),
+            pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+            doppler_velocity=[0.0] * u.km / u.s,
+            line_list_file=tmp_path / "lines.nc",
+            include_continuum=False,
+            ci_units=("ph",),
+        )
+        return read_response(written[1]).detector_response
+
+    muse_pixel = (DEFAULTS_MUSE.dx_pixel_CI * DEFAULTS_MUSE.dy_pixel_CI).to_value(u.arcsec**2)
+    ratio = photons(tmp_path / "aia.zarr") / photons(tmp_path / "bare.zarr")
+    np.testing.assert_allclose(ratio, 0.6**2 / muse_pixel, rtol=1e-9)
 
 
 @pytest.mark.remote_data

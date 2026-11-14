@@ -29,6 +29,8 @@ MUSE_DEFAULTS_DICT = {
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
     "spectral_slit_separation_SG": 390.0 * u.mAA,
+    "waveband_half_width_SG": 35.0 * u.AA,
+    "wavelength_step_SG": 4.9 * u.mAA,
     "steps_per_raster_SG": 11,
     # Diffraction
     "mesh_transmission": {284: 0.81},

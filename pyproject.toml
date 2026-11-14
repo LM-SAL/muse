@@ -31,6 +31,7 @@ dependencies = [
   "netCDF4>=1.7.2",
   "numpy>=2.5.0",
   "scipy>=1.18.0",
+  "threadpoolctl>=3.1",
   "tqdm>=4.70",
   "xarray>=2026.7.0",
   "zarr>=3.3.0",
