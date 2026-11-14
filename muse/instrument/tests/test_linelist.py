@@ -1,5 +1,6 @@
 import os
 import warnings
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -8,7 +9,14 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.atomic import linelist
-from muse.instrument.atomic.linelist import create_chianti_line_list
+from muse.instrument.atomic.linelist import (
+    boost_transitions,
+    create_chianti_line_list,
+    create_fiasco_line_list,
+    rank_line_list,
+    select_transitions,
+)
+from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
 
 
 def test_rejects_missing_density_and_pressure():
@@ -221,3 +229,231 @@ def test_create_chianti_line_list_live_density():
     assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
     assert line_list.sizes["trans_index"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values
+
+
+try:
+    import fiasco
+except ImportError:  # pragma: no cover
+    fiasco = None
+
+needs_fiasco_line_lists = pytest.mark.skipif(
+    fiasco is None or not hasattr(fiasco.IonCollection, "build_line_list"),
+    reason="fiasco with IonCollection.build_line_list is not installed",
+)
+
+
+@pytest.fixture
+def temperature():
+    return xr.DataArray(10 ** np.linspace(5.5, 6.5, 5) * u.K, dims="logT")
+
+
+@pytest.fixture
+def controlled_ions(monkeypatch):
+    """
+    Keep fiasco's real line-list builder, replacing only the database-backed ion data.
+    """
+
+    class Ion:
+        def __init__(self, name, temperature, *, abundance="controlled_abundance", **_kwargs) -> None:
+            self.temperature = temperature.to(u.K)
+            self.abundance = 1e-4
+            self._ion_name = name
+            self.ion_name = "Fe 9"
+            self.ion_name_roman = "Fe IX"
+            self.atomic_number = 26
+            self.atomic_symbol = "Fe"
+            self.ionization_stage = 9
+            self.ionization_potential = 233 * u.eV
+            self._dset_names = {"abundance": abundance, "ionization_fraction": "controlled"}
+            self._elvlc = SimpleNamespace(version="controlled CHIANTI")
+            wavelength = np.array([171.073, 174.0]) * u.AA
+            self.transitions = SimpleNamespace(
+                wavelength=wavelength,
+                is_bound_bound=np.array([True, True]),
+                delta_energy=wavelength.to(u.erg, equivalencies=u.spectral()),
+                A=np.array([1.0, 0.1]) / u.s,
+                lower_level=np.array([1, 1]),
+                upper_level=np.array([2, 3]),
+                lower_label=np.array(["lower", "lower"]),
+                upper_label=np.array(["upper", "upper"]),
+                is_observed=np.array([True, False]),
+            )
+
+        def contribution_function(self, density, **_kwargs):
+            peak = np.exp(-(((np.log10(self.temperature.to_value(u.K)) - 5.9) / 0.2) ** 2))
+            values = peak * density.to_value(u.cm**-3) / 1e9
+            return values[:, None, None] * np.array([1.0, 0.1])[None, None, :] * 1e-25 * u.cm**3 * u.erg / u.s
+
+    monkeypatch.setattr(fiasco, "Ion", Ion)
+    monkeypatch.setattr(fiasco, "proton_electron_ratio", lambda temperature, **_kwargs: np.ones(temperature.size))
+    # As fiasco lists its ions: the line list still names them the CHIANTI way, fe_9.
+    monkeypatch.setattr(fiasco, "list_ions", lambda **_kwargs: ["Fe 9"])
+
+
+@needs_fiasco_line_lists
+@pytest.mark.usefixtures("controlled_ions")
+def test_fiasco_line_list_has_the_chianti_layout(temperature):
+    pressure = xr.DataArray([3e14, 1e15] * u.K / u.cm**3, dims="pressure")
+    line_list = create_fiasco_line_list(temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA)
+    assert {
+        "ion_name",
+        "wavelength",
+        "lower_level_label",
+        "upper_level_label",
+        "lower_level_index",
+        "upper_level_index",
+        "spectroscopic_name",
+        "atomic_number",
+        "observed",
+        "gofnt",
+        "logT_peak",
+        "full_name",
+    } <= set(line_list.data_vars)
+    assert line_list.gofnt.dims == ("pressure", "logT", "trans_index")
+    assert line_list.full_name.values.tolist() == ["Fe IX 171.073", "Fe IX 174.0"]
+    assert line_list.ion_name.values.tolist() == ["fe_9", "fe_9"]
+    assert line_list.observed.values.tolist() == [True, False]
+    assert line_list.wavelength.attrs["units"] == "Angstrom"
+    assert line_list.gofnt.attrs["units"] == "erg cm3 / (s sr)"
+    assert line_list.logT.attrs["units"] == "dex(K)"
+    assert line_list.pressure.attrs["units"] == "K / cm3"
+    np.testing.assert_allclose(line_list.logT.values, np.linspace(5.5, 6.5, 5))
+    # the contribution function per steradian, on the density pressure / temperature
+    # The whole grid, so that a swap of the pressure and the temperature axis cannot pass.
+    density = pressure.values[:, None] / temperature.values[None, :]
+    peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
+    expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
+    np.testing.assert_allclose(line_list.gofnt.isel(trans_index=0).transpose("pressure", "logT"), expected, rtol=1e-12)
+    assert line_list.attrs["Chianti"] == "controlled CHIANTI"
+    assert line_list.attrs["abundance"] == "controlled_abundance"
+    assert "create_fiasco_line_list(" in line_list.attrs["HISTORY"][-1]
+    assert float(line_list.logT_peak.isel(pressure=0, trans_index=0)) == pytest.approx(6.0, abs=0.26)
+
+
+@needs_fiasco_line_lists
+@pytest.mark.usefixtures("controlled_ions")
+def test_fiasco_line_list_density_grid_and_range_units(temperature):
+    density = xr.DataArray([1e9] * u.cm**-3, dims="density")
+    line_list = create_fiasco_line_list(
+        temperature, density=density, wavelength_range=[17, 17.2] * u.nm, abundance="sun_coronal_2021_chianti"
+    )
+    assert line_list.gofnt.dims == ("logT", "logD", "trans_index")
+    np.testing.assert_allclose(line_list.logD.values, [9.0])
+    assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
+    assert line_list.wavelength.values.tolist() == [171.073]
+    assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
+
+
+@needs_fiasco_line_lists
+@pytest.mark.usefixtures("controlled_ions")
+def test_fiasco_line_list_rejects_bad_inputs(temperature, monkeypatch):
+    pressure = xr.DataArray([3e14] * u.K / u.cm**3, dims="pressure")
+    with pytest.raises(ValueError, match="minimum_abundance"):
+        create_fiasco_line_list(
+            temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA, minimum_abundance=-1
+        )
+    with pytest.raises(ValueError, match="ion_list"):
+        create_fiasco_line_list(temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA, ion_list=["Fe IX"])
+    monkeypatch.setattr(linelist, "_fiasco_line_table", lambda *_args, **_kwargs: None)
+    with pytest.raises(ValueError, match="no lines"):
+        create_fiasco_line_list(temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA)
+
+
+@pytest.mark.skipif(fiasco is None, reason="fiasco is not installed")
+def test_fiasco_line_list_refuses_a_fiasco_before_0_9(temperature, monkeypatch):
+    monkeypatch.setattr(fiasco, "__version__", "0.8.3")
+    with pytest.raises(ImportError, match=r"0\.9\.0 or later is required, found 0\.8\.3"):
+        create_fiasco_line_list(
+            temperature,
+            pressure=xr.DataArray([3e14] * u.K / u.cm**3, dims="pressure"),
+            wavelength_range=[170, 175] * u.AA,
+        )
+
+
+def _chunk_sum(chunk, offset):
+    return sum(chunk) + offset
+
+
+def test_over_ion_chunks_runs_every_chunk():
+    pytest.importorskip("joblib")
+    serial = linelist._over_ion_chunks(_chunk_sum, [1, 2, 3, 4, 5], 1, 10)
+    parallel = linelist._over_ion_chunks(_chunk_sum, [1, 2, 3, 4, 5], 2, 10)
+    assert serial == [25]
+    assert sorted(parallel) == [10 + 1 + 2 + 3, 10 + 4 + 5]
+
+
+def test_over_ion_chunks_rejects_a_worker_count_below_one():
+    with pytest.raises(ValueError, match="workers must be at least 1"):
+        linelist._over_ion_chunks(_chunk_sum, [1, 2, 3], 0, 10)
+
+
+def test_over_ion_chunks_counts_the_allocation_not_the_machine(monkeypatch):
+    pytest.importorskip("joblib")
+    monkeypatch.setattr(os, "process_cpu_count", lambda: 2)
+    monkeypatch.setattr(os, "cpu_count", lambda: 64)
+    # two chunks, as the two usable CPUs give; the machine's 64 would give five
+    assert sorted(linelist._over_ion_chunks(_chunk_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
+
+
+def test_boost_transitions():
+    line_list = xr.Dataset(
+        {
+            "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
+            "lower_level_index": ("trans_index", np.array([1, 1, 1])),
+            "upper_level_index": ("trans_index", np.array([3, 4, 13])),
+            "wavelength": ("trans_index", np.array([303.786, 303.785, 171.073])),
+            "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
+        }
+    )
+    boosted = boost_transitions(line_list, {("he_2", 1, 3): 20})
+    assert boosted.gofnt.values[:, 0].tolist() == [20.0, 20.0]
+    assert (boosted.gofnt.values[:, 1:] == 1).all()
+    assert boosted.gofnt.attrs == line_list.gofnt.attrs
+    assert boosted.attrs["transition_boosts"] == '{"he_2 1-3": 20}'
+    assert (line_list.gofnt.values == 1).all()
+    with pytest.raises(ValueError, match="0 transitions match he_2 1-5"):
+        boost_transitions(line_list, {("he_2", 1, 5): 20})
+    # A line name where a transition is meant used to fail with "too many values to unpack".
+    with pytest.raises(ValueError, match="a transition is \\(ion_name, lower_level_index, upper_level_index\\)"):
+        boost_transitions(line_list, {"He II 303.786": 20})
+
+
+def test_rank_line_list_orders_by_peak_times_area():
+    line_list = synthetic_line_list(3)  # peaks 1.0, 0.75, 0.5 at 170.6, 171.0, 171.4 A
+    by_peak = rank_line_list(line_list)
+    assert by_peak.full_name.values.tolist() == line_list.full_name.values.tolist()
+    np.testing.assert_allclose(by_peak.brightness.values, [1e-25, 0.75e-25, 0.5e-25])
+    area = synthetic_effective_area([1.0, 0.0, 10.0], [170.5, 171.0, 171.5])
+    by_area = rank_line_list(line_list, area)
+    assert by_area.full_name.values.tolist() == [
+        line_list.full_name[2].item(),
+        line_list.full_name[0].item(),
+        line_list.full_name[1].item(),
+    ]
+    assert by_area.brightness.values[-1] == 0.0
+    assert u.Unit(by_area.brightness.attrs["units"]) == u.Unit(line_list.gofnt.attrs["units"]) * u.cm**2
+    # The same curve in nm ranks the same: its numbers are not taken as Angstrom.
+    in_nm = area.assign_coords(wavelength=("wavelength", area.wavelength.values / 10, {"units": "nm"}))
+    # atol: the conversion back from nm leaves a rounding error where the area is exactly zero.
+    np.testing.assert_allclose(
+        rank_line_list(line_list, in_nm).brightness.values, by_area.brightness.values, atol=1e-30
+    )
+    with pytest.raises(ValueError, match="along wavelength"):
+        rank_line_list(line_list, xr.DataArray(2.0, attrs={"units": "cm2"}))
+
+
+def test_select_transitions():
+    line_list = xr.Dataset(
+        {
+            "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
+            "lower_level_index": ("trans_index", np.array([1, 1, 1])),
+            "upper_level_index": ("trans_index", np.array([3, 4, 13])),
+            "wavelength": ("trans_index", np.array([303.786, 303.785, 171.073])),
+            "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
+        }
+    )
+    doublet = select_transitions(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
+    assert doublet.wavelength.values.tolist() == [303.786, 303.785]
+    assert doublet.attrs["transition_selection"] == '["he_2 1-3", "he_2 1-4"]'
+    with pytest.raises(ValueError, match="0 transitions match fe_9 1-5"):
+        select_transitions(line_list, [("fe_9", 1, 5)])
