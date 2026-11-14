@@ -7,11 +7,12 @@ from muse.instrument.response.io import (
     save_response,
 )
 from muse.instrument.response.radiometry import transform_response_units
-from muse.instrument.response.spectral import create_spectral_response
+from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 
 __all__ = [
     "align_response_and_vdem",
     "create_chianti_line_list",
+    "create_log_wavelength_edges",
     "create_spectral_response",
     "load_and_concat_responses",
     "map_response_to_ci_detector",

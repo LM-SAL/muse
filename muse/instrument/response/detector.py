@@ -276,7 +276,13 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         raise ValueError(msg)
 
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
-    mapped = spectral_response.integrate("wavelength_grid")
+    if "wavelength_bounds" in response.coords:
+        # Bin averages times the bin widths: exact for bin-integrated profiles on any grid.
+        bounds = coord_as_unit(response, "wavelength_bounds", u.AA, "response.wavelength_bounds")
+        width = bounds.isel(bound=1) - bounds.isel(bound=0)
+        mapped = (spectral_response * width).sum("wavelength_bin")
+    else:
+        mapped = spectral_response.integrate("wavelength_grid")
     mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
 
     result = response.drop_dims("wavelength_bin")
