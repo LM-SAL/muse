@@ -1,0 +1,1 @@
+Added ``generate_responses`` and ``generate_continuum_responses``, which write the SG and CI response functions of every band, abundance and pressure, given each band's effective area as a zarr or netCDF file (``create_effective_area``).

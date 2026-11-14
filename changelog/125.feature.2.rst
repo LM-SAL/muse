@@ -1,0 +1,1 @@
+Added ``create_aia_effective_area``, which builds the effective area of an SDO/AIA channel from aiapy (``pip install muse[aia]``), so ``generate_responses`` can write AIA responses.
