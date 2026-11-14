@@ -1,0 +1,1 @@
+Added ``create_effective_area``, ``save_effective_area`` and ``read_effective_area`` for the effective area of one channel, and ``create_aia_effective_area``, which builds that of an SDO/AIA channel from aiapy (``pip install muse[aia]``).

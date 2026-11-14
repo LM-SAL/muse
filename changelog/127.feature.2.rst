@@ -1,0 +1,1 @@
+Added the free-free, free-bound and two-photon continuum from ChiantiPy or fiasco (``create_chianti_continuum``, ``create_fiasco_continuum``), and ``create_continuum_response``, which folds it through an effective area onto wavelength bins.
