@@ -1,3 +1,4 @@
+from muse.instrument.continuum import bin_continuum, create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.linelist import (
     apply_line_boosts,
     create_chianti_line_list,
@@ -18,7 +19,10 @@ from muse.instrument.spectral import create_log_wavelength_edges, create_spectra
 __all__ = [
     "align_response_and_vdem",
     "apply_line_boosts",
+    "bin_continuum",
+    "create_chianti_continuum",
     "create_chianti_line_list",
+    "create_fiasco_continuum",
     "create_fiasco_line_list",
     "create_log_wavelength_edges",
     "create_spectral_response",
