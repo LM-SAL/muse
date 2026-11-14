@@ -437,6 +437,19 @@ def test_vdem_synthesis_rejects_mismatched_slit_dimensions(response, raster, cas
         vdem_synthesis(raster, response)
 
 
+def test_vdem_synthesis_images_each_slit_position_with_an_imager_response(response, raster, vdem) -> None:
+    # An imager response has no slit and no spectral axis, as map_response_to_ci_detector returns it.
+    imager = response.isel(slit=0, detector_x_pixel=0, drop=True)
+    imager = imager.assign_coords(detector_wavelength=imager.line_wavelength.rename("detector_wavelength"))
+
+    out = vdem_synthesis(raster, imager)
+
+    # The same image as synthesizing the field in x and y and putting it on the raster afterwards.
+    expected = reshape_x_to_slit_step(vdem_synthesis(vdem, imager))
+    assert set(out.flux.dims) == {"step", "slit", "y", "line"}
+    xr.testing.assert_allclose(out.flux.transpose(*expected.flux.dims), expected.flux)
+
+
 def test_vdem_synthesis_requires_present_arrays(response, raster) -> None:
     bad_response = response.drop_vars("detector_response")
     with pytest.raises(ValueError, match=r"response\.detector_response is missing"):

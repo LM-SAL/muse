@@ -24,6 +24,8 @@ _GENERIC_RESPONSE_NAMES = {
     "spectral_response": "detector_response",
     "wavelength_grid": "detector_wavelength",
 }
+# A response with neither of these as a dimension has no spectral axis: it is an imager's.
+_SPECTRAL_DIMS = {"detector_x_pixel", "detector_wavelength"}
 
 
 def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray:
@@ -59,7 +61,9 @@ def _validate_inputs(
     if "slit" in response.dims and "slit" not in raster.dims and response.slit.size > 1:
         msg = "response has a slit dimension and number of slits are greater than one, but raster does not"
         raise ValueError(msg)
-    if "slit" not in response.dims and "slit" in raster.dims:
+    # An imager response, one without a spectral axis, is the exception: it images every slit
+    # position on its own, so the slit axis is the raster's alone and stays in the output.
+    if "slit" not in response.dims and "slit" in raster.dims and _SPECTRAL_DIMS & set(response.dims):
         msg = "raster has a slit dimension but response does not"
         raise ValueError(msg)
     # A legacy 'vdop' axis is not in sum_over, so einsum would keep it in the output and
@@ -129,10 +133,15 @@ def vdem_synthesis(
         the detector-style names. Note that such a response is still per
         Å per steradian: no detector-pixel integration or photon
         conversion has been applied.
+        An imager response, one without a slit dimension and without a
+        spectral axis such as `muse.instrument.map_response_to_ci_detector`
+        returns, is accepted with a raster that has slits: each slit position
+        is imaged on its own and ``slit`` stays in the output.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
-        ``"slit"`` is dropped from this when neither input has a slit
-        dimension, so the MUSE default works for single-slit responses.
+        ``"slit"`` is dropped from this when the response has no slit
+        dimension, so the MUSE default works for single-slit and imager
+        responses.
     device : `str`, `torch.device` or `None`, optional
         Torch device of the product (requires ``backend="torch"``): ``"cpu"``,
         ``"cuda:0"``, ``"mps"``, or ``"auto"`` for the first of CUDA, MPS and the
@@ -172,8 +181,8 @@ def vdem_synthesis(
     if renames:
         logger.info(f"Accepting wavelength-space response names, renaming: {renames}")
         response = response.rename(renames)
-    if "slit" in sum_over and "slit" not in response.dims and "slit" not in raster.dims:
-        logger.info("Neither input has a slit dimension, dropping 'slit' from sum_over")
+    if "slit" in sum_over and "slit" not in response.dims:
+        logger.info("The response has no slit dimension, dropping 'slit' from sum_over")
         sum_over = tuple(dim for dim in sum_over if dim != "slit")
     raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
     raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
