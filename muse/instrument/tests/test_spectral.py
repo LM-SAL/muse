@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+import astropy.constants as const
 import astropy.units as u
 
 import muse.instrument.response.spectral as spectral_module
@@ -125,6 +126,20 @@ def test_gaussian_window_matches_full_grid():
         accumulator=np.ones_like(expected),
     )
     np.testing.assert_allclose(response, expected + 1, rtol=1e-15, atol=0)
+
+
+def test_thermal_width_takes_the_element_mass_in_atomic_mass_units():
+    # Fe at 1 MK: sigma = wavelength * sqrt(k T / (55.845 u)) / c. The proton mass in place of u makes
+    # the line 0.36 % too narrow.
+    line_list = synthetic_line_list(1, wavelength=[171.0], logT=[6.0])
+    response = create_spectral_response(
+        line_list, DEFAULT_WAVELENGTH_GRID, main_lines=line_list.full_name.values.tolist(), instrumental_width=0 * u.AA
+    )
+    profile = response.spectral_response.squeeze().values
+    offset = response.wavelength_grid.values - 171.0
+    sigma = np.sqrt(np.sum(profile * offset**2) / np.sum(profile))
+    thermal_velocity = np.sqrt(const.k_B * 1e6 * u.K / (55.845 * const.u)).to_value(u.m / u.s)
+    np.testing.assert_allclose(sigma, 171.0 * thermal_velocity / const.c.value, rtol=1e-4)
 
 
 def test_peak_follows_doppler_shift():

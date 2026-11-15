@@ -218,14 +218,15 @@ def _create_wavelength_response(
     speed_of_light_kms = const.c.to_value(u.km / u.s)
     speed_of_light_ms = const.c.to_value(u.m / u.s)
     boltzmann = const.k_B.to_value(u.J / u.K)
-    proton_mass = const.m_p.to_value(u.kg)
+    # periodictable gives the mass of an element in atomic mass units, so the factor is u, not the proton mass.
+    atomic_mass_unit = const.u.to_value(u.kg)
 
     if doppler_velocity is not None:
         line_centers = line_list["wavelength"] * (1 + doppler_velocity / speed_of_light_kms)
     else:
         line_centers = line_list["wavelength"]
 
-    atomic_mass = _atomic_mass_from_atomic_number(line_list.atomic_number, pt.elements, proton_mass)
+    atomic_mass = _atomic_mass_from_atomic_number(line_list.atomic_number, pt.elements, atomic_mass_unit)
     thermal_velocity = np.sqrt(boltzmann * 10**line_list.logT / atomic_mass)
     thermal_line_width = line_centers * thermal_velocity / speed_of_light_ms
     doppler_widths_squared = thermal_line_width**2 + instrumental_width**2
@@ -595,14 +596,14 @@ def _validate_main_lines(line_names: tuple[str, ...], main_lines: Sequence[str])
     return main_lines
 
 
-def _atomic_mass_from_atomic_number(atomic_number: xr.DataArray, elements, proton_mass: float) -> xr.DataArray:
+def _atomic_mass_from_atomic_number(atomic_number: xr.DataArray, elements, atomic_mass_unit: float) -> xr.DataArray:
     max_atomic_number = max(element.number for element in elements)
     if np.any(np.asarray(atomic_number) > max_atomic_number):
         msg = f"line_list.atomic_number must be between 1 and {max_atomic_number}"
         raise ValueError(msg)
     atomic_mass = atomic_number.copy()
     masses = np.array([elements[int(value)].mass for value in atomic_mass.data.reshape(-1)])
-    atomic_mass.data = masses.reshape(atomic_mass.shape) * proton_mass
+    atomic_mass.data = masses.reshape(atomic_mass.shape) * atomic_mass_unit
     return atomic_mass
 
 
