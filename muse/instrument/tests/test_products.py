@@ -1,0 +1,957 @@
+"""
+Tests of the response generators on synthetic inputs: a line list file and a flat
+continuum stand in for CHIANTI, and a sloped effective area for the instrument.
+
+Only the test marked ``chianti`` reads the database.
+"""
+
+import shutil
+
+import numpy as np
+import pytest
+import xarray as xr
+
+import astropy.constants as const
+import astropy.units as u
+
+from muse.instrument import (
+    create_effective_area,
+    create_log_wavelength_edges,
+    generate_ci_responses,
+    generate_sg_continuum_responses,
+    generate_sg_responses,
+    load_and_concat_responses,
+    read_response,
+    read_spectral_response,
+    save_effective_area,
+)
+from muse.instrument.atomic import cache
+from muse.instrument.response import products as products_module
+from muse.instrument.response.io import _open_response_file
+from muse.tests.helpers import synthetic_continuum, synthetic_line_list
+from muse.variables import DEFAULTS_MUSE
+
+pytest.importorskip("numexpr")
+pytest.importorskip("periodictable")
+
+CHANNEL = 171
+MAIN_LINE = "Fe IX 171.073"
+LINE_NAMES = ["Fe X 155.000", "Fe VIII 165.000", MAIN_LINE, "Fe X 174.500", "Fe XI 180.000", "Fe XII 188.000"]
+ABUNDANCE = "sun_coronal_2021_chianti"
+OTHER_ABUNDANCE = "sun_photospheric_2021_asplund"
+TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
+PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+DOPPLER_VELOCITY = np.array([-500.0, 0.0, 500.0]) * u.km / u.s
+# 171 is no channel of the MUSE imager: the test area describes its detector, as an AIA file does.
+DETECTOR = {"gain": "10.0 electron / DN", "pair_energy": "3.65 eV / electron"}
+GEOMETRY = "nslits35_sep390"
+# What every product name of the default test call carries after its prefix.
+TAIL = f"{ABUNDANCE}_testea_pressure_3e+15"
+
+
+def _area_file(directory, *, unit=u.cm**2, channel=CHANNEL, wavelength=(150.0, 192.0), name=None, attrs=DETECTOR):
+    """
+    An effective area with a slope, by default wider than the whole 171 waveband (153.5
+    to 188.5 Angstrom).
+    """
+    wavelengths = np.linspace(*wavelength, 100)
+    effective_area = create_effective_area(
+        10.0 * (1 + 0.01 * (wavelengths - 150.0)) * unit, wavelengths * u.AA, channel=channel * u.AA, attrs=attrs
+    )
+    path = directory / (name or f"effective_area_channel_{channel}_TEST.zarr")
+    save_effective_area(effective_area, path)
+    return path
+
+
+def _line_list(plasma="pressure"):
+    """
+    Six lines across the waveband on one pressure (or two densities), each fainter than
+    the one before; the main line is the third.
+    """
+    line_list = synthetic_line_list(
+        6, wavelength=[155.0, 165.0, 171.073, 174.5, 180.0, 188.0], logT=np.array([5.5, 6.0, 6.5])
+    )
+    line_list = line_list.assign(
+        full_name=("trans_index", LINE_NAMES),
+        ion_name=("trans_index", ["fe_10", "fe_8", "fe_9", "fe_10", "fe_11", "fe_12"]),
+        lower_level_index=("trans_index", [1] * 6),
+        upper_level_index=("trans_index", [2, 3, 13, 4, 5, 6]),
+    ).assign_attrs(fiasco="0.0.test", Chianti="11.0.2")
+    if plasma == "pressure":
+        line_list["gofnt"] = line_list.gofnt.expand_dims(pressure=[3e15]).transpose("pressure", "logT", "trans_index")
+        line_list.pressure.attrs["units"] = "K / cm3"  # as the line-list builders label it
+    else:
+        line_list["gofnt"] = line_list.gofnt.expand_dims(logD=[9.0, 10.0]).transpose("logT", "logD", "trans_index")
+    return line_list
+
+
+def _line_list_file(directory, *, plasma="pressure"):
+    path = directory / f"line_list_{plasma}.nc"
+    _line_list(plasma).to_netcdf(path)
+    return path
+
+
+@pytest.fixture(scope="module")
+def inputs(tmp_path_factory):
+    directory = tmp_path_factory.mktemp("inputs")
+    return {
+        "area": _area_file(directory),
+        "line_list": _line_list_file(directory),
+        "density_line_list": _line_list_file(directory, plasma="density"),
+    }
+
+
+@pytest.fixture
+def _synthetic_continuum(monkeypatch):
+    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+
+
+def _options(inputs, output_directory, **overrides):
+    return {
+        "output_directory": output_directory,
+        "author": "TEST",
+        "effective_area_label": "testea",
+        "effective_area_files": [inputs["area"]],
+        "abundances": [ABUNDANCE],
+        "pressure": PRESSURE,
+        "temperature": TEMPERATURE,
+        "doppler_velocity": DOPPLER_VELOCITY,
+        "line_list_file": inputs["line_list"],
+        **overrides,
+    }
+
+
+def _sg(inputs, output_directory, **overrides):
+    options = {"main_lines_by_channel": {CHANNEL: [MAIN_LINE]}, "maximum_contaminants": 3, **overrides}
+    return generate_sg_responses(**_options(inputs, output_directory, **options))
+
+
+def _ci(inputs, output_directory, **overrides):
+    return generate_ci_responses(**_options(inputs, output_directory, **{"maximum_lines": 3, **overrides}))
+
+
+def _sg_continuum(inputs, output_directory, **overrides):
+    options = _options(inputs, output_directory, **{"wavelength_step": 0.1 * u.AA, **overrides})
+    del options["line_list_file"]
+    return generate_sg_continuum_responses(**options)
+
+
+@pytest.fixture(scope="module")
+def sg_products(inputs, tmp_path_factory):
+    return _sg(inputs, tmp_path_factory.mktemp("sg"))
+
+
+@pytest.fixture(scope="module")
+def ci_products(inputs, tmp_path_factory):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        return _ci(inputs, tmp_path_factory.mktemp("ci"))
+
+
+def _only(products, pattern):
+    matches = [path for path in products if pattern in path.name]
+    assert len(matches) == 1, f"expected one product matching {pattern!r}, got {[path.name for path in matches]}"
+    return matches[0]
+
+
+def _prefixes(products):
+    """
+    The names up to the date, which is today's.
+    """
+    return [path.name.rsplit("_", 1)[0] for path in products]
+
+
+def _main_response(products):
+    return read_response(_only(products, f"FeIX171.073_{GEOMETRY}")).detector_response
+
+
+def test_every_sg_product_is_written_once(sg_products):
+    assert _prefixes(sg_products) == [
+        f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST",
+        f"respfunc_171_FeIX171.073_{GEOMETRY}_{TAIL}_TEST",
+        f"respfunc_171_contaminants_waveband_{TAIL}_TEST",
+        f"respfunc_171_contaminants_{GEOMETRY}_{TAIL}_TEST",
+    ]
+    # each product is one file
+    assert all(path.is_file() and path.name.endswith(".zarr.zip") for path in sg_products)
+    # nothing else in the directory: no staging file is left
+    assert sorted(path.name for path in sg_products[0].parent.iterdir()) == sorted(path.name for path in sg_products)
+
+
+def test_every_ci_product_is_written_once(ci_products):
+    assert _prefixes(ci_products) == [
+        f"respfunc_ci_171_waveband_{TAIL}_TEST",
+        f"respfunc_ci_171_{TAIL}_TEST",
+        f"respfunc_ci_171_waveband_{TAIL}_DN_TEST",
+        f"respfunc_ci_171_{TAIL}_DN_TEST",
+    ]
+    assert all(path.is_file() for path in ci_products)
+
+
+def test_main_line_response(sg_products):
+    response = read_response(_only(sg_products, f"FeIX171.073_{GEOMETRY}"))
+
+    assert response.detector_response.dims == (
+        "line",
+        "doppler_velocity",
+        "logT",
+        "pressure",
+        "slit",
+        "detector_x_pixel",
+    )
+    assert response.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
+    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.value
+    assert response.sizes["pressure"] == 1
+    assert response.sizes["doppler_velocity"] == 3
+    assert list(response.line.values) == [MAIN_LINE]
+    assert (response.channel == CHANNEL).all()
+    np.testing.assert_allclose(response.line_wavelength.values, [171.073])
+    assert response.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
+    assert response.pressure.attrs["units"] == "K / cm3"
+    assert "effective_area" in response.data_vars
+    assert np.isfinite(response.detector_response.values).all()
+    assert float(response.detector_response.max()) > 0
+
+
+def test_products_record_what_made_them(sg_products, ci_products):
+    response = read_response(_only(sg_products, f"FeIX171.073_{GEOMETRY}"))
+
+    assert response.attrs["author"] == "TEST"
+    assert response.attrs["effective_area_label"] == "testea"
+    assert response.attrs["abundance"] == ABUNDANCE
+    assert response.attrs["effective_area_file"] == "effective_area_channel_171_TEST.zarr"
+    assert response.attrs["maximum_contaminants"] == 3
+    # Made from a given line list: its file is recorded, by name alone. Neither a backend nor
+    # a minimum abundance is claimed for it, as neither was applied in this call.
+    assert response.attrs["line_list_file"] == "line_list_pressure.nc"
+    assert "line_list_backend" not in response.attrs
+    assert "minimum_abundance" not in response.attrs
+    # the database and the software of the line list, and the whole chain of calls up to this read
+    assert (response.attrs["Chianti"], response.attrs["fiasco"]) == ("11.0.2", "0.0.test")
+    assert [entry.split("(")[0] for entry in response.attrs["HISTORY"]] == [
+        "create_spectral_response",
+        "transform_response_units",
+        "map_response_to_sg_detector",
+        "generate_sg_responses",
+        "read_response",
+    ]
+    assert "maximum_contaminants=3" in response.attrs["HISTORY"][-2]
+
+    cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
+    # The continuum of an imager cube: that it is there, what made it and on which minimum
+    # abundance, and its own calls where it joined the lines, before the units were converted.
+    assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
+    assert cube.attrs["minimum_abundance"] == 1e-21
+    assert cube.attrs["continuum_fiasco"] == "0.0.test"
+    assert [entry.split("(")[0] for entry in cube.attrs["HISTORY"]] == [
+        "create_spectral_response",
+        "create_continuum_response",
+        "transform_response_units",
+        "generate_ci_responses",
+    ]
+
+
+def test_contaminant_products(sg_products):
+    detector_response = read_response(_only(sg_products, f"contaminants_{GEOMETRY}"))
+    cube = read_spectral_response(_only(sg_products, "contaminants_waveband"))
+
+    assert list(detector_response.line.values) == ["171 contaminants"]
+    assert detector_response.attrs["number_of_lines"] == 3
+    # referenced to the channel's main line on the detector, to the brightest contaminant in the cube
+    np.testing.assert_allclose(detector_response.line_wavelength.values, [171.073])
+    assert cube.line_wavelength.values[0] in (174.5, 165.0, 180.0, 155.0, 188.0)
+    assert float(detector_response.detector_response.max()) > 0
+
+
+def test_waveband_cube_is_on_the_sg_grid(sg_products):
+    cube = read_spectral_response(_only(sg_products, "FeIX171.073_waveband"))
+
+    assert cube.spectral_response.dims == ("line", "doppler_velocity", "logT", "pressure", "wavelength_bin")
+    assert cube.spectral_response.attrs["units"] == "1e-27 cm5 ph / (Angstrom s)"
+    assert cube.sizes["pressure"] == 1
+    np.testing.assert_allclose(np.diff(cube.wavelength_grid.values), 0.0049, rtol=1e-6)
+    np.testing.assert_allclose(cube.wavelength_grid.values[[0, -1]], [153.5, 188.5], atol=0.005)
+    assert "effective_area" in cube.data_vars
+
+
+def test_the_sg_grid_has_one_length_whatever_the_round_off():
+    """
+    Stepped up to the upper end, the grids of 108 and 171 at 0.01 Angstrom differ by one
+    sample, though both wavebands are 35 Angstrom wide.
+    """
+    step = 0.01 * u.AA
+    grids = [products_module._sg_waveband_grid(channel, step) for channel in (108, 171)]
+    assert [grid.size for grid in grids] == [3501, 3501]
+    np.testing.assert_allclose(grids[0][[0, -1]].value, [90.5, 125.5])
+    # the default step does not divide the waveband: the last sample is the nearest to its end
+    assert abs(products_module._sg_waveband_grid(171)[-1].value - 188.5) < 0.0049 / 2
+
+
+def test_the_line_products_of_a_channel_load_together(sg_products):
+    main = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
+    contaminants = _only(sg_products, f"contaminants_{GEOMETRY}")
+
+    response = load_and_concat_responses(
+        main.parent,
+        [main.name, contaminants.name],
+        channels=[CHANNEL, CHANNEL],
+        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+    )
+
+    assert response.sizes["line"] == 2
+    assert (response.channel == CHANNEL).all()
+    assert (response.detector_response.max(dim=[d for d in response.detector_response.dims if d != "line"]) > 0).all()
+
+
+def test_cube_holds_the_lines_and_the_continuum_on_log_bins(ci_products):
+    cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
+
+    edges = create_log_wavelength_edges([150, 192] * u.AA, 0.01)
+    assert cube.spectral_response.dims == ("line", "doppler_velocity", "logT", "pressure", "wavelength_bin")
+    assert cube.sizes["wavelength_bin"] == edges.size - 1
+    np.testing.assert_allclose(cube.wavelength_bounds.isel(bound=0).values, edges[:-1].value)
+    assert list(cube.line.values) == [
+        "171 lines",
+        "171 continuum free-free",
+        "171 continuum free-bound",
+        "171 continuum two-photon",
+    ]
+    assert cube.spectral_response.attrs["units"] == "1e-27 cm5 ph / (Angstrom s)"
+    assert cube.spectral_response.attrs["bin_method"] == "average"
+    assert np.isfinite(cube.spectral_response.values).all()
+    assert (cube.spectral_response.max(dim=[d for d in cube.spectral_response.dims if d != "line"]) > 0).all()
+
+
+def test_imager_response_is_the_cube_sum(ci_products):
+    cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
+    summed = read_response(_only(ci_products, f"ci_171_{TAIL}_TEST"))
+
+    width = cube.wavelength_bounds.isel(bound=1) - cube.wavelength_bounds.isel(bound=0)
+    expected = (cube.spectral_response * width).sum(["wavelength_bin", "line"])
+    assert list(summed.line.values) == ["171 lines + continuum"]
+    assert summed.detector_response.dims == ("line", "doppler_velocity", "logT", "pressure")
+    assert summed.attrs["number_of_lines"] == 3
+    assert summed.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
+    assert (summed.channel == CHANNEL).all()
+    np.testing.assert_allclose(
+        summed.detector_response.isel(line=0).transpose(*expected.dims).values, expected.values, rtol=1e-12
+    )
+
+
+def test_dn_product_follows_the_photon_energy(ci_products):
+    photons = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
+    dn = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_DN_TEST"))
+
+    assert dn.spectral_response.attrs["units"] == "1e-27 cm5 DN / (Angstrom s)"
+    photon_energy = (const.h * const.c / (photons.wavelength_grid.values * u.AA)).to(u.eV)
+    expected = (photon_energy / (3.65 * u.eV)).value / 10
+    ratio = (dn.spectral_response / photons.spectral_response).where(photons.spectral_response > 0)
+    for i_line in range(ratio.sizes["line"]):
+        values = ratio.isel(line=i_line).values
+        mask = np.isfinite(values)
+        np.testing.assert_allclose(values[mask], np.broadcast_to(expected, values.shape)[mask], rtol=1e-12)
+
+
+def test_an_area_in_dn_gives_dn_products_only(inputs, tmp_path):
+    area = _area_file(tmp_path, unit=u.cm**2 * u.DN / u.ph)
+    with pytest.raises(ValueError, match="only DN products exist for it"):
+        _ci(inputs, tmp_path / "ph", effective_area_files=[area], units=["ph"], include_continuum=False)
+
+    written = _ci(inputs, tmp_path / "dn", effective_area_files=[area], include_continuum=False)
+
+    assert _prefixes(written) == [f"respfunc_ci_171_waveband_{TAIL}_DN_TEST", f"respfunc_ci_171_{TAIL}_DN_TEST"]
+    summed = read_response(written[1])
+    assert summed.detector_response.attrs["units"] == "1e-27 cm5 DN / s"
+    assert list(summed.line.values) == ["171 lines"]
+    # The stored area keeps the unit it came with, the gain included.
+    assert summed.effective_area.attrs["units"] == "cm2 DN / ph"
+    # without a continuum none is claimed, and so no minimum abundance for the given line list
+    assert summed.attrs["include_continuum"] == 0
+    assert "continuum_backend" not in summed.attrs
+    assert "minimum_abundance" not in summed.attrs
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_each_imager_file_is_converted_with_its_own_detector(inputs, ci_products, tmp_path):
+    twice_the_gain = {"gain": "20.0 electron / DN", "pair_energy": "3.65 eV / electron"}
+    twice_as_wide = {**DETECTOR, "pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_CI)}
+    reference = read_response(_only(ci_products, f"respfunc_ci_171_{TAIL}_DN_TEST")).detector_response
+
+    # one file, given as it often is: a single path as a string
+    gain = _ci(
+        inputs,
+        tmp_path / "gain",
+        effective_area_files=str(_area_file(tmp_path, name="gain.zarr", attrs=twice_the_gain)),
+        units="DN",
+    )
+    width = _ci(
+        inputs,
+        tmp_path / "width",
+        effective_area_files=[_area_file(tmp_path, name="width.zarr", attrs=twice_as_wide)],
+        units="DN",
+    )
+
+    # twice the electrons per DN halve the DN; pixels twice as wide see twice the solid angle
+    xr.testing.assert_allclose(read_response(gain[1]).detector_response, reference / 2)
+    xr.testing.assert_allclose(read_response(width[1]).detector_response, 2 * reference)
+
+
+def test_an_sg_file_is_converted_with_its_own_detector(inputs, sg_products, tmp_path):
+    """
+    The detector attributes of an SG file count as those of an imager file do: here
+    pixels twice as wide, which see twice the solid angle.
+    """
+    width = 2 * DEFAULTS_MUSE.dx_pixel_SG
+    area = _area_file(tmp_path, attrs={"pixel_width": str(width)})
+
+    written = _sg(inputs, tmp_path / "run", effective_area_files=[area], maximum_contaminants=0)
+
+    xr.testing.assert_allclose(_main_response(written), 2 * _main_response(sg_products))
+
+
+def test_the_main_line_products_do_not_depend_on_the_contaminants(inputs, sg_products, tmp_path):
+    written = _sg(inputs, tmp_path, maximum_contaminants=0)
+
+    assert _prefixes(written) == _prefixes(sg_products)[:2]
+    xr.testing.assert_allclose(_main_response(written), _main_response(sg_products), rtol=1e-12)
+
+
+def test_settings_keyed_by_a_wavelength_count_as_those_keyed_by_a_number(inputs, sg_products, tmp_path):
+    """
+    A key given as a wavelength, such as ``17.1 * u.nm``, selects the channel as the
+    number 171 does; a key that is no SG channel raises.
+    """
+    line = "Fe X 174.500"
+    by_number = _sg(inputs, tmp_path / "number", main_lines_by_channel={171: [line]}, maximum_contaminants=0)
+    # one line alone may be given as its name
+    by_wavelength = _sg(
+        inputs, tmp_path / "wavelength", main_lines_by_channel={17.1 * u.nm: line}, maximum_contaminants=0
+    )
+
+    assert _prefixes(by_wavelength) == _prefixes(by_number)
+    assert "FeX174.500" in by_number[0].name
+    wider = _sg(inputs, tmp_path / "wider", instrumental_width_by_channel={171 * u.AA: 0.1 * u.AA})
+    assert float(_main_response(wider).max()) < float(_main_response(sg_products).max())
+
+
+def test_a_pressure_is_taken_by_value_from_a_longer_line_list(inputs, sg_products, tmp_path):
+    """
+    A call for one pressure reads a line list made for several and takes its own by
+    value, not by position.
+    """
+    line_list = xr.load_dataset(inputs["line_list"])
+    # Another pressure first and ten times brighter: taking the first would show.
+    gofnt = xr.concat(
+        [10 * line_list.gofnt.assign_coords(pressure=[3e14]), line_list.gofnt],
+        dim="pressure",
+        join="exact",
+        combine_attrs="override",
+    )
+    path = tmp_path / "two_pressures.nc"
+    line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt).to_netcdf(path)
+    options = {"maximum_contaminants": 0, "line_list_file": path}
+
+    written = _sg(inputs, tmp_path / "run", **options)
+
+    xr.testing.assert_allclose(_main_response(written), _main_response(sg_products))
+    missing = xr.DataArray([3e16] * u.K / u.cm**3, dims="pressure")
+    with pytest.raises(ValueError, match=r"two_pressures\.nc holds the pressure values .* not all of the requested"):
+        _sg(inputs, tmp_path / "missing", pressure=missing, **options)
+    assert not (tmp_path / "missing").exists()
+
+
+def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
+    """
+    On other temperatures it would be joined with the continuum on the union of both
+    temperature axes and leave the cube part NaN; of another abundance it would give
+    products that carry the wrong name.
+    """
+    other = xr.DataArray(10 ** np.array([5.5, 6.0, 6.6]) * u.K, dims="logT")
+    with pytest.raises(ValueError, match=r"line_list_pressure\.nc is on other temperatures than requested"):
+        _ci(inputs, tmp_path / "run", temperature=other)
+
+    photospheric = tmp_path / "photospheric.nc"
+    xr.load_dataset(inputs["line_list"]).assign_attrs(abundance=OTHER_ABUNDANCE).to_netcdf(photospheric)
+    with pytest.raises(ValueError, match=rf"photospheric\.nc is of the abundance {OTHER_ABUNDANCE}, not {ABUNDANCE}"):
+        _sg(inputs, tmp_path / "run", line_list_file=photospheric)
+
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_a_pressure_one_bit_off_fills_no_cube_with_nan(inputs, tmp_path):
+    """
+    3e21 K / m3 is 3e15 K / cm3 to one bit: the lines and the continuum must still lie
+    on one pressure.
+    """
+    in_si = xr.DataArray([3e21] * u.K / u.m**3, dims="pressure")
+    assert in_si.data.to_value(u.K / u.cm**3).tolist() != [3e15]
+
+    written = _ci(inputs, tmp_path, pressure=in_si, units=["ph"])
+
+    cube = read_spectral_response(written[0])
+    assert cube.sizes["pressure"] == 1
+    assert cube.sizes["line"] == 4
+    assert np.isfinite(cube.spectral_response.values).all()
+
+
+def test_a_pressure_axis_of_another_name_works(inputs, sg_products, tmp_path):
+    written = _sg(inputs, tmp_path, pressure=PRESSURE.rename(pressure="p"), maximum_contaminants=0)
+
+    assert read_response(written[1]).sizes["pressure"] == 1
+    xr.testing.assert_allclose(_main_response(written), _main_response(sg_products))
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_a_density_grid_goes_into_one_product_whole(inputs, tmp_path):
+    options = {"pressure": None, "density": xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")}
+
+    written = [
+        *_sg(inputs, tmp_path / "sg", line_list_file=inputs["density_line_list"], **options),
+        *_ci(inputs, tmp_path / "ci", line_list_file=inputs["density_line_list"], **options),
+        *_sg_continuum(inputs, tmp_path / "continuum", **options),
+    ]
+
+    assert len(written) == 9
+    assert all("_density_TEST_" in path.name or "_density_DN_TEST_" in path.name for path in written)
+    cube = read_spectral_response(_only(written, f"ci_171_waveband_{ABUNDANCE}_testea_density_TEST"))
+    assert cube.sizes["logD"] == 2
+    # one order of the dimensions for the line and the continuum products alike
+    order = ("line", "doppler_velocity", "logT", "logD", "slit", "detector_x_pixel")
+    assert _main_response(written).dims == order
+    assert read_response(_only(written, "continuum_fiasco")).detector_response.dims == order
+
+
+def test_boosts_and_selection_reach_the_products(inputs, sg_products, tmp_path):
+    written = _sg(
+        inputs,
+        tmp_path,
+        maximum_contaminants=0,
+        transition_boosts={("fe_9", 1, 13): 2.0},
+        transition_selection=[("fe_9", 1, 13), ("fe_10", 1, 4)],
+    )
+
+    response = read_response(written[1])
+    assert response.attrs["transition_boosts"] == '{"fe_9 1-13": 2.0}'
+    assert response.attrs["transition_selection"] == '["fe_9 1-13", "fe_10 1-4"]'
+    xr.testing.assert_allclose(response.detector_response, 2 * _main_response(sg_products))
+
+
+@pytest.fixture
+def line_list_calls(inputs, monkeypatch):
+    """
+    A line-list backend that gives the test line list and records the wavelength range
+    of each call.
+    """
+    calls = []
+
+    def backend(_temperature, **kwargs):
+        calls.append(kwargs["wavelength_range"].value.tolist())
+        return xr.load_dataset(inputs["line_list"])
+
+    monkeypatch.setitem(cache._LINE_LIST_BACKENDS, "fiasco", backend)
+    return calls
+
+
+def test_calls_for_single_files_share_the_line_list_of_them_all(inputs, tmp_path, line_list_calls):
+    options = {
+        "maximum_contaminants": 0,
+        "line_list_file": None,
+        "cache_directory": tmp_path / "cache",
+        "line_list_wavelength_range": [100, 300] * u.AA,
+    }
+
+    first = _sg(inputs, tmp_path / "first", **options)
+    _sg(inputs, tmp_path / "second", **options)
+
+    assert line_list_calls == [[100.0, 300.0]]
+    cached = tmp_path / "cache" / f"line_list_fiasco_100-300A_{ABUNDANCE}.zarr.zip"
+    assert cached.is_file()
+    # a cache file is a line list like any other, and can be given as one
+    given = _sg(inputs, tmp_path / "given", maximum_contaminants=0, line_list_file=cached)
+    xr.testing.assert_allclose(_main_response(given), _main_response(first))
+    # made by a backend: that is recorded with its minimum abundance, and no file
+    attrs = read_response(first[1]).attrs
+    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", 1e-21)
+    assert "line_list_file" not in attrs
+    for wrong_range, match in (
+        ([160, 170] * u.AA, "does not cover what the products need"),
+        ([100, 200, 300] * u.AA, "must hold a lower and an upper wavelength"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            _sg(inputs, tmp_path / "third", **{**options, "line_list_wavelength_range": wrong_range})
+    assert not (tmp_path / "third").exists()
+
+
+def test_the_default_line_list_spans_what_the_products_use(inputs, tmp_path, line_list_calls):
+    """
+    The waveband for the SG, which is far less than a file may span; the whole area for
+    the imager, which sums over it.
+    """
+    options = {"line_list_file": None, "cache_directory": tmp_path / "cache"}
+
+    _sg(inputs, tmp_path / "sg", maximum_contaminants=0, **options)
+    _ci(inputs, tmp_path / "ci", include_continuum=False, **options)
+
+    assert line_list_calls == [[153.5, 188.5], [150.0, 192.0]]
+
+
+def test_a_missing_cache_can_be_an_error(inputs, tmp_path, line_list_calls):
+    with pytest.raises(FileNotFoundError, match="create_if_missing is False"):
+        _sg(inputs, tmp_path, line_list_file=None, create_if_missing=False)
+    assert not line_list_calls
+
+
+def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inputs, tmp_path):
+    first = _sg(inputs, tmp_path, maximum_contaminants=0)
+    with pytest.raises(ValueError, match="is already there; pass skip_existing=True"):
+        _sg(inputs, tmp_path, maximum_contaminants=0)
+    # As a call that stopped halfway before midnight UTC leaves it: one product is missing, the
+    # other carries an earlier date.
+    first[-1].unlink()
+    today = first[0].name.rsplit("_", 1)[-1].removesuffix(".zarr.zip")
+    earlier = first[0].rename(first[0].with_name(first[0].name.replace(today, "2000-01-01")))
+    # A file that only starts like a product is none: the date is matched as a date.
+    shutil.copy(earlier, earlier.with_name(earlier.name.replace("2000-01-01", "copy")))
+    # Under any date a product is in the way: a second copy beside it would be picked up with it.
+    with pytest.raises(ValueError, match=r"2000-01-01\.zarr\.zip is already there"):
+        _sg(inputs, tmp_path, maximum_contaminants=0)
+
+    again = _sg(inputs, tmp_path, maximum_contaminants=0, skip_existing=True)
+
+    # It is kept as it is, and not written again under today's date.
+    assert again == [earlier, first[-1]]
+    assert first[-1].exists()
+    assert not first[0].exists()
+
+
+def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
+    """
+    The names are fixed before any work, so a finished call is recognized without
+    reading the line list or building a response.
+    """
+    first = _sg(inputs, tmp_path)
+
+    def not_called(*_args, **_kwargs):
+        msg = "work was done for products that exist"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(xr, "load_dataset", not_called)
+    monkeypatch.setattr(products_module, "create_spectral_response", not_called)
+
+    assert _sg(inputs, tmp_path, skip_existing=True) == first
+
+
+def test_a_failed_write_leaves_no_product_behind(inputs, tmp_path, monkeypatch):
+    def half_written(dataset, path):
+        dataset.to_zarr(path, consolidated=False)
+        msg = "disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr(products_module, "save_response", half_written)
+
+    with pytest.raises(OSError, match="disk full"):
+        _sg(inputs, tmp_path, maximum_contaminants=0)
+
+    # the cube before it is whole; of the failed detector response neither a file nor a staging store
+    assert _prefixes(tmp_path.iterdir()) == [f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST"]
+
+
+def test_close_pressures_get_their_own_products(inputs, tmp_path):
+    """
+    3.0e15 and 3.4e15 K / cm3 are named pressure_3e+15 and pressure_3.4e+15: a name
+    rounded to one digit would give both the same product.
+    """
+    line_list = xr.load_dataset(inputs["line_list"])
+    gofnt = xr.concat(
+        [line_list.gofnt, 2 * line_list.gofnt.assign_coords(pressure=[3.4e15])],
+        dim="pressure",
+        join="exact",
+        combine_attrs="override",
+    )
+    path = tmp_path / "close_pressures.nc"
+    line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt).to_netcdf(path)
+    pressure = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+
+    written = _sg(inputs, tmp_path / "run", pressure=pressure, line_list_file=path, maximum_contaminants=0)
+
+    assert [name.split("_testea_")[1] for name in _prefixes(written)] == [
+        "pressure_3e+15_TEST",
+        "pressure_3e+15_TEST",
+        "pressure_3.4e+15_TEST",
+        "pressure_3.4e+15_TEST",
+    ]
+    xr.testing.assert_allclose(
+        read_response(written[3]).detector_response.squeeze("pressure", drop=True),
+        2 * read_response(written[1]).detector_response.squeeze("pressure", drop=True),
+    )
+
+
+SCALE_OF_ABUNDANCE = {ABUNDANCE: 1.0, OTHER_ABUNDANCE: 5.0}
+
+
+@pytest.fixture
+def _backends_that_scale(monkeypatch):
+    """
+    A line list and a continuum that grow with the abundance, by the factors above, and
+    with the pressure, in proportion.
+    """
+
+    def line_list_backend(_temperature, *, pressure, abundance, **_kwargs):
+        line_list = _line_list()
+        values = pressure.data.to_value(u.K / u.cm**3)
+        scale = xr.DataArray(
+            SCALE_OF_ABUNDANCE[abundance] * values / 3e15, dims="pressure", coords={"pressure": values}
+        )
+        gofnt = (line_list.gofnt.isel(pressure=0, drop=True) * scale).transpose("pressure", "logT", "trans_index")
+        gofnt.pressure.attrs["units"] = "K / cm3"
+        return line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt.assign_attrs(line_list.gofnt.attrs))
+
+    def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
+        continuum = synthetic_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
+        scaled = (continuum.spectral_response * SCALE_OF_ABUNDANCE[abundance]).assign_attrs(
+            continuum.spectral_response.attrs
+        )
+        return continuum.assign(spectral_response=scaled)
+
+    monkeypatch.setitem(cache._LINE_LIST_BACKENDS, "fiasco", line_list_backend)
+    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", continuum_backend)
+
+
+@pytest.mark.usefixtures("_backends_that_scale")
+def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, tmp_path):
+    """
+    Every generator pairs a line list or a continuum with a name in a loop over abundances
+    and pressures: each product must hold the data of its own pair.
+    """
+    options = {
+        "abundances": list(SCALE_OF_ABUNDANCE),
+        "pressure": xr.DataArray([3e15, 6e15] * u.K / u.cm**3, dims="pressure"),
+        "cache_directory": tmp_path / "cache",
+    }
+    pairs = [(abundance, tag) for abundance in SCALE_OF_ABUNDANCE for tag in ("3e+15", "6e+15")]
+    expected = [SCALE_OF_ABUNDANCE[abundance] * (2.0 if tag == "6e+15" else 1.0) for abundance, tag in pairs]
+
+    def peaks(written, pattern, **selection):
+        """
+        The peak of each pair's product, over that of the first pair.
+        """
+        values = []
+        for abundance, tag in pairs:
+            product = _open_response_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
+            assert (product.attrs["abundance"], product.pressure.values.tolist()) == (abundance, [float(tag)])
+            variable = product["detector_response" if "detector_response" in product else "spectral_response"]
+            values.append(float(variable.sel(**selection).max()))
+        return np.array(values) / values[0]
+
+    sg = _sg(inputs, tmp_path / "sg", line_list_file=None, **options)
+    ci = _ci(inputs, tmp_path / "ci", line_list_file=None, units=["ph"], **options)
+    continuum = _sg_continuum(inputs, tmp_path / "continuum", **options)
+
+    assert (len(sg), len(ci), len(continuum)) == (16, 8, 4)
+    np.testing.assert_allclose(peaks(sg, f"FeIX171.073_{GEOMETRY}"), expected)
+    np.testing.assert_allclose(peaks(sg, f"contaminants_{GEOMETRY}"), expected)
+    # In an imager cube the lines and the two-photon continuum grow with both; the free-free
+    # continuum does not depend on the pressure.
+    np.testing.assert_allclose(peaks(ci, "ci_171_waveband", line="171 lines"), expected)
+    np.testing.assert_allclose(peaks(ci, "ci_171_waveband", line="171 continuum two-photon"), expected)
+    np.testing.assert_allclose(peaks(ci, "ci_171_waveband", line="171 continuum free-free"), [1, 1, 5, 5])
+    np.testing.assert_allclose(peaks(continuum, f"continuum_fiasco_{GEOMETRY}", line="two-photon"), expected)
+    np.testing.assert_allclose(peaks(continuum, f"continuum_fiasco_{GEOMETRY}", line="free-free"), [1, 1, 5, 5])
+
+
+def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_path, monkeypatch):
+    def not_called(*_args, **_kwargs):
+        msg = "work was done before the names were checked"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(xr, "load_dataset", not_called)
+    second = _area_file(tmp_path, name="another_171.zarr")
+    twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
+
+    for overrides in ({"effective_area_files": [inputs["area"], second]}, {"pressure": twice}):
+        with pytest.raises(ValueError, match=r"product name\(s\) would be used twice"):
+            _sg(inputs, tmp_path / "run", **overrides)
+    assert not (tmp_path / "run").exists()
+
+
+def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
+    written = _sg(inputs, tmp_path, abundances=[ABUNDANCE, ABUNDANCE])
+
+    assert _prefixes(written) == _prefixes(sg_products)
+
+
+@pytest.mark.parametrize(
+    ("generate", "overrides", "match"),
+    [
+        (_ci, {"units": ["electrons"]}, "units must be 'ph', 'DN' or both"),
+        (_ci, {"units": []}, "units must be 'ph', 'DN' or both"),
+        (_ci, {"maximum_lines": 0}, "maximum_lines must be at least 1"),
+        (_ci, {"maximum_lines": 2.5}, "maximum_lines must be an integer"),
+        (_ci, {"bin_fractional_width": 0.0}, "bin_fractional_width must be positive"),
+        (_ci, {"continuum_backend": "idl"}, "continuum_backend must be one of"),
+        (_sg, {"maximum_contaminants": 2.5}, "maximum_contaminants must be an integer"),
+        (_sg, {"line_list_backend": "idl"}, "line_list_backend must be one of"),
+        (_sg, {"density": xr.DataArray([1e9] * u.cm**-3, dims="density")}, "mutually exclusive"),
+        (_sg, {"abundances": [ABUNDANCE, OTHER_ABUNDANCE], "line_list_file": "a.nc"}, "one abundance"),
+        (_sg, {"abundances": []}, "at least one abundance"),
+        (_sg, {"effective_area_files": []}, "at least one effective-area file"),
+        # a name where a transition is meant
+        (_sg, {"transition_boosts": {MAIN_LINE: 2.0}}, "a transition is"),
+        (_sg, {"transition_selection": [("fe_9", 1)]}, "a transition is"),
+        # per-channel settings: an unknown channel, names that differ by spaces alone, a width without a unit
+        (_sg, {"main_lines_by_channel": {94: [MAIN_LINE]}}, "the SG channels are 108, 171, 284"),
+        (_sg, {"instrumental_width_by_channel": {193 * u.AA: 1 * u.AA}}, "the SG channels are 108, 171, 284"),
+        (_sg, {"main_lines_by_channel": {171: [MAIN_LINE, "FeIX 171.073"]}}, "would get one file name"),
+        (_sg, {"instrumental_width_by_channel": {171: 0.02}}, "must be one wavelength, such as 0.02"),
+        # what goes into a file name: a slash makes a directory, a brace or a bracket a pattern
+        (_sg, {"author": ""}, "author is part of a file name"),
+        (_sg, {"author": "A/B"}, "author is part of a file name"),
+        (_sg, {"effective_area_label": "Zr{thin}"}, "effective_area_label is part of a file name"),
+        (_sg, {"effective_area_label": "Zr[1]"}, "effective_area_label is part of a file name"),
+        (_sg, {"effective_area_label": "Al_Zr"}, "effective_area_label is part of a file name"),
+        (_sg, {"abundances": ["../coronal"]}, "abundance is part of a file name"),
+    ],
+)
+def test_bad_options_stop_the_call_before_any_work(inputs, tmp_path, line_list_calls, generate, overrides, match):
+    """
+    An option that cannot work is refused in the first second, not after the line list.
+    """
+    with pytest.raises((ValueError, TypeError), match=match):
+        generate(inputs, tmp_path / "run", **{"line_list_file": None, **overrides})
+    assert not line_list_calls
+    assert not list(tmp_path.iterdir())
+
+
+def test_files_a_generator_cannot_use_stop_the_call_before_any_work(inputs, tmp_path, line_list_calls):
+    other_channel = _area_file(tmp_path, channel=94)
+    with_the_gain = _area_file(tmp_path, unit=u.cm**2 * u.DN / u.ph, name="gain.zarr")
+    no_detector = _area_file(tmp_path, name="no_detector.zarr", attrs={})
+
+    # the spectrograph: the MUSE channels alone, and an area in cm2
+    for generate, options in ((_sg, {"line_list_file": None}), (_sg_continuum, {})):
+        with pytest.raises(ValueError, match="is of channel 94 Angstrom; SG products exist for the MUSE channels 108"):
+            generate(inputs, tmp_path / "run", effective_area_files=[other_channel], **options)
+        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the camera gain"):
+            generate(inputs, tmp_path / "run", effective_area_files=[with_the_gain], **options)
+    # an imager: any channel, but one that is not of MUSE must describe its detector
+    with pytest.raises(
+        ValueError, match=r"no channel of the MUSE imager \(195, 304\), so it must give gain and pair_energy"
+    ):
+        _ci(inputs, tmp_path / "run", effective_area_files=[no_detector], line_list_file=None)
+
+    assert not line_list_calls
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
+    written = _sg_continuum(inputs, tmp_path)
+
+    assert _prefixes(written) == [f"respfunc_171_continuum_fiasco_{GEOMETRY}_{TAIL}_TEST"]
+    response = read_response(written[0])
+    assert list(response.line.values) == ["free-free", "free-bound", "two-photon"]
+    # the dimensions in the order of the line products
+    assert response.detector_response.dims == _main_response(sg_products).dims
+    assert response.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
+    assert response.sizes["doppler_velocity"] == 3
+    assert response.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
+    assert response.attrs["continuum_backend"] == "fiasco"
+    # the last entry is this read
+    assert response.attrs["HISTORY"][-2].startswith("generate_sg_continuum_responses(")
+    assert float(response.detector_response.sel(line="free-free").max()) > 0
+    assert (tmp_path / "cache" / f"continuum_fiasco_153.5-188.5A_n351_{ABUNDANCE}.zarr.zip").is_file()
+
+    # the detector a file describes counts here too: pixels twice as wide see twice the solid angle
+    wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_SG)})
+    twice = _sg_continuum(inputs, tmp_path / "wide", effective_area_files=[wide])
+    xr.testing.assert_allclose(read_response(twice[0]).detector_response, 2 * response.detector_response)
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
+    """
+    Both abundances and the three pressures, one product each as the line products are,
+    on velocities that are coarser than those of the lines and reach as far.
+    """
+    written = generate_sg_continuum_responses(
+        output_directory=tmp_path,
+        author="TEST",
+        effective_area_label="testea",
+        effective_area_files=[inputs["area"]],
+        temperature=TEMPERATURE,
+        wavelength_step=0.1 * u.AA,
+    )
+
+    assert [name.split(f"{GEOMETRY}_")[1] for name in _prefixes(written)] == [
+        f"{abundance}_testea_pressure_{pressure}_TEST"
+        for abundance in (ABUNDANCE, OTHER_ABUNDANCE)
+        for pressure in ("3e+14", "3e+15", "3e+16")
+    ]
+    response = read_response(written[0])
+    assert response.sizes["pressure"] == 1
+    velocities = DEFAULTS_MUSE.continuum_response_doppler_velocity
+    np.testing.assert_array_equal(response.doppler_velocity.values, velocities.value)
+    lines = DEFAULTS_MUSE.response_doppler_velocity
+    assert (velocities.min(), velocities.max()) == (lines.min(), lines.max())
+    assert velocities.size < lines.size
+
+
+@pytest.mark.usefixtures("_synthetic_continuum")
+def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_products, tmp_path):
+    # coarser than the lines, with the same ends
+    continuum = _sg_continuum(inputs, tmp_path, doppler_velocity=DOPPLER_VELOCITY[[0, -1]])
+    main = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
+    shutil.copy(main, tmp_path / main.name)
+
+    response = load_and_concat_responses(
+        tmp_path,
+        [main.name, continuum[0].name],
+        channels=[CHANNEL, CHANNEL],
+        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+    )
+
+    assert list(response.line.values) == [MAIN_LINE, "free-free", "free-bound", "two-photon"]
+    assert np.isfinite(response.detector_response.values).all()
+
+
+@pytest.mark.chianti
+def test_the_generators_on_live_chianti(tmp_path):
+    """
+    The whole chain on real CHIANTI data: a narrow 171 effective area, the abundant
+    elements, one pressure, no continuum.
+    """
+    pytest.importorskip("ChiantiPy")
+    area = _area_file(tmp_path, wavelength=(165.0, 178.0))
+    options = {
+        "output_directory": tmp_path / "run",
+        "author": "TEST",
+        "effective_area_label": "testea",
+        "effective_area_files": [area],
+        "abundances": [ABUNDANCE],
+        "pressure": PRESSURE,
+        "temperature": TEMPERATURE,
+        "doppler_velocity": DOPPLER_VELOCITY,
+        "minimum_abundance": 3e-5,
+        "line_list_backend": "chianti",
+        # The 171 waveband, which the SG call asks for whatever the area spans: given to the
+        # imager call too, so that the two share one line list.
+        "line_list_wavelength_range": [153.5, 188.5] * u.AA,
+    }
+
+    sg = generate_sg_responses(main_lines_by_channel={CHANNEL: [MAIN_LINE]}, maximum_contaminants=3, **options)
+    ci = generate_ci_responses(maximum_lines=3, include_continuum=False, units=["ph"], **options)
+
+    assert (len(sg), len(ci)) == (4, 2)
+    main = read_response(_only(sg, f"FeIX171.073_{GEOMETRY}"))
+    assert float(main.detector_response.max()) > 0
+    # Fe IX 171.073 peaks near logT 5.9: the middle temperature of the grid is the brightest
+    by_temperature = main.detector_response.sel(doppler_velocity=0).sum(["slit", "detector_x_pixel"]).squeeze().values
+    assert np.argmax(by_temperature) == 1
+    cube = read_spectral_response(_only(ci, "ci_171_waveband"))
+    assert list(cube.line.values) == ["171 lines"]
+    assert float(cube.spectral_response.max()) > 0
+    # one line list, made by the first call and read by the second
+    assert [path.name for path in (tmp_path / "run" / "cache").iterdir()] == [
+        f"line_list_chianti_153.5-188.5A_{ABUNDANCE}.zarr.zip"
+    ]

@@ -29,6 +29,8 @@ MUSE_DEFAULTS_DICT = {
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
     "spectral_slit_separation_SG": 390.0 * u.mAA,
+    "waveband_half_width_SG": 35.0 * u.AA,
+    "wavelength_step_SG": 4.9 * u.mAA,
     "steps_per_raster_SG": 11,
     # Diffraction
     "mesh_transmission": {284: 0.81},
@@ -86,6 +88,11 @@ MUSE_DEFAULTS_DICT = {
         "FL": np.arange(-500, 510, 20) * u.km / u.s,
     },
     # Response
+    "response_abundances": ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund"),
+    "response_temperature": xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT"),
+    "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
+    "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
+    "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
     "minimum_abundance": 1e-21,
     "num_lines_keep": 2,  # nervous about this since there are 3 mainlines in 108 due to repeat wavelength.  Not used in pipeline
     "sum_lines": False,

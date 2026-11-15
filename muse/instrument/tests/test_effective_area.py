@@ -71,7 +71,7 @@ def test_create_effective_area_converts_wavelength_and_channel_to_angstrom():
     np.testing.assert_allclose(float(in_nm.channel), 171.0)
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
 def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
     effective_area = _area(components={"mirror": np.full(5, 0.5) * u.one})
     path = tmp_path / f"area{suffix}"

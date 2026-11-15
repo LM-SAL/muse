@@ -102,7 +102,7 @@ def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
     xr.testing.assert_identical(response, before)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
+@pytest.mark.parametrize("fmt", ["nc", "zarr", "zarr.zip"])
 def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     # The save tests read back with the raw opener and the read tests are fed raw to_netcdf
     # output, so nothing checked that what save_response writes is what read_response accepts.
@@ -112,6 +112,9 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     save_response(response, path)
     loaded = read_response(path)
 
+    # a zipped store is one file, with nothing left beside it
+    assert [found.name for found in tmp_path.iterdir()] == [path.name]
+    assert path.is_dir() == (fmt == "zarr")
     # read_response adds a gain coordinate of its own, so compare the data rather than the
     # whole object.
     assert loaded.detector_response.dims == response.detector_response.dims
@@ -637,7 +640,7 @@ def test_align_response_and_vdem_rejects_nonoverlapping_coordinates() -> None:
         align_response_and_vdem(response, fake_vdem())
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
 def test_spectral_response_round_trip(tmp_path, suffix):
     response = xr.Dataset(
         {

@@ -338,6 +338,21 @@ class InstrumentDefaults:
     Normalized to Angstroms.
     """
 
+    waveband_half_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    """
+    Half of the wavelength range an SG channel covers at first order; divide by the
+    spectral order.
+
+    Normalized to Angstroms.
+    """
+
+    wavelength_step_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    """
+    Sampling of the wavelength grid an SG spectral response is built on.
+
+    Normalized to Angstroms.
+    """
+
     steps_per_raster_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of steps per raster for the SG.
@@ -513,6 +528,44 @@ class InstrumentDefaults:
     Effective pressure for response creation.
 
     Normalized to Kelvin per cubic centimeter.
+    """
+
+    response_abundances: tuple | None = field(default=None, converter=converters.optional(tuple))
+    """
+    CHIANTI abundance names the response products are generated for.
+    """
+
+    response_temperature: xr.DataArray | None = field(default=None, converter=_data_array(u.K), eq=_data_array_eq)
+    """
+    Temperatures of the response products, along ``logT``.
+
+    Values normalized to Kelvin.
+    """
+
+    response_pressure: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.K / u.cm**3), eq=_data_array_eq
+    )
+    """
+    Electron pressures of the response products, along ``pressure``.
+
+    Values normalized to Kelvin per cubic centimeter.
+    """
+
+    response_doppler_velocity: u.Quantity | None = field(default=None, converter=_quantity(u.km / u.s), eq=_array_eq)
+    """
+    Doppler velocities of the line response products.
+
+    Normalized to kilometers per second.
+    """
+
+    continuum_response_doppler_velocity: u.Quantity | None = field(
+        default=None, converter=_quantity(u.km / u.s), eq=_array_eq
+    )
+    """
+    Doppler velocities of the SG continuum response products; a continuum varies slowly
+    with wavelength, so they are coarser than those of the lines.
+
+    Normalized to kilometers per second.
     """
 
     response_logT_min: float = field(default=4.8, converter=float)

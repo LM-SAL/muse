@@ -3,7 +3,10 @@ Functions whose scope is not limited to one part of the muse package.
 """
 
 import inspect
+import zipfile
 import datetime as dt
+import tempfile
+from pathlib import Path
 from collections.abc import Callable, Sequence
 
 import dask.array as da
@@ -293,3 +296,30 @@ def update_attrs(
     if source is not None:
         ds.attrs.update({key: value for key, value in source.attrs.items() if key not in _PROVENANCE_ATTRS})
     ds.attrs.update(attrs)
+
+
+def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
+    """
+    Write ``dataset`` as a zarr store of format 3: a directory or, for a destination
+    that ends in ``.zip``, one file.
+
+    ``kwargs`` go to `xarray.Dataset.to_zarr`.
+    """
+    options = {"mode": "w", "zarr_format": 3, "consolidated": False, **kwargs}
+    if destination.suffix.lower() != ".zip":
+        dataset.to_zarr(destination, **options)
+        return
+    # zarr writes its metadata more than once, and a zip keeps every version as an entry of the
+    # same name. So the store is written as a directory first and packed whole.
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix=f".{destination.name}.") as staging:
+        store = Path(staging) / "store.zarr"
+        dataset.to_zarr(store, **options)
+        try:
+            # Stored, not deflated: the chunks are compressed already.
+            with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_STORED) as archive:
+                for path in sorted(store.rglob("*")):
+                    if path.is_file():
+                        archive.write(path, path.relative_to(store).as_posix())
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            raise
