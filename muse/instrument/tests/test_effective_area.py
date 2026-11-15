@@ -192,7 +192,11 @@ def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
     assert u.Unit(effective_area.dn_per_photon.attrs["units"]) == u.DN / u.ph
     attrs = effective_area.attrs
     assert (attrs["degradation"], attrs["eve_correction"]) == (1.0, 1.5)
-    assert (attrs["obstime"], attrs["include_crosstalk"], attrs["include_gain"]) == ("2010-05-01T00:00:00.000", 1, 1)
+    assert (attrs["obstime"], attrs["include_crosstalk"], attrs["include_dn_per_photon"]) == (
+        "2010-05-01T00:00:00.000",
+        1,
+        1,
+    )
     # the detector, as the file describes it
     assert u.allclose(u.Quantity(attrs["pixel_width"]), 0.6 * u.arcsec)
     assert u.allclose(u.Quantity(attrs["gain"]), 18 * u.electron / u.DN)
@@ -205,7 +209,7 @@ def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
 @pytest.mark.usefixtures("fake_aiapy")
 def test_create_aia_effective_area_switches():
     effective_area = create_aia_effective_area(
-        304 * u.AA, obstime="2014-01-01", include_crosstalk=False, include_degradation=True, include_gain=False
+        304 * u.AA, obstime="2014-01-01", include_crosstalk=False, include_degradation=True, include_dn_per_photon=False
     )
     np.testing.assert_allclose(effective_area.effective_area, 2.0 * 0.8 * 1.5)
     assert effective_area.effective_area.attrs["units"] == "cm2"

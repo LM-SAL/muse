@@ -154,8 +154,8 @@ def _fit_axis(ds: xr.Dataset, axis: str, size: int, mode: str, *, extend: bool) 
     "DEFAULTS_MUSE",
     pixel_width="dx_pixel_SG",
     pixel_height="dy_pixel_SG",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
+    number_of_slits="number_of_slits_SG",
+    steps_per_raster="steps_per_raster_SG",
     x_extent="fov_x_extent",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
@@ -166,8 +166,8 @@ def match_fov(
     *,
     pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
     pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
     x_extent: str = DEFAULTS_MUSE.fov_x_extent,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
@@ -185,12 +185,12 @@ def match_fov(
         Pixel size in arcsec along the x axis, by default is {pixel_width}
     pixel_height : `astropy.units.Quantity`, optional
         Pixel size in arcsec along the y axis, by default is {pixel_height}
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
+    number_of_slits : `int`
+        Number of slits, by default is {number_of_slits}.
+    steps_per_raster : `int`
+        Number of raster steps, by default is {steps_per_raster}.
     x_extent : `str`, optional
-        How to treat the x width relative to ``nslits * nraster``, by default
+        How to treat the x width relative to ``number_of_slits * steps_per_raster``, by default
         {x_extent}. ``"tile"`` crops wider inputs and extends narrower ones
         using ``mode``. ``"crop"`` crops wider inputs but retains a narrower
         input at its available width. ``"keep"`` leaves the width untouched
@@ -235,7 +235,7 @@ def match_fov(
     3. **Resample** - otherwise each axis is resampled onto the requested
        pixel size (interpolated up, integer-factor averaged down, or
        sub-interpolated).
-    4. **Match the x extent** - inputs wider than ``nslits * nraster`` are
+    4. **Match the x extent** - inputs wider than ``number_of_slits * steps_per_raster`` are
        cropped. Narrower inputs are extended with ``mode`` only when
        ``x_extent="tile"``; ``"crop"`` retains their available width. Skipped
        entirely when ``x_extent="keep"``.
@@ -255,7 +255,7 @@ def match_fov(
         raise ValueError(msg)
     pixel_width = pixel_width.to("arcsec")
     pixel_height = pixel_height.to("arcsec")
-    target_width = nslits * nraster
+    target_width = number_of_slits * steps_per_raster
 
     if rotate:
         vdem = vdem.rename({"x": "ynew"})
@@ -310,13 +310,13 @@ def match_fov(
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
+    number_of_slits="number_of_slits_SG",
+    steps_per_raster="steps_per_raster_SG",
 )
 def reshape_x_to_slit_step(
     ds: xr.Dataset,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
     """
     For a given xarray data set (either vdem or spectra) we reshape from the x spatial
@@ -329,10 +329,10 @@ def reshape_x_to_slit_step(
     ----------
     ds : `xarray.Dataset`
         Data that contains x spatial axis. The ``x`` coordinate must define units.
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
+    number_of_slits : `int`
+        Number of slits, by default is {number_of_slits}.
+    steps_per_raster : `int`
+        Number of raster steps, by default is {steps_per_raster}.
 
     Returns
     -------
@@ -345,7 +345,7 @@ def reshape_x_to_slit_step(
         reshaped = ds.unstack("x")
     else:
         step_size = ds.x[1] - ds.x[0]
-        step, slit = (arr.flatten() for arr in np.meshgrid(range(nraster), range(nslits)))
+        step, slit = (arr.flatten() for arr in np.meshgrid(range(steps_per_raster), range(number_of_slits)))
         reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
         reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
         attrs = {"step_size": step_size.values, "step_size units": str(x_unit)}
@@ -356,13 +356,13 @@ def reshape_x_to_slit_step(
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
+    number_of_slits="number_of_slits_SG",
+    steps_per_raster="steps_per_raster_SG",
 )
 def reshape_slit_step_to_x(
     ds: xr.Dataset,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
     """
     Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
@@ -376,10 +376,10 @@ def reshape_slit_step_to_x(
     ----------
     ds : `xarray.Dataset`
         Data with ``slit`` and ``step`` coordinates.
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
+    number_of_slits : `int`
+        Number of slits, by default is {number_of_slits}.
+    steps_per_raster : `int`
+        Number of raster steps, by default is {steps_per_raster}.
 
     Returns
     -------

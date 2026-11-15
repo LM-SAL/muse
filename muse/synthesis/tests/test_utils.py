@@ -149,7 +149,7 @@ def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
 def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
     spectrum = _tiny_moment_spectrum()
 
-    moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=50)
 
     assert moments["0th"].attrs["units"] == "ph / s"
 
@@ -163,7 +163,7 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
         },
     )
 
-    moments = synthesis_utils.calculate_moments(spectrum, vmax=50)
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=50)
 
     assert moments["0th"].item() == 5.0
 
@@ -184,7 +184,7 @@ def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
 def test_calculate_moments_vmask_keeps_peak_window() -> None:
     spectrum = _tiny_moment_spectrum()
 
-    moments = synthesis_utils.calculate_moments(spectrum, vmax=300, vmask=1)
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=300, peak_half_width=1)
 
     assert moments["0th"].item() == 10.0
     assert moments["1st"].item() == 0.0

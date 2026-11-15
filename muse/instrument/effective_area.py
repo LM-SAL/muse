@@ -123,7 +123,7 @@ def create_aia_effective_area(
     include_crosstalk: bool = True,
     include_degradation: bool = False,
     include_eve_correction: bool = True,
-    include_gain: bool = True,
+    include_dn_per_photon: bool = True,
 ) -> xr.Dataset:
     """
     Build the effective-area dataset of one SDO/AIA channel from aiapy.
@@ -150,7 +150,7 @@ def create_aia_effective_area(
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
-    include_gain : `bool`, optional
+    include_dn_per_photon : `bool`, optional
         Multiply the area by the DN that one photon gives, aiapy's ``Channel.gain``, which
         varies with wavelength, by default `True`. The area is then in cm2 DN / ph, and
         `muse.instrument.create_spectral_response` and
@@ -187,7 +187,7 @@ def create_aia_effective_area(
     degradation_factor = degradation(channel, obstime).to_value(u.one).item() if include_degradation else 1.0
     eve_factor = aia_channel.eve_correction(obstime).to_value(u.one).item() if include_eve_correction else 1.0
     area = (aia_channel.effective_area + crosstalk) * degradation_factor * eve_factor
-    if include_gain:
+    if include_dn_per_photon:
         area = area * aia_channel.gain
     # aiapy's Channel.gain is DN per photon: the photon energy over the pair energy and the
     # camera gain (electron / DN). So the camera gain follows from any one wavelength.

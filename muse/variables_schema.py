@@ -424,17 +424,17 @@ class InstrumentDefaults:
     Data compression level.
     """
 
-    ccd_gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     SG CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    ccd_gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     CI CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    pair_creation_energy_SG: xr.DataArray | None = field(
+    pair_energy_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
@@ -442,7 +442,7 @@ class InstrumentDefaults:
     ``channel``.
     """
 
-    pair_creation_energy_CI: xr.DataArray | None = field(
+    pair_energy_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """

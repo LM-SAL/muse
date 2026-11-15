@@ -53,7 +53,7 @@ _ANGSTROM = {"units": str(u.AA)}
 _VERSION_ATTRS = ("Chianti", "Chiantipy", "fiasco")
 _SG_CHANNELS = tuple(int(channel) for channel in DEFAULTS_MUSE.channel_spectral_order_SG.channel.values)
 # The channels of the MUSE imager, whose gain and pair energy the defaults hold.
-_CI_CHANNELS = tuple(int(channel) for channel in DEFAULTS_MUSE.ccd_gain_CI.channel.values)
+_CI_CHANNELS = tuple(int(channel) for channel in DEFAULTS_MUSE.gain_CI.channel.values)
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s, line_list_wavelength_range=u.AA)

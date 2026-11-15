@@ -324,7 +324,7 @@ def test_read_response_gain_accepts_quantity(response_path) -> None:
 
 def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain_SG,
+        DEFAULTS_MUSE.gain_SG,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
@@ -372,7 +372,7 @@ def _line_file(line: str, wavelength: float) -> xr.Dataset:
 
 def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain_SG,
+        DEFAULTS_MUSE.gain_SG,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
@@ -442,14 +442,14 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
 
 
 def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
+    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
     source = fake_response_file()
     path = _write(source.assign_coords(channel=("line", [195] * source.sizes["line"])), tmp_path / "ci.nc", "nc")
     np.testing.assert_allclose(read_response(path).gain.values, 7.0)
 
 
 def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
+    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
     _write(fake_response_file(), tmp_path / "a.zarr", "zarr")
     response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
     np.testing.assert_allclose(response.gain.values, 7.0)

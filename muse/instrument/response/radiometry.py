@@ -156,13 +156,13 @@ def transform_response_units(
     if detector == "sg":
         default_pixel_width = DEFAULTS_MUSE.dx_pixel_SG
         default_pixel_height = DEFAULTS_MUSE.dy_pixel_SG
-        gains = DEFAULTS_MUSE.ccd_gain_SG
-        pair_energies = DEFAULTS_MUSE.pair_creation_energy_SG
+        gains = DEFAULTS_MUSE.gain_SG
+        pair_energies = DEFAULTS_MUSE.pair_energy_SG
     else:
         default_pixel_width = DEFAULTS_MUSE.dx_pixel_CI
         default_pixel_height = DEFAULTS_MUSE.dy_pixel_CI
-        gains = DEFAULTS_MUSE.ccd_gain_CI
-        pair_energies = DEFAULTS_MUSE.pair_creation_energy_CI
+        gains = DEFAULTS_MUSE.gain_CI
+        pair_energies = DEFAULTS_MUSE.pair_energy_CI
     pixel_width = default_pixel_width if pixel_width is None else pixel_width
     pixel_height = default_pixel_height if pixel_height is None else pixel_height
 
@@ -294,14 +294,10 @@ def transform_flux_units(
             raise ValueError(msg)
         try:
             if needs_gain:
-                gain = u.Quantity(
-                    getattr(DEFAULTS_MUSE, f"ccd_gain_{detector.upper()}").sel(channel=spectrum.channel).data
-                )
+                gain = u.Quantity(getattr(DEFAULTS_MUSE, f"gain_{detector.upper()}").sel(channel=spectrum.channel).data)
             if needs_pair_energy:
                 pair_energy = u.Quantity(
-                    getattr(DEFAULTS_MUSE, f"pair_creation_energy_{detector.upper()}")
-                    .sel(channel=spectrum.channel)
-                    .data
+                    getattr(DEFAULTS_MUSE, f"pair_energy_{detector.upper()}").sel(channel=spectrum.channel).data
                 )
         except KeyError:
             channels = np.unique(spectrum.channel.values).tolist()

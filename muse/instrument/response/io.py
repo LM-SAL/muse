@@ -209,8 +209,8 @@ def read_response(
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.ccd_gain_SG` or
-        `~muse.variables_schema.InstrumentDefaults.ccd_gain_CI` selected by the
+        values from `~muse.variables_schema.InstrumentDefaults.gain_SG` or
+        `~muse.variables_schema.InstrumentDefaults.gain_CI` selected by the
         response's ``channel`` coordinate.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
@@ -254,8 +254,8 @@ def read_response(
 
     if slit is not None:
         # Normalize to 0-based labels so downstream exact joins see byte-identical axes.
-        nslits = int(slit.max()) + 1
-        r = r.isel(slit=slice(nslits)).assign_coords(slit=np.arange(nslits))
+        number_of_slits = int(slit.max()) + 1
+        r = r.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
     if "channel" not in r.dims and "line" not in r.dims:
         r = r.expand_dims("line")
@@ -295,7 +295,7 @@ def _default_gain(channel) -> u.Quantity:
     ValueError
         If a channel is neither an SG nor a CI channel of the instrument defaults.
     """
-    for gains in (DEFAULTS_MUSE.ccd_gain_SG, DEFAULTS_MUSE.ccd_gain_CI):
+    for gains in (DEFAULTS_MUSE.gain_SG, DEFAULTS_MUSE.gain_CI):
         try:
             return u.Quantity(gains.sel(channel=channel).data)
         except KeyError:

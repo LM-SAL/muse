@@ -359,7 +359,9 @@ def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
     # Emission at a single doppler_velocity must place the line at lambda * (1 + v/c): synthesis
     # encodes velocity as a wavelength shift, the core spectral behaviour.
     def centroid(vdop_kms):
-        reshaped = reshape_x_to_slit_step(fake_vdem_single_doppler_velocity(vdop_kms), nslits=35, nraster=11)
+        reshaped = reshape_x_to_slit_step(
+            fake_vdem_single_doppler_velocity(vdop_kms), number_of_slits=35, steps_per_raster=11
+        )
         flux = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity")).flux
         spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"]).values
         wavelength = flux.detector_wavelength.isel(line=0, slit=17).values

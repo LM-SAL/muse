@@ -46,23 +46,23 @@ MUSE_DEFAULTS_DICT = {
     "psf_fwhm": 0.5 * u.arcsec,
     # Other
     "data_compression": 1,
-    "ccd_gain_SG": xr.DataArray(
+    "gain_SG": xr.DataArray(
         np.array([10.0, 10.0, 10.0]) * u.electron / u.DN,
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
-    "pair_creation_energy_SG": xr.DataArray(
+    "pair_energy_SG": xr.DataArray(
         np.array([3.65, 3.65, 3.65]) * u.eV / u.electron,
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
     # CI calibrations are independently scoped from the SG hardware.
-    "ccd_gain_CI": xr.DataArray(
+    "gain_CI": xr.DataArray(
         np.array([10.0, 10.0]) * u.electron / u.DN,
         coords={"channel": [195, 304]},
         dims="channel",
     ),
-    "pair_creation_energy_CI": xr.DataArray(
+    "pair_energy_CI": xr.DataArray(
         np.array([3.65, 3.65]) * u.eV / u.electron,
         coords={"channel": [195, 304]},
         dims="channel",

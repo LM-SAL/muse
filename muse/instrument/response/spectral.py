@@ -440,7 +440,7 @@ def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> x
         carries_gain = area_unit.is_equivalent(u.cm**2 * u.DN / u.ph)
         hint = (
             "; this area includes the conversion from photons to DN: pass one in cm2, "
-            "e.g. from create_aia_effective_area(..., include_gain=False)"
+            "e.g. from create_aia_effective_area(..., include_dn_per_photon=False)"
         ) * carries_gain
         msg = f"effective_area units must be convertible to cm2{hint}"
         raise ValueError(msg)

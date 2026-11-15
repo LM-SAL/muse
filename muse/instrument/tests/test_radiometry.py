@@ -88,7 +88,7 @@ def test_transform_response_units_accepts_explicit_calibration_without_channel()
 
 def test_transform_response_units_uses_channel_gain(monkeypatch):
     monkeypatch.setattr(
-        DEFAULTS_MUSE.ccd_gain_SG,
+        DEFAULTS_MUSE.gain_SG,
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
@@ -202,7 +202,7 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
 
 def test_transform_response_units_uses_the_channel_pair_energy():
     channel = 17.1 * u.nm
-    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_creation_energy_SG.sel(channel=171).data)
+    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data)
     response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel)
 
     default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel)
@@ -222,7 +222,7 @@ def test_transform_response_units_selects_detector_calibration(monkeypatch):
         coords={"channel": [195, 304]},
         dims="channel",
     )
-    defaults = attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=ci_gain, pair_creation_energy_CI=ci_pair_energy)
+    defaults = attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain, pair_energy_CI=ci_pair_energy)
     monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", defaults)
 
     target_unit = "1e-27 cm5 DN / (Angstrom s)"
@@ -231,8 +231,8 @@ def test_transform_response_units_selects_detector_calibration(monkeypatch):
 
     sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
     ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)
-    sg_pair_energy = u.Quantity(defaults.pair_creation_energy_SG.sel(channel=171).data)
-    sg_gain = u.Quantity(defaults.ccd_gain_SG.sel(channel=171).data)
+    sg_pair_energy = u.Quantity(defaults.pair_energy_SG.sel(channel=171).data)
+    sg_gain = u.Quantity(defaults.gain_SG.sel(channel=171).data)
     expected_ratio = (
         ci_solid_angle
         / sg_solid_angle
@@ -311,7 +311,7 @@ def test_transform_flux_units_works_along_channel():
 
 def test_transform_flux_units_selects_the_detector_calibration(monkeypatch):
     ci_gain = xr.DataArray(np.array([2.0, 4.0]) * u.electron / u.DN, coords={"channel": [195, 304]}, dims="channel")
-    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=ci_gain))
+    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain))
     spectrum = _spectrum(channel=(195, 304))
 
     out = transform_flux_units(spectrum, "DN / s", detector="ci")

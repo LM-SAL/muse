@@ -303,8 +303,8 @@ def calculate_moments(
     moment_dim: str = "detector_x_pixel",
     integration_name: str = "flux",
     doppler_name: str = "detector_doppler_velocity",
-    vmax: float | None = None,
-    vmask: float | None = None,
+    maximum_doppler_velocity: float | None = None,
+    peak_half_width: float | None = None,
 ) -> xr.Dataset:
     """
     Compute the zeroth, first, and second moments from a spectrum.
@@ -325,12 +325,12 @@ def calculate_moments(
         Name of the Doppler-velocity coordinate in ``spectrum``, by default
         ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds. Its
         dimensions must be a subset of the dimensions of ``integration_name``.
-    vmax : `float` or None, optional
+    maximum_doppler_velocity : `float` or None, optional
         Maximum absolute velocity (km/s) to include in the integration, by default None.
-    vmask : `float` or None, optional
+    peak_half_width : `float` or None, optional
         Half-width (in ``detector_x_pixel``) of the window kept around the line
         peak, by default None.
-        Only used together with ``vmax``.
+        Only used together with ``maximum_doppler_velocity``.
 
     Returns
     -------
@@ -351,16 +351,16 @@ def calculate_moments(
         msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{integration_name} dimensions"
         raise ValueError(msg)
 
-    if vmax is not None:
+    if maximum_doppler_velocity is not None:
         # NaN Doppler coordinates stay included, matching the old 0/1 mask.
-        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > vmax), 0)
+        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > maximum_doppler_velocity), 0)
         masked_spectrum = spectrum.assign({integration_name: masked_flux})
-        if vmask is not None:
+        if peak_half_width is not None:
             peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
             peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
             distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
             masked_spectrum = masked_spectrum.assign(
-                {integration_name: masked_spectrum[integration_name].where(distance < vmask, 0)}
+                {integration_name: masked_spectrum[integration_name].where(distance < peak_half_width, 0)}
             )
     else:
         masked_spectrum = spectrum
