@@ -156,7 +156,9 @@ def vdem_synthesis(
     Returns
     -------
     `xarray.Dataset`
-        Dataset of the spectrum on the detector. With the default NumPy backend,
+        Dataset of the spectrum on the detector, or of the image for an imager
+        response, whose ``flux`` keeps the ``slit`` axis of the raster. With the
+        default NumPy backend,
         dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
         stays bounded and writing streams chunk by chunk; the Torch backend
         always computes its inputs eagerly.
