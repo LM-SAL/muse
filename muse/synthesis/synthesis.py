@@ -42,11 +42,9 @@ def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray
     return array.chunk({dim: -1 for dim in dims if dim in array.dims})
 
 
-def _validate_inputs(
-    raster: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]
-) -> tuple[u.UnitBase, u.UnitBase]:
+def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]) -> tuple[u.UnitBase, u.UnitBase]:
     """
-    Validate ``raster``/``response`` structure and units for synthesis.
+    Validate ``vdem``/``response`` structure and units for synthesis.
 
     Checks slit-dimension consistency, that neither input still uses the legacy
     ``vdop`` axis name, that every ``sum_over`` dimension exists on the response,
@@ -55,20 +53,20 @@ def _validate_inputs(
     Returns
     -------
     `tuple` of `astropy.units.Unit`
-        ``(raster.vdem unit, response.detector_response unit)``, reused for the
+        ``(vdem.vdem unit, response.detector_response unit)``, reused for the
         flux unit.
     """
-    if "slit" in response.dims and "slit" not in raster.dims and response.slit.size > 1:
-        msg = "response has a slit dimension and number of slits are greater than one, but raster does not"
+    if "slit" in response.dims and "slit" not in vdem.dims and response.slit.size > 1:
+        msg = "response has a slit dimension and number of slits are greater than one, but vdem does not"
         raise ValueError(msg)
     # An imager response, one without a spectral axis, is the exception: it images every slit
-    # position on its own, so the slit axis is the raster's alone and stays in the output.
-    if "slit" not in response.dims and "slit" in raster.dims and _SPECTRAL_DIMS & set(response.dims):
-        msg = "raster has a slit dimension but response does not"
+    # position on its own, so the slit axis is the VDEM's alone and stays in the output.
+    if "slit" not in response.dims and "slit" in vdem.dims and _SPECTRAL_DIMS & set(response.dims):
+        msg = "vdem has a slit dimension but response does not"
         raise ValueError(msg)
     # A legacy 'vdop' axis is not in sum_over, so einsum would keep it in the output and
     # contract the other input's doppler_velocity on its own: no error, wrong flux.
-    for name, dataset in (("raster", raster), ("response", response)):
+    for name, dataset in (("vdem", vdem), ("response", response)):
         if "vdop" in dataset.dims:
             msg = (
                 f"{name} uses the legacy 'vdop' dimension; rename it to 'doppler_velocity' "
@@ -79,13 +77,13 @@ def _validate_inputs(
         if dim not in response.dims:
             msg = f"{dim!r} is not a response dimension"
             raise ValueError(msg)
-    raster_vdem_unit = require_unit(raster, "vdem", "raster.vdem")
+    vdem_unit = require_unit(vdem, "vdem", "vdem.vdem")
     response_unit = require_unit(response, "detector_response", "response.detector_response")
     # join="exact" only validates indexed dims; a shared dim indexed on one side would
     # otherwise contract positionally against unordered labels: no error, wrong flux.
-    for dim in sorted(set(raster.vdem.dims) & set(response.detector_response.dims)):
-        if (dim in raster.xindexes) != (dim in response.xindexes):
-            unindexed = "response" if dim in raster.xindexes else "raster"
+    for dim in sorted(set(vdem.vdem.dims) & set(response.detector_response.dims)):
+        if (dim in vdem.xindexes) != (dim in response.xindexes):
+            unindexed = "response" if dim in vdem.xindexes else "vdem"
             msg = (
                 f"{dim!r} has an index coordinate on only one input ({unindexed} lacks it), so labels "
                 "cannot be aligned; add the coordinate with assign_coords or regrid with "
@@ -101,12 +99,12 @@ def _validate_inputs(
             coord_only=True,
             convertible_to=u.AA,
         )
-    return raster_vdem_unit, response_unit
+    return vdem_unit, response_unit
 
 
 @format_docstring("DEFAULTS_MUSE", sum_over="sum_over_dims_synthesis")
 def vdem_synthesis(
-    raster: xr.Dataset,
+    vdem: xr.Dataset,
     response: xr.Dataset,
     *,
     sum_over: Sequence[str] = DEFAULTS_MUSE.sum_over_dims_synthesis,
@@ -114,18 +112,19 @@ def vdem_synthesis(
     backend: str = "numpy",
 ) -> xr.Dataset:
     """
-    Given a VDEM raster, and response function(s) synthesize observables by computing
-    the tensor product.
+    Given a VDEM and response function(s), synthesize observables by computing the
+    tensor product.
 
     Parameters
     ----------
-    raster : `xarray.Dataset`
-        VDEM raster. ``vdem`` must define units in the attrs.
+    vdem : `xarray.Dataset`
+        VDEM, as it is or reshaped onto slits and raster steps. Its ``vdem`` variable must
+        define units in the attrs.
     response : `xarray.Dataset`
         Response functions. ``detector_response`` and ``line_wavelength`` must
         define units in the attrs. ``detector_wavelength`` must define units when
         its slit dimension is retained in the output.
-        Indexed coordinates shared with ``raster`` must match exactly; a
+        Indexed coordinates shared with ``vdem`` must match exactly; a
         dimension indexed on only one input is rejected.
         The wavelength-space names produced by
         `muse.instrument.create_spectral_response` (``spectral_response``,
@@ -135,7 +134,7 @@ def vdem_synthesis(
         conversion has been applied.
         An imager response, as `muse.instrument.map_response_to_ci_detector`
         returns it, has neither a slit dimension nor a spectral axis. It is
-        accepted with a raster that has slits: each slit position is imaged
+        accepted with a VDEM that has slits: each slit position is imaged
         on its own and ``slit`` stays in the output.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default {sum_over}.
@@ -157,7 +156,7 @@ def vdem_synthesis(
     -------
     `xarray.Dataset`
         Dataset of the spectrum on the detector, or of the image for an imager
-        response, whose ``flux`` keeps the ``slit`` axis of the raster. With the
+        response, whose ``flux`` keeps the ``slit`` axis of the VDEM. With the
         default NumPy backend,
         dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
         stays bounded and writing streams chunk by chunk; the Torch backend
@@ -186,40 +185,40 @@ def vdem_synthesis(
     if "slit" in sum_over and "slit" not in response.dims:
         logger.info("The response has no slit dimension, dropping 'slit' from sum_over")
         sum_over = tuple(dim for dim in sum_over if dim != "slit")
-    raster_vdem_unit, response_unit = _validate_inputs(raster, response, sum_over)
-    raster = raster.assign(vdem=_single_chunk_over(raster.vdem, sum_over))
+    vdem_unit, response_unit = _validate_inputs(vdem, response, sum_over)
+    vdem = vdem.assign(vdem=_single_chunk_over(vdem.vdem, sum_over))
     response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))
     dim_indices = {
-        dim: index for index, dim in enumerate(dict.fromkeys((*raster.vdem.dims, *response.detector_response.dims)))
+        dim: index for index, dim in enumerate(dict.fromkeys((*vdem.vdem.dims, *response.detector_response.dims)))
     }
-    raster_indices = [dim_indices[dim] for dim in raster.vdem.dims]
+    vdem_indices = [dim_indices[dim] for dim in vdem.vdem.dims]
     response_indices = [dim_indices[dim] for dim in response.detector_response.dims]
     output_dims = [dim for dim in dim_indices if dim not in sum_over]
     output_indices = [dim_indices[dim] for dim in output_dims]
     backend = _resolve_backend(device, backend)
     logger.debug(
-        f"Using {backend} to contract vdem{np.shape(raster.vdem.data)} and "
+        f"Using {backend} to contract vdem{np.shape(vdem.vdem.data)} and "
         f"detector_response{np.shape(response.detector_response.data)} over {tuple(sum_over)} "
         f"-> flux{tuple(output_dims)}"
     )
 
-    def contract(vdem, detector_response):
+    def contract(vdem_values, detector_response):
         # Unwrap duck arrays (e.g. astropy Quantity) so einsum's sublist mode works;
         # dask stays raw so the contraction dispatches to da.einsum and stays lazy.
-        vdem = vdem if isinstance(vdem, da.Array) else np.asarray(vdem)
+        vdem_values = vdem_values if isinstance(vdem_values, da.Array) else np.asarray(vdem_values)
         detector_response = (
             detector_response if isinstance(detector_response, da.Array) else np.asarray(detector_response)
         )
         if backend == "torch":
-            return torch_einsum(vdem, detector_response, raster_indices, response_indices, output_indices, device)
-        return np.einsum(vdem, raster_indices, detector_response, response_indices, output_indices, optimize=True)
+            return torch_einsum(vdem_values, detector_response, vdem_indices, response_indices, output_indices, device)
+        return np.einsum(vdem_values, vdem_indices, detector_response, response_indices, output_indices, optimize=True)
 
     try:
         flux = xr.apply_ufunc(
             contract,
-            raster.vdem,
+            vdem.vdem,
             response.detector_response,
-            input_core_dims=[list(raster.vdem.dims), list(response.detector_response.dims)],
+            input_core_dims=[list(vdem.vdem.dims), list(response.detector_response.dims)],
             output_core_dims=[output_dims],
             join="exact",
             dask="allowed",
@@ -227,18 +226,18 @@ def vdem_synthesis(
         )
     except xr.AlignmentError as err:
         msg = (
-            "raster and response coordinates disagree on a shared dimension; "
+            "vdem and response coordinates disagree on a shared dimension; "
             f"regrid the response with muse.instrument.align_response_and_vdem ({err})"
         )
         raise ValueError(msg) from err
-    flux.attrs = {"units": str(raster_vdem_unit * response_unit)}
+    flux.attrs = {"units": str(vdem_unit * response_unit)}
     ds = flux.to_dataset(name="flux")
     # apply_ufunc drops coords the inputs disagree on and never materializes index
     # coords for bare dims.
     out_dims = set(ds.flux.dims)
-    # Response-only output dims own their coordinates; scalar conflicts keep raster metadata.
-    response_only_dims = set(response.detector_response.dims) - set(raster.vdem.dims)
-    restored = {name: coord for name, coord in raster.coords.items() if set(coord.dims) <= out_dims}
+    # Response-only output dims own their coordinates; scalar conflicts keep the VDEM's metadata.
+    response_only_dims = set(response.detector_response.dims) - set(vdem.vdem.dims)
+    restored = {name: coord for name, coord in vdem.coords.items() if set(coord.dims) <= out_dims}
     restored.update(
         {
             name: coord
@@ -247,7 +246,7 @@ def vdem_synthesis(
         }
     )
     restored |= {
-        dim: (raster[dim] if dim in raster.vdem.dims else response[dim])
+        dim: (vdem[dim] if dim in vdem.vdem.dims else response[dim])
         for dim in ds.flux.dims
         if dim not in restored and dim not in ds.coords
     }
@@ -266,7 +265,7 @@ def vdem_synthesis(
                 "response.detector_wavelength",
             )
         )
-    update_attrs(ds, raster)
+    update_attrs(ds, vdem)
     update_attrs(ds, response)
-    add_history(ds, locals(), vdem_synthesis, sources=(raster, response))
+    add_history(ds, locals(), vdem_synthesis, sources=(vdem, response))
     return ds

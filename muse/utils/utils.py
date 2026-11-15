@@ -45,7 +45,7 @@ def require_unit(
     name : `str`
         Variable or coordinate name to look up.
     label : `str`
-        Human-readable name used in error messages (e.g. ``"raster.vdem"`` or
+        Human-readable name used in error messages (e.g. ``"vdem.vdem"`` or
         ``"x coordinate"``).
     coord_only : `bool`, optional
         When `True`, require ``name`` to be a coordinate rather than any

@@ -400,11 +400,11 @@ def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, raster) -> None:
         vdem_synthesis(raster, response, sum_over=("bogus",))
 
 
-@pytest.mark.parametrize("legacy_input", ["raster", "response"])
+@pytest.mark.parametrize("legacy_input", ["vdem", "response"])
 def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, raster, legacy_input) -> None:
     # A stray vdop is not in sum_over, so einsum would carry it into the output and contract
     # the other input's doppler_velocity alone: no error, wrong flux. It must fail loudly.
-    if legacy_input == "raster":
+    if legacy_input == "vdem":
         raster = raster.rename(doppler_velocity="vdop")
     else:
         response = response.rename(doppler_velocity="vdop")
@@ -417,8 +417,8 @@ def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, raster, legacy_in
     ("case", "match"),
     [
         ("raster_without_slit", "response has a slit dimension"),
-        ("response_without_slit", "raster has a slit dimension but response does not"),
-        ("wavelength_response_without_slit", "raster has a slit dimension but response does not"),
+        ("response_without_slit", "vdem has a slit dimension but response does not"),
+        ("wavelength_response_without_slit", "vdem has a slit dimension but response does not"),
     ],
 )
 def test_vdem_synthesis_rejects_mismatched_slit_dimensions(response, raster, case, match) -> None:
@@ -511,10 +511,10 @@ def test_vdem_synthesis_cuda_matches_cpu(response, raster) -> None:
     np.testing.assert_allclose(gpu.flux.values, cpu.flux.values, rtol=1e-5, atol=1e-6)
 
 
-def test_vdem_synthesis_requires_raster_vdem_units(response, raster) -> None:
+def test_vdem_synthesis_requires_vdem_units(response, raster) -> None:
     del raster.vdem.attrs["units"]
 
-    with pytest.raises(ValueError, match=r"raster\.vdem must define units"):
+    with pytest.raises(ValueError, match=r"vdem\.vdem must define units"):
         vdem_synthesis(raster, response)
 
 

@@ -104,7 +104,7 @@ def test_wavelength_to_doppler_normalizes_units() -> None:
 def test_wavelength_to_doppler_requires_units() -> None:
     resp = _tiny_response()
     del resp.detector_wavelength.attrs["units"]
-    with pytest.raises(ValueError, match=r"response\.detector_wavelength must define units"):
+    with pytest.raises(ValueError, match=r"data\.detector_wavelength must define units"):
         synthesis_utils.wavelength_to_doppler(resp)
 
 

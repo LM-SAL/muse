@@ -389,15 +389,15 @@ def calculate_moments(
     return moments
 
 
-def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
+def wavelength_to_doppler(data: xr.Dataset) -> xr.Dataset:
     """
     Add a Doppler-shift coordinate in km/s derived from wavelengths.
 
     Parameters
     ----------
-    response : `xarray.Dataset`
-        Must include ``detector_wavelength`` and ``line_wavelength``
-        coordinates.
+    data : `xarray.Dataset`
+        A spectrum or a response. It must include the ``detector_wavelength``
+        and ``line_wavelength`` coordinates.
 
     Returns
     -------
@@ -408,29 +408,24 @@ def wavelength_to_doppler(response: xr.Dataset) -> xr.Dataset:
         it is.
     """
     c_kms = speed_of_light.to_value(u.km / u.s)
-    detector_wavelength = coord_as_unit(
-        response,
-        "detector_wavelength",
-        u.AA,
-        "response.detector_wavelength",
-    )
-    line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
-    doppler_velocity = (detector_wavelength / line_wavelength - 1) * c_kms
-    doppler_velocity.attrs["units"] = str(u.km / u.s)
-    response = response.assign_coords(detector_doppler_velocity=doppler_velocity)
-    add_history(response, locals(), wavelength_to_doppler)
-    return response
+    detector_wavelength = coord_as_unit(data, "detector_wavelength", u.AA, "data.detector_wavelength")
+    line_wavelength = coord_as_unit(data, "line_wavelength", u.AA, "data.line_wavelength")
+    detector_doppler_velocity = (detector_wavelength / line_wavelength - 1) * c_kms
+    detector_doppler_velocity.attrs["units"] = str(u.km / u.s)
+    result = data.assign_coords(detector_doppler_velocity=detector_doppler_velocity)
+    add_history(result, locals(), wavelength_to_doppler)
+    return result
 
 
-def doppler_to_wavelength(response: xr.Dataset, *, doppler_name: str = "detector_doppler_velocity") -> xr.Dataset:
+def doppler_to_wavelength(data: xr.Dataset, *, doppler_name: str = "detector_doppler_velocity") -> xr.Dataset:
     """
     Add a wavelength coordinate in Angstrom derived from a Doppler shift.
 
     Parameters
     ----------
-    response : `xarray.Dataset`
-        Must include the coordinate that ``doppler_name`` names and the
-        ``line_wavelength`` coordinate.
+    data : `xarray.Dataset`
+        A spectrum or a response. It must include the coordinate that
+        ``doppler_name`` names and the ``line_wavelength`` coordinate.
     doppler_name : `str`, optional
         Name of the Doppler-velocity coordinate to convert, by default
         ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds.
@@ -443,13 +438,13 @@ def doppler_to_wavelength(response: xr.Dataset, *, doppler_name: str = "detector
         Angstrom.
     """
     c_kms = speed_of_light.to_value(u.km / u.s)
-    line_wavelength = coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength")
-    doppler_velocity = coord_as_unit(response, doppler_name, u.km / u.s, f"response.{doppler_name}")
+    line_wavelength = coord_as_unit(data, "line_wavelength", u.AA, "data.line_wavelength")
+    doppler_velocity = coord_as_unit(data, doppler_name, u.km / u.s, f"data.{doppler_name}")
     detector_wavelength = line_wavelength * (1 + doppler_velocity / c_kms)
     detector_wavelength.attrs["units"] = str(u.AA)
-    response = response.assign_coords(detector_wavelength=detector_wavelength)
-    add_history(response, locals(), doppler_to_wavelength)
-    return response
+    result = data.assign_coords(detector_wavelength=detector_wavelength)
+    add_history(result, locals(), doppler_to_wavelength)
+    return result
 
 
 def _time_base(unit: u.UnitBase) -> u.UnitBase | None:
