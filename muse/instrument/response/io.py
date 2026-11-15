@@ -359,7 +359,7 @@ def align_response_and_vdem(
     response: xr.Dataset,
     vdem: xr.Dataset,
     *,
-    coord_methods: Mapping[str, tuple] = FrozenDict(
+    coordinate_methods: Mapping[str, tuple] = FrozenDict(
         {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)}
     ),
 ) -> tuple[xr.Dataset, xr.Dataset]:
@@ -372,7 +372,7 @@ def align_response_and_vdem(
         Response dataset containing ``detector_response``.
     vdem : `xarray.Dataset`
         VDEM dataset containing ``vdem``.
-    coord_methods : `~collections.abc.Mapping`, optional
+    coordinate_methods : `~collections.abc.Mapping`, optional
         Maps each coordinate name to align to a ``(resampling method, unit)``
         tuple, by default ``{"logT": ("nearest", u.dex(u.K)),
         "doppler_velocity": ("linear", u.km / u.s)}``. Coordinates not listed
@@ -404,7 +404,7 @@ def align_response_and_vdem(
     matched_response = response
     matched_vdem = vdem
 
-    for name, (method, unit) in coord_methods.items():
+    for name, (method, unit) in coordinate_methods.items():
         normalized_axes = []
         for dataset_name, dataset in (("response", matched_response), ("vdem", matched_vdem)):
             axis = coord_as_unit(dataset, name, unit, f"{dataset_name}.{name}")

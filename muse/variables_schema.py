@@ -286,11 +286,6 @@ class InstrumentDefaults:
     Normalized to arcseconds.
     """
 
-    slit_sep_CI: u.Quantity | None = field(default=None, converter=_quantity(u.pixel))
-    """
-    Slit separation in pixels to convert the CI into SG format.
-    """
-
     full_well_depth_CI: u.Quantity | None = field(default=None, converter=_quantity(u.DN))
     """
     Full well depth in DN for the CI.
@@ -309,11 +304,6 @@ class InstrumentDefaults:
     Spatial pixel size along y-axis for the SG.
 
     Normalized to arcseconds.
-    """
-
-    slit_sep_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pixel))
-    """
-    Slit separation in pixels for the SG.
     """
 
     pixels_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pix))
@@ -603,11 +593,6 @@ class InstrumentDefaults:
     normalization: float = field(default=1e-27, converter=float)
     """
     Normalization in the response function.
-    """
-
-    num_lines_keep: int | None = field(default=None, converter=_int_converter)
-    """
-    Number of lines conserved independently for the response creation.
     """
 
     sum_lines: bool | None = field(default=None, validator=_instance((bool, np.bool_)))

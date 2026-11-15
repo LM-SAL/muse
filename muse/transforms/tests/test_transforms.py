@@ -141,9 +141,9 @@ def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
-    resampled_width = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="crop").x.size
+    resampled_width = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, x_extent="crop").x.size
 
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, mode="constant")
+    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, mode="constant")
 
     assert out.x.size == 35 * 11
     assert bool(np.isfinite(out.vdem).all())
@@ -154,7 +154,7 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
 def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, x_extent) -> None:
     # Both resample the resolution; neither extends an input that is then narrower than the
     # MUSE FOV (nslits*nraster = 385), as "tile" would.
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent=x_extent)
+    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, x_extent=x_extent)
     assert out.x.size == 308
     assert bool(np.isfinite(out.vdem).all())
 
@@ -247,7 +247,7 @@ def test_match_fov_rejects_y_pixels_below_one(vdem) -> None:
 
 def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
     # Coarse y pixels exercise the integer-factor averaging branch on the y axis.
-    out = match_fov(vdem_offgrid, dy_pix=2.0 * u.arcsec)
+    out = match_fov(vdem_offgrid, pixel_height=2.0 * u.arcsec)
     assert out.y.size == 5
     assert bool(np.isfinite(out.vdem).all())
 
@@ -357,8 +357,8 @@ def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
 
 
 def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
-    with pytest.raises(TypeError, match="dx_pix"):
-        match_fov(vdem, dx_pix=0.4)
+    with pytest.raises(TypeError, match="pixel_width"):
+        match_fov(vdem, pixel_width=0.4)
 
 
 def test_match_fov_requires_coordinate_units(vdem) -> None:
