@@ -361,7 +361,7 @@ def test_fiasco_line_list_rejects_bad_inputs(temperature, monkeypatch):
 
 
 @pytest.mark.skipif(fiasco is None, reason="fiasco is not installed")
-def test_fiasco_line_list_refuses_a_fiasco_before_0_9(temperature, monkeypatch):
+def test_fiasco_line_list_refuses_a_fiasco_below_the_minimum_version(temperature, monkeypatch):
     monkeypatch.setattr(fiasco, "__version__", "0.8.3")
     with pytest.raises(ImportError, match=r"0\.9\.0 or later is required, found 0\.8\.3"):
         create_fiasco_line_list(
@@ -496,7 +496,7 @@ def test_select_transitions():
     doublet = select_transitions(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
     assert doublet.wavelength.values.tolist() == [303.786, 303.785]
     assert doublet.attrs["transition_selection"] == '["he_2 1-3", "he_2 1-4"]'
-    # the input is left as it was: a full line list must not come to say it is a selection
+    # the input is left as it was: a full line list must not be marked as a selection
     assert "transition_selection" not in line_list.attrs
     with pytest.raises(ValueError, match="0 transitions match fe_9 1-5"):
         select_transitions(line_list, [("fe_9", 1, 5)])

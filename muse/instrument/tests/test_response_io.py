@@ -58,7 +58,7 @@ def _open(path, fmt: str) -> xr.Dataset:
 
 @pytest.fixture
 def response_path(tmp_path):
-    # For tests reading a pristine legacy file where the on-disk format is irrelevant.
+    # For tests that read an unmodified response file, whatever its on-disk format.
     return _write(fake_response_file(), tmp_path / "resp.nc", "nc")
 
 
@@ -275,9 +275,9 @@ def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
 @pytest.mark.parametrize("zarr_format", [2, 3])
 @pytest.mark.parametrize("chunked", [False, True])
 def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked) -> None:
-    legacy = fake_response_file()
-    expected = read_response(_write(legacy, tmp_path / "resp.nc", "nc"))
-    legacy.to_zarr(tmp_path / "resp.zarr", zarr_format=zarr_format, consolidated=False)
+    source = fake_response_file()
+    expected = read_response(_write(source, tmp_path / "resp.nc", "nc"))
+    source.to_zarr(tmp_path / "resp.zarr", zarr_format=zarr_format, consolidated=False)
     # The archives in use were made by zipping a store, so the entries sit at the archive root.
     shutil.make_archive(str(tmp_path / "resp.zarr"), "zip", root_dir=tmp_path / "resp.zarr")
     zipped = read_response(tmp_path / "resp.zarr.zip", chunked=chunked)
@@ -519,8 +519,8 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
 
 def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, ccd_gain_CI=_CI_GAIN))
-    legacy = fake_response_file()
-    path = _write(legacy.assign_coords(channel=("line", [195] * legacy.sizes["line"])), tmp_path / "ci.nc", "nc")
+    source = fake_response_file()
+    path = _write(source.assign_coords(channel=("line", [195] * source.sizes["line"])), tmp_path / "ci.nc", "nc")
     np.testing.assert_allclose(read_response(path).gain.values, 7.0)
 
 

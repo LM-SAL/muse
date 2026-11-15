@@ -28,7 +28,7 @@ _DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
 # transform_response_units, as "<value> <unit>" strings.
 _DETECTOR_ATTRS = ("pixel_width", "pixel_height", "gain", "pair_energy")
 # SolarSoft's default aia_get_response epoch, the start of the science mission.
-_AIA_LAUNCH_EPOCH = "2010-05-01T00:00:00.000"
+_AIA_MISSION_START = "2010-05-01T00:00:00.000"
 # Mean energy that frees one electron-hole pair in silicon, as the SolarSoft AIA tables take it.
 _AIA_PAIR_ENERGY = 3.65 * u.eV / u.electron
 
@@ -145,8 +145,8 @@ def create_aia_effective_area(
         the leak rivals the channel's own peak.
     include_degradation : `bool`, optional
         Apply ``aiapy.calibrate.degradation`` at ``obstime``, by default `False`, as aiapy's
-        degradation on 1 May 2010 is not exactly 1. Set it, with ``obstime``, to compare with
-        observations.
+        degradation at the default ``obstime`` is not exactly 1. Set it, with ``obstime``, to
+        compare with observations.
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
@@ -181,7 +181,7 @@ def create_aia_effective_area(
         msg = "aiapy is required for this function, install it with `pip install muse[aia]`"
         raise ImportError(msg) from None
 
-    obstime = Time(_AIA_LAUNCH_EPOCH if obstime is None else obstime)
+    obstime = Time(_AIA_MISSION_START if obstime is None else obstime)
     aia_channel = Channel(channel)
     crosstalk = aia_channel.crosstalk * int(include_crosstalk)
     degradation_factor = degradation(channel, obstime).to_value(u.one).item() if include_degradation else 1.0

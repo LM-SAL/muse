@@ -165,7 +165,7 @@ def test_a_cache_that_does_not_hold_the_request_is_refused_and_kept(
     load(tmp_path, **kwargs)
     (path,) = tmp_path.iterdir()
     if "density" in other:
-        # A density grid has its own file name; here a pressure file stands under it.
+        # A density grid has its own file name; here a pressure file is given that name.
         path = path.rename(path.with_name(path.name.replace(".zarr.zip", "_density.zarr.zip")))
     written = path.read_bytes()
 

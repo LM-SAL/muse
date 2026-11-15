@@ -553,9 +553,8 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
 
 def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once():
     """
-    A response in memory is interpolated one slit at a time, which needs a fraction of
-    the memory, and a chunked one in one lazy call: both give the same detector
-    response.
+    A response in memory is interpolated one slit at a time and a chunked one in one
+    lazy call: both give the same detector response.
     """
     response = _spectral_response(contaminants=True)
     kwargs = {
@@ -573,7 +572,7 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
     assert isinstance(chunked.detector_response.data, da.Array)
     xr.testing.assert_identical(chunked.compute().drop_attrs(), in_memory.drop_attrs())
     assert chunked.detector_response.attrs == in_memory.detector_response.attrs
-    # what the spectral response says of itself stays on the mapped one, with the new units
+    # the attributes of the spectral response stay on the mapped one, with the new units
     assert in_memory.detector_response.attrs == {
         **response.spectral_response.attrs,
         "units": in_memory.detector_response.attrs["units"],
@@ -593,7 +592,7 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
 
 def test_sg_dispersion_follows_the_slit_separation_of_the_channel(monkeypatch):
     """
-    The separation is a setting per channel: each mapping takes that of its own.
+    The separation is a setting per channel: each mapping takes that of its own channel.
     """
     separation = xr.DataArray([380.0, 390.0, 400.0] * u.mAA, coords={"channel": [108, 171, 284]}, dims="channel")
     monkeypatch.setattr(detector, "DEFAULTS_MUSE", evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=separation))

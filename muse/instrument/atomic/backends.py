@@ -22,8 +22,8 @@ def _validate_plasma_inputs(
     temperature: xr.DataArray, density: xr.DataArray | None, pressure: xr.DataArray | None
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
-    The temperature in K and the density in cm^-3 or the pressure in K cm^-3, as plain
-    values.
+    The temperature in K and the plasma grid, a density in cm^-3 or a pressure in K
+    cm^-3, both without units.
     """
     if density is None and pressure is None:
         msg = "Specify density or pressure"
@@ -150,8 +150,9 @@ def _import_fiasco():
     except ImportError:
         msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
-    # 0.9.0 brought IonCollection.build_line_list and a free-free emission that is no longer
-    # per steradian: on an older fiasco the continuum would come out 4 pi too low, silently.
+    # 0.9.0 is the first release with IonCollection.build_line_list and with a free-free
+    # emission that is not per steradian: an older fiasco would silently give a continuum that
+    # is too low by a factor of 4 pi.
     if not minversion(fiasco, "0.9.0"):
         msg = f"fiasco 0.9.0 or later is required, found {fiasco.__version__}"
         raise ImportError(msg)
@@ -192,8 +193,8 @@ def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = Fa
         raise ValueError(msg)
     if workers == -1:
         # os.process_cpu_count gives the CPUs this process may run on. os.cpu_count gives every
-        # core of the machine, also on a Slurm node where the job holds a few: one worker per
-        # core there ran a 16-CPU job out of memory.
+        # core of the machine, also where a batch job holds only a few of them, and one worker
+        # per core would then exhaust the job's memory.
         workers = os.process_cpu_count() or 1
     if workers == 1 or len(ions) <= 1:
         return [function(list(ions), *args, **kwargs)]
@@ -203,8 +204,8 @@ def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = Fa
         msg = "joblib is required for workers != 1, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
     if single_ions:
-        # fiasco's number of levels of an ion, zero for one without data, ranks its cost well
-        # enough to order the queue; the split itself then needs no estimate.
+        # The number of levels of an ion, zero for one without data, ranks its cost well enough
+        # to order the queue.
         groups = [[ion] for ion in sorted(ions, key=lambda ion: getattr(ion, "n_levels", 0), reverse=True)]
     else:
         number_of_groups = min(workers, len(ions))

@@ -325,14 +325,12 @@ def create_fiasco_line_list(
         As for `create_chianti_line_list`.
     abundance : `str`, optional
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``. If not given,
-        fiasco's default applies (``sun_coronal_1992_feldman_ext`` in fiasco 0.9.0),
-        which is not ChiantiPy's default; give the name to compare the two backends.
-        The resolved name is recorded in the ``abundance`` attribute.
+        fiasco's default applies, which need not be ChiantiPy's; give the name to compare
+        the two backends. The resolved name is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by
-        default ``DEFAULTS_MUSE.minimum_abundance`` (1e-21, which keeps every element
-        of the abundance file). Unlike in `create_chianti_line_list`, it combines with
-        ``ion_list``.
+        default ``DEFAULTS_MUSE.minimum_abundance``. Unlike in `create_chianti_line_list`,
+        it combines with ``ion_list``.
     ion_list : `list` of `str`, optional
         CHIANTI ion names to include, such as ``"fe_9"`` (not fiasco's ``"Fe 9"``); by
         default every ion in the database.
@@ -351,8 +349,8 @@ def create_fiasco_line_list(
 
     Notes
     -----
-    Needs fiasco 0.9.0 or later, the first release with ``IonCollection.build_line_list``,
-    and joblib when ``workers`` is not 1.
+    Needs fiasco, and joblib when ``workers`` is not 1; ``pip install muse[fiasco]`` brings
+    both.
     """
     call_inputs = dict(locals())
     temperature, plasma_grid, wavelength_range = _validate_line_list_inputs(
@@ -455,9 +453,9 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     """
     Multiply the contribution functions of chosen transitions by a factor.
 
-    SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 Angstrom line by 20 to stand
-    in for its optical depth, and every SolarSoft AIA temperature response carries that
-    factor; a response meant to be compared with them needs the same.
+    For example, SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 Angstrom line
+    by 20 to stand in for its optical depth; a response meant to be compared with SolarSoft's
+    AIA temperature responses needs the same factor.
 
     Parameters
     ----------
@@ -484,7 +482,6 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
         factor = factor.where(~_match_transition(line_list, transition), value)
     boosted = line_list.copy()
     boosted["gofnt"] = (line_list.gofnt * factor).assign_attrs(line_list.gofnt.attrs)
-    # A line list that was boosted before records the product of both factors.
     recorded = json.loads(line_list.attrs.get("transition_boosts", "{}"))
     for (ion, lower, upper), value in boosts.items():
         recorded[f"{ion} {lower}-{upper}"] = recorded.get(f"{ion} {lower}-{upper}", 1) * value

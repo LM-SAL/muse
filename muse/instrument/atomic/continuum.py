@@ -43,7 +43,7 @@ def create_chianti_continuum(
 
     Free-free and free-bound emission do not depend on the density and are computed once;
     the two-photon emission of the hydrogen- and helium-like ions is evaluated at every
-    density or pressure. The result is a wavelength-space response like
+    density or pressure. The result is a wavelength-space response as
     `muse.instrument.create_spectral_response` gives, with one ``line`` per component, at
     rest and without an effective area: fold it onto bins with
     `muse.instrument.create_continuum_response`.
@@ -59,15 +59,15 @@ def create_chianti_continuum(
         name of the set that was used is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by default
-        ``DEFAULTS_MUSE.minimum_abundance`` (1e-21, which keeps every element of the
-        abundance file).
+        ``DEFAULTS_MUSE.minimum_abundance``.
 
     Returns
     -------
     `xarray.Dataset`
-        ``spectral_response`` in ``1e-27 erg cm3 / (Angstrom s sr)``. Its dimensions are
-        ``(line, logT, logD, wavelength_bin)`` for a density grid. For a pressure grid the
-        dimension of ``pressure`` takes the place of ``logD`` and comes before ``logT``.
+        ``spectral_response`` in units of ``DEFAULTS_MUSE.normalization`` erg cm3 /
+        (Angstrom s sr). Its dimensions are ``(line, logT, logD, wavelength_bin)`` for a
+        density grid. For a pressure grid the dimension of ``pressure`` takes the place of
+        ``logD`` and comes before ``logT``.
         ``line`` holds the three components ``free-free``, ``free-bound`` and
         ``two-photon``. The coordinates are ``wavelength_grid`` (the input wavelengths)
         with its ``wavelength_bounds``, and ``line_wavelength``, which is NaN for every
@@ -107,8 +107,7 @@ def create_chianti_continuum(
         for stage in range(1, z + 2):
             ion_name = f"{chconst.El[z - 1]}_{stage}"
             # A neutral has no charge to radiate free-free emission, and no electron recombines
-            # onto it. ChiantiPy 0.16 divides by zero for a neutral: freeFree then returns zeros
-            # and freeBound raises an AttributeError. So a neutral is not asked. A charged ion
+            # onto it; ChiantiPy divides by zero for one. So neutrals are skipped. A charged ion
             # without the data of a component reports an errorMessage instead.
             if stage > 1:
                 continuum = ch.continuum(ion_name, chianti_temperatures, abundance=abundance)
@@ -183,14 +182,13 @@ def create_fiasco_continuum(
     The counterpart of `create_chianti_continuum` with the same output, built on
     ``fiasco.IonCollection``, whose methods include the abundance and the ionization fraction
     like ChiantiPy's ``includeAbund`` and ``includeIoneq``. fiasco's continuum emission is
-    not per steradian (its free-free emission since fiasco 0.9), so every component is
-    divided by 4 pi to match ChiantiPy.
+    not per steradian, so every component is divided by 4 pi to match ChiantiPy.
 
     Parameters
     ----------
     temperature, wavelength_grid, density, pressure, abundance, minimum_abundance
         As for `create_chianti_continuum`. If ``abundance`` is not given, fiasco's default
-        applies (``sun_coronal_1992_feldman_ext`` in fiasco 0.9.0), which is not ChiantiPy's.
+        applies, which need not be ChiantiPy's.
     workers : `int`, optional
         Number of processes that share the ions, by default 1; ``-1`` uses every CPU this
         process may run on.
@@ -210,7 +208,8 @@ def create_fiasco_continuum(
 
     Notes
     -----
-    Needs fiasco 0.9.0 or later, and joblib when ``workers`` is not 1.
+    Needs fiasco, and joblib when ``workers`` is not 1; ``pip install muse[fiasco]`` brings
+    both.
     """
     call_inputs = dict(locals())
     temperature, plasma_grid, grid = _validate_continuum_inputs(temperature, density, pressure, wavelength_grid)
@@ -225,8 +224,7 @@ def create_fiasco_continuum(
 
     from fiasco.util.exceptions import MissingDatasetException, MissingIonError  # noqa: PLC0415
 
-    # Computed once for all elements: each Element would otherwise compute it again, about 0.4 s
-    # each time.
+    # Computed once for all elements: each Element would otherwise compute it again.
     proton_electron_ratio = fiasco.proton_electron_ratio(temperatures, **ion_kwargs)
     ions, two_photon_ions = [], []
     for z in range(1, 31):
@@ -274,7 +272,7 @@ def create_fiasco_continuum(
         grid=grid,
         attrs={
             "fiasco": fiasco.__version__,
-            # as fiasco's own line list takes the version of the database
+            # The version of the database, read where fiasco's own line list reads it.
             **({"Chianti": str(ions[0]._elvlc.version)} if hasattr(ions[0], "_elvlc") else {}),
             "minimum_abundance": minimum_abundance,
         },
@@ -314,9 +312,9 @@ def _chianti_component(
     try:
         method(grid, **kwargs)
     except AttributeError:
-        # How ChiantiPy 0.16 fails for an ion without the levels of this component: the
-        # two-photon emission of 21 hydrogen- and helium-like ions of CHIANTI 11.0.2, and no
-        # other error among its 495 ions. Anything else is a real error.
+        # How ChiantiPy fails for an ion without the levels of this component, as some
+        # hydrogen- and helium-like ions lack those of the two-photon emission. Any other error
+        # is raised.
         return None
     result = getattr(method.__self__, result_name)
     if "errorMessage" in result:

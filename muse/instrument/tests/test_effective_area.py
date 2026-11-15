@@ -215,7 +215,7 @@ def test_create_aia_effective_area_switches():
 
 @pytest.mark.usefixtures("fake_aiapy")
 def test_create_aia_effective_area_takes_a_component_of_one_value(monkeypatch):
-    # aiapy gives the contamination of the 1600, 1700 and 4500 channels as one value.
+    # aiapy gives the contamination of some channels as one value.
     monkeypatch.setattr(_FakeChannel, "contamination", [0.5] * u.one)
 
     effective_area = create_aia_effective_area(304 * u.AA)
@@ -230,7 +230,6 @@ def test_create_aia_effective_area_matches_aiapy_wavelength_response():
     With an epoch and the degradation, the area is aiapy's own wavelength response.
     """
     response = pytest.importorskip("aiapy.response")
-    # aiapy takes a Time only; create_aia_effective_area also a string
     expected = response.Channel(335 * u.AA).wavelength_response(obstime=Time("2014-01-01"), include_eve_correction=True)
     effective_area = create_aia_effective_area(335 * u.AA, obstime="2014-01-01", include_degradation=True)
     np.testing.assert_allclose(effective_area.effective_area, expected.to_value(u.cm**2 * u.DN / u.ph), rtol=1e-12)
