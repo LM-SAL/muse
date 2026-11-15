@@ -26,13 +26,13 @@ from muse.instrument.atomic.cache import (
 )
 from muse.instrument.atomic.linelist import boost_transitions, rank_line_list, select_transitions
 from muse.instrument.effective_area import (
+    _CM2_DN_PER_PHOTON,
     _DETECTOR_ATTRS,
-    _DN_PER_PHOTON,
     effective_area_wavelength_range,
     read_effective_area,
 )
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
-from muse.instrument.response.io import _open_response_file, save_response, save_spectral_response
+from muse.instrument.response.io import _open_dataset_file, save_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import (
     _centers_to_edges,
@@ -207,19 +207,19 @@ def generate_sg_responses(
         If another process is creating the line list; see
         `muse.instrument.load_or_create_line_list`.
     """
-    call = dict(locals())
+    call_inputs = dict(locals())
     settings = {
         "maximum_contaminants": maximum_contaminants,
         **_line_list_settings(line_list_file, line_list_backend, minimum_abundance),
     }
     with _limited_threads(threads):
-        run = _Run(generate_sg_responses, settings, call)
+        run = _Run(generate_sg_responses, settings, call_inputs)
         _require_sg_files(run.effective_areas)
         if not isinstance(maximum_contaminants, Integral):
             msg = f"maximum_contaminants must be an integer, got {maximum_contaminants!r}"
             raise TypeError(msg)
-        main_lines = _main_lines_by_sg_channel(main_lines_by_channel)
-        widths = _instrumental_width_by_sg_channel(instrumental_width_by_channel)
+        main_lines_by_sg_channel = _main_lines_by_sg_channel(main_lines_by_channel)
+        instrumental_width_by_sg_channel = _instrumental_width_by_sg_channel(instrumental_width_by_channel)
         wavebands = u.Quantity([_sg_waveband(_channel(area)) for area in run.effective_areas])
         load_line_list = _line_list_loader(
             run,
@@ -236,8 +236,11 @@ def generate_sg_responses(
 
         def names_of(area: xr.Dataset) -> dict:
             channel = _channel(area)
-            tags = [*map(_line_tag, main_lines[channel]), *(["contaminants"] if maximum_contaminants >= 1 else [])]
-            kinds = {"waveband": "waveband", "detector": _sg_geometry(channel)}
+            tags = [
+                *map(_line_tag, main_lines_by_sg_channel[channel]),
+                *(["contaminants"] if maximum_contaminants >= 1 else []),
+            ]
+            kinds = {"waveband": "waveband", "detector": _sg_geometry_tag(channel)}
             return {(tag, kind): (f"{channel}_{tag}_{part}", "") for tag in tags for kind, part in kinds.items()}
 
         for abundance, tasks in run.plan(names_of).items():
@@ -246,10 +249,10 @@ def generate_sg_responses(
                 _write_sg_products(
                     run,
                     names,
-                    line_list.isel({run.plasma.axis: plasma_point}),
+                    line_list.isel({run.request.plasma_dim: plasma_point}),
                     area,
-                    main_lines=main_lines[_channel(area)],
-                    instrumental_width=widths[_channel(area)],
+                    main_lines=main_lines_by_sg_channel[_channel(area)],
+                    instrumental_width=instrumental_width_by_sg_channel[_channel(area)],
                     doppler_velocity=doppler_velocity,
                     maximum_contaminants=maximum_contaminants,
                     abundance=abundance,
@@ -326,7 +329,7 @@ def generate_sg_continuum_responses(
     ValueError, FileNotFoundError, FileExistsError
         As for `generate_sg_responses`, for the continuum in place of the line list.
     """
-    call = dict(locals())
+    call_inputs = dict(locals())
     settings = {
         "wavelength_step": wavelength_step,
         "minimum_abundance": minimum_abundance,
@@ -336,26 +339,28 @@ def generate_sg_continuum_responses(
         if not wavelength_step > 0:
             msg = f"wavelength_step must be positive, got {wavelength_step}"
             raise ValueError(msg)
-        run = _Run(generate_sg_continuum_responses, settings, call)
+        run = _Run(generate_sg_continuum_responses, settings, call_inputs)
         _require_sg_files(run.effective_areas)
         load_continuum = _continuum_loader(run, continuum_backend)
         doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.continuum_response_doppler_velocity)
 
         def names_of(area: xr.Dataset) -> dict:
             channel = _channel(area)
-            return {"continuum": (f"{channel}_continuum_{continuum_backend}_{_sg_geometry(channel)}", "")}
+            return {"continuum": (f"{channel}_continuum_{continuum_backend}_{_sg_geometry_tag(channel)}", "")}
 
         for abundance, tasks in run.plan(names_of).items():
             for area, plasma_point, names in tasks:
                 channel = _channel(area) * u.AA
                 grid = _sg_waveband_grid(_channel(area), wavelength_step)
                 folded = create_continuum_response(
-                    load_continuum(abundance, grid).isel({run.plasma.axis: plasma_point}),
+                    load_continuum(abundance, grid).isel({run.request.plasma_dim: plasma_point}),
                     _centers_to_edges(grid.value) * u.AA,
                     effective_area=_curve(area),
                     doppler_velocity=doppler_velocity,
                 )
-                photons = transform_response_units(folded, _PHOTON_UNITS, channel, detector="SG", **_detector(area))
+                photons = transform_response_units(
+                    folded, _PHOTON_UNITS, channel, detector="SG", **_detector_kwargs(area)
+                )
                 run.write(
                     map_response_to_sg_detector(photons, channel=channel).assign(effective_area=_curve(area)),
                     names["continuum"],
@@ -469,7 +474,7 @@ def generate_ci_responses(
     ValueError, FileNotFoundError, FileExistsError
         As for `generate_sg_responses`, for the line list and the continuum alike.
     """
-    call = dict(locals())
+    call_inputs = dict(locals())
     settings = {
         "maximum_lines": maximum_lines,
         "bin_fractional_width": bin_fractional_width,
@@ -493,7 +498,7 @@ def generate_ci_responses(
         if not bin_fractional_width > 0:
             msg = f"bin_fractional_width must be positive, got {bin_fractional_width!r}"
             raise ValueError(msg)
-        run = _Run(generate_ci_responses, settings, call)
+        run = _Run(generate_ci_responses, settings, call_inputs)
         _require_ci_files(run.effective_areas, units)
         load_line_list = _line_list_loader(
             run,
@@ -525,12 +530,12 @@ def generate_ci_responses(
                     # At the wavelength samples of the effective area: the continuum is smooth, so
                     # samples that resolve the area resolve their product.
                     continuum = load_continuum(abundance, area.wavelength.values * u.AA).isel(
-                        {run.plasma.axis: plasma_point}
+                        {run.request.plasma_dim: plasma_point}
                     )
                 _write_ci_products(
                     run,
                     names,
-                    line_list.isel({run.plasma.axis: plasma_point}),
+                    line_list.isel({run.request.plasma_dim: plasma_point}),
                     area,
                     continuum=continuum,
                     doppler_velocity=doppler_velocity,
@@ -547,17 +552,17 @@ class _Run:
     and their writing.
     """
 
-    def __init__(self, generator: Callable, settings: dict, call: dict) -> None:
+    def __init__(self, generator: Callable, settings: dict, call_inputs: dict) -> None:
         """
-        ``call`` holds the arguments of ``generator`` by name, as ``locals()`` gives
-        them at its start; ``settings`` those that go into the history and the
+        ``call_inputs`` holds the arguments of ``generator`` by name, as ``locals()``
+        gives them at its start; ``settings`` those that go into the history and the
         attributes of every product.
         """
         self.generator, self.settings = generator, settings
-        self.author, self.effective_area_label = call["author"], call["effective_area_label"]
+        self.author, self.effective_area_label = call_inputs["author"], call_inputs["effective_area_label"]
         _require_name_part("author", self.author)
         _require_name_part("effective_area_label", self.effective_area_label)
-        abundances = call["abundances"]
+        abundances = call_inputs["abundances"]
         # A repeated abundance is taken once.
         self.abundances = [abundances] if isinstance(abundances, str) else list(dict.fromkeys(abundances))
         if not self.abundances:
@@ -565,31 +570,31 @@ class _Run:
             raise ValueError(msg)
         for abundance in self.abundances:
             _require_name_part("abundance", abundance, "._+-")
-        self.output_directory = Path(call["output_directory"])
-        cache_directory = call["cache_directory"]
+        self.output_directory = Path(call_inputs["output_directory"])
+        cache_directory = call_inputs["cache_directory"]
         self.cache_directory = self.output_directory / "cache" if cache_directory is None else Path(cache_directory)
-        self.skip_existing = call["skip_existing"]
+        self.skip_existing = call_inputs["skip_existing"]
         self.date = datetime.now(UTC).date()
-        pressure, density = call["pressure"], call["density"]
+        pressure, density = call_inputs["pressure"], call_inputs["density"]
         if pressure is None and density is None:
             pressure = DEFAULTS_MUSE.response_pressure
-        self.plasma = _PlasmaRequest(
-            _or_default(call["temperature"], DEFAULTS_MUSE.response_temperature), pressure, density
+        self.request = _PlasmaRequest(
+            _or_default(call_inputs["temperature"], DEFAULTS_MUSE.response_temperature), pressure, density
         )
         # What every read of a cache in the call shares.
         self._cache_options = {
-            "temperature": self.plasma.temperature,
-            "pressure": self.plasma.pressure,
-            "density": self.plasma.density,
-            **{name: call[name] for name in ("minimum_abundance", "create_if_missing", "workers", "threads")},
+            "temperature": self.request.temperature,
+            "pressure": self.request.pressure,
+            "density": self.request.density,
+            **{name: call_inputs[name] for name in ("minimum_abundance", "create_if_missing", "workers", "threads")},
         }
         # One plasma point per pressure; a density grid is one plasma point as a whole.
         self.plasma_points = (
             [("density", slice(None))]
             if density is not None
-            else [(f"pressure_{value:g}", [index]) for index, value in enumerate(self.plasma.values)]
+            else [(f"pressure_{value:g}", [index]) for index, value in enumerate(self.request.plasma_values)]
         )
-        files = call["effective_area_files"]
+        files = call_inputs["effective_area_files"]
         self.effective_areas = [
             read_effective_area(path).assign_attrs(effective_area_file=Path(path).name)
             for path in ([files] if isinstance(files, str | Path) else files)
@@ -623,12 +628,15 @@ class _Run:
                     area,
                     plasma_point,
                     {
-                        key: f"respfunc_{prefix}_{abundance}_{self.effective_area_label}_{tag}{units_tag}_{self.author}"
+                        key: (
+                            f"respfunc_{prefix}_{abundance}_{self.effective_area_label}"
+                            f"_{plasma_tag}{units_tag}_{self.author}"
+                        )
                         for key, (prefix, units_tag) in names_of(area).items()
                     },
                 )
                 for area in self.effective_areas
-                for tag, plasma_point in self.plasma_points
+                for plasma_tag, plasma_point in self.plasma_points
             ]
             for abundance in self.abundances
         }
@@ -671,7 +679,7 @@ class _Run:
             return
         # One order of the dimensions for every product, whatever order its parts came in.
         dataset = dataset.transpose(
-            "line", "doppler_velocity", "logT", self.plasma.axis, ..., missing_dims="ignore"
+            "line", "doppler_velocity", "logT", self.request.plasma_dim, ..., missing_dims="ignore"
         ).assign_attrs(author=self.author, effective_area_label=self.effective_area_label, **attrs)
         add_history(dataset, self.settings, self.generator)
         _replace_atomically(self._paths[name], lambda staging: save(dataset, staging))
@@ -714,7 +722,7 @@ def _write_sg_products(
             effective_area=curve,
             **kwargs,
         )
-        return transform_response_units(response, _PHOTON_UNITS, channel, detector="SG", **_detector(area))
+        return transform_response_units(response, _PHOTON_UNITS, channel, detector="SG", **_detector_kwargs(area))
 
     def write(cube: xr.Dataset, on_detector: xr.Dataset, tag: str) -> None:
         attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
@@ -780,7 +788,7 @@ def _write_ci_products(
         response_area = curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
     edges = create_log_wavelength_edges(curve.wavelength.values[[0, -1]] * u.AA, bin_fractional_width)
     ranked = rank_line_list(line_list, response_area).isel(trans_index=slice(maximum_lines))
-    line = f"{_channel(area)} lines"
+    line_label = f"{_channel(area)} lines"
     cube = create_spectral_response(
         ranked,
         main_lines=None,
@@ -788,7 +796,7 @@ def _write_ci_products(
         doppler_velocity=doppler_velocity,
         effective_area=response_area,
         wavelength_edges=edges,
-    ).assign_coords(line=[line], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
+    ).assign_coords(line=[line_label], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
     cube.attrs["number_of_lines"] = ranked.sizes["trans_index"]
     if continuum is not None:
         folded = create_continuum_response(
@@ -809,20 +817,20 @@ def _write_ci_products(
         ).assign_attrs(versions)
         # The attributes are those of the lines: the calls that made the continuum join the history here.
         _inherit_history(cube, folded)
-        line += " + continuum"
+        line_label += " + continuum"
 
-    detector = _detector(area)
-    photons = transform_response_units(cube, _PHOTON_UNITS, channel, detector="CI", **detector)
+    detector_kwargs = _detector_kwargs(area)
+    photons = transform_response_units(cube, _PHOTON_UNITS, channel, detector="CI", **detector_kwargs)
     if _carries_gain(area):
         in_dn = photons.assign(spectral_response=photons.spectral_response.assign_attrs(units=_DN_UNITS))
     else:
-        in_dn = transform_response_units(cube, _DN_UNITS, channel, detector="CI", **detector)
+        in_dn = transform_response_units(cube, _DN_UNITS, channel, detector="CI", **detector_kwargs)
     attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
     for tag, converted in (("", photons), ("_DN", in_dn)):
         if (tag, "waveband") not in names:
             continue
         run.write(converted.assign(effective_area=curve), names[tag, "waveband"], save_spectral_response, **attrs)
-        summed = _sum_lines(map_response_to_ci_detector(converted, channel), line)
+        summed = _sum_lines(map_response_to_ci_detector(converted, channel), line_label)
         run.write(summed.assign(effective_area=curve), names[tag, "summed"], save_response, **attrs)
 
 
@@ -870,15 +878,15 @@ def _line_list_loader(
             )
         else:
             # A netCDF file or a zarr store, such as a cache file of load_or_create_line_list.
-            with _open_response_file(Path(line_list_file)) as opened:
+            with _open_dataset_file(Path(line_list_file)) as opened:
                 line_list = opened.load()
-            problem = run.plasma.mismatch(line_list)
+            problem = run.request.mismatch(line_list)
             if line_list.attrs.get("abundance") not in (None, abundance):
                 problem = f"is of the abundance {line_list.attrs['abundance']}, not {abundance}"
             if problem:
                 msg = f"the line list {line_list_file} {problem}"
                 raise ValueError(msg)
-            line_list = run.plasma.select(line_list)
+            line_list = run.request.select(line_list)
         if transition_boosts:
             line_list = boost_transitions(line_list, transition_boosts)
         if transition_selection:
@@ -929,32 +937,32 @@ def _require_choice(name: str, value: str, choices: Iterable[str]) -> None:
         raise ValueError(msg)
 
 
-def _channel(effective_area: xr.Dataset) -> int:
+def _channel(area: xr.Dataset) -> int:
     """
     The channel of an effective area as the names and the MUSE defaults state it: whole
     Angstrom.
     """
-    return round(float(effective_area.channel))
+    return round(float(area.channel))
 
 
-def _curve(effective_area: xr.Dataset) -> xr.DataArray:
+def _curve(area: xr.Dataset) -> xr.DataArray:
     """
     The area along ``wavelength`` alone: its scalar ``channel`` would clash with the
     ``channel`` a detector response carries along ``line``.
     """
-    return effective_area.effective_area.reset_coords("channel", drop=True)
+    return area.effective_area.reset_coords("channel", drop=True)
 
 
-def _carries_gain(effective_area: xr.Dataset) -> bool:
-    return u.Unit(effective_area.effective_area.attrs["units"]).is_equivalent(_DN_PER_PHOTON)
+def _carries_gain(area: xr.Dataset) -> bool:
+    return u.Unit(area.effective_area.attrs["units"]).is_equivalent(_CM2_DN_PER_PHOTON)
 
 
-def _detector(effective_area: xr.Dataset) -> dict[str, u.Quantity]:
+def _detector_kwargs(area: xr.Dataset) -> dict[str, u.Quantity]:
     """
     The detector a file describes in its attributes, for `transform_response_units`;
     what it leaves out is the MUSE value.
     """
-    return {name: u.Quantity(effective_area.attrs[name]) for name in _DETECTOR_ATTRS if name in effective_area.attrs}
+    return {name: u.Quantity(area.attrs[name]) for name in _DETECTOR_ATTRS if name in area.attrs}
 
 
 def _line_tag(line: str) -> str:
@@ -1035,7 +1043,7 @@ def _instrumental_width_by_sg_channel(overrides: Mapping | None) -> dict[int, u.
     return widths
 
 
-def _sg_geometry(channel: int) -> str:
+def _sg_geometry_tag(channel: int) -> str:
     """
     The number of slits and the slit separation of an SG channel in milliangstrom, as
     the names of its detector products state them.

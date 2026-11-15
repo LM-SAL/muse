@@ -41,7 +41,7 @@ def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | N
     return allowed[matches][0].item()
 
 
-def _validate_wavelength_response(
+def _validate_spectral_response(
     response: xr.Dataset, *, accepted_units: tuple[u.UnitBase, ...] = _ACCEPTED_SG_RESPONSE_UNITS
 ) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
     if not isinstance(response, xr.Dataset):
@@ -145,7 +145,7 @@ def map_response_to_sg_detector(
         ``detector_wavelength`` and ``line_wavelength`` coordinates
         in Angstrom.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(response)
     line_wavelength = np.asarray(line_wavelength)
     channel_value = None
     spectral_order = None
@@ -291,7 +291,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         of ``response.spectral_response`` integrated over wavelength, with
         ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(
+    response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(
         response, accepted_units=_ACCEPTED_CI_RESPONSE_UNITS
     )
     line_wavelength = np.asarray(line_wavelength)

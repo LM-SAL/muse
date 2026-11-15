@@ -364,24 +364,24 @@ def _group_itself(group):
     return group
 
 
-def test_over_ions_runs_every_ion():
+def test_map_ion_groups_runs_every_ion():
     pytest.importorskip("joblib")
-    assert linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], 1, 10) == [25]
-    assert sorted(linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], 2, 10)) == [16, 19]
+    assert linelist._map_ion_groups(_group_sum, [1, 2, 3, 4, 5], 1, 10) == [25]
+    assert sorted(linelist._map_ion_groups(_group_sum, [1, 2, 3, 4, 5], 2, 10)) == [16, 19]
     # Every n-th ion to a worker: neighbors, the ions of one element, go to different ones.
-    assert linelist._over_ions(_group_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
+    assert linelist._map_ion_groups(_group_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
 
 
 def _levels_of(group):
     return [ion.n_levels for ion in group]
 
 
-def test_over_ions_hands_out_single_ions_with_the_most_levels_first():
+def test_map_ion_groups_hands_out_single_ions_with_the_most_levels_first():
     pytest.importorskip("joblib")
     # A free worker takes the next ion, so the costly ones spread out; an ion without data has no levels.
     ions = [SimpleNamespace(n_levels=levels) for levels in (3, 0, 40, 7)]
 
-    assert linelist._over_ions(_levels_of, ions, 2, single_ions=True) == [[40], [7], [3], [0]]
+    assert linelist._map_ion_groups(_levels_of, ions, 2, single_ions=True) == [[40], [7], [3], [0]]
 
 
 def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
@@ -403,17 +403,17 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     np.testing.assert_array_equal(parallel.gofnt.values, serial.gofnt.values)
 
 
-def test_over_ions_rejects_a_worker_count_below_one():
+def test_map_ion_groups_rejects_a_worker_count_below_one():
     with pytest.raises(ValueError, match="workers must be at least 1"):
-        linelist._over_ions(_group_sum, [1, 2, 3], 0, 10)
+        linelist._map_ion_groups(_group_sum, [1, 2, 3], 0, 10)
 
 
-def test_over_ions_counts_the_allocation_not_the_machine(monkeypatch):
+def test_map_ion_groups_counts_the_allocation_not_the_machine(monkeypatch):
     pytest.importorskip("joblib")
     monkeypatch.setattr(os, "process_cpu_count", lambda: 2)
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
     # two groups, as the two usable CPUs give; the machine's 64 would give five
-    assert sorted(linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
+    assert sorted(linelist._map_ion_groups(_group_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
 
 
 def _he_fe_line_list():

@@ -158,7 +158,7 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
         )
 
 
-def _open_response_file(response_file: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
+def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
     # open_zarr chunks with dask by default; chunks=None gives the file's lazily indexed arrays
     # without dask, as open_dataset does for netCDF.
     kwargs = {"chunks": {} if chunked else None, "decode_coords": decode_coords}
@@ -245,34 +245,34 @@ def read_response(
             msg = f"{name} must contain only finite values"
             raise ValueError(msg)
 
-    r = _open_response_file(response_file, chunked=chunked)
+    response = _open_dataset_file(response_file, chunked=chunked)
 
-    _validate_response(r, "response")
+    _validate_response(response, "response")
 
-    r = _resample_axis(r, "logT", logT, logT_method)
-    r = _resample_axis(r, "doppler_velocity", doppler_velocity, doppler_velocity_method)
+    response = _resample_axis(response, "logT", logT, logT_method)
+    response = _resample_axis(response, "doppler_velocity", doppler_velocity, doppler_velocity_method)
 
     if slit is not None:
         # Normalize to 0-based labels so downstream exact joins see byte-identical axes.
         number_of_slits = int(slit.max()) + 1
-        r = r.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
+        response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
-    if "channel" not in r.dims and "line" not in r.dims:
-        r = r.expand_dims("line")
+    if "channel" not in response.dims and "line" not in response.dims:
+        response = response.expand_dims("line")
 
     gain_unit = u.electron / u.DN
     if gain is None:
-        if "channel" not in r.coords:
+        if "channel" not in response.coords:
             msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
             raise ValueError(msg)
-        gain = _default_gain(r.channel)
+        gain = _default_gain(response.channel)
     gain = gain.to(gain_unit)  # a statement so add_history records the converted value
-    gain_dim = "channel" if "channel" in r.dims else "line"
-    gain_values = np.broadcast_to(np.atleast_1d(gain.value), r.sizes[gain_dim])
-    r = r.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
+    gain_dim = "channel" if "channel" in response.dims else "line"
+    gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
+    response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
-    add_history(r, locals(), read_response)
-    return r
+    add_history(response, locals(), read_response)
+    return response
 
 
 def _default_gain(channel) -> u.Quantity:
@@ -305,7 +305,7 @@ def _default_gain(channel) -> u.Quantity:
     raise ValueError(msg)
 
 
-def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
+def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
     """
     Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or
     ``doppler_velocity``).
@@ -315,11 +315,11 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
     clamps the result to be finite and non-negative.
     """
     if axis is None:
-        return r
+        return response
     # The requested axis is taken in the response's units when it carries none and converted to
     # them when it does, so the range check, the resampling and the result share one unit.
-    response_unit = require_unit(r, name, f"response.{name}", coord_only=True)
-    axis_attrs = dict(r[name].attrs)
+    response_unit = require_unit(response, name, f"response.{name}", coord_only=True)
+    axis_attrs = dict(response[name].attrs)
     if "units" in axis.attrs:
         try:
             converted = u.Unit(axis.attrs["units"]).to(response_unit, np.asarray(axis.values, dtype=float))
@@ -327,7 +327,7 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
             msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
             raise ValueError(msg) from exc
         axis = axis.copy(data=converted)
-    in_range = (axis >= r[name].min()) & (axis <= r[name].max())
+    in_range = (axis >= response[name].min()) & (axis <= response[name].max())
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
         axis = axis.where(in_range, drop=True)
@@ -335,24 +335,26 @@ def _resample_axis(r: xr.Dataset, name: str, axis: xr.DataArray | None, method: 
             msg = f"Requested {name} axis has no overlap with the response range"
             raise ValueError(msg)
     if method == "nearest":
-        r = r.sel({name: axis}, drop=True, method="nearest")
+        response = response.sel({name: axis}, drop=True, method="nearest")
     else:
-        nearest = r[name].sel({name: axis}, method="nearest").values
+        nearest = response[name].sel({name: axis}, method="nearest").values
         if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=1e-12, atol=0.0):
             # Every requested point already sits on the response grid, where interpolation
             # reduces to selection; selecting also reads only the needed slabs of a
             # dask-backed response instead of the full axis.
-            r = r.sel({name: axis}, drop=True, method="nearest")
+            response = response.sel({name: axis}, drop=True, method="nearest")
         else:
-            r = r.interp({name: axis}, method=method)
+            response = response.interp({name: axis}, method=method)
     # Clamp on every path so nearest and interpolated responses behave consistently.
-    r["detector_response"] = r.detector_response.fillna(0).clip(min=0).assign_attrs(r.detector_response.attrs)
-    if r.detector_response.chunks is not None:
+    response["detector_response"] = (
+        response.detector_response.fillna(0).clip(min=0).assign_attrs(response.detector_response.attrs)
+    )
+    if response.detector_response.chunks is not None:
         # Response files store tiny chunks along logT; point selection above keeps one
         # dask chunk per selected point, which shatters downstream synthesis graphs.
         # Consolidate the resampled axis into a single chunk.
-        r = r.chunk({name: -1})
-    return r.assign_coords({name: axis.assign_attrs(axis_attrs)})
+        response = response.chunk({name: -1})
+    return response.assign_coords({name: axis.assign_attrs(axis_attrs)})
 
 
 def align_response_and_vdem(
@@ -490,10 +492,10 @@ def load_and_concat_responses(
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
-        for filename, channel in zip(response_files, channels, strict=True):
+        for file_name, channel in zip(response_files, channels, strict=True):
             gain = _default_gain(channel)
             dataset = read_response(
-                Path(response_directory) / filename,
+                Path(response_directory) / file_name,
                 logT=logT,
                 doppler_velocity=doppler_velocity,
                 slit=slit,
@@ -579,7 +581,7 @@ def read_spectral_response(response_file: str | Path) -> xr.Dataset:
         If the file does not contain ``spectral_response``.
     """
     response_file = Path(response_file)
-    response = _open_response_file(response_file, decode_coords="all")
+    response = _open_dataset_file(response_file, decode_coords="all")
     if "spectral_response" not in response:
         msg = f"{response_file} does not contain spectral_response"
         raise ValueError(msg)

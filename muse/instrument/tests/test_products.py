@@ -29,7 +29,7 @@ from muse.instrument import (
 from muse.instrument.atomic import cache
 from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
-from muse.instrument.response.io import _open_response_file
+from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import synthetic_continuum, synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 
@@ -627,7 +627,7 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
         raise AssertionError(msg)
 
     # what the generators read a line list with, and what builds a response
-    monkeypatch.setattr(products_module, "_open_response_file", not_called)
+    monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     monkeypatch.setattr(products_module, "create_spectral_response", not_called)
 
     assert _sg(inputs, tmp_path, skip_existing=True) == first
@@ -717,7 +717,7 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
         """
         values = []
         for abundance, tag in pairs:
-            product = _open_response_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
+            product = _open_dataset_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
             assert (product.attrs["abundance"], product.pressure.values.tolist()) == (abundance, [float(tag)])
             variable = product["detector_response" if "detector_response" in product else "spectral_response"]
             values.append(float(variable.sel(**selection).max()))
@@ -745,7 +745,7 @@ def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_pa
         raise AssertionError(msg)
 
     # what the generators read a line list with
-    monkeypatch.setattr(products_module, "_open_response_file", not_called)
+    monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     second = _area_file(tmp_path, name="another_171.zarr")
     twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
 

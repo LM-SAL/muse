@@ -129,7 +129,7 @@ def create_spectral_response(
     """
     call_inputs = dict(locals())
     main_lines = () if main_lines is None else main_lines
-    response = _create_wavelength_response(
+    response = _build_spectral_response(
         line_list,
         wavelength_grid,
         instrumental_width=instrumental_width,
@@ -153,7 +153,7 @@ def create_spectral_response(
     nonthermal_velocity=u.km / u.s,
     wavelength_edges=u.AA,
 )
-def _create_wavelength_response(
+def _build_spectral_response(
     line_list: xr.Dataset,
     wavelength_grid: u.Quantity | None = None,
     *,
@@ -182,7 +182,7 @@ def _create_wavelength_response(
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
     if nonthermal_velocity is not None:
         nonthermal_velocity = _velocity_axis(nonthermal_velocity, "nonthermal_velocity")
-    effective_area = _effective_area_in_canonical_units(effective_area)
+    effective_area = _effective_area_in_cm2(effective_area)
     if include_contaminants and effective_area is not None and np.unique(effective_area.data).size == 1:
         logger.warning(
             "A flat (wavelength-independent) effective area is only representative near the main lines; "
@@ -229,12 +229,12 @@ def _create_wavelength_response(
     atomic_mass = _atomic_mass_from_atomic_number(line_list.atomic_number, pt.elements, atomic_mass_unit)
     thermal_velocity = np.sqrt(boltzmann * 10**line_list.logT / atomic_mass)
     thermal_line_width = line_centers * thermal_velocity / speed_of_light_ms
-    doppler_widths_squared = thermal_line_width**2 + instrumental_width**2
+    line_widths_squared = thermal_line_width**2 + instrumental_width**2
     if nonthermal_velocity is not None:
-        doppler_widths_squared = (
-            doppler_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
+        line_widths_squared = (
+            line_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
         )
-    doppler_widths = np.sqrt(doppler_widths_squared)
+    line_widths = np.sqrt(line_widths_squared)
     gaussian_norm = np.sqrt(2 * np.pi)
 
     # With bin averages a curve is taken at each line's own center. A scalar area, or a curve with
@@ -249,17 +249,17 @@ def _create_wavelength_response(
     for i, line_name in enumerate(line_names):
         if line_name not in main_response_parts:
             continue
-        line_response, gofnt_scaled = _evaluate_gaussian_response(
+        line_response, template = _evaluate_gaussian_response(
             wavelength_grid,
             line_centers.isel(trans_index=i),
-            doppler_widths.isel(trans_index=i),
+            line_widths.isel(trans_index=i),
             line_list.gofnt.isel(trans_index=i),
             gaussian_norm,
             edges=edges,
             bin_method=bin_method,
             area_at_center=None if area_at_center is None else area_at_center.isel(trans_index=i),
         )
-        line_response = xr.DataArray(line_response, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
+        line_response = xr.DataArray(line_response, dims=template.dims, coords=template.coords)
         line_response = line_response.expand_dims(line=[line_name])
         line_response = line_response.assign_coords(
             line_wavelength=("line", [line_list.wavelength.isel(trans_index=i).item()], {"units": str(u.AA)}),
@@ -279,9 +279,9 @@ def _create_wavelength_response(
         if contaminant_indices:
             # A transition whose +-window (see _evaluate_gaussian_response) misses the grid
             # contributes exactly zero, and a broad-band list is mostly such lines.
-            width_dims = [dim for dim in doppler_widths.dims if dim != "trans_index"]
+            width_dims = [dim for dim in line_widths.dims if dim != "trans_index"]
             center_dims = [dim for dim in line_centers.dims if dim != "trans_index"]
-            half_window = _GAUSSIAN_WINDOW_SIGMA * doppler_widths.max(dim=width_dims)
+            half_window = _GAUSSIAN_WINDOW_SIGMA * line_widths.max(dim=width_dims)
             lower = line_centers.min(dim=center_dims) - half_window
             upper = line_centers.max(dim=center_dims) + half_window
             on_grid = ((upper >= edges[0]) & (lower <= edges[-1])).values
@@ -292,7 +292,7 @@ def _create_wavelength_response(
             contaminant_indices,
             wavelength_grid,
             line_centers,
-            doppler_widths,
+            line_widths,
             gaussian_norm,
             edges=edges,
             bin_method=bin_method,
@@ -395,7 +395,7 @@ def _instrumental_width_in_angstrom(instrumental_width: u.Quantity) -> float:
     return converted
 
 
-def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> xr.DataArray | None:
+def _effective_area_in_cm2(effective_area: xr.DataArray | None) -> xr.DataArray | None:
     if effective_area is None:
         return None
     if not isinstance(effective_area, xr.DataArray):
@@ -479,7 +479,7 @@ def _create_contaminant_response(
     contaminant_indices: list[int],
     wavelength_grid: xr.DataArray,
     line_centers: xr.DataArray,
-    doppler_widths: xr.DataArray,
+    line_widths: xr.DataArray,
     gaussian_norm: float,
     *,
     edges: np.ndarray,
@@ -492,10 +492,10 @@ def _create_contaminant_response(
     accumulator = None
     iterator = tqdm(contaminant_indices, desc="Spectral contaminants", unit="line") if progress else contaminant_indices
     for i in iterator:
-        accumulator, gofnt_scaled = _evaluate_gaussian_response(
+        accumulator, template = _evaluate_gaussian_response(
             wavelength_grid,
             line_centers.isel(trans_index=i),
-            doppler_widths.isel(trans_index=i),
+            line_widths.isel(trans_index=i),
             line_list.gofnt.isel(trans_index=i),
             gaussian_norm,
             accumulator=accumulator,
@@ -503,7 +503,7 @@ def _create_contaminant_response(
             bin_method=bin_method,
             area_at_center=None if area_at_center is None else area_at_center.isel(trans_index=i),
         )
-    return xr.DataArray(accumulator, dims=gofnt_scaled.dims, coords=gofnt_scaled.coords)
+    return xr.DataArray(accumulator, dims=template.dims, coords=template.coords)
 
 
 def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
@@ -610,7 +610,7 @@ def _atomic_mass_from_atomic_number(atomic_number: xr.DataArray, elements, atomi
 def _evaluate_gaussian_response(
     wavelength_grid: xr.DataArray,
     line_center: xr.DataArray,
-    doppler_width: xr.DataArray,
+    line_width: xr.DataArray,
     gofnt: xr.DataArray,
     gaussian_norm: float,
     *,
@@ -637,7 +637,7 @@ def _evaluate_gaussian_response(
     if average and edges is None:
         msg = "bin averages need the bin edges"
         raise ValueError(msg)
-    center, width_for_bounds = xr.broadcast(line_center, doppler_width)
+    center, width_for_bounds = xr.broadcast(line_center, line_width)
     half_window = _GAUSSIAN_WINDOW_SIGMA * width_for_bounds
     window_lower, window_upper = np.min((center - half_window).data), np.max((center + half_window).data)
     if average:
@@ -658,7 +658,7 @@ def _evaluate_gaussian_response(
         else wavelength_grid.isel(wavelength_bin=slice(start, stop))
     )
     shift = (window_points - line_center).broadcast_like(gofnt)
-    width, shift = xr.broadcast(doppler_width, shift)
+    width, shift = xr.broadcast(line_width, shift)
     gofnt_scaled = (gofnt / DEFAULTS_MUSE.normalization).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     wavelength_axis = gofnt_scaled.get_axis_num("wavelength_bin")
@@ -766,21 +766,23 @@ def create_continuum_response(
     """
     call_inputs = dict(locals())
     response_unit = require_unit(continuum, "spectral_response", "continuum.spectral_response")
-    grid = np.asarray(coord_as_unit(continuum, "wavelength_grid", u.AA, "continuum.wavelength_grid"), dtype=float)
+    continuum_grid = np.asarray(
+        coord_as_unit(continuum, "wavelength_grid", u.AA, "continuum.wavelength_grid"), dtype=float
+    )
     centers, edges = _wavelength_bins(None, wavelength_edges)
     if effective_area is None:
         msg = "effective_area is required: a continuum response is the continuum seen through an area"
         raise ValueError(msg)
-    if grid.size < 2:
+    if continuum_grid.size < 2:
         msg = "the continuum needs at least two wavelength samples to average over bins"
         raise ValueError(msg)
-    if edges[1] <= grid[0] or edges[-2] >= grid[-1]:
+    if edges[1] <= continuum_grid[0] or edges[-2] >= continuum_grid[-1]:
         msg = (
-            f"wavelength_edges reach beyond the continuum, which is given from {grid[0]:g} to {grid[-1]:g} Angstrom: "
-            "a bin lies wholly outside it"
+            f"wavelength_edges reach beyond the continuum, which is given from {continuum_grid[0]:g} to "
+            f"{continuum_grid[-1]:g} Angstrom: a bin lies wholly outside it"
         )
         raise ValueError(msg)
-    area = _effective_area_in_canonical_units(effective_area)
+    area = _effective_area_in_cm2(effective_area)
     # Where the product of continuum and area is evaluated before it is averaged, whatever the
     # velocity: at the two outer edges and, for a curve, at its two ends and just beyond them,
     # where the area drops to zero.
@@ -788,7 +790,7 @@ def create_continuum_response(
     if area.ndim:
         ends = area.wavelength.values[[0, -1]]
         fixed += [ends, np.nextafter(ends, [-np.inf, np.inf])]
-    rest = continuum.spectral_response.assign_coords(wavelength_bin=grid)
+    rest_continuum = continuum.spectral_response.assign_coords(wavelength_bin=continuum_grid)
     velocities = [0.0] if doppler_velocity is None else np.atleast_1d(doppler_velocity.to_value(u.km / u.s))
     pieces = []
     for velocity in velocities:
@@ -796,7 +798,7 @@ def create_continuum_response(
         # And at the samples of the continuum, both where they are observed and at rest: the
         # first keeps the shape of the shifted continuum, the second that of an area that is
         # sampled on the grid of the continuum.
-        positions = np.unique(np.concatenate([*fixed, grid, grid * stretch]))
+        positions = np.unique(np.concatenate([*fixed, continuum_grid, continuum_grid * stretch]))
         positions = positions[(positions >= edges[0]) & (positions <= edges[-1])]
         area_there = area
         if area.ndim:
@@ -804,7 +806,9 @@ def create_continuum_response(
                 area.interp(wavelength=xr.DataArray(positions, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
             )
         # Clipped to the samples, which holds the continuum constant beyond its two ends.
-        emitted = rest.interp(wavelength_bin=np.clip(positions / stretch, grid[0], grid[-1]))
+        emitted = rest_continuum.interp(
+            wavelength_bin=np.clip(positions / stretch, continuum_grid[0], continuum_grid[-1])
+        )
         product = emitted.assign_coords(wavelength_bin=positions) / stretch * area_there
         pieces.append(_bin_average(product, positions, edges))
     if doppler_velocity is None:

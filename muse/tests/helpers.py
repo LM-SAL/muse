@@ -61,7 +61,9 @@ def synthetic_continuum(
 
     temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
     grid = wavelength_grid.to_value(u.AA)
-    temperature_bc, _, extra_coords = _broadcast_plasma_grid(temperature, plasma, by_density=density is not None)
+    temperature_broadcast, _, plasma_coords = _broadcast_plasma_grid(
+        temperature, plasma, by_density=density is not None
+    )
     base = 1e-24 * np.ones((temperature.size, grid.size))
     two_photon = 1e-40 * plasma.data[:, None, None] * np.ones((plasma.size, temperature.size, grid.size))
     return _continuum_dataset(
@@ -69,9 +71,9 @@ def synthetic_continuum(
         0.5 * base,
         two_photon,
         temperature=temperature,
-        temperature_bc=temperature_bc,
-        extra_coords=extra_coords,
-        grid=grid,
+        temperature_broadcast=temperature_broadcast,
+        plasma_coords=plasma_coords,
+        wavelength_grid=grid,
         attrs={"abundance": abundance, "minimum_abundance": minimum_abundance, "fiasco": "0.0.test"},
     )
 

@@ -95,10 +95,10 @@ def _broadcast_plasma_grid(
     """
     if by_density:
         plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})
-        temperature_bc, density_bc = xr.broadcast(temperature, plasma_grid)
-        return temperature_bc, density_bc, {"logD": np.log10(plasma_grid.data)}
-    density_bc = plasma_grid / temperature
-    return temperature.broadcast_like(density_bc), density_bc, {plasma_grid.dims[0]: plasma_grid.data}
+        temperature_broadcast, density_broadcast = xr.broadcast(temperature, plasma_grid)
+        return temperature_broadcast, density_broadcast, {"logD": np.log10(plasma_grid.data)}
+    density_broadcast = plasma_grid / temperature
+    return temperature.broadcast_like(density_broadcast), density_broadcast, {plasma_grid.dims[0]: plasma_grid.data}
 
 
 def _initialize_chianti() -> tuple[str, ModuleType]:
@@ -168,7 +168,7 @@ def _fiasco_ion_kwargs(abundance: str | None, hdf5_dbase_root: str | Path | None
     return {key: value for key, value in options.items() if value is not None}
 
 
-def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = False, **kwargs) -> list:
+def _map_ion_groups(function, ions: list, workers: int, *args, single_ions: bool = False, **kwargs) -> list:
     """
     Call ``function(group, *args, **kwargs)`` on groups of ``ions`` and return the
     results, one per group.
