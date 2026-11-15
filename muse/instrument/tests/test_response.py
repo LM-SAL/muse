@@ -2,11 +2,13 @@ import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
+from attrs import evolve
 
 import astropy.units as u
 
 from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.atomic.linelist import create_chianti_line_list
+from muse.instrument.response import detector
 from muse.instrument.response.io import read_response, read_spectral_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
@@ -142,7 +144,7 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=0).item() == pytest.approx(expected_start)
     dispersion = (
         2
-        * DEFAULTS_MUSE.spectral_slit_separation_SG
+        * u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=171).data)
         / DEFAULTS_MUSE.pixels_between_slits_SG
         / DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=171).item()
     ).to_value(u.AA / u.pix)
@@ -587,3 +589,20 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
         rtol=1e-12,
     )
     assert float(in_memory.detector_response.max()) > 0
+
+
+def test_sg_dispersion_follows_the_slit_separation_of_the_channel(monkeypatch):
+    """
+    The separation is a setting per channel: each mapping takes that of its own.
+    """
+    separation = xr.DataArray([380.0, 390.0, 400.0] * u.mAA, coords={"channel": [108, 171, 284]}, dims="channel")
+    monkeypatch.setattr(detector, "DEFAULTS_MUSE", evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=separation))
+    pixels_between_slits = DEFAULTS_MUSE.pixels_between_slits_SG.to_value(u.pix)
+
+    # The separation is stated at second order; 284 is observed at first order, with twice the dispersion.
+    for channel, expected in ((108, 0.380), (171, 0.390), (284, 2 * 0.400)):
+        mapped = map_response_to_sg_detector(_spectral_response(), channel=channel * u.AA)
+        step = mapped.detector_wavelength.isel(slit=0).diff("detector_x_pixel")
+        np.testing.assert_allclose(step, expected / pixels_between_slits)
+        slit_to_slit = mapped.detector_wavelength.isel(detector_x_pixel=0).diff("slit")
+        np.testing.assert_allclose(-slit_to_slit, expected)
