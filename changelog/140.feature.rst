@@ -1,0 +1,1 @@
+Added ``sum_lines_per_channel`` to ``muse.synthesis``, which sums the lines of each channel of a spectrum or a response, as the detector records them on the same pixels. ``channel`` replaces ``line`` as the dimension, and ``sum_slits=True`` also sums over ``slit``.
