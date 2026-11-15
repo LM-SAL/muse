@@ -1,0 +1,1 @@
+The thermal width of a line in ``create_spectral_response`` takes the mass of the element in atomic mass units. It was multiplied by the proton mass, which made every ion 0.73 % too heavy and every thermal width 0.36 % too narrow.
