@@ -575,6 +575,13 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
     ValueError
         If ``data`` has no ``line`` dimension or no ``channel`` coordinate along
         it.
+
+    Notes
+    -----
+    Sum after converting photons to electrons or DN, not before. The sum keeps
+    the wavelength of the first line of a channel, so
+    `muse.instrument.transform_flux_units` would apply the photon energy of
+    that line to every line of the channel.
     """
     if "line" not in data.dims or "channel" not in data.coords or data.channel.dims != ("line",):
         msg = "data must have a line dimension and a channel coordinate along it"
@@ -583,7 +590,8 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
     channels, first_line = channels[np.argsort(first_line)], np.sort(first_line)
     # Start from the first line of each channel, which gives the coordinates; the sums then replace the
     # data variables along line.
-    result = data.isel(line=first_line).swap_dims(line="channel").drop_vars("line")
+    # errors="ignore": a line dimension need not have a coordinate of its own.
+    result = data.isel(line=first_line).swap_dims(line="channel").drop_vars("line", errors="ignore")
     for name, variable in data.data_vars.items():
         if "line" not in variable.dims:
             continue

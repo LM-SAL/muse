@@ -404,6 +404,7 @@ def test_remove_exposure_time_requires_a_recorded_time() -> None:
 def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
     # Without its first line, the first and the last line of a channel differ in wavelength.
     response = response.isel(line=slice(1, None))
+    history = list(response.attrs.get("HISTORY", []))
 
     out = synthesis_utils.sum_lines_per_channel(response)
 
@@ -421,10 +422,12 @@ def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
         # The first line of the channel gives its coordinates.
         assert float(out.line_wavelength.sel(channel=channel)) == float(response.line_wavelength[lines[0]])
     assert out.attrs["HISTORY"][-1].startswith("sum_lines_per_channel(")
+    assert response.attrs.get("HISTORY", []) == history  # the entry goes to the result alone
 
 
 def test_sum_lines_per_channel_keeps_the_order_in_which_channels_first_appear(response) -> None:
-    reversed_lines = response.isel(line=slice(None, None, -1))
+    # without a coordinate of its own, the line dimension is still summed
+    reversed_lines = response.isel(line=slice(None, None, -1)).drop_vars("line")
 
     out = synthesis_utils.sum_lines_per_channel(reversed_lines)
 
@@ -450,7 +453,7 @@ def test_sum_lines_per_channel_sums_the_slits_on_request(response, raster) -> No
     one_slit = spectrum.isel(slit=0, drop=True)
     xr.testing.assert_allclose(
         synthesis_utils.sum_lines_per_channel(one_slit, sum_slits=True).flux,
-        synthesis_utils.sum_lines_per_channel(one_slit).flux,
+        synthesis_utils.sum_lines_per_channel(spectrum).flux.isel(slit=0, drop=True),
     )
 
 
