@@ -19,6 +19,7 @@ __all__ = [
     "fake_vdem",
     "fake_vdem_offgrid",
     "fake_vdem_single_doppler_velocity",
+    "synthetic_continuum",
     "synthetic_effective_area",
     "synthetic_line_list",
 ]
@@ -41,6 +42,37 @@ def synthetic_line_list(n_lines=2, wavelength=None, logT=None):
             "full_name": ("trans_index", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
         },
         coords={"logT": ("logT", logT, {"units": "dex(K)"})},
+    )
+
+
+def synthetic_continuum(
+    temperature, wavelength_grid, *, density=None, pressure=None, abundance=None, minimum_abundance=None, **_kwargs
+):
+    """
+    Return a flat continuum with the call signature and the layout of the continuum
+    builders: free-free 1e-24, free-bound half of it, and a two-photon part that is 1e-40
+    times the density or the pressure of each plasma point.
+    """
+    from muse.instrument.atomic.backends import (  # noqa: PLC0415
+        _broadcast_plasma_grid,
+        _validate_plasma_inputs,
+    )
+    from muse.instrument.atomic.continuum import _continuum_dataset  # noqa: PLC0415
+
+    temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
+    grid = wavelength_grid.to_value(u.AA)
+    temperature_bc, _, extra_coords = _broadcast_plasma_grid(temperature, plasma, by_density=density is not None)
+    base = 1e-24 * np.ones((temperature.size, grid.size))
+    two_photon = 1e-40 * plasma.data[:, None, None] * np.ones((plasma.size, temperature.size, grid.size))
+    return _continuum_dataset(
+        base,
+        0.5 * base,
+        two_photon,
+        temperature=temperature,
+        temperature_bc=temperature_bc,
+        extra_coords=extra_coords,
+        grid=grid,
+        attrs={"abundance": abundance, "minimum_abundance": minimum_abundance, "fiasco": "0.0.test"},
     )
 
 
