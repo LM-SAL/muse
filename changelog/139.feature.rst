@@ -1,0 +1,1 @@
+Added ``apply_exposure_time`` and ``remove_exposure_time`` to ``muse.synthesis``: the first turns the rate of a spectrum into the counts of one exposure and records the time, in seconds, as the ``exposure_time`` coordinate; the second divides it back out.
