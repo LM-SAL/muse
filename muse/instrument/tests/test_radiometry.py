@@ -297,7 +297,9 @@ def test_transform_flux_units_electrons_to_data_numbers_needs_only_the_gain():
 
 
 def test_transform_flux_units_works_along_channel():
-    out = transform_flux_units(_spectrum(dim="channel", channel=None).assign_coords(channel=[171, 284]), "electron / s")
+    spectrum = _spectrum(dim="channel", channel=None).assign_coords(channel=[171, 284])
+    # a gain the conversion does not need is not read, so one without units is no obstacle
+    out = transform_flux_units(spectrum.assign_coords(gain=("channel", [1.0, 1.0])), "electron / s")
 
     np.testing.assert_allclose(
         out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]), rtol=1e-12
@@ -327,6 +329,7 @@ def test_transform_flux_units_selects_the_detector_calibration(monkeypatch):
         (_spectrum().assign(flux=_spectrum().flux.assign_attrs(units=None)), "DN / s", {}, "spectrum.flux"),
         (_spectrum().drop_vars("line_wavelength"), "DN / s", {}, "line_wavelength"),
         (_spectrum().isel(line=0), "DN / s", {}, "must lie along one dimension"),
+        (_spectrum(), "DN / s", {"gain": 0 * u.electron / u.DN}, "gain must be finite and positive"),
     ],
 )
 def test_transform_flux_units_rejects_invalid_inputs(spectrum, new_units, kwargs, match):

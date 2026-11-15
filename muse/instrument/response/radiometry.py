@@ -59,6 +59,11 @@ def _detector_chain_factor(
     """
     to_photon, to_electron, to_dn = _chain_steps(old_unit, target_unit)
     factor = (1 / photon_energy) ** to_photon
+    for name, value, steps in (("pair_energy", pair_energy, to_electron), ("gain", gain, to_dn)):
+        # A zero would give an infinite flux and a negative value a negative one, without an error.
+        if steps and not np.all(np.isfinite(value.value) & (value.value > 0)):
+            msg = f"{name} must be finite and positive, got {value}"
+            raise ValueError(msg)
     if to_electron:
         factor = factor * ((photon_energy * u.ph / pair_energy).to(u.electron) / u.ph) ** to_electron
     if to_dn:
@@ -222,7 +227,9 @@ def transform_flux_units(
         Spectrum, e.g. from `muse.synthesis.vdem_synthesis`. ``flux`` and the
         ``line_wavelength`` coordinate must define units, and
         ``line_wavelength`` must lie along one dimension of ``flux``, such as
-        ``line`` or ``channel``.
+        ``line`` or ``channel``. An entry without a line wavelength (NaN), such
+        as the continuum, has no photon energy: its flux comes out as NaN from
+        a conversion between photons and electrons or DN.
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g. ``"DN / s"``.
     detector : {"SG", "CI"}, optional
@@ -263,13 +270,14 @@ def transform_flux_units(
         msg = "spectrum.line_wavelength must lie along one dimension of spectrum.flux"
         raise ValueError(msg)
 
-    if gain is None and "gain" in spectrum.coords:
+    # The gain and the pair energy are read only for a step the conversion takes: electrons to DN
+    # needs no pair energy, and photons to electrons no gain, whatever the spectrum carries.
+    _, to_electron, to_dn = _chain_steps(old_unit, target_unit)
+    if to_dn and gain is None and "gain" in spectrum.coords:
         gain = u.Quantity(
             coord_as_unit(spectrum, "gain", u.electron / u.DN, "spectrum.gain").broadcast_like(wavelength).values,
             u.electron / u.DN,
         )
-    # A default is looked up only for a step the conversion takes: electrons to DN needs no pair energy.
-    _, to_electron, to_dn = _chain_steps(old_unit, target_unit)
     needs_gain, needs_pair_energy = bool(to_dn) and gain is None, bool(to_electron) and pair_energy is None
     if needs_gain or needs_pair_energy:
         if "channel" not in spectrum.coords:
