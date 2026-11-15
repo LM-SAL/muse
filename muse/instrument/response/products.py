@@ -105,7 +105,7 @@ def generate_sg_responses(
     stop the call at its start.
 
     On the default grids the detector response of one line takes 2 GB of memory, and making it
-    about 12 GB.
+    about 4 GB.
 
     Parameters
     ----------
@@ -729,8 +729,7 @@ def _write_sg_products(
 
     main = photon_response(line_list, main_lines=main_lines)
     for line in main_lines:
-        # One line at a time: the mapping needs several times the memory of its result, which
-        # is 2 GB on the default grids.
+        # One line at a time: the detector response of a line is 2 GB on the default grids.
         one = main.sel(line=[line])
         write(one, map_response_to_sg_detector(one, channel=channel), _line_tag(line))
     if maximum_contaminants < 1:
