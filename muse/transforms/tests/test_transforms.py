@@ -148,6 +148,8 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     assert out.x.size == 35 * 11
     assert bool(np.isfinite(out.vdem).all())
     np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
+    # only the padding is zero: the resampled field in front of it keeps its emission
+    assert float(out.vdem.isel(x=slice(0, resampled_width)).sum()) > 0
 
 
 @pytest.mark.parametrize("x_extent", ["crop", "keep"])
