@@ -1,5 +1,7 @@
 """
 Line lists and continua stored in files: created once, then read by every later call.
+
+A file is a zarr store packed into one zip.
 """
 
 import os
@@ -15,6 +17,7 @@ from collections.abc import Callable
 import numpy as np
 import xarray as xr
 from threadpoolctl import threadpool_info, threadpool_limits
+from zarr.storage import ZipStore
 
 import astropy.units as u
 
@@ -22,6 +25,7 @@ from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
+from muse.utils.utils import _to_zarr
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_or_create_continuum", "load_or_create_line_list"]
@@ -49,8 +53,8 @@ def load_or_create_line_list(
     """
     Read a line list from a cache directory, creating it first if it is not there.
 
-    The file is ``line_list_<backend>_<lower>-<upper>A_<abundance>.nc``, with ``_density``
-    before the suffix for a density grid. A file that holds more plasma points than requested
+    The file is ``line_list_<backend>_<lower>-<upper>A_<abundance>.zarr.zip``, with
+    ``_density`` before the suffix for a density grid. A file that holds more plasma points than requested
     serves the requested ones. One created on other temperatures, without one of the requested
     plasma points or with another minimum abundance is refused and left as it is, as a line
     list takes hours and other processes may be reading it.
@@ -165,8 +169,8 @@ def load_or_create_continuum(
     Read a continuum from a cache directory, creating it first if it is not there.
 
     It is the rest-frame continuum of one abundance on one wavelength grid. The file is
-    ``continuum_<backend>_<lower>-<upper>A_n<wavelengths>_<abundance>.nc``, with ``_density``
-    before the suffix for a density grid. A file that holds more plasma points than requested
+    ``continuum_<backend>_<lower>-<upper>A_n<wavelengths>_<abundance>.zarr.zip``, with
+    ``_density`` before the suffix for a density grid. A file that holds more plasma points than requested
     serves the requested ones. One created on other temperatures or wavelengths, without one
     of the requested plasma points or with another minimum abundance is refused and left as it
     is. The lock file is as for `load_or_create_line_list`.
@@ -288,7 +292,7 @@ def _cache_path(
     _require_name_part("abundance", abundance, "._+-")
     suffix = "_density" if request.density is not None else ""
     # The ends are not rounded to whole Angstrom: 25.4-900 must not find the file of 25-900.
-    return Path(cache_directory) / f"{kind}_{backend}_{span}_{abundance}{suffix}.nc"
+    return Path(cache_directory) / f"{kind}_{backend}_{span}_{abundance}{suffix}.zarr.zip"
 
 
 def _require_name_part(name: str, value: str, punctuation: str = ".+-") -> None:
@@ -328,11 +332,25 @@ def _load_or_create(
                 # The minimum abundance is recorded here, so that the check below does not rest
                 # on what a backend stores.
                 created = create().assign_attrs(minimum_abundance=minimum_abundance)
-                _replace_atomically(path, lambda staging: _to_netcdf(created, staging))
+                # One chunk per plasma point and temperature, so that a call for one pressure reads
+                # that pressure alone and no chunk outgrows what the compressor takes.
+                chunks = {
+                    name: {
+                        "chunks": tuple(
+                            1 if dim in (request.axis, "logT") else size
+                            for dim, size in zip(variable.dims, variable.shape, strict=True)
+                        )
+                    }
+                    for name, variable in created.data_vars.items()
+                    if request.axis in variable.dims
+                }
+                _replace_atomically(path, lambda staging: _to_zarr(created, staging, encoding=chunks))
     logger.info(f"Reading the {what} from {path}")
     # A file created just now is read back too: the first call then returns what every later
-    # one will. Opened lazily, so that a call for one pressure reads that pressure alone.
-    with xr.open_dataset(path, decode_coords="all") as cached:
+    # one will. Opened without loading, so that only the requested part is read.
+    store = ZipStore(path, mode="r")
+    try:
+        cached = xr.open_zarr(store, consolidated=False, chunks=None, decode_coords="all")
         if cached.attrs.get("minimum_abundance") != minimum_abundance:
             problem = (
                 f"was created with the minimum abundance {cached.attrs.get('minimum_abundance')}, "
@@ -349,15 +367,8 @@ def _load_or_create(
             msg = f"the {what} cache {path} {problem}; delete it or use another cache directory"
             raise ValueError(msg)
         return request.select(cached).load()
-
-
-def _to_netcdf(dataset: xr.Dataset, path: Path) -> None:
-    encoding = {
-        name: {"zlib": True, "complevel": 5}
-        for name, variable in dataset.data_vars.items()
-        if variable.dtype.kind in "fiu"
-    }
-    dataset.to_netcdf(path, encoding=encoding)
+    finally:
+        store.close()
 
 
 @contextlib.contextmanager
@@ -394,14 +405,13 @@ def _replace_atomically(path: Path, write: Callable[[Path], None]) -> None:
     Call ``write`` on a staging path beside ``path`` and rename the result into place: a
     reader never finds a half-written file, and a failed write leaves nothing behind.
     """
-    # netCDF4 reports a missing directory as "Permission denied".
     path.parent.mkdir(parents=True, exist_ok=True)
     staging = path.with_name(f".{path.stem}.{uuid.uuid4().hex}{path.suffix}")
     try:
         write(staging)
         staging.replace(path)
     finally:
-        # Still there only if the write or the rename failed; a zarr store is a directory.
+        # Still there only if the write or the rename failed; a zarr store that is not packed is a directory.
         if staging.is_dir():
             shutil.rmtree(staging)
         else:

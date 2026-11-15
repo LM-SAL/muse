@@ -12,8 +12,8 @@ import astropy.constants as const
 import astropy.units as u
 from astropy.time import Time
 
-from muse.instrument.response.io import _check_destination, _open_response_file
-from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
+from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination, _open_response_file
+from muse.utils.utils import _require_increasing_axis, _to_zarr, add_history, coord_as_unit, require_unit
 
 __all__ = [
     "create_aia_effective_area",
@@ -255,7 +255,8 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
         ``effective_area(wavelength)`` with units convertible to cm2 or cm2 DN / ph, and the
         scalar coordinate ``channel``.
     effective_area_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
+        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``.
+        A ``.zarr.zip`` destination is one file: the zarr store packed into a zip. Existing
         destinations are not overwritten.
 
     Raises
@@ -266,8 +267,8 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
     """
     validated = _validated(effective_area, "effective_area").drop_encoding()
     destination = _check_destination(effective_area_file, what="effective area", argument="effective_area_file")
-    if destination.suffix.lower() == ".zarr":
-        validated.to_zarr(destination, consolidated=False)
+    if destination.suffix.lower() in _ZARR_SUFFIXES:
+        _to_zarr(validated, destination)
     else:
         validated.to_netcdf(destination)
 

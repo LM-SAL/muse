@@ -27,6 +27,7 @@ from muse.instrument import (
 )
 from muse.instrument.atomic import cache
 from muse.instrument.response import products as products_module
+from muse.instrument.response.io import _open_response_file
 from muse.tests.helpers import synthetic_continuum, synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 
@@ -171,8 +172,9 @@ def test_every_sg_product_is_written_once(sg_products):
         f"respfunc_171_contaminants_waveband_{TAIL}_TEST",
         f"respfunc_171_contaminants_{GEOMETRY}_{TAIL}_TEST",
     ]
-    assert all(path.is_dir() and path.suffix == ".zarr" for path in sg_products)
-    # nothing else in the directory: no staging store is left
+    # each product is one file
+    assert all(path.is_file() and path.name.endswith(".zarr.zip") for path in sg_products)
+    # nothing else in the directory: no staging file is left
     assert sorted(path.name for path in sg_products[0].parent.iterdir()) == sorted(path.name for path in sg_products)
 
 
@@ -183,7 +185,7 @@ def test_every_ci_product_is_written_once(ci_products):
         f"respfunc_ci_171_waveband_{TAIL}_DN_TEST",
         f"respfunc_ci_171_{TAIL}_DN_TEST",
     ]
-    assert all(path.is_dir() for path in ci_products)
+    assert all(path.is_file() for path in ci_products)
 
 
 def test_main_line_response(sg_products):
@@ -563,7 +565,11 @@ def test_calls_for_single_files_share_the_line_list_of_them_all(inputs, tmp_path
     _sg(inputs, tmp_path / "second", **options)
 
     assert line_list_calls == [[100.0, 300.0]]
-    assert (tmp_path / "cache" / f"line_list_fiasco_100-300A_{ABUNDANCE}.nc").is_file()
+    cached = tmp_path / "cache" / f"line_list_fiasco_100-300A_{ABUNDANCE}.zarr.zip"
+    assert cached.is_file()
+    # a cache file is a line list like any other, and can be given as one
+    given = _sg(inputs, tmp_path / "given", maximum_contaminants=0, line_list_file=cached)
+    xr.testing.assert_allclose(_main_response(given), _main_response(first))
     # made by a backend: that is recorded with its minimum abundance, and no file
     attrs = read_response(first[1]).attrs
     assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", 1e-21)
@@ -602,13 +608,13 @@ def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inpu
         _sg(inputs, tmp_path, maximum_contaminants=0)
     # As a call that stopped halfway before midnight UTC leaves it: one product is missing, the
     # other carries an earlier date.
-    shutil.rmtree(first[-1])
-    today = first[0].stem.rsplit("_", 1)[-1]
+    first[-1].unlink()
+    today = first[0].name.rsplit("_", 1)[-1].removesuffix(".zarr.zip")
     earlier = first[0].rename(first[0].with_name(first[0].name.replace(today, "2000-01-01")))
-    # A store that only starts like a product is none: the date is matched as a date.
-    shutil.copytree(earlier, earlier.with_name(earlier.name.replace("2000-01-01", "copy")))
+    # A file that only starts like a product is none: the date is matched as a date.
+    shutil.copy(earlier, earlier.with_name(earlier.name.replace("2000-01-01", "copy")))
     # Under any date a product is in the way: a second copy beside it would be picked up with it.
-    with pytest.raises(ValueError, match=r"2000-01-01\.zarr is already there"):
+    with pytest.raises(ValueError, match=r"2000-01-01\.zarr\.zip is already there"):
         _sg(inputs, tmp_path, maximum_contaminants=0)
 
     again = _sg(inputs, tmp_path, maximum_contaminants=0, skip_existing=True)
@@ -647,7 +653,7 @@ def test_a_failed_write_leaves_no_product_behind(inputs, tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         _sg(inputs, tmp_path, maximum_contaminants=0)
 
-    # the cube before it is whole; of the failed detector response neither a store nor a staging store
+    # the cube before it is whole; of the failed detector response neither a file nor a staging store
     assert _prefixes(tmp_path.iterdir()) == [f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST"]
 
 
@@ -732,7 +738,7 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
         """
         values = []
         for abundance, tag in pairs:
-            product = xr.open_zarr(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"), consolidated=False)
+            product = _open_response_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
             assert (product.attrs["abundance"], product.pressure.values.tolist()) == (abundance, [float(tag)])
             variable = product["detector_response" if "detector_response" in product else "spectral_response"]
             values.append(float(variable.sel(**selection).max()))
@@ -854,7 +860,7 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     # the last entry is this read
     assert response.attrs["HISTORY"][-2].startswith("generate_sg_continuum_responses(")
     assert float(response.detector_response.sel(line="free-free").max()) > 0
-    assert (tmp_path / "cache" / f"continuum_fiasco_153.5-188.5A_n351_{ABUNDANCE}.nc").is_file()
+    assert (tmp_path / "cache" / f"continuum_fiasco_153.5-188.5A_n351_{ABUNDANCE}.zarr.zip").is_file()
 
     # the detector a file describes counts here too: pixels twice as wide see twice the solid angle
     wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_SG)})
@@ -896,7 +902,7 @@ def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_p
     # coarser than the lines, with the same ends
     continuum = _sg_continuum(inputs, tmp_path, doppler_velocity=DOPPLER_VELOCITY[[0, -1]])
     main = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
-    shutil.copytree(main, tmp_path / main.name)
+    shutil.copy(main, tmp_path / main.name)
 
     response = load_and_concat_responses(
         tmp_path,
@@ -947,5 +953,5 @@ def test_the_generators_on_live_chianti(tmp_path):
     assert float(cube.spectral_response.max()) > 0
     # one line list, made by the first call and read by the second
     assert [path.name for path in (tmp_path / "run" / "cache").iterdir()] == [
-        f"line_list_chianti_153.5-188.5A_{ABUNDANCE}.nc"
+        f"line_list_chianti_153.5-188.5A_{ABUNDANCE}.zarr.zip"
     ]

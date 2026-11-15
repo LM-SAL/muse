@@ -81,7 +81,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
 
     assert len(line_list_calls) == 1
     # the file alone: no lock and no staging file are left
-    assert [path.name for path in tmp_path.iterdir()] == ["line_list_fiasco_150-192A_a.nc"]
+    assert [path.name for path in tmp_path.iterdir()] == ["line_list_fiasco_150-192A_a.zarr.zip"]
     xr.testing.assert_identical(first, second)
     assert first.gofnt.dims == ("pressure", "logT", "trans_index")
     assert first.pressure.attrs["units"] == "K / cm3"
@@ -95,8 +95,8 @@ def test_the_file_names_say_what_the_files_hold(tmp_path):
     load_or_create_continuum(tmp_path, **CONTINUUM, pressure=_pressure([3e15]))
 
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "continuum_fiasco_170-172A_n3_a.nc",
-        "line_list_fiasco_25.4-900A_a_density.nc",
+        "continuum_fiasco_170-172A_n3_a.zarr.zip",
+        "line_list_fiasco_25.4-900A_a_density.zarr.zip",
     ]
 
 
@@ -166,7 +166,7 @@ def test_a_cache_that_does_not_hold_the_request_is_refused_and_kept(
     (path,) = tmp_path.iterdir()
     if "density" in other:
         # A density grid has its own file name; here a pressure file stands under it.
-        path = path.rename(path.with_name(path.name.replace(".nc", "_density.nc")))
+        path = path.rename(path.with_name(path.name.replace(".zarr.zip", "_density.zarr.zip")))
     written = path.read_bytes()
 
     with pytest.raises(ValueError, match=f"{problem}.*; delete it or use another cache directory"):
@@ -249,7 +249,7 @@ def test_a_failed_write_leaves_nothing_behind(tmp_path, monkeypatch):
         msg = "disk full"
         raise OSError(msg)
 
-    monkeypatch.setattr(xr.Dataset, "to_netcdf", half_written)
+    monkeypatch.setattr(xr.Dataset, "to_zarr", half_written)
 
     with pytest.raises(OSError, match="disk full"):
         load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15]))
@@ -260,11 +260,13 @@ def test_a_failed_write_leaves_nothing_behind(tmp_path, monkeypatch):
 
 def test_a_cache_another_process_is_creating_is_not_created_twice(tmp_path, line_list_calls):
     kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
-    lock = tmp_path / "line_list_fiasco_150-192A_a.nc.lock"
+    lock = tmp_path / "line_list_fiasco_150-192A_a.zarr.zip.lock"
     lock.write_text("process 7 on node12, job 99, since 2026-01-01 00:00 UTC")
 
     # the error says who holds the lock, for the person who has to judge whether it is stale
-    with pytest.raises(FileExistsError, match=r"is being created by process 7 on node12, job 99.*delete .*a\.nc\.lock"):
+    with pytest.raises(
+        FileExistsError, match=r"is being created by process 7 on node12, job 99.*delete .*a\.zarr\.zip\.lock"
+    ):
         load_or_create_line_list(tmp_path, **kwargs)
 
     assert not line_list_calls
@@ -278,7 +280,7 @@ def test_the_lock_says_which_process_holds_it(tmp_path, monkeypatch):
     seen = []
 
     def backend(temperature, **kwargs):
-        seen.append((tmp_path / "line_list_fiasco_150-192A_a.nc.lock").read_text())
+        seen.append((tmp_path / "line_list_fiasco_150-192A_a.zarr.zip.lock").read_text())
         return synthetic_line_list_backend(temperature, **kwargs)
 
     monkeypatch.setitem(cache._LINE_LIST_BACKENDS, "fiasco", backend)

@@ -32,7 +32,7 @@ from muse.instrument.effective_area import (
     read_effective_area,
 )
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
-from muse.instrument.response.io import save_response, save_spectral_response
+from muse.instrument.response.io import _open_response_file, save_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import (
     _centers_to_edges,
@@ -98,8 +98,8 @@ def generate_sg_responses(
     ``contaminants``; if the waveband holds no other line, a warning is logged and the channel
     gets none.
 
-    The products are zarr stores named
-    ``respfunc_<channel>_<line>_<kind>_<abundance>_<label>_<plasma>_<author>_<date>.zarr``:
+    Each product is one file, a zarr store packed into a zip, named
+    ``respfunc_<channel>_<line>_<kind>_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
     ``<line>`` is the name of the main line without spaces, or ``contaminants``; ``<kind>`` is
     ``waveband`` for a cube and ``nslits35_sep390`` (the number of slits and their separation
     in milliangstrom) for a detector response; ``<plasma>`` is ``pressure_<value>`` in K / cm3
@@ -160,7 +160,7 @@ def generate_sg_responses(
         covers the imager's files too, so that separate calls share one cached line list.
     line_list_file : `str` or `pathlib.Path`, optional
         A line list of the one abundance in ``abundances``, on ``temperature`` and holding
-        the plasma points, to use instead of the cache. ``line_list_backend``,
+        the plasma points, to use instead of the cache: a netCDF file or a zarr store. ``line_list_backend``,
         ``minimum_abundance``, ``create_if_missing`` and ``workers`` then have no effect.
     transition_boosts : `dict`, optional
         Passed to `muse.instrument.boost_transitions` after the line list is read, so the
@@ -289,8 +289,8 @@ def generate_sg_continuum_responses(
     folded through the effective area with `muse.instrument.create_continuum_response`,
     converted to photons and mapped onto the detector.
 
-    The products are zarr stores named
-    ``respfunc_<channel>_continuum_<backend>_nslits35_sep390_<abundance>_<label>_<plasma>_<author>_<date>.zarr``:
+    Each product is one file, a zarr store packed into a zip, named
+    ``respfunc_<channel>_continuum_<backend>_nslits35_sep390_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
     ``<backend>`` is ``continuum_backend``, and the other parts of the names and the rules for
     them are as in `generate_sg_responses`.
 
@@ -407,8 +407,8 @@ def generate_ci_responses(
     three continuum components, on bins of constant velocity width, and that cube summed over
     wavelength and over its parts into one imager response.
 
-    The products are zarr stores named
-    ``respfunc_ci_<channel>[_waveband]_<abundance>_<label>_<plasma>[_DN]_<author>_<date>.zarr``:
+    Each product is one file, a zarr store packed into a zip, named
+    ``respfunc_ci_<channel>[_waveband]_<abundance>_<label>_<plasma>[_DN]_<author>_<date>.zarr.zip``:
     ``_waveband`` marks the cube and ``_DN`` the products in DN instead of photons; the other
     parts of the names and the rules for them are as in `generate_sg_responses`.
 
@@ -646,12 +646,12 @@ class _Run:
                 "for two effective-area files of one channel, or pressures that agree to six significant digits"
             )
             raise ValueError(msg)
-        present = sorted(path.name for path in self.output_directory.glob("respfunc_*.zarr"))
+        present = sorted(path.name for path in self.output_directory.glob("respfunc_*.zarr.zip"))
         for name in every_name:
-            self._paths[name] = self.output_directory / f"{name}_{self.date}.zarr"
+            self._paths[name] = self.output_directory / f"{name}_{self.date}.zarr.zip"
             # Under any date: a call that goes on after midnight UTC must find what it wrote before,
             # and a call on a later day must not write a second copy beside the first.
-            dated = re.compile(re.escape(name) + r"_\d{4}-\d{2}-\d{2}\.zarr")
+            dated = re.compile(re.escape(name) + r"_\d{4}-\d{2}-\d{2}\.zarr\.zip")
             found = [file_name for file_name in present if dated.fullmatch(file_name)]
             if found and not self.skip_existing:
                 msg = (
@@ -877,7 +877,9 @@ def _line_list_loader(
                 load_or_create_line_list, abundance=abundance, wavelength_range=wavelength_range, backend=backend
             )
         else:
-            line_list = xr.load_dataset(line_list_file)
+            # A netCDF file or a zarr store, such as a cache file of load_or_create_line_list.
+            with _open_response_file(Path(line_list_file)) as opened:
+                line_list = opened.load()
             problem = run.plasma.mismatch(line_list)
             if line_list.attrs.get("abundance") not in (None, abundance):
                 problem = f"is of the abundance {line_list.attrs['abundance']}, not {abundance}"

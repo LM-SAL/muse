@@ -10,7 +10,7 @@ from zarr.storage import ZipStore
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
+from muse.utils.utils import _to_zarr, add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import FrozenDict
 
@@ -25,6 +25,8 @@ __all__ = [
 
 _DEFAULT_RESPONSE_CHUNKS = {"line": 1, "doppler_velocity": 20, "logT": 1, "pressure": 1, "abundance": 1}
 _NETCDF_SUFFIXES = {".nc", ".ncdf", ".netcdf"}
+# A zarr store as a directory, or packed into one zip file.
+_ZARR_SUFFIXES = {".zarr", ".zip"}
 
 
 def save_response(
@@ -41,7 +43,8 @@ def save_response(
     response : `xarray.Dataset`
         Dataset containing ``detector_response``.
     response_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``.
+        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``.
+        A ``.zarr.zip`` destination is one file: the zarr store packed into a zip.
         Existing destinations are not overwritten.
     chunks : mapping of `str` to `int`, optional
         Per-dimension overrides for the benchmark-backed defaults:
@@ -74,8 +77,8 @@ def _check_destination(destination: str | Path, *, what: str = "response", argum
         msg = f"Refusing to overwrite existing {what}: {destination}"
         raise ValueError(msg)
     suffix = destination.suffix.lower()
-    if suffix != ".zarr" and suffix not in _NETCDF_SUFFIXES:
-        msg = f"{argument} must end in .zarr, .nc, .ncdf, or .netcdf"
+    if suffix not in _ZARR_SUFFIXES and suffix not in _NETCDF_SUFFIXES:
+        msg = f"{argument} must end in .zarr, .zarr.zip, .nc, .ncdf, or .netcdf"
         raise ValueError(msg)
     return destination
 
@@ -84,15 +87,9 @@ def _write_chunked(chunked: xr.Dataset, response_file: Path, variable: str) -> N
     """
     Write a chunked dataset with the compression every response file gets.
     """
-    if response_file.suffix.lower() == ".zarr":
+    if response_file.suffix.lower() in _ZARR_SUFFIXES:
         compressor = BloscCodec(cname="zstd", clevel=3, shuffle="bitshuffle")
-        chunked.to_zarr(
-            response_file,
-            mode="w",
-            zarr_format=3,
-            consolidated=False,
-            encoding={variable: {"compressors": (compressor,)}},
-        )
+        _to_zarr(chunked, response_file, encoding={variable: {"compressors": (compressor,)}})
         return
     chunksizes = tuple(axis[0] for axis in chunked[variable].chunks)
     chunked.to_netcdf(
@@ -531,7 +528,7 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
     response : `xarray.Dataset`
         Dataset containing ``spectral_response``, ``wavelength_grid`` and ``line_wavelength``.
     response_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
+        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
         destinations are not overwritten.
 
     Raises

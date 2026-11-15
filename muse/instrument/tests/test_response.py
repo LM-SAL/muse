@@ -526,7 +526,7 @@ def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
 def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_path, suffix):
     """
     A netCDF file keeps the units of the bin bounds on the grid alone: the bounds read
