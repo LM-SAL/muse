@@ -354,16 +354,7 @@ def reshape_x_to_slit_step(
     return reshaped
 
 
-@format_docstring(
-    "DEFAULTS_MUSE",
-    number_of_slits="number_of_slits_SG",
-    steps_per_raster="steps_per_raster_SG",
-)
-def reshape_slit_step_to_x(
-    ds: xr.Dataset,
-    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
-) -> xr.Dataset:
+def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
     """
     Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
     onto a single x spatial axis.
@@ -376,10 +367,6 @@ def reshape_slit_step_to_x(
     ----------
     ds : `xarray.Dataset`
         Data with ``slit`` and ``step`` coordinates.
-    number_of_slits : `int`
-        Number of slits, by default is {number_of_slits}.
-    steps_per_raster : `int`
-        Number of raster steps, by default is {steps_per_raster}.
 
     Returns
     -------

@@ -326,7 +326,7 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
 def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
     vdem = vdem.assign_coords(x=("x", np.arange(vdem.sizes["x"]) * step_size, {"units": unit}))
     reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    out = reshape_slit_step_to_x(reshaped, number_of_slits=35, steps_per_raster=11)
+    out = reshape_slit_step_to_x(reshaped)
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
@@ -342,14 +342,14 @@ def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
 def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     del reshaped.attrs["step_size"]
-    out = reshape_slit_step_to_x(reshaped, number_of_slits=35, steps_per_raster=11)
+    out = reshape_slit_step_to_x(reshaped)
     # Falls back to the MUSE pixel size (0.4 arcsec) for the x spacing.
     np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
 
 
 def test_reshape_slit_step_to_x_records_history(vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    out = reshape_slit_step_to_x(reshaped, number_of_slits=35, steps_per_raster=11)
+    out = reshape_slit_step_to_x(reshaped)
     assert _history_functions(out) == ["reshape_x_to_slit_step", "reshape_slit_step_to_x"]
 
 
