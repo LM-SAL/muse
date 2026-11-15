@@ -1,3 +1,4 @@
+from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import (
     boost_transitions,
@@ -22,6 +23,11 @@ from muse.instrument.response.io import (
     save_response,
     save_spectral_response,
 )
+from muse.instrument.response.products import (
+    generate_ci_responses,
+    generate_sg_continuum_responses,
+    generate_sg_responses,
+)
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import (
     create_continuum_response,
@@ -42,7 +48,12 @@ __all__ = [
     "create_log_wavelength_edges",
     "create_spectral_response",
     "effective_area_wavelength_range",
+    "generate_ci_responses",
+    "generate_sg_continuum_responses",
+    "generate_sg_responses",
     "load_and_concat_responses",
+    "load_or_create_continuum",
+    "load_or_create_line_list",
     "map_response_to_ci_detector",
     "map_response_to_sg_detector",
     "rank_line_list",
