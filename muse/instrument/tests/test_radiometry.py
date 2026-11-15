@@ -291,7 +291,10 @@ def test_transform_flux_units_round_trips():
 
 def test_transform_flux_units_electrons_to_data_numbers_needs_only_the_gain():
     # No channel to take a pair energy from, and none is needed; the rest of the unit converts with it.
-    out = transform_flux_units(_spectrum("electron / s", channel=None), "DN / min", gain=4 * u.electron / u.DN)
+    # Nor is a line wavelength: electrons to DN takes no photon energy.
+    spectrum = _spectrum("electron / s", channel=None)
+    spectrum = spectrum.assign_coords(line_wavelength=spectrum.line_wavelength * np.nan)
+    out = transform_flux_units(spectrum, "DN / min", gain=4 * u.electron / u.DN)
 
     np.testing.assert_allclose(out.flux.values, 60 / 4)
 
@@ -330,6 +333,12 @@ def test_transform_flux_units_selects_the_detector_calibration(monkeypatch):
         (_spectrum().drop_vars("line_wavelength"), "DN / s", {}, "line_wavelength"),
         (_spectrum().isel(line=0), "DN / s", {}, "must lie along one dimension"),
         (_spectrum(), "DN / s", {"gain": 0 * u.electron / u.DN}, "gain must be finite and positive"),
+        (
+            _spectrum().assign_coords(line_wavelength=("line", [171.073, np.nan], {"units": "Angstrom"})),
+            "DN / s",
+            {},
+            "have no line wavelength",
+        ),
     ],
 )
 def test_transform_flux_units_rejects_invalid_inputs(spectrum, new_units, kwargs, match):

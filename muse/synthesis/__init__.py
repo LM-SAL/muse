@@ -5,6 +5,7 @@ from muse.synthesis.utils import (
     create_simple_vdem,
     doppler_to_wavelength,
     remove_exposure_time,
+    sum_lines_per_channel,
     wavelength_to_doppler,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "create_simple_vdem",
     "doppler_to_wavelength",
     "remove_exposure_time",
+    "sum_lines_per_channel",
     "vdem_synthesis",
     "wavelength_to_doppler",
 ]

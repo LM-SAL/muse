@@ -399,3 +399,84 @@ def test_apply_exposure_time_rejects_what_it_cannot_integrate(spectrum, exposure
 def test_remove_exposure_time_requires_a_recorded_time() -> None:
     with pytest.raises(ValueError, match="no exposure_time coordinate"):
         synthesis_utils.remove_exposure_time(_rate_spectrum("ph"))
+
+
+def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
+    # Without its first line, the first and the last line of a channel differ in wavelength.
+    response = response.isel(line=slice(1, None))
+    response = response.assign_coords(position=("line", np.arange(response.sizes["line"])))
+    history = list(response.attrs.get("HISTORY", []))
+
+    out = synthesis_utils.sum_lines_per_channel(response)
+
+    channels = list(dict.fromkeys(response.channel.values.tolist()))
+    assert out.channel.values.tolist() == channels
+    assert "line" not in out.dims
+    assert out.detector_response.dims == tuple(
+        "channel" if dim == "line" else dim for dim in response.detector_response.dims
+    )
+    assert out.detector_response.attrs["units"] == response.detector_response.attrs["units"]
+    for channel in channels:
+        lines = np.flatnonzero(response.channel.values == channel)
+        expected = response.detector_response.isel(line=lines).sum("line")
+        np.testing.assert_allclose(out.detector_response.sel(channel=channel).values, expected.values)
+        # The first line of the channel gives its coordinates.
+        assert int(out.position.sel(channel=channel)) == lines[0]
+        # A wavelength only where every line of the channel has the same one.
+        wavelengths = response.line_wavelength.values[lines]
+        expected_wavelength = wavelengths[0] if np.all(wavelengths == wavelengths[0]) else np.nan
+        np.testing.assert_equal(float(out.line_wavelength.sel(channel=channel)), expected_wavelength)
+    assert bool(np.isnan(out.line_wavelength).any())  # the fixture has such a channel
+    assert out.line_wavelength.attrs["units"] == response.line_wavelength.attrs["units"]
+    assert out.attrs["HISTORY"][-1].startswith("sum_lines_per_channel(")
+    assert response.attrs.get("HISTORY", []) == history  # the entry goes to the result alone
+
+
+def test_sum_lines_per_channel_keeps_the_order_in_which_channels_first_appear(response) -> None:
+    # without a coordinate of its own, the line dimension is still summed
+    reversed_lines = response.isel(line=slice(None, None, -1)).drop_vars("line")
+
+    out = synthesis_utils.sum_lines_per_channel(reversed_lines)
+
+    assert out.channel.values.tolist() == list(dict.fromkeys(reversed_lines.channel.values.tolist()))
+    xr.testing.assert_allclose(
+        out.detector_response.sortby("channel"),
+        synthesis_utils.sum_lines_per_channel(response).detector_response.sortby("channel"),
+    )
+
+
+def test_sum_lines_per_channel_sums_the_slits_on_request(response, raster) -> None:
+    # Keep slit in the spectrum, so that the sum over slits is this function's.
+    spectrum = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+
+    out = synthesis_utils.sum_lines_per_channel(spectrum, sum_slits=True)
+
+    assert "slit" not in out.dims
+    assert "detector_wavelength" not in out.coords  # it is per slit, so it goes with the slits
+    expected = synthesis_utils.sum_lines_per_channel(spectrum).flux.sum("slit")
+    xr.testing.assert_allclose(out.flux, expected)
+    assert u.Unit(out.flux.attrs["units"]) == u.Unit(spectrum.flux.attrs["units"])
+    # Data without slits has nothing more to sum.
+    one_slit = spectrum.isel(slit=0, drop=True)
+    xr.testing.assert_allclose(
+        synthesis_utils.sum_lines_per_channel(one_slit, sum_slits=True).flux,
+        synthesis_utils.sum_lines_per_channel(spectrum).flux.isel(slit=0, drop=True),
+    )
+
+
+def test_sum_lines_per_channel_keeps_a_nan_in_the_sum(response) -> None:
+    holed = response.copy(deep=True)
+    holed.detector_response[{"line": 0, "logT": 0}] = np.nan
+
+    out = synthesis_utils.sum_lines_per_channel(holed)
+
+    first_channel = out.detector_response.isel(channel=0)
+    assert bool(np.isnan(first_channel.isel(logT=0)).all())
+    assert bool(np.isfinite(first_channel.isel(logT=1)).all())
+
+
+def test_sum_lines_per_channel_requires_a_channel_along_line(response) -> None:
+    with pytest.raises(ValueError, match="channel coordinate along it"):
+        synthesis_utils.sum_lines_per_channel(response.drop_vars("channel"))
+    with pytest.raises(ValueError, match="channel coordinate along it"):
+        synthesis_utils.sum_lines_per_channel(response.drop_vars("channel").assign_coords(channel=171))

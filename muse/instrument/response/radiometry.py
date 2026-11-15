@@ -228,8 +228,9 @@ def transform_flux_units(
         ``line_wavelength`` coordinate must define units, and
         ``line_wavelength`` must lie along one dimension of ``flux``, such as
         ``line`` or ``channel``. An entry without a line wavelength (NaN), such
-        as the continuum, has no photon energy: its flux comes out as NaN from
-        a conversion between photons and electrons or DN.
+        as the continuum or a channel summed over lines of different
+        wavelengths, has no photon energy: a conversion between photons and
+        electrons or DN is refused for a spectrum that holds one.
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g. ``"DN / s"``.
     detector : {"SG", "CI"}, optional
@@ -272,7 +273,15 @@ def transform_flux_units(
 
     # The gain and the pair energy are read only for a step the conversion takes: electrons to DN
     # needs no pair energy, and photons to electrons no gain, whatever the spectrum carries.
-    _, to_electron, to_dn = _chain_steps(old_unit, target_unit)
+    to_photon, to_electron, to_dn = _chain_steps(old_unit, target_unit)
+    if (to_photon or to_electron) and not np.isfinite(wavelength.values).all():
+        dim = wavelength.dims[0]
+        without = spectrum[dim].values[~np.isfinite(wavelength.values)].tolist()
+        msg = (
+            f"cannot convert between photons and electrons or DN: {dim} {without} have no line wavelength. "
+            "Convert before summing the lines of a channel, or select the entries that have one."
+        )
+        raise ValueError(msg)
     if to_dn and gain is None and "gain" in spectrum.coords:
         gain = u.Quantity(
             coord_as_unit(spectrum, "gain", u.electron / u.DN, "spectrum.gain").broadcast_like(wavelength).values,

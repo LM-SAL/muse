@@ -16,6 +16,7 @@ __all__ = [
     "create_simple_vdem",
     "doppler_to_wavelength",
     "remove_exposure_time",
+    "sum_lines_per_channel",
     "wavelength_to_doppler",
 ]
 
@@ -543,4 +544,69 @@ def remove_exposure_time(spectrum: xr.Dataset) -> xr.Dataset:
     flux = (spectrum.flux / seconds).assign_attrs({**spectrum.flux.attrs, "units": str(flux_unit / u.s)})
     result = spectrum.assign(flux=flux).drop_vars("exposure_time")
     add_history(result, locals(), remove_exposure_time)
+    return result
+
+
+def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Dataset:
+    """
+    Sum the lines of each channel, which the detector records on the same pixels.
+
+    Parameters
+    ----------
+    data : `xarray.Dataset`
+        A spectrum or a response with a ``line`` dimension and a ``channel``
+        coordinate along it.
+    sum_slits : `bool`, optional
+        Also sum over ``slit`` when the data has that dimension, by default
+        `False`.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        A new dataset in which ``channel`` replaces ``line``. Every data
+        variable along ``line`` is the sum of the lines of the channel, and a
+        NaN in a line stays a NaN in the sum. Every coordinate along ``line``,
+        such as ``gain``, takes the value of the first line of the channel;
+        ``line_wavelength`` does too where every line of the channel has the
+        same wavelength, and is NaN otherwise. The channels keep the order in
+        which they first appear. With ``sum_slits``, the coordinates along
+        ``slit`` are dropped.
+
+    Raises
+    ------
+    ValueError
+        If ``data`` has no ``line`` dimension or no ``channel`` coordinate along
+        it.
+
+    Notes
+    -----
+    Sum after converting photons to electrons or DN, not before. A channel
+    whose lines differ in wavelength has no single photon energy, so its
+    ``line_wavelength`` is NaN in the sum and
+    `muse.instrument.transform_flux_units` refuses to take it across the photon
+    step.
+    """
+    if "line" not in data.dims or "channel" not in data.coords or data.channel.dims != ("line",):
+        msg = "data must have a line dimension and a channel coordinate along it"
+        raise ValueError(msg)
+    channels, first_line = np.unique(data.channel.values, return_index=True)
+    channels, first_line = channels[np.argsort(first_line)], np.sort(first_line)
+    # Start from the first line of each channel, which gives the coordinates; the sums then replace the
+    # data variables along line.
+    # errors="ignore": a line dimension need not have a coordinate of its own.
+    result = data.isel(line=first_line).swap_dims(line="channel").drop_vars("line", errors="ignore")
+    for name, variable in data.data_vars.items():
+        if "line" not in variable.dims:
+            continue
+        summed = variable.groupby("channel").sum(skipna=False, keep_attrs=True).sel(channel=channels)
+        result[name] = summed.transpose(*("channel" if dim == "line" else dim for dim in variable.dims))
+    if "line_wavelength" in data.coords and data.line_wavelength.dims == ("line",):
+        # The sum of lines at different wavelengths has no single photon energy: without a wavelength,
+        # transform_flux_units refuses the photon step instead of taking the first line's for all.
+        wavelengths = data.line_wavelength.groupby("channel")
+        mixed = (wavelengths.max(skipna=False) != wavelengths.min(skipna=False)).sel(channel=channels)
+        result = result.assign_coords(line_wavelength=result.line_wavelength.where(~mixed.values))
+    if sum_slits and "slit" in result.dims:
+        result = result.sum("slit", skipna=False, keep_attrs=True)
+    add_history(result, locals(), sum_lines_per_channel)
     return result
