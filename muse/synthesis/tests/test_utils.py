@@ -351,13 +351,15 @@ def test_apply_exposure_time_turns_a_rate_into_counts() -> None:
 
     out = synthesis_utils.apply_exposure_time(spectrum, 0.5 * u.min)
 
-    np.testing.assert_allclose(out.flux.values, 30000 * spectrum.flux.values)
+    rate = np.array([[1.0, 2.0], [3.0, 4.0]])
+    np.testing.assert_allclose(out.flux.values, 30000 * rate)
     assert u.Unit(out.flux.attrs["units"]) == u.DN
     assert float(out.exposure_time) == 30.0
     assert out.exposure_time.attrs["units"] == "s"
     assert out.attrs["HISTORY"][-1].startswith("apply_exposure_time(")
     assert "exposure_time=30.0" in out.attrs["HISTORY"][-1]
     # The input is left as it was.
+    np.testing.assert_array_equal(spectrum.flux.values, rate)
     assert spectrum.flux.attrs["units"] == "DN / ms"
     assert "exposure_time" not in spectrum.coords
     assert spectrum.attrs["HISTORY"] == ["vdem_synthesis()"]
@@ -383,7 +385,9 @@ def test_remove_exposure_time_undoes_apply_exposure_time() -> None:
             1 * u.s,
             "already has an exposure time",
         ),
+        (_rate_spectrum().assign(exposure_time=2.0), 1 * u.s, "already has an exposure time"),
         (_rate_spectrum(), [1, 2] * u.s, "must be a scalar"),
+        (_rate_spectrum(), 0 * u.s, "must be finite and positive"),
         (_rate_spectrum().assign(flux=_rate_spectrum().flux.assign_attrs(units=None)), 1 * u.s, "spectrum.flux"),
     ],
 )

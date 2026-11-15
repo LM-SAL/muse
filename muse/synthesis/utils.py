@@ -484,10 +484,12 @@ def apply_exposure_time(spectrum: xr.Dataset, exposure_time: u.Quantity) -> xr.D
     ------
     ValueError
         If ``flux`` has no units or is not per unit time, if ``exposure_time``
-        is not a scalar, or if the spectrum already carries an exposure time.
+        is not a positive scalar, or if the spectrum already carries an
+        exposure time.
     """
     flux_unit = require_unit(spectrum, "flux", "spectrum.flux")
-    if "exposure_time" in spectrum.coords:
+    # A data variable of that name counts too: the coordinate would replace it without a word.
+    if "exposure_time" in spectrum.variables:
         msg = "spectrum already has an exposure time applied; call remove_exposure_time first"
         raise ValueError(msg)
     time_base = _time_base(flux_unit)
@@ -496,6 +498,9 @@ def apply_exposure_time(spectrum: xr.Dataset, exposure_time: u.Quantity) -> xr.D
         raise ValueError(msg)
     if not exposure_time.isscalar:
         msg = "exposure_time must be a scalar"
+        raise ValueError(msg)
+    if not np.isfinite(exposure_time.value) or exposure_time.value <= 0:
+        msg = f"exposure_time must be finite and positive, got {exposure_time}"
         raise ValueError(msg)
     exposure_time = exposure_time.to(u.s)  # a statement so add_history records the time in seconds
     flux = (spectrum.flux * exposure_time.to_value(time_base)).assign_attrs(
