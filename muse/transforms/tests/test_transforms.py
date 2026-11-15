@@ -70,7 +70,7 @@ def test_match_fov_without_tiling_returns_input_for_single_x_column(vdem) -> Non
     ("case", "reason"),
     [
         ("y_mismatch", "dy is off the MUSE pixel size, so the x match alone must not accept"),
-        ("wrong_x_count", "dx matches but x does not span nslits * nraster, so it must not accept"),
+        ("wrong_x_count", "dx matches but x does not span number_of_slits * steps_per_raster, so it must not accept"),
     ],
 )
 def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem, case, reason) -> None:
@@ -128,9 +128,9 @@ def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
     assert isinstance(lazy_fov.vdem.data, da.Array)
     np.testing.assert_allclose(lazy_fov.vdem.compute().values, match_fov(vdem_offgrid).vdem.values, rtol=1e-12)
 
-    lazy_raster = reshape_x_to_slit_step(vdem.chunk({"logT": 4, "x": 64}), nslits=35, nraster=11)
+    lazy_raster = reshape_x_to_slit_step(vdem.chunk({"logT": 4, "x": 64}), number_of_slits=35, steps_per_raster=11)
     assert isinstance(lazy_raster.vdem.data, da.Array)
-    eager_raster = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    eager_raster = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     np.testing.assert_array_equal(lazy_raster.vdem.compute().values, eager_raster.vdem.values)
 
     lazy_x = reshape_slit_step_to_x(lazy_raster)
@@ -155,7 +155,7 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
 @pytest.mark.parametrize("x_extent", ["crop", "keep"])
 def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, x_extent) -> None:
     # Both resample the resolution; neither extends an input that is then narrower than the
-    # MUSE FOV (nslits*nraster = 385), as "tile" would.
+    # MUSE FOV (number_of_slits*steps_per_raster = 385), as "tile" would.
     out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, x_extent=x_extent)
     assert out.x.size == 308
     assert bool(np.isfinite(out.vdem).all())
@@ -281,7 +281,7 @@ def test_match_fov_rotate_skips_resampling_when_resolution_matches(vdem) -> None
 
 
 def test_reshape_x_to_slit_step(vdem) -> None:
-    out = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    out = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
@@ -298,7 +298,7 @@ def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
     source = vdem.copy(deep=True)
     source.attrs["HISTORY"] = ["match_fov(ds=ds)"]
 
-    out = reshape_x_to_slit_step(source, nslits=35, nraster=11)
+    out = reshape_x_to_slit_step(source, number_of_slits=35, steps_per_raster=11)
 
     assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
     assert _history_functions(out) == ["match_fov", "reshape_x_to_slit_step"]
@@ -325,8 +325,8 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
 @pytest.mark.parametrize(("unit", "step_size"), [("arcsec", 0.7), ("Mm", 0.25), ("cm", 2.5e7)])
 def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
     vdem = vdem.assign_coords(x=("x", np.arange(vdem.sizes["x"]) * step_size, {"units": unit}))
-    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
+    out = reshape_slit_step_to_x(reshaped)
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
@@ -340,16 +340,16 @@ def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
 
 
 def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
+    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     del reshaped.attrs["step_size"]
-    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    out = reshape_slit_step_to_x(reshaped)
     # Falls back to the MUSE pixel size (0.4 arcsec) for the x spacing.
     np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
 
 
 def test_reshape_slit_step_to_x_records_history(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
-    out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
+    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
+    out = reshape_slit_step_to_x(reshaped)
     assert _history_functions(out) == ["reshape_x_to_slit_step", "reshape_slit_step_to_x"]
 
 
@@ -379,9 +379,9 @@ def test_reshape_x_to_slit_step_requires_x_units(vdem) -> None:
     bad_vdem = vdem.copy(deep=True)
     del bad_vdem.x.attrs["units"]
     with pytest.raises(ValueError, match="x coordinate must define units"):
-        reshape_x_to_slit_step(bad_vdem, nslits=35, nraster=11)
+        reshape_x_to_slit_step(bad_vdem, number_of_slits=35, steps_per_raster=11)
 
 
 def test_reshape_x_to_slit_step_requires_x_coordinate(vdem) -> None:
     with pytest.raises(ValueError, match="x coordinate is missing"):
-        reshape_x_to_slit_step(vdem.drop_vars("x"), nslits=35, nraster=11)
+        reshape_x_to_slit_step(vdem.drop_vars("x"), number_of_slits=35, steps_per_raster=11)

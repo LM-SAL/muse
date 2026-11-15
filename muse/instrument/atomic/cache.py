@@ -244,8 +244,8 @@ class _PlasmaRequest:
         if pressure is not None and pressure.dims != ("pressure",):
             self.pressure = pressure.rename({pressure.dims[0]: "pressure"})
         self.logT = np.log10(validated_temperature.data)
-        self.axis = "pressure" if density is None else "logD"
-        self.values = plasma.data if density is None else np.log10(plasma.data)
+        self.plasma_dim = "pressure" if density is None else "logD"
+        self.plasma_values = plasma.data if density is None else np.log10(plasma.data)
 
     def mismatch(self, dataset: xr.Dataset) -> str | None:
         """
@@ -255,12 +255,13 @@ class _PlasmaRequest:
             dataset.logT.values, self.logT, rtol=0, atol=1e-6
         ):
             return "is on other temperatures than requested"
-        if self.axis not in dataset.dims:
-            return f"has no {self.axis} axis"
-        stored = dataset[self.axis].values
-        if not all(np.isclose(stored, value, rtol=1e-9, atol=0).any() for value in self.values):
+        if self.plasma_dim not in dataset.dims:
+            return f"has no {self.plasma_dim} axis"
+        stored = dataset[self.plasma_dim].values
+        if not all(np.isclose(stored, value, rtol=1e-9, atol=0).any() for value in self.plasma_values):
             return (
-                f"holds the {self.axis} values {stored.tolist()}, not all of the requested {self.values.tolist()} "
+                f"holds the {self.plasma_dim} values {stored.tolist()}, not all of the requested "
+                f"{self.plasma_values.tolist()} "
                 "(a file serves the plasma points it was created on, so create it on all of them at once)"
             )
         return None
@@ -269,14 +270,16 @@ class _PlasmaRequest:
         """
         ``dataset`` at the requested plasma points, in their order.
         """
-        stored = dataset[self.axis].values
-        selected = dataset.isel({self.axis: [int(np.argmin(np.abs(stored - value))) for value in self.values]})
+        stored = dataset[self.plasma_dim].values
+        selected = dataset.isel(
+            {self.plasma_dim: [int(np.argmin(np.abs(stored - value))) for value in self.plasma_values]}
+        )
         # The coordinates are set to the requested numbers: a value read from a file can differ
         # from the request in the last bit after a unit conversion, and a line list and a
         # continuum that each kept their own number would not align.
         return selected.assign_coords(
             logT=("logT", self.logT, dataset.logT.attrs),
-            **{self.axis: (self.axis, self.values, dataset[self.axis].attrs)},
+            **{self.plasma_dim: (self.plasma_dim, self.plasma_values, dataset[self.plasma_dim].attrs)},
         )
 
 
@@ -331,17 +334,17 @@ def _load_or_create(
                 created = create().assign_attrs(minimum_abundance=minimum_abundance)
                 # One chunk per plasma point and temperature, so that a call for one pressure reads
                 # that pressure alone and no chunk exceeds the size limit of the compressor.
-                chunks = {
+                encoding = {
                     name: {
                         "chunks": tuple(
-                            1 if dim in (request.axis, "logT") else size
+                            1 if dim in (request.plasma_dim, "logT") else size
                             for dim, size in zip(variable.dims, variable.shape, strict=True)
                         )
                     }
                     for name, variable in created.data_vars.items()
-                    if request.axis in variable.dims
+                    if request.plasma_dim in variable.dims
                 }
-                _replace_atomically(path, lambda staging: _to_zarr(created, staging, encoding=chunks))
+                _replace_atomically(path, lambda staging: _to_zarr(created, staging, encoding=encoding))
     logger.info(f"Reading the {what} from {path}")
     # A file created just now is read back too: the first call then returns what every later
     # one will. Opened without loading, so that only the requested part is read.
@@ -434,12 +437,12 @@ def _limited_threads(threads: int):
         import numexpr  # noqa: PLC0415
     except ImportError:
         numexpr = None
-    numexpr_threads = None if numexpr is None else numexpr.set_num_threads(threads)
-    if numexpr_threads is not None and numexpr_threads < threads:
-        numexpr.set_num_threads(numexpr_threads)
+    previous_numexpr_threads = None if numexpr is None else numexpr.set_num_threads(threads)
+    if previous_numexpr_threads is not None and previous_numexpr_threads < threads:
+        numexpr.set_num_threads(previous_numexpr_threads)
     try:
         with threadpool_limits(limits=limits):
             yield
     finally:
-        if numexpr_threads is not None:
-            numexpr.set_num_threads(numexpr_threads)
+        if previous_numexpr_threads is not None:
+            numexpr.set_num_threads(previous_numexpr_threads)

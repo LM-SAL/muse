@@ -16,7 +16,7 @@ from muse.variables_schema import InstrumentDefaults
 
 def test_instrument_defaults_reject_top_level_reassignment():
     with pytest.raises(FrozenInstanceError, match="can't set attribute"):
-        DEFAULTS_MUSE.ccd_gain_SG = 20 * u.electron / u.DN
+        DEFAULTS_MUSE.gain_SG = 20 * u.electron / u.DN
 
 
 def test_instrument_mapping_fields_are_read_only_and_copied():
@@ -163,15 +163,15 @@ def test_instrument_defaults_validate_spectral_channels():
     # Every per-channel DataArray field is checked, not just the two spectral ones.
     mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
     with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(initial_wavelength_SG=initial, pair_creation_energy_SG=mismatched_pair_energy)
+        InstrumentDefaults(initial_wavelength_SG=initial, pair_energy_SG=mismatched_pair_energy)
 
 
 def test_ci_calibrations_require_channel_dimension():
     # every field whose name ends in _CI is checked alike; one stands for them
     calibration = xr.DataArray([1] * u.electron / u.DN, coords={"wavelength": [195]}, dims="wavelength")
 
-    with pytest.raises(ValueError, match="ccd_gain_CI must have a 'channel' dimension"):
-        InstrumentDefaults(ccd_gain_CI=calibration)
+    with pytest.raises(ValueError, match="gain_CI must have a 'channel' dimension"):
+        InstrumentDefaults(gain_CI=calibration)
 
 
 def test_instrument_defaults_validate_spectral_lines():

@@ -29,8 +29,8 @@ from muse.instrument import (
 from muse.instrument.atomic import cache
 from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
-from muse.instrument.response.io import _open_response_file
-from muse.tests.helpers import synthetic_continuum, synthetic_line_list
+from muse.instrument.response.io import _open_dataset_file
+from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.variables import DEFAULTS_MUSE
 
 pytest.importorskip("numexpr")
@@ -72,7 +72,7 @@ def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
 
     Given several values of ``pressure``, each holds the lines times its ``scale``.
     """
-    line_list = synthetic_line_list(
+    line_list = fake_line_list(
         6, wavelength=[155.0, 165.0, 171.073, 174.5, 180.0, 188.0], logT=np.array([5.5, 6.0, 6.5])
     )
     line_list = line_list.assign(
@@ -109,7 +109,7 @@ def inputs(tmp_path_factory):
 
 @pytest.fixture
 def _synthetic_continuum(monkeypatch):
-    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
 
 
 def _options(inputs, output_directory, **overrides):
@@ -150,7 +150,7 @@ def sg_products(inputs, tmp_path_factory):
 @pytest.fixture(scope="module")
 def ci_products(inputs, tmp_path_factory):
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
         return _ci(inputs, tmp_path_factory.mktemp("ci"))
 
 
@@ -627,7 +627,7 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
         raise AssertionError(msg)
 
     # what the generators read a line list with, and what builds a response
-    monkeypatch.setattr(products_module, "_open_response_file", not_called)
+    monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     monkeypatch.setattr(products_module, "create_spectral_response", not_called)
 
     assert _sg(inputs, tmp_path, skip_existing=True) == first
@@ -687,7 +687,7 @@ def _backends_that_scale(monkeypatch):
         return _line_list(pressure=values, scale=SCALE_OF_ABUNDANCE[abundance] * values / 3e15)
 
     def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
-        continuum = synthetic_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
+        continuum = fake_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
         scaled = (continuum.spectral_response * SCALE_OF_ABUNDANCE[abundance]).assign_attrs(
             continuum.spectral_response.attrs
         )
@@ -717,7 +717,7 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
         """
         values = []
         for abundance, tag in pairs:
-            product = _open_response_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
+            product = _open_dataset_file(_only(written, f"{pattern}_{abundance}_testea_pressure_{tag}_"))
             assert (product.attrs["abundance"], product.pressure.values.tolist()) == (abundance, [float(tag)])
             variable = product["detector_response" if "detector_response" in product else "spectral_response"]
             values.append(float(variable.sel(**selection).max()))
@@ -745,7 +745,7 @@ def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_pa
         raise AssertionError(msg)
 
     # what the generators read a line list with
-    monkeypatch.setattr(products_module, "_open_response_file", not_called)
+    monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     second = _area_file(tmp_path, name="another_171.zarr")
     twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
 
@@ -939,7 +939,7 @@ def test_the_detector_products_follow_the_slit_separation_of_their_channel(input
 
     lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0)
     with pytest.MonkeyPatch.context() as continuum:
-        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
         continua = _sg_continuum(inputs, tmp_path / "continuum")
 
     assert _prefixes(lines) == [

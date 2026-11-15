@@ -20,7 +20,7 @@ from muse.instrument.response.spectral import (
     create_continuum_response,
     create_log_wavelength_edges,
 )
-from muse.tests.helpers import synthetic_effective_area
+from muse.tests.helpers import fake_effective_area
 
 NORMALIZATION = 1e-27
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
@@ -38,7 +38,7 @@ def _stepped_effective_area():
     """
     wavelength = np.linspace(165.0, 177.0, 121)
     values = np.where(wavelength < 171.8, 1.0, 3.0) * (1 + 0.01 * (wavelength - 165.0))
-    return synthetic_effective_area(values, wavelength), wavelength, values
+    return fake_effective_area(values, wavelength), wavelength, values
 
 
 def _continuum_cube():
@@ -167,7 +167,7 @@ def test_continuum_response_ends_where_the_area_ends():
     reaches beyond them, where the area is zero.
     """
     grid = np.linspace(150.0, 192.0, 85)
-    area = synthetic_effective_area([2.0, 2.0], [150.0, 192.0])
+    area = fake_effective_area([2.0, 2.0], [150.0, 192.0])
     edges = create_log_wavelength_edges([150, 192] * u.AA, 0.01)
     assert edges[-1].value > 192.0
 
@@ -201,7 +201,7 @@ def test_a_doppler_shift_conserves_the_continuum():
 def test_continuum_response_one_area_value_holds_at_every_wavelength():
     # As create_spectral_response takes it: the same as a flat curve of that value.
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
-    flat = synthetic_effective_area([2.0, 2.0], [100.0, 300.0])
+    flat = fake_effective_area([2.0, 2.0], [100.0, 300.0])
 
     out = create_continuum_response(_continuum_cube(), edges, effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}))
 

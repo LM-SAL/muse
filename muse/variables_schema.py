@@ -146,7 +146,7 @@ def _readonly_data_array(value, unit=None):
     return data_array
 
 
-def _immutable_value(value):
+def _readonly_value(value):
     if isinstance(value, u.Quantity):
         quantity = value.copy()
         _set_readonly(quantity)
@@ -156,14 +156,14 @@ def _immutable_value(value):
     if isinstance(value, np.ndarray):
         return _readonly_array(value)
     if isinstance(value, Mapping):
-        return _immutable_mapping(value)
+        return _readonly_mapping(value)
     if isinstance(value, (list, tuple)):
-        return tuple(_immutable_value(item) for item in value)
+        return tuple(_readonly_value(item) for item in value)
     return value
 
 
-def _immutable_mapping(mapping):
-    return FrozenDict({key: _immutable_value(value) for key, value in mapping.items()})
+def _readonly_mapping(mapping):
+    return FrozenDict({key: _readonly_value(value) for key, value in mapping.items()})
 
 
 def _quantity_mapping(unit):
@@ -351,6 +351,7 @@ class InstrumentDefaults:
     Number of steps per raster for the SG.
     """
 
+    # Effective areas
     main_line_effective_area_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
@@ -370,7 +371,7 @@ class InstrumentDefaults:
     """
 
     # Diffraction parameters
-    mesh_transmission: Mapping | None = field(default=None, converter=converters.optional(_immutable_mapping))
+    mesh_transmission: Mapping | None = field(default=None, converter=converters.optional(_readonly_mapping))
     """
     Mesh transmission coefficient, keyed by diffraction channel.
     """
@@ -424,17 +425,17 @@ class InstrumentDefaults:
     Data compression level.
     """
 
-    ccd_gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     SG CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    ccd_gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
+    gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     CI CCD gain in electrons per DN, keyed by ``channel``.
     """
 
-    pair_creation_energy_SG: xr.DataArray | None = field(
+    pair_energy_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
@@ -442,7 +443,7 @@ class InstrumentDefaults:
     ``channel``.
     """
 
-    pair_creation_energy_CI: xr.DataArray | None = field(
+    pair_energy_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
@@ -472,7 +473,8 @@ class InstrumentDefaults:
 
     bands_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA), eq=_array_eq)
     """
-    Wavelength bands for the SG.
+    Channel of each main SG line, with one entry per line of ``main_lines_SG`` in the
+    same order, so a channel with two main lines appears twice.
 
     Normalized to Angstroms.
     """
@@ -491,9 +493,14 @@ class InstrumentDefaults:
 
     fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
     """
-    Does a subgrid interpolation.
+    Sub-samples per input sample that `~muse.transforms.match_fov` interpolates onto
+    before it averages them into pixels. Used only when the input has at least one and
+    fewer than four samples per pixel.
+
+    0 interpolates straight onto the pixels.
     """
 
+    # Exposures
     exposure_times_SG: Mapping | None = field(default=None, converter=_quantity_mapping(u.s), eq=_mapping_eq)
     """
     Typical exposure times for the SG, keyed by solar condition.
@@ -511,14 +518,14 @@ class InstrumentDefaults:
     # Response creation
     electron_density: u.Quantity = field(default=1e9 / u.cm**3, converter=_required_quantity(1 / u.cm**3))
     """
-    Effective density for response creation.
+    Electron density for response creation.
 
     Normalized to inverse cubic centimeters.
     """
 
     electron_pressure: u.Quantity = field(default=3e15 * u.K / u.cm**3, converter=_required_quantity(u.K / u.cm**3))
     """
-    Effective pressure for response creation.
+    Electron pressure for response creation.
 
     Normalized to Kelvin per cubic centimeter.
     """
@@ -564,9 +571,13 @@ class InstrumentDefaults:
     response_logT_min: float = field(default=4.8, converter=float)
     """
     Minimum logT for response creation.
+
+    Nothing in this package reads it: the response products take their temperatures
+    from ``response_temperature``.
     """
 
-    target_logT: Mapping | None = field(default=None, converter=converters.optional(_immutable_mapping), eq=_mapping_eq)
+    # Target grids
+    target_logT: Mapping | None = field(default=None, converter=converters.optional(_readonly_mapping), eq=_mapping_eq)
     """
     Target logT values for different solar conditions.
     """
@@ -580,6 +591,7 @@ class InstrumentDefaults:
     Values normalized to kilometers per second.
     """
 
+    # Response creation, continued
     minimum_abundance: float | None = field(default=None, converter=converters.optional(float))
     """
     Minimum abundance considered for response creation.

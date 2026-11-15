@@ -41,7 +41,7 @@ def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | N
     return allowed[matches][0].item()
 
 
-def _validate_wavelength_response(
+def _validate_spectral_response(
     response: xr.Dataset, *, accepted_units: tuple[u.UnitBase, ...] = _ACCEPTED_SG_RESPONSE_UNITS
 ) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
     if not isinstance(response, xr.Dataset):
@@ -83,7 +83,7 @@ def _validate_wavelength_response(
 @u.quantity_input(
     channel=u.AA,
     dispersion=u.AA / u.pix,
-    slit_spacing=u.pix,
+    pixels_between_slits=u.pix,
     wavelength_start=u.AA,
 )
 def map_response_to_sg_detector(
@@ -92,7 +92,7 @@ def map_response_to_sg_detector(
     channel: u.Quantity | None = None,
     number_of_slits: int | None = None,
     dispersion: u.Quantity | None = None,
-    slit_spacing: u.Quantity | None = None,
+    pixels_between_slits: u.Quantity | None = None,
     detector_pixels: int | None = None,
     wavelength_start: u.Quantity | None = None,
 ) -> xr.Dataset:
@@ -126,7 +126,7 @@ def map_response_to_sg_detector(
         spectral order and the MUSE slit calibration by default. Otherwise it
         is required. Adjacent detector-pixel centers are separated by exactly
         ``dispersion``.
-    slit_spacing : `astropy.units.Quantity`, optional
+    pixels_between_slits : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits. Required for an explicit
         multi-slit geometry; unused for a single slit.
     detector_pixels : `int`, optional
@@ -145,7 +145,7 @@ def map_response_to_sg_detector(
         ``detector_wavelength`` and ``line_wavelength`` coordinates
         in Angstrom.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(response)
+    response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(response)
     line_wavelength = np.asarray(line_wavelength)
     channel_value = None
     spectral_order = None
@@ -153,7 +153,9 @@ def map_response_to_sg_detector(
         channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.channel_spectral_order_SG.channel, "sg")
         spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=channel_value).item()
         number_of_slits = DEFAULTS_MUSE.number_of_slits_SG if number_of_slits is None else number_of_slits
-        slit_spacing = DEFAULTS_MUSE.pixels_between_slits_SG if slit_spacing is None else slit_spacing
+        pixels_between_slits = (
+            DEFAULTS_MUSE.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
+        )
         detector_pixels = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix)) if detector_pixels is None else detector_pixels
         wavelength_start = (
             u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel_value).data)
@@ -171,8 +173,8 @@ def map_response_to_sg_detector(
             )
             if value is None
         ]
-        if isinstance(number_of_slits, numbers.Integral) and number_of_slits > 1 and slit_spacing is None:
-            missing.append("slit_spacing")
+        if isinstance(number_of_slits, numbers.Integral) and number_of_slits > 1 and pixels_between_slits is None:
+            missing.append("pixels_between_slits")
         if missing:
             msg = f"channel or explicit detector geometry is required; missing: {', '.join(missing)}"
             raise ValueError(msg)
@@ -183,7 +185,7 @@ def map_response_to_sg_detector(
             raise ValueError(msg)
 
     for name, value in (
-        ("slit_spacing", slit_spacing),
+        ("pixels_between_slits", pixels_between_slits),
         ("wavelength_start", wavelength_start),
     ):
         if value is None:
@@ -193,13 +195,13 @@ def map_response_to_sg_detector(
             raise ValueError(msg)
     if dispersion is None:
         slit_separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=channel_value).data)
-        dispersion = 2 * slit_separation / slit_spacing / spectral_order
+        dispersion = 2 * slit_separation / pixels_between_slits / spectral_order
     if not dispersion.isscalar or not np.isfinite(dispersion.value) or dispersion.value <= 0:
         msg = "dispersion must be a finite, positive scalar"
         raise ValueError(msg)
 
     dispersion_value = dispersion.to_value(u.AA / u.pix)
-    slit_offset = 0 if slit_spacing is None else slit_spacing.to_value(u.pix) * dispersion_value
+    slit_offset = 0 if pixels_between_slits is None else pixels_between_slits.to_value(u.pix) * dispersion_value
     detector_start = wavelength_start.to_value(u.AA)
     detector_wavelength_values = detector_start + np.arange(detector_pixels) * dispersion_value
     detector_wavelength = xr.DataArray(
@@ -289,7 +291,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         of ``response.spectral_response`` integrated over wavelength, with
         ``channel`` and ``detector_wavelength`` coordinates along ``line``.
     """
-    response_unit, wavelength_grid, line_wavelength = _validate_wavelength_response(
+    response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(
         response, accepted_units=_ACCEPTED_CI_RESPONSE_UNITS
     )
     line_wavelength = np.asarray(line_wavelength)

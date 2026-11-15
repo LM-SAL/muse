@@ -13,7 +13,7 @@ from muse.instrument.response.io import read_response, read_spectral_response, s
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
-from muse.tests.helpers import synthetic_line_list
+from muse.tests.helpers import fake_line_list
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -67,7 +67,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
         response,
         number_of_slits=2,
         dispersion=0.1 * u.AA / u.pix,
-        slit_spacing=2 * u.pix,
+        pixels_between_slits=2 * u.pix,
         detector_pixels=4,
         wavelength_start=170 * u.AA,
     )
@@ -155,7 +155,7 @@ def test_map_response_to_sg_detector_requires_effective_area():
         ("wavelength_grid", ValueError, "strictly increasing"),
         ("wavelength_grid_empty", ValueError, "wavelength_grid"),
         ("wavelength_grid_positive", ValueError, "positive"),
-        ("slit_spacing", ValueError, "slit_spacing"),
+        ("pixels_between_slits", ValueError, "pixels_between_slits"),
         ("geometry", ValueError, "number_of_slits"),
     ],
 )
@@ -183,8 +183,8 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         response = response.isel(wavelength_bin=slice(0, 0))
     elif case == "wavelength_grid_positive":
         response = response.assign_coords(wavelength_grid=response.wavelength_grid - 200)
-    elif case == "slit_spacing":
-        kwargs["slit_spacing"] = 0 * u.pix
+    elif case == "pixels_between_slits":
+        kwargs["pixels_between_slits"] = 0 * u.pix
     else:
         kwargs["number_of_slits"] = 0
 
@@ -199,7 +199,7 @@ def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel(
     ):
         map_response_to_sg_detector(_spectral_response())
 
-    with pytest.raises(ValueError, match="missing: slit_spacing"):
+    with pytest.raises(ValueError, match="missing: pixels_between_slits"):
         map_response_to_sg_detector(
             _spectral_response(),
             number_of_slits=2,
@@ -347,7 +347,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         channel=171 * u.AA,
         number_of_slits=2,
         dispersion=0.01 * u.AA / u.pix,
-        slit_spacing=2 * u.pix,
+        pixels_between_slits=2 * u.pix,
         detector_pixels=5,
         wavelength_start=171.05 * u.AA,
     )
@@ -400,7 +400,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
 
 
 def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
-    line_list = synthetic_line_list(1)
+    line_list = fake_line_list(1)
     response = create_spectral_response(
         line_list,
         main_lines=[line_list.full_name[0].item()],
@@ -422,7 +422,7 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
     back without them must still give the bin widths.
     """
     response = create_spectral_response(
-        synthetic_line_list(),
+        fake_line_list(),
         wavelength_edges=np.linspace(170.0, 172.0, 9) * u.AA,
         main_lines=None,
         include_contaminants=True,
@@ -450,7 +450,7 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
     kwargs = {
         "number_of_slits": 3,
         "dispersion": 0.02 * u.AA / u.pix,
-        "slit_spacing": 5 * u.pix,
+        "pixels_between_slits": 5 * u.pix,
         "detector_pixels": 40,
         "wavelength_start": 170.6 * u.AA,
     }

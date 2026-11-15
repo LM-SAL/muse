@@ -18,7 +18,7 @@ from muse.instrument.atomic.backends import (
     _fiasco_ion_kwargs,
     _import_fiasco,
     _initialize_chianti,
-    _over_ions,
+    _map_ion_groups,
     _plasma_axis_units,
     _validate_plasma_inputs,
 )
@@ -94,11 +94,11 @@ def create_chianti_line_list(
 
     chiantipy_version, ch = _initialize_chianti()
 
-    temperature_bc, density_bc, extra_coords = _broadcast_plasma_grid(
+    temperature_broadcast, density_broadcast, plasma_coords = _broadcast_plasma_grid(
         temperature, plasma_grid, by_density=density is not None
     )
-    temperature_flat = temperature_bc.data.reshape(-1)
-    density_flat = density_bc.data.reshape(-1)
+    temperature_flat = temperature_broadcast.data.reshape(-1)
+    density_flat = density_broadcast.data.reshape(-1)
 
     chianti_kwargs = {
         "em": 1.0,
@@ -120,8 +120,8 @@ def create_chianti_line_list(
     line_list = _chianti_bunch_to_dataset(
         bunch,
         temperature=temperature,
-        temperature_bc=temperature_bc,
-        extra_coords=extra_coords,
+        temperature_broadcast=temperature_broadcast,
+        plasma_coords=plasma_coords,
         wavelength_range=wavelength_range,
         chiantipy_version=chiantipy_version,
     )
@@ -136,8 +136,8 @@ def _chianti_bunch_to_dataset(
     bunch,
     *,
     temperature: xr.DataArray,
-    temperature_bc: xr.DataArray,
-    extra_coords: dict[str, np.ndarray],
+    temperature_broadcast: xr.DataArray,
+    plasma_coords: dict[str, np.ndarray],
     wavelength_range: tuple[float, float],
     chiantipy_version: str,
 ) -> xr.Dataset:
@@ -163,13 +163,13 @@ def _chianti_bunch_to_dataset(
         "atomic_number": np.array([name_info[ion]["Z"] for ion in ion_names]),
         "observed": bunch.Intensity["obs"] == "Y",
     }
-    gofnt_values = bunch.Intensity["intensity"].reshape((*temperature_bc.data.shape, -1))
+    gofnt_values = bunch.Intensity["intensity"].reshape((*temperature_broadcast.data.shape, -1))
     return _line_list_dataset(
         per_transition,
         gofnt_values,
         temperature=temperature,
-        temperature_bc=temperature_bc,
-        extra_coords=extra_coords,
+        temperature_broadcast=temperature_broadcast,
+        plasma_coords=plasma_coords,
         wavelength_range=wavelength_range,
         attrs={"Chiantipy": chiantipy_version, "Chianti": chio.versionRead()},
     )
@@ -180,8 +180,8 @@ def _line_list_dataset(
     gofnt_values: np.ndarray,
     *,
     temperature: xr.DataArray,
-    temperature_bc: xr.DataArray,
-    extra_coords: dict[str, np.ndarray],
+    temperature_broadcast: xr.DataArray,
+    plasma_coords: dict[str, np.ndarray],
     wavelength_range: tuple[float, float],
     attrs: dict,
 ) -> xr.Dataset:
@@ -191,8 +191,8 @@ def _line_list_dataset(
     line_list = xr.Dataset({name: ("trans_index", values) for name, values in per_transition.items()})
     line_list["gofnt"] = xr.DataArray(
         gofnt_values,
-        dims=(*temperature_bc.dims, "trans_index"),
-        coords={"logT": np.log10(temperature), **extra_coords},
+        dims=(*temperature_broadcast.dims, "trans_index"),
+        coords={"logT": np.log10(temperature), **plasma_coords},
     )
     line_list["logT_peak"] = np.log10(temperature[{"logT": line_list.gofnt.argmax(dim="logT")}])
     line_list["full_name"] = (
@@ -203,7 +203,7 @@ def _line_list_dataset(
     line_list.wavelength.attrs["units"] = str(u.AA)
     line_list.gofnt.attrs["units"] = "erg cm3 / (s sr)"
     line_list.logT.attrs["units"] = str(u.dex(u.K))
-    for plasma_dim in extra_coords:
+    for plasma_dim in plasma_coords:
         line_list[plasma_dim].attrs["units"] = _plasma_axis_units(plasma_dim)
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
@@ -364,11 +364,11 @@ def create_fiasco_line_list(
         raise ValueError(msg)
     fiasco = _import_fiasco()
 
-    temperature_bc, density_bc, extra_coords = _broadcast_plasma_grid(
+    temperature_broadcast, density_broadcast, plasma_coords = _broadcast_plasma_grid(
         temperature, plasma_grid, by_density=density is not None
     )
-    temperature_flat = temperature_bc.data.reshape(-1) * u.K
-    density_flat = density_bc.data.reshape(-1) * u.cm**-3
+    temperature_flat = temperature_broadcast.data.reshape(-1) * u.K
+    density_flat = density_broadcast.data.reshape(-1) * u.cm**-3
     ion_kwargs = _fiasco_ion_kwargs(abundance, hdf5_dbase_root)
     # The proton-to-electron ratio depends only on the temperature grid and the datasets.
     proton_electron_ratio = fiasco.proton_electron_ratio(temperature_flat, **ion_kwargs)
@@ -378,7 +378,7 @@ def create_fiasco_line_list(
     ]
     tables = [
         table
-        for table in _over_ions(
+        for table in _map_ion_groups(
             _fiasco_line_table,
             ions,
             workers,
@@ -417,13 +417,13 @@ def create_fiasco_line_list(
     }
     # (trans_index, grid point, 1) -> (*grid dims, trans_index), per steradian
     gofnt = (table["contribution function"][:, :, 0] / (4 * np.pi * u.sr)).to_value(u.erg * u.cm**3 / (u.s * u.sr))
-    gofnt_values = np.moveaxis(gofnt, 0, -1).reshape((*temperature_bc.data.shape, -1))
+    gofnt_values = np.moveaxis(gofnt, 0, -1).reshape((*temperature_broadcast.data.shape, -1))
     line_list = _line_list_dataset(
         per_transition,
         gofnt_values,
         temperature=temperature,
-        temperature_bc=temperature_bc,
-        extra_coords=extra_coords,
+        temperature_broadcast=temperature_broadcast,
+        plasma_coords=plasma_coords,
         wavelength_range=wavelength_range,
         attrs={"fiasco": table.meta["fiasco_version"], "Chianti": table.meta["chianti_version"]},
     )

@@ -21,7 +21,7 @@ _SPATIAL_EQUIVALENCY = [
 ]
 
 
-def _coordinate_unit_to(ds: xr.Dataset, coord_name: str, target_unit: u.UnitBase) -> float:
+def _coord_conversion_factor(ds: xr.Dataset, coord_name: str, target_unit: u.UnitBase) -> float:
     unit = require_unit(ds, coord_name, f"{coord_name} coordinate", coord_only=True)
     try:
         return unit.to(target_unit, equivalencies=_SPATIAL_EQUIVALENCY)
@@ -45,23 +45,24 @@ def _spacing_matches(coord: xr.DataArray, to_arcsec: float, pixel_arcsec: float)
     return bool(abs(spacing - pixel_arcsec) / pixel_arcsec < 0.005)
 
 
-def _resample_weights(coord_values: np.ndarray, n: int, blocks: int) -> np.ndarray:
+def _resample_weights(coord_values: np.ndarray, n_pixels: int, samples_per_pixel: int) -> np.ndarray:
     """
-    Matrix mapping samples at ``coord_values`` onto ``n`` output pixels.
+    Matrix mapping samples at ``coord_values`` onto ``n_pixels`` output pixels.
 
-    Row ``i`` holds the weights that linearly interpolate the input onto ``blocks``
-    evenly spaced sub-samples of output pixel ``i`` and average them, so applying the
-    matrix reproduces interpolate-then-block-average in a single product.
+    Row ``i`` holds the weights that linearly interpolate the input onto
+    ``samples_per_pixel`` evenly spaced sub-samples of output pixel ``i`` and average
+    them, so applying the matrix reproduces interpolate-then-block-average in a single
+    product.
     """
-    fine = np.linspace(coord_values[0], coord_values[-1], n * blocks)
+    fine = np.linspace(coord_values[0], coord_values[-1], n_pixels * samples_per_pixel)
     right = np.clip(np.searchsorted(coord_values, fine, side="right"), 1, coord_values.size - 1)
     left = right - 1
-    frac = (fine - coord_values[left]) / (coord_values[right] - coord_values[left])
-    weights = np.zeros((n * blocks, coord_values.size))
-    rows = np.arange(n * blocks)
-    weights[rows, left] = 1.0 - frac
-    weights[rows, right] = frac
-    return weights.reshape(n, blocks, coord_values.size).mean(axis=1)
+    fraction = (fine - coord_values[left]) / (coord_values[right] - coord_values[left])
+    weights = np.zeros((n_pixels * samples_per_pixel, coord_values.size))
+    rows = np.arange(n_pixels * samples_per_pixel)
+    weights[rows, left] = 1.0 - fraction
+    weights[rows, right] = fraction
+    return weights.reshape(n_pixels, samples_per_pixel, coord_values.size).mean(axis=1)
 
 
 def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_interpolation: int) -> xr.Dataset:
@@ -88,22 +89,22 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     if not np.all(np.diff(coord.values) > 0):
         msg = f"{axis} coordinate must be strictly monotonically increasing to resample onto the MUSE pixel grid"
         raise ValueError(msg)
-    to_cm = _coordinate_unit_to(ds, axis, u.cm)
+    to_cm = _coord_conversion_factor(ds, axis, u.cm)
     span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
-    n = int(np.round(span_pixels))
-    if n > coord.size:
+    n_pixels = int(np.round(span_pixels))
+    if n_pixels > coord.size:
         # Finer target grid: pure interpolation, no block averaging.
-        blocks = 1
-    elif coord.size // n > 3:
-        # factor = coord.size / span_pixels; the rounded sample count n equals round(span_pixels).
-        blocks = int(np.round(coord.size / span_pixels))
+        samples_per_pixel = 1
+    elif coord.size // n_pixels > 3:
+        # factor = coord.size / span_pixels; the rounded pixel count n_pixels equals round(span_pixels).
+        samples_per_pixel = int(np.round(coord.size / span_pixels))
     else:
         # sub_interpolation == 0 means "no sub-grid", but the averaging still needs
-        # >= 1 block; fall back to interpolating straight onto the n output pixels.
-        blocks = max(1, int(coord.size / n * sub_interpolation))
+        # >= 1 sample per pixel; fall back to interpolating straight onto the n_pixels output pixels.
+        samples_per_pixel = max(1, int(coord.size / n_pixels * sub_interpolation))
     # No coords on the weights array: alignment must be by dimension only.
-    weights = xr.DataArray(_resample_weights(coord.values, n, blocks), dims=("_center", axis))
-    centers = np.linspace(coord[0].values, coord[-1].values, n)
+    weights = xr.DataArray(_resample_weights(coord.values, n_pixels, samples_per_pixel), dims=("_center", axis))
+    centers = np.linspace(coord[0].values, coord[-1].values, n_pixels)
 
     def apply_weights(block: np.ndarray, weight_block: np.ndarray, dtype=None) -> np.ndarray:
         return (block @ weight_block.T).astype(dtype)
@@ -130,32 +131,33 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, sub_
     return ds.drop_dims(axis).assign(resampled).assign_coords({axis: centers})
 
 
-def _fit_axis(ds: xr.Dataset, axis: str, size: int, mode: str, *, extend: bool) -> xr.Dataset:
+def _fit_axis(ds: xr.Dataset, axis: str, target_size: int, mode: str, *, extend: bool) -> xr.Dataset:
     """
-    Crop ``ds`` to ``size`` points along ``axis``; pad it with ``mode`` if ``extend``.
+    Crop ``ds`` to ``target_size`` points along ``axis``; pad it with ``mode`` if
+    ``extend``.
     """
-    n = ds.sizes[axis]
-    if n > size:
-        return ds.isel({axis: np.arange(size)})
-    if n == size or not extend:
+    current_size = ds.sizes[axis]
+    if current_size > target_size:
+        return ds.isel({axis: np.arange(target_size)})
+    if current_size == target_size or not extend:
         return ds
     if mode == "wrap":
         # dask.array.pad silently clips a wrap pad wider than the axis; modular
         # indexing tiles any width and works on both numpy and dask backends.
-        return ds.isel({axis: np.arange(size) % n})
+        return ds.isel({axis: np.arange(target_size) % current_size})
     # xarray.pad defaults constant_values to NaN, which would poison every
     # downstream sum; a padded VDEM pixel means "no emission here", so fill
     # with zeros. Only "constant" accepts the argument.
     fill = {"constant_values": 0} if mode == "constant" else {}
-    return ds.pad({axis: (0, size - n)}, mode=mode, **fill)
+    return ds.pad({axis: (0, target_size - current_size)}, mode=mode, **fill)
 
 
 @format_docstring(
     "DEFAULTS_MUSE",
     pixel_width="dx_pixel_SG",
     pixel_height="dy_pixel_SG",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
+    number_of_slits="number_of_slits_SG",
+    steps_per_raster="steps_per_raster_SG",
     x_extent="fov_x_extent",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
@@ -166,8 +168,8 @@ def match_fov(
     *,
     pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
     pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
     x_extent: str = DEFAULTS_MUSE.fov_x_extent,
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
@@ -185,12 +187,12 @@ def match_fov(
         Pixel size in arcsec along the x axis, by default is {pixel_width}
     pixel_height : `astropy.units.Quantity`, optional
         Pixel size in arcsec along the y axis, by default is {pixel_height}
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
+    number_of_slits : `int`
+        Number of slits, by default is {number_of_slits}.
+    steps_per_raster : `int`
+        Number of raster steps, by default is {steps_per_raster}.
     x_extent : `str`, optional
-        How to treat the x width relative to ``nslits * nraster``, by default
+        How to treat the x width relative to ``number_of_slits * steps_per_raster``, by default
         {x_extent}. ``"tile"`` crops wider inputs and extends narrower ones
         using ``mode``. ``"crop"`` crops wider inputs but retains a narrower
         input at its available width. ``"keep"`` leaves the width untouched
@@ -204,7 +206,9 @@ def match_fov(
         ``"constant"`` fills the padded columns with zeros rather than the
         `xarray.DataArray.pad` default of NaN, so they read as "no emission here".
     sub_interpolation: `int`
-        Does a subgrid interpolation, by default {sub_interpolation},
+        Sub-samples per input sample that a coarse input is interpolated onto
+        before it is averaged into pixels, by default {sub_interpolation}; 0
+        interpolates straight onto the pixels.
     rotate: `bool`
         Rotates 90 degrees the FOV, by default False.
     y_pixels : `int`, optional
@@ -235,7 +239,7 @@ def match_fov(
     3. **Resample** - otherwise each axis is resampled onto the requested
        pixel size (interpolated up, integer-factor averaged down, or
        sub-interpolated).
-    4. **Match the x extent** - inputs wider than ``nslits * nraster`` are
+    4. **Match the x extent** - inputs wider than ``number_of_slits * steps_per_raster`` are
        cropped. Narrower inputs are extended with ``mode`` only when
        ``x_extent="tile"``; ``"crop"`` retains their available width. Skipped
        entirely when ``x_extent="keep"``.
@@ -255,17 +259,21 @@ def match_fov(
         raise ValueError(msg)
     pixel_width = pixel_width.to("arcsec")
     pixel_height = pixel_height.to("arcsec")
-    target_width = nslits * nraster
+    target_width = number_of_slits * steps_per_raster
 
     if rotate:
         vdem = vdem.rename({"x": "ynew"})
         vdem = vdem.rename({"y": "x"})
         vdem = vdem.rename({"ynew": "y"})
 
-    x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), pixel_width.value)
-    y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), pixel_height.value)
-    resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
-        y_at_pixel and vdem.coords["x"].size < 2
+    x_spacing_matches = _spacing_matches(
+        vdem.coords["x"], _coord_conversion_factor(vdem, "x", u.arcsec), pixel_width.value
+    )
+    y_spacing_matches = _spacing_matches(
+        vdem.coords["y"], _coord_conversion_factor(vdem, "y", u.arcsec), pixel_height.value
+    )
+    resolution_matches = (x_spacing_matches and (y_spacing_matches or vdem.coords["y"].size < 2)) or (
+        y_spacing_matches and vdem.coords["x"].size < 2
     )
     width_needs_no_change = (
         x_extent == "keep"
@@ -281,42 +289,42 @@ def match_fov(
 
     # Shallow copy: every transform below returns a new object; the copy only isolates
     # coord/attr mutations on the degenerate size-1 paths where resampling is a no-op.
-    vdem_xr = vdem.copy()
+    matched = vdem.copy()
 
     if not resolution_matches:
-        vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", pixel_width.value, sub_interpolation)
-        vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", pixel_height.value, sub_interpolation)
+        matched = _resample_axis_to_pixel(matched, "x", pixel_width.value, sub_interpolation)
+        matched = _resample_axis_to_pixel(matched, "y", pixel_height.value, sub_interpolation)
         # The unstack inside the resampling moves the resampled axis last; restore each
         # variable's original dimension order so downstream plots keep their orientation.
-        vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
+        matched = matched.assign({name: matched[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     if x_extent != "keep":
-        vdem_xr = _fit_axis(vdem_xr, "x", target_width, mode, extend=x_extent == "tile")
-    if y_pixels is not None and vdem_xr.y.size > 1:
-        vdem_xr = _fit_axis(vdem_xr, "y", y_pixels, mode, extend=x_extent == "tile")
+        matched = _fit_axis(matched, "x", target_width, mode, extend=x_extent == "tile")
+    if y_pixels is not None and matched.y.size > 1:
+        matched = _fit_axis(matched, "y", y_pixels, mode, extend=x_extent == "tile")
 
-    vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * pixel_width.value
-    vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * pixel_height.value
-    vdem_xr.x.attrs["units"] = "arcsec"
-    vdem_xr.y.attrs["units"] = "arcsec"
+    matched.coords["x"] = np.arange(matched.x.size) * pixel_width.value
+    matched.coords["y"] = np.arange(matched.y.size) * pixel_height.value
+    matched.x.attrs["units"] = "arcsec"
+    matched.y.attrs["units"] = "arcsec"
     for var in vdem.data_vars:
-        vdem_xr[var].attrs.update(vdem[var].attrs)
+        matched[var].attrs.update(vdem[var].attrs)
 
-    update_attrs(vdem_xr, vdem)
-    add_history(vdem_xr, locals(), match_fov, sources=(vdem,))
+    update_attrs(matched, vdem)
+    add_history(matched, locals(), match_fov, sources=(vdem,))
 
-    return vdem_xr
+    return matched
 
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
+    number_of_slits="number_of_slits_SG",
+    steps_per_raster="steps_per_raster_SG",
 )
 def reshape_x_to_slit_step(
     ds: xr.Dataset,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
+    number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
+    steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
     """
     For a given xarray data set (either vdem or spectra) we reshape from the x spatial
@@ -329,10 +337,10 @@ def reshape_x_to_slit_step(
     ----------
     ds : `xarray.Dataset`
         Data that contains x spatial axis. The ``x`` coordinate must define units.
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
+    number_of_slits : `int`
+        Number of slits, by default is {number_of_slits}.
+    steps_per_raster : `int`
+        Number of raster steps, by default is {steps_per_raster}.
 
     Returns
     -------
@@ -345,7 +353,7 @@ def reshape_x_to_slit_step(
         reshaped = ds.unstack("x")
     else:
         step_size = ds.x[1] - ds.x[0]
-        step, slit = (arr.flatten() for arr in np.meshgrid(range(nraster), range(nslits)))
+        step, slit = (array.flatten() for array in np.meshgrid(range(steps_per_raster), range(number_of_slits)))
         reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
         reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
         attrs = {"step_size": step_size.values, "step_size units": str(x_unit)}
@@ -354,16 +362,7 @@ def reshape_x_to_slit_step(
     return reshaped
 
 
-@format_docstring(
-    "DEFAULTS_MUSE",
-    nslits="number_of_slits_SG",
-    nraster="steps_per_raster_SG",
-)
-def reshape_slit_step_to_x(
-    ds: xr.Dataset,
-    nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
-    nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
-) -> xr.Dataset:
+def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
     """
     Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
     onto a single x spatial axis.
@@ -376,10 +375,6 @@ def reshape_slit_step_to_x(
     ----------
     ds : `xarray.Dataset`
         Data with ``slit`` and ``step`` coordinates.
-    nslits : `int`
-        Number of slits, by default is {nslits}.
-    nraster : `int`
-        Number of raster steps, by default is {nraster}.
 
     Returns
     -------

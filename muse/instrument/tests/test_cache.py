@@ -16,7 +16,7 @@ import astropy.units as u
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
-from muse.tests.helpers import synthetic_continuum, synthetic_line_list
+from muse.tests.helpers import fake_continuum, fake_line_list
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -36,7 +36,7 @@ def synthetic_line_list_backend(temperature, *, density=None, pressure=None, **_
     Three lines on the requested grids, the same at every plasma point.
     """
     temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
-    line_list = synthetic_line_list(3, wavelength=[165.0, 171.073, 180.0], logT=np.log10(temperature.data))
+    line_list = fake_line_list(3, wavelength=[165.0, 171.073, 180.0], logT=np.log10(temperature.data))
     axis = "logD" if density is not None else plasma.dims[0]
     values = np.log10(plasma.data) if density is not None else plasma.data
     line_list["gofnt"] = line_list.gofnt.expand_dims({axis: values})
@@ -62,7 +62,7 @@ def continuum_calls(monkeypatch):
 
     def backend(temperature, wavelength_grid, **kwargs):
         calls.append(kwargs)
-        return synthetic_continuum(temperature, wavelength_grid, **kwargs)
+        return fake_continuum(temperature, wavelength_grid, **kwargs)
 
     monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", backend)
     return calls

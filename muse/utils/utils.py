@@ -45,7 +45,7 @@ def require_unit(
     name : `str`
         Variable or coordinate name to look up.
     label : `str`
-        Human-readable name used in error messages (e.g. ``"raster.vdem"`` or
+        Human-readable name used in error messages (e.g. ``"vdem.vdem"`` or
         ``"x coordinate"``).
     coord_only : `bool`, optional
         When `True`, require ``name`` to be a coordinate rather than any
@@ -231,21 +231,21 @@ def add_history(
     """
     # A string label has no signature to inspect, so it records no inputs.
     params = inspect.signature(func).parameters if callable(func) else {}
-    string_vals = []
+    formatted_args = []
     for arg, value in local_vars.items():
         if arg not in params:
             continue
         if isinstance(value, u.Quantity):
-            string_vals.append(f"{arg}={value.value}")
+            formatted_args.append(f"{arg}={value.value}")
         elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):
             if isinstance(value, np.ndarray) and value.shape in [(), (1,)]:
-                string_vals.append(f"{arg}={value.tolist()}")
+                formatted_args.append(f"{arg}={value.tolist()}")
             elif isinstance(value, xr.DataArray) and value.size == 1 and isinstance(value.data, np.ndarray):
-                string_vals.append(f"{arg}={value.values.tolist()}")
+                formatted_args.append(f"{arg}={value.values.tolist()}")
             else:
-                string_vals.append(f"{arg}={arg}")
+                formatted_args.append(f"{arg}={arg}")
         else:
-            string_vals.append(f"{arg}={value}")
+            formatted_args.append(f"{arg}={value}")
         if params[arg].default is not inspect.Parameter.empty:  # keyword input
             safe = _attr_safe(value)
             if safe is not None:
@@ -258,7 +258,7 @@ def add_history(
                 )
 
     name = func if isinstance(func, str) else func.__name__
-    history_entry = f"{name}({', '.join(string_vals)})"
+    history_entry = f"{name}({', '.join(formatted_args)})"
 
     for source in sources:
         _inherit_history(ds, source)

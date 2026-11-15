@@ -12,7 +12,7 @@ import astropy.constants as const
 import astropy.units as u
 from astropy.time import Time
 
-from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination, _open_response_file
+from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination, _open_dataset_file
 from muse.utils.utils import _require_increasing_axis, _to_zarr, add_history, coord_as_unit, require_unit
 
 __all__ = [
@@ -23,7 +23,7 @@ __all__ = [
     "save_effective_area",
 ]
 
-_DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
+_CM2_DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
 # Attributes with which an effective-area file describes its own detector: the keywords of
 # transform_response_units, as "<value> <unit>" strings.
 _DETECTOR_ATTRS = ("pixel_width", "pixel_height", "gain", "pair_energy")
@@ -33,7 +33,7 @@ _AIA_MISSION_START = "2010-05-01T00:00:00.000"
 _AIA_PAIR_ENERGY = 3.65 * u.eV / u.electron
 
 
-@u.quantity_input(area=[u.cm**2, _DN_PER_PHOTON], wavelength=u.AA, channel=u.AA)
+@u.quantity_input(area=[u.cm**2, _CM2_DN_PER_PHOTON], wavelength=u.AA, channel=u.AA)
 def create_effective_area(
     area: u.Quantity,
     wavelength: u.Quantity,
@@ -123,7 +123,7 @@ def create_aia_effective_area(
     include_crosstalk: bool = True,
     include_degradation: bool = False,
     include_eve_correction: bool = True,
-    include_gain: bool = True,
+    include_dn_per_photon: bool = True,
 ) -> xr.Dataset:
     """
     Build the effective-area dataset of one SDO/AIA channel from aiapy.
@@ -150,7 +150,7 @@ def create_aia_effective_area(
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
-    include_gain : `bool`, optional
+    include_dn_per_photon : `bool`, optional
         Multiply the area by the DN that one photon gives, aiapy's ``Channel.gain``, which
         varies with wavelength, by default `True`. The area is then in cm2 DN / ph, and
         `muse.instrument.create_spectral_response` and
@@ -187,7 +187,7 @@ def create_aia_effective_area(
     degradation_factor = degradation(channel, obstime).to_value(u.one).item() if include_degradation else 1.0
     eve_factor = aia_channel.eve_correction(obstime).to_value(u.one).item() if include_eve_correction else 1.0
     area = (aia_channel.effective_area + crosstalk) * degradation_factor * eve_factor
-    if include_gain:
+    if include_dn_per_photon:
         area = area * aia_channel.gain
     # aiapy's Channel.gain is DN per photon: the photon energy over the pair energy and the
     # camera gain (electron / DN). So the camera gain follows from any one wavelength.
@@ -221,7 +221,7 @@ def create_aia_effective_area(
     return effective_area
 
 
-def _validated(effective_area: xr.Dataset, label: str) -> xr.Dataset:
+def _validate_effective_area(effective_area: xr.Dataset, label: str) -> xr.Dataset:
     """
     ``effective_area`` with its wavelength and channel in Angstrom, after checking the
     layout `create_effective_area` gives.
@@ -236,7 +236,7 @@ def _validated(effective_area: xr.Dataset, label: str) -> xr.Dataset:
         )
         raise ValueError(msg)
     unit = require_unit(effective_area, "effective_area", f"{label}: effective_area")
-    if not (unit.is_equivalent(u.cm**2) or unit.is_equivalent(_DN_PER_PHOTON)):
+    if not (unit.is_equivalent(u.cm**2) or unit.is_equivalent(_CM2_DN_PER_PHOTON)):
         msg = f"{label}: effective_area units {unit} must be convertible to cm2 or cm2 DN / ph"
         raise ValueError(msg)
     # Converted here, once: every later step may take the numbers as Angstrom.
@@ -265,7 +265,7 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
         If the dataset does not have that layout, or the destination exists or does not end
         in one of those suffixes.
     """
-    validated = _validated(effective_area, "effective_area").drop_encoding()
+    validated = _validate_effective_area(effective_area, "effective_area").drop_encoding()
     destination = _check_destination(effective_area_file, what="effective area", argument="effective_area_file")
     if destination.suffix.lower() in _ZARR_SUFFIXES:
         _to_zarr(validated, destination)
@@ -294,9 +294,9 @@ def read_effective_area(effective_area_file: str | Path) -> xr.Dataset:
         If the file does not have that layout or lacks a unit.
     """
     effective_area_file = Path(effective_area_file)
-    with _open_response_file(effective_area_file) as opened:
+    with _open_dataset_file(effective_area_file) as opened:
         effective_area = opened.load()
-    effective_area = _validated(effective_area, effective_area_file.name)
+    effective_area = _validate_effective_area(effective_area, effective_area_file.name)
     # zarr hands back arrays with an explicit byte order, which netCDF then writes with a warning.
     native = {
         name: variable.astype(variable.dtype.newbyteorder("="))

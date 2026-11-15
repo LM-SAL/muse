@@ -204,9 +204,9 @@ def torch_einsum(
     """
     import torch  # NOQA: PLC0415
 
-    target = _resolve_device(device)
+    torch_device = _resolve_device(device)
     vdem_indices, response_indices, output_indices = list(vdem_indices), list(response_indices), list(output_indices)
-    logger.debug(f"Synthesis einsum on {target}")
+    logger.debug(f"Synthesis einsum on {torch_device}")
     # At most one float32 copy each, made in NumPy: MPS has no float64, a float64 tensor cast
     # afterwards would hold the VDEM three times over on the host, and a contiguous writable
     # float32 input is used as is.
@@ -219,35 +219,42 @@ def torch_einsum(
         (i for i, index in enumerate(vdem_indices) if index in output_indices and index not in response_indices), None
     )
     n_rows = 1 if axis is None else vdem_tensor.shape[axis]
-    device_per_row = 8 * (vdem_tensor.numel() + out.size) // n_rows
-    host_per_row = 4 * out.size // n_rows
+    device_bytes_per_row = 8 * (vdem_tensor.numel() + out.size) // n_rows
+    host_bytes_per_row = 4 * out.size // n_rows
     # The allocator's cached blocks count as allocated: a solve just before would leave no budget.
-    _empty_device_cache(target)
-    free_device = _available_memory_bytes(target)
-    free_host = _available_memory_bytes(torch.device("cpu"))
-    rows = int(min((free_device // 2 - 8 * response_tensor.numel()) // device_per_row, free_host // 2 // host_per_row))
-    if rows < 1 and target.type == "cpu":
-        rows = 1  # the host pages to disk rather than failing
-    if rows < 1:
+    _empty_device_cache(torch_device)
+    free_device_bytes = _available_memory_bytes(torch_device)
+    free_host_bytes = _available_memory_bytes(torch.device("cpu"))
+    rows_per_chunk = int(
+        min(
+            (free_device_bytes // 2 - 8 * response_tensor.numel()) // device_bytes_per_row,
+            free_host_bytes // 2 // host_bytes_per_row,
+        )
+    )
+    if rows_per_chunk < 1 and torch_device.type == "cpu":
+        rows_per_chunk = 1  # the host pages to disk rather than failing
+    if rows_per_chunk < 1:
         msg = (
-            f"One row of the synthesis ({device_per_row / 1e9:.2f} GB on {target}) does not fit next to "
+            f"One row of the synthesis ({device_bytes_per_row / 1e9:.2f} GB on {torch_device}) does not fit next to "
             f"the response ({8 * response_tensor.numel() / 1e9:.1f} GB)"
         )
         raise MemoryError(msg)
-    response_tensor = response_tensor.to(target)
-    for start in range(0, n_rows, rows):
-        chunk = vdem_tensor if axis is None else vdem_tensor.narrow(axis, start, min(rows, n_rows - start))
+    response_tensor = response_tensor.to(torch_device)
+    for start in range(0, n_rows, rows_per_chunk):
+        chunk = vdem_tensor if axis is None else vdem_tensor.narrow(axis, start, min(rows_per_chunk, n_rows - start))
         product = torch_to_numpy(
-            torch.einsum(chunk.to(target), vdem_indices, response_tensor, response_indices, output_indices)
+            torch.einsum(chunk.to(torch_device), vdem_indices, response_tensor, response_indices, output_indices)
         )
-        if target.type == "mps" and not product.any() and chunk.any() and response_tensor.any():  # pragma: no cover
+        if (
+            torch_device.type == "mps" and not product.any() and chunk.any() and response_tensor.any()
+        ):  # pragma: no cover
             # Oversubscribed unified memory: the product is right on the GPU, its copy to the host is zeros.
             # ponytail: a chunk whose nonzero operands do not overlap along the summed axes trips this too;
             # if a real response ever does, compare one row against a CPU product before raising.
             msg = "The synthesis copied back from MPS is all zero, which happens when memory runs out; use device='cpu'"
             raise RuntimeError(msg)
-        index = [slice(None)] * out.ndim
+        out_slices = [slice(None)] * out.ndim
         if axis is not None:
-            index[output_indices.index(vdem_indices[axis])] = slice(start, start + chunk.shape[axis])
-        out[tuple(index)] = product
+            out_slices[output_indices.index(vdem_indices[axis])] = slice(start, start + chunk.shape[axis])
+        out[tuple(out_slices)] = product
     return out
