@@ -172,7 +172,7 @@ def match_fov(
     mode: str = DEFAULTS_MUSE.fov_mode,
     sub_interpolation: int = DEFAULTS_MUSE.fov_sub_interpolation,
     rotate: bool = False,
-    nrows: int | None = None,
+    y_pixels: int | None = None,
 ) -> xr.Dataset:
     """
     Match a VDEM's spatial resolution and available extent to the MUSE FOV.
@@ -207,18 +207,18 @@ def match_fov(
         Does a subgrid interpolation, by default {sub_interpolation},
     rotate: `bool`
         Rotates 90 degrees the FOV, by default False.
-    nrows : `int`, optional
-        Number of rows along y, counted in output pixels, that is after the
-        resampling. More rows than that are cropped to the first ``nrows``.
-        Fewer are extended with ``mode`` when ``x_extent="tile"``, as x is, and
-        kept otherwise. A single row, one position along the slit, is always
-        kept. By default `None`, which leaves the rows as they are.
+    y_pixels : `int`, optional
+        Number of pixels along y in the output, counted after the resampling.
+        More are cropped to the first ``y_pixels``. Fewer are extended with
+        ``mode`` when ``x_extent="tile"``, as x is, and kept otherwise. A
+        single row, one position along the slit, is always kept. By default
+        `None`, which leaves y as it is.
 
     Returns
     -------
     `xarray.Dataset`
         VDEM data resampled to the requested pixel sizes and cropped or extended
-        along x as described by ``x_extent``, and along y when ``nrows`` is given.
+        along x as described by ``x_extent``, and along y when ``y_pixels`` is given.
 
     Notes
     -----
@@ -241,16 +241,17 @@ def match_fov(
        entirely when ``x_extent="keep"``.
     5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
        extent is extended when ``x_extent="tile"`` and otherwise retained.
-    6. **Match the rows** - with ``nrows``, an output of more than one row is
-       cropped to its first ``nrows`` rows whatever ``x_extent`` is, and
-       extended to ``nrows`` rows with ``mode`` only when ``x_extent="tile"``.
-       This follows the resampling, so the count is in output pixels.
+    6. **Match the y extent** - with ``y_pixels``, an output of more than one
+       row is cropped to its first ``y_pixels`` rows whatever ``x_extent`` is,
+       and extended to ``y_pixels`` rows with ``mode`` only when
+       ``x_extent="tile"``. This follows the resampling, so the count is in
+       output pixels.
     """
     if x_extent not in ("tile", "crop", "keep"):
         msg = f"Unsupported x_extent {x_extent!r}; use 'tile', 'crop', or 'keep'"
         raise ValueError(msg)
-    if nrows is not None and nrows < 1:
-        msg = f"nrows must be at least 1, got {nrows}"
+    if y_pixels is not None and y_pixels < 1:
+        msg = f"y_pixels must be at least 1, got {y_pixels}"
         raise ValueError(msg)
     dx_pix = dx_pix.to("arcsec")
     dy_pix = dy_pix.to("arcsec")
@@ -273,7 +274,7 @@ def match_fov(
     )
     # The input rows are the ones to count here: the early return is only taken when nothing is resampled.
     ny = vdem.coords["y"].size
-    rows_need_no_change = nrows is None or ny in (1, nrows) or (ny < nrows and x_extent != "tile")
+    rows_need_no_change = y_pixels is None or ny in (1, y_pixels) or (ny < y_pixels and x_extent != "tile")
     if not rotate and resolution_matches and width_needs_no_change and rows_need_no_change:
         logger.info("vdem already has the requested pixel size and needs no extent change")
         return vdem
@@ -291,8 +292,8 @@ def match_fov(
 
     if x_extent != "keep":
         vdem_xr = _fit_axis(vdem_xr, "x", target_width, mode, extend=x_extent == "tile")
-    if nrows is not None and vdem_xr.y.size > 1:
-        vdem_xr = _fit_axis(vdem_xr, "y", nrows, mode, extend=x_extent == "tile")
+    if y_pixels is not None and vdem_xr.y.size > 1:
+        vdem_xr = _fit_axis(vdem_xr, "y", y_pixels, mode, extend=x_extent == "tile")
 
     vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
     vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value

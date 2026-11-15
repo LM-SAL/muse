@@ -1,1 +1,1 @@
-``match_fov`` takes ``nrows``, the number of rows along y in output pixels: an input with more rows is cropped to the first ``nrows``, and one with fewer is extended with ``mode`` when ``x_extent="tile"``.
+``match_fov`` takes ``y_pixels``, the number of pixels along y in the output: an input with more is cropped to the first ``y_pixels``, and one with fewer is extended with ``mode`` when ``x_extent="tile"``.

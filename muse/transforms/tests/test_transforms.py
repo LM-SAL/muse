@@ -198,17 +198,17 @@ def test_match_fov_tiles_single_x_column(vdem) -> None:
     np.testing.assert_array_equal(out.vdem.isel(x=0), out.vdem.isel(x=-1))
 
 
-def test_match_fov_crops_rows_to_nrows(vdem) -> None:
-    out = match_fov(vdem, nrows=20)
+def test_match_fov_crops_y_to_y_pixels(vdem) -> None:
+    out = match_fov(vdem, y_pixels=20)
 
     assert out.y.size == 20
     np.testing.assert_array_equal(out.vdem.values, vdem.vdem.isel(y=slice(0, 20)).values)
 
 
 @pytest.mark.parametrize("mode", ["wrap", "constant"])
-def test_match_fov_extends_rows_to_nrows_when_tiling(vdem, mode) -> None:
+def test_match_fov_extends_y_to_y_pixels_when_tiling(vdem, mode) -> None:
     # Rows are extended as x is: "wrap" repeats the field, "constant" adds rows without emission.
-    out = match_fov(vdem, nrows=40, mode=mode)
+    out = match_fov(vdem, y_pixels=40, mode=mode)
 
     assert out.y.size == 40
     np.testing.assert_array_equal(out.vdem.isel(y=slice(0, 32)).values, vdem.vdem.values)
@@ -220,29 +220,29 @@ def test_match_fov_extends_rows_to_nrows_when_tiling(vdem, mode) -> None:
 def test_match_fov_without_tiling_keeps_fewer_rows(vdem_offgrid) -> None:
     resampled_rows = match_fov(vdem_offgrid, x_extent="crop").y.size
 
-    assert match_fov(vdem_offgrid, x_extent="crop", nrows=resampled_rows + 5).y.size == resampled_rows
+    assert match_fov(vdem_offgrid, x_extent="crop", y_pixels=resampled_rows + 5).y.size == resampled_rows
 
 
-def test_match_fov_keeps_a_single_row_whatever_nrows(vdem) -> None:
+def test_match_fov_keeps_a_single_row_whatever_y_pixels(vdem) -> None:
     # Narrower than the field, so the input is extended along x and reaches the fit of the rows.
-    out = match_fov(vdem.isel(y=[0], x=slice(0, 100)), nrows=40)
+    out = match_fov(vdem.isel(y=[0], x=slice(0, 100)), y_pixels=40)
 
     assert out.y.size == 1
 
 
-def test_match_fov_counts_nrows_in_output_pixels(vdem_offgrid) -> None:
-    # The coarse input is resampled to more rows than it has, and nrows crops those.
+def test_match_fov_counts_y_pixels_after_the_resampling(vdem_offgrid) -> None:
+    # The coarse input is resampled to more rows than it has, and y_pixels counts those.
     resampled_rows = match_fov(vdem_offgrid).y.size
 
-    out = match_fov(vdem_offgrid, nrows=resampled_rows - 5)
+    out = match_fov(vdem_offgrid, y_pixels=resampled_rows - 5)
 
     assert resampled_rows > vdem_offgrid.y.size
     assert out.y.size == resampled_rows - 5
 
 
-def test_match_fov_rejects_nrows_below_one(vdem) -> None:
-    with pytest.raises(ValueError, match="nrows must be at least 1"):
-        match_fov(vdem, nrows=0)
+def test_match_fov_rejects_y_pixels_below_one(vdem) -> None:
+    with pytest.raises(ValueError, match="y_pixels must be at least 1"):
+        match_fov(vdem, y_pixels=0)
 
 
 def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
