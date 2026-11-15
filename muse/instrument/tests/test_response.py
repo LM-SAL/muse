@@ -571,6 +571,11 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
     assert isinstance(chunked.detector_response.data, da.Array)
     xr.testing.assert_identical(chunked.compute().drop_attrs(), in_memory.drop_attrs())
     assert chunked.detector_response.attrs == in_memory.detector_response.attrs
+    # what the spectral response says of itself stays on the mapped one, with the new units
+    assert in_memory.detector_response.attrs == {
+        **response.spectral_response.attrs,
+        "units": in_memory.detector_response.attrs["units"],
+    }
     # and that is the interpolation of every slit at once, times the width of a pixel
     grid = response.spectral_response.assign_coords(wavelength_grid=response.wavelength_grid).swap_dims(
         wavelength_bin="wavelength_grid"

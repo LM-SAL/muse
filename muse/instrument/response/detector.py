@@ -255,7 +255,8 @@ def map_response_to_sg_detector(
             *leading_dims, "slit", "detector_x_pixel"
         )
         mapped = mapped.assign_coords(detector_wavelength=detector_wavelength)
-    mapped.attrs = {"units": str(response_unit * u.AA)}
+    # The attributes of the spectral response, such as its bin method, with the units of the mapped one.
+    mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
     mapped.detector_wavelength.attrs["units"] = str(u.AA)
 
     result = response.drop_dims("wavelength_bin")
