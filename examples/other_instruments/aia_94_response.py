@@ -5,7 +5,7 @@ Create an AIA 94 Å response
 
 This example demonstrates how to create a broadband imaging response for the
 SDO/AIA 94 Å channel by combining a precomputed CHIANTI line list with the
-wavelength response and plate scale from `aiapy`.
+effective area and pixel size from `aiapy`.
 
 Unlike a spectrograph, an imager integrates over its whole bandpass, so the
 main product is a temperature response rather than a line profile. We compute
@@ -15,7 +15,7 @@ to combine every transition into one wavelength-space component.
 .. warning::
 
     This example requires the optional ``aiapy`` package. Install it with
-    ``pip install aiapy`` before running the script.
+    ``pip install muse[aia]`` before running the script.
 """
 
 import matplotlib.pyplot as plt
@@ -26,33 +26,30 @@ import astropy.constants as const
 import astropy.units as u
 
 from muse.data import fetch_example_data
-from muse.instrument import create_spectral_response
-
-try:
-    from aiapy.response import Channel
-except ImportError:
-    msg = "aiapy is required for this example, install it with `pip install aiapy`"
-    raise ImportError(msg) from None
+from muse.instrument import create_aia_effective_area, create_spectral_response
 
 ##############################################################################
-# `aiapy` provides the wavelength-dependent effective area and detector gain
-# together as ``wavelength_response``. Dividing by the photon energy converts
-# CHIANTI's energy radiance to photons, and multiplying by the AIA plate scale
-# converts per-steradian radiance to the signal in one detector pixel.
-# With no ``obstime``, this uses the baseline calibration without a
-# time-dependent degradation correction.
+# :func:`muse.instrument.create_aia_effective_area` builds the effective area of
+# the channel from `aiapy`. By default the area includes the wavelength-dependent
+# conversion from photons to DN, so it is in cm2 DN / ph. The attributes of the
+# dataset give the size of a detector pixel. Dividing by the photon energy
+# converts CHIANTI's energy radiance to photons, and multiplying by the solid
+# angle of a pixel converts per-steradian radiance to the signal in one detector
+# pixel. We leave the EVE normalization out, which gives the baseline calibration
+# without any time-dependent correction.
 
-channel = Channel(94 * u.angstrom)
-photon_energy = (const.h * const.c / channel.wavelength / u.ph).to(u.erg / u.ph)
-radiometric_conversion_quantity = (channel.wavelength_response() * channel.plate_scale / photon_energy).to(
+effective_area = create_aia_effective_area(94 * u.AA, include_eve_correction=False)
+area = effective_area.effective_area.sel(wavelength=slice(84, 106))
+pixel_solid_angle = (
+    u.Quantity(effective_area.attrs["pixel_width"]) * u.Quantity(effective_area.attrs["pixel_height"])
+).to(u.sr) / u.pix
+photon_energy = (const.h * const.c / (area.wavelength.values * u.AA) / u.ph).to(u.erg / u.ph)
+radiometric_conversion_quantity = (area.values * u.Unit(area.attrs["units"]) * pixel_solid_angle / photon_energy).to(
     u.cm**2 * u.DN * u.sr / (u.erg * u.pix)
 )
-radiometric_conversion = xr.DataArray(
-    radiometric_conversion_quantity.value,
-    dims="wavelength",
-    coords={"wavelength": ("wavelength", channel.wavelength.to_value(u.AA), {"units": str(u.AA)})},
-    attrs={"units": str(radiometric_conversion_quantity.unit)},
-).sel(wavelength=slice(84, 106))
+radiometric_conversion = area.copy(data=radiometric_conversion_quantity.value).assign_attrs(
+    units=str(radiometric_conversion_quantity.unit)
+)
 
 plt.figure()
 radiometric_conversion.plot()

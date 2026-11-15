@@ -1,0 +1,1 @@
+``create_spectral_response`` takes ``wavelength_edges`` for coarse or non-uniform bins, such as those from the new ``create_log_wavelength_edges``, and then stores the average of each line over its bin; ``bin_method="average"`` asks for the same on a ``wavelength_grid``. Every response now carries the edges of its bins in a ``wavelength_bounds`` coordinate.

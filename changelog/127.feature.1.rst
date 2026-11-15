@@ -1,0 +1,1 @@
+Added fiasco as a backend for line lists (``create_fiasco_line_list``), alongside ChiantiPy. It needs fiasco 0.9.0 or later: ``pip install muse[fiasco]``. ``boost_transitions``, ``select_transitions`` and ``rank_line_list`` scale, pick and sort the transitions of a line list from either backend.

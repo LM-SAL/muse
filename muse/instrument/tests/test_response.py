@@ -7,10 +7,11 @@ import astropy.units as u
 
 from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.atomic.linelist import create_chianti_line_list
-from muse.instrument.response.io import read_response
+from muse.instrument.response.io import read_response, read_spectral_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
-from muse.instrument.response.spectral import create_spectral_response
+from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
+from muse.tests.helpers import synthetic_line_list
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -298,7 +299,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
 
 def test_map_response_to_ci_detector_accepts_any_channel():
     # The channel is only recorded in the output coordinates, so non-MUSE
-    # imagers (e.g. AIA 171) pass their own band centre.
+    # imagers (e.g. AIA 171) pass their own band center.
     response = _ci_spectral_response()
 
     mapped = map_response_to_ci_detector(response, 171 * u.AA)
@@ -483,7 +484,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         (
             f"create_spectral_response(line_list=line_list, wavelength_grid={np.linspace(170.5, 171.5, 101)}, "
             "main_lines=['Fe IX 171.073'], instrumental_width=0.0, doppler_velocity=[0.], nonthermal_velocity=None, "
-            "effective_area=effective_area, include_contaminants=False)"
+            "effective_area=effective_area, include_contaminants=False, wavelength_edges=None, bin_method=None)"
         ),
         (
             "transform_response_units(response=response, new_units=1e-27 cm5 ph / (Angstrom s), channel=171.0, "
@@ -507,3 +508,42 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
             "doppler_name=doppler_velocity, vmax=None, vmask=None)"
         ),
     ]
+
+
+def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
+    line_list = synthetic_line_list(1)
+    response = create_spectral_response(
+        line_list,
+        main_lines=[line_list.full_name[0].item()],
+        doppler_velocity=np.array([-200.0, 0.0, 200.0]) * u.km / u.s,
+        wavelength_edges=create_log_wavelength_edges([100, 300] * u.AA, 0.01),
+        bin_method="average",
+    )
+    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+    expected = line_list.gofnt.isel(trans_index=0) / response.attrs["normalization"]
+    np.testing.assert_allclose((mapped.detector_response.isel(line=0) / expected).values, 1.0, rtol=1e-12)
+    assert "bound" not in mapped.dims
+    assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA
+
+
+@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_path, suffix):
+    """
+    A netCDF file keeps the units of the bin bounds on the grid alone: the bounds read
+    back without them must still give the bin widths.
+    """
+    response = create_spectral_response(
+        synthetic_line_list(),
+        wavelength_edges=np.linspace(170.0, 172.0, 9) * u.AA,
+        main_lines=None,
+        include_contaminants=True,
+        effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}),
+    )
+    save_spectral_response(response, tmp_path / f"cube{suffix}")
+
+    back = read_spectral_response(tmp_path / f"cube{suffix}")
+
+    xr.testing.assert_allclose(
+        map_response_to_ci_detector(back, 171 * u.AA).detector_response,
+        map_response_to_ci_detector(response, 171 * u.AA).detector_response,
+    )

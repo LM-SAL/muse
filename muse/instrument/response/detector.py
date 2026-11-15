@@ -254,8 +254,14 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
     ----------
     response : `xarray.Dataset`
         Wavelength-space response containing ``spectral_response``,
-        ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
-        be nonuniform.
+        ``wavelength_grid``, and ``line_wavelength``. If it carries
+        ``wavelength_bounds``, as every response from
+        `muse.instrument.create_spectral_response` and
+        `muse.instrument.create_continuum_response` does, each bin is multiplied
+        by its width and the bins are summed, which is exact for
+        ``bin_method="average"``. Without bounds the response is integrated
+        between the bin centers by the trapezoidal rule. The wavelength grid may
+        be non-uniform.
     channel : `astropy.units.Quantity`
         Nominal channel wavelength recorded in the output coordinates.
 
@@ -276,7 +282,20 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         raise ValueError(msg)
 
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
-    mapped = spectral_response.integrate("wavelength_grid")
+    if "wavelength_bounds" in response.coords:
+        # The value of each bin times its width: exact for bin averages on any grid, the
+        # midpoint rule for samples at the bin centers.
+        bounds = response.wavelength_bounds
+        if "units" not in bounds.attrs:
+            # A netCDF file keeps the units of the bounds on the grid alone, as CF has it.
+            bounds = bounds.assign_attrs(units=response.wavelength_grid.attrs.get("units"))
+        bounds = coord_as_unit(
+            response.assign_coords(wavelength_bounds=bounds), "wavelength_bounds", u.AA, "response.wavelength_bounds"
+        )
+        width = bounds.isel(bound=1) - bounds.isel(bound=0)
+        mapped = (spectral_response * width).sum("wavelength_bin")
+    else:
+        mapped = spectral_response.integrate("wavelength_grid")
     mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
 
     result = response.drop_dims("wavelength_bin")
