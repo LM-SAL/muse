@@ -10,6 +10,7 @@ import shutil
 import numpy as np
 import pytest
 import xarray as xr
+from attrs import evolve
 
 import astropy.constants as const
 import astropy.units as u
@@ -26,6 +27,7 @@ from muse.instrument import (
     save_effective_area,
 )
 from muse.instrument.atomic import cache
+from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_response_file
 from muse.tests.helpers import synthetic_continuum, synthetic_line_list
@@ -955,3 +957,33 @@ def test_the_generators_on_live_chianti(tmp_path):
     assert [path.name for path in (tmp_path / "run" / "cache").iterdir()] == [
         f"line_list_chianti_153.5-188.5A_{ABUNDANCE}.zarr.zip"
     ]
+
+
+def test_the_detector_products_follow_the_slit_separation_of_their_channel(inputs, sg_products, tmp_path, monkeypatch):
+    """
+    The separation is a setting per channel: the name of a detector product states that
+    of its channel, and its wavelengths are laid out with it.
+    """
+    separation = xr.DataArray([380.0, 385.0, 400.0] * u.mAA, coords={"channel": [108, 171, 284]}, dims="channel")
+    defaults = evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=separation)
+    monkeypatch.setattr(products_module, "DEFAULTS_MUSE", defaults)
+    monkeypatch.setattr(detector_module, "DEFAULTS_MUSE", defaults)
+
+    lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0)
+    with pytest.MonkeyPatch.context() as continuum:
+        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        continua = _sg_continuum(inputs, tmp_path / "continuum")
+
+    assert _prefixes(lines) == [
+        f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST",
+        f"respfunc_171_FeIX171.073_nslits35_sep385_{TAIL}_TEST",
+    ]
+    assert _prefixes(continua) == [f"respfunc_171_continuum_fiasco_nslits35_sep385_{TAIL}_TEST"]
+    for product in (lines[1], continua[0]):
+        slit_to_slit = read_response(product).detector_wavelength.isel(detector_x_pixel=0).diff("slit")
+        np.testing.assert_allclose(-slit_to_slit, 0.385)
+    # the cube does not depend on the detector: it is that of the default separation
+    xr.testing.assert_identical(
+        read_spectral_response(lines[0]).spectral_response,
+        read_spectral_response(_only(sg_products, "FeIX171.073_waveband")).spectral_response,
+    )

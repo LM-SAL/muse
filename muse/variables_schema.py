@@ -331,11 +331,13 @@ class InstrumentDefaults:
     Number of pixels between slits for the SG.
     """
 
-    spectral_slit_separation_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    spectral_slit_separation_SG: xr.DataArray | None = field(
+        default=None, converter=_data_array(u.AA), eq=_data_array_eq
+    )
     """
-    Spectral slit separation for the SG.
+    Spectral separation of adjacent SG slits for each channel, stated at second order.
 
-    Normalized to Angstroms.
+    Values normalized to Angstroms.
     """
 
     waveband_half_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))

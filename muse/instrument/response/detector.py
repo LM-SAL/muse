@@ -203,7 +203,8 @@ def map_response_to_sg_detector(
             msg = f"{name} must be a finite, positive scalar"
             raise ValueError(msg)
     if dispersion is None:
-        dispersion = 2 * DEFAULTS_MUSE.spectral_slit_separation_SG / slit_spacing / spectral_order
+        slit_separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=channel_value).data)
+        dispersion = 2 * slit_separation / slit_spacing / spectral_order
     if not dispersion.isscalar or not np.isfinite(dispersion.value) or dispersion.value <= 0:
         msg = "dispersion must be a finite, positive scalar"
         raise ValueError(msg)

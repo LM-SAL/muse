@@ -54,10 +54,6 @@ _VERSION_ATTRS = ("Chianti", "Chiantipy", "fiasco")
 _SG_CHANNELS = tuple(int(channel) for channel in DEFAULTS_MUSE.channel_spectral_order_SG.channel.values)
 # The channels of the MUSE imager, whose gain and pair energy the defaults hold.
 _CI_CHANNELS = tuple(int(channel) for channel in DEFAULTS_MUSE.ccd_gain_CI.channel.values)
-# The slits and their spectral separation, as the names of the SG detector products state them.
-_SG_GEOMETRY = (
-    f"nslits{DEFAULTS_MUSE.number_of_slits_SG}_sep{DEFAULTS_MUSE.spectral_slit_separation_SG.to_value(u.mAA):g}"
-)
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s, line_list_wavelength_range=u.AA)
@@ -101,15 +97,15 @@ def generate_sg_responses(
     Each product is one file, a zarr store packed into a zip, named
     ``respfunc_<channel>_<line>_<kind>_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
     ``<line>`` is the name of the main line without spaces, or ``contaminants``; ``<kind>`` is
-    ``waveband`` for a cube and ``nslits35_sep390`` (the number of slits and their separation
-    in milliangstrom) for a detector response; ``<plasma>`` is ``pressure_<value>`` in K / cm3
+    ``waveband`` for a cube and, for a detector response, the number of slits and the slit
+    separation of the channel in milliangstrom, e.g. ``nslits35_sep390``; ``<plasma>`` is ``pressure_<value>`` in K / cm3
     to six significant digits, e.g. ``pressure_3e+15``, or ``density``; ``<date>`` is the UTC
     date at the start of the call, as ``YYYY-MM-DD``. Every name is fixed before any work is
     done, so two products with one name, or a product that is already there under any date,
     stop the call at its start.
 
     On the default grids the detector response of one line takes 2 GB of memory, and making it
-    about 12 GB.
+    about 4 GB.
 
     Parameters
     ----------
@@ -241,7 +237,8 @@ def generate_sg_responses(
         def names_of(area: xr.Dataset) -> dict:
             channel = _channel(area)
             tags = [*map(_line_tag, main_lines[channel]), *(["contaminants"] if maximum_contaminants >= 1 else [])]
-            return {(tag, kind): (f"{channel}_{tag}_{kind}", "") for tag in tags for kind in ("waveband", _SG_GEOMETRY)}
+            kinds = {"waveband": "waveband", "detector": _sg_geometry(channel)}
+            return {(tag, kind): (f"{channel}_{tag}_{part}", "") for tag in tags for kind, part in kinds.items()}
 
         for abundance, tasks in run.plan(names_of).items():
             line_list = load_line_list(abundance) if tasks else None
@@ -291,8 +288,9 @@ def generate_sg_continuum_responses(
 
     Each product is one file, a zarr store packed into a zip, named
     ``respfunc_<channel>_continuum_<backend>_nslits35_sep390_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
-    ``<backend>`` is ``continuum_backend``, and the other parts of the names and the rules for
-    them are as in `generate_sg_responses`.
+    ``<backend>`` is ``continuum_backend``, ``nslits35_sep390`` the slits and the slit
+    separation of the channel, and the other parts of the names and the rules for them are as
+    in `generate_sg_responses`.
 
     Parameters
     ----------
@@ -346,7 +344,8 @@ def generate_sg_continuum_responses(
         doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.continuum_response_doppler_velocity)
 
         def names_of(area: xr.Dataset) -> dict:
-            return {"continuum": (f"{_channel(area)}_continuum_{continuum_backend}_{_SG_GEOMETRY}", "")}
+            channel = _channel(area)
+            return {"continuum": (f"{channel}_continuum_{continuum_backend}_{_sg_geometry(channel)}", "")}
 
         for abundance, tasks in run.plan(names_of).items():
             for area, plasma_point, names in tasks:
@@ -726,12 +725,11 @@ def _write_sg_products(
     def write(cube: xr.Dataset, on_detector: xr.Dataset, tag: str) -> None:
         attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
         run.write(cube.assign(effective_area=curve), names[tag, "waveband"], save_spectral_response, **attrs)
-        run.write(on_detector.assign(effective_area=curve), names[tag, _SG_GEOMETRY], save_response, **attrs)
+        run.write(on_detector.assign(effective_area=curve), names[tag, "detector"], save_response, **attrs)
 
     main = photon_response(line_list, main_lines=main_lines)
     for line in main_lines:
-        # One line at a time: the mapping needs several times the memory of its result, which
-        # is 2 GB on the default grids.
+        # One line at a time: the detector response of a line is 2 GB on the default grids.
         one = main.sel(line=[line])
         write(one, map_response_to_sg_detector(one, channel=channel), _line_tag(line))
     if maximum_contaminants < 1:
@@ -1042,6 +1040,15 @@ def _instrumental_width_by_sg_channel(overrides: Mapping | None) -> dict[int, u.
             )
             raise ValueError(msg)
     return widths
+
+
+def _sg_geometry(channel: int) -> str:
+    """
+    The slits and the slit separation of an SG channel in milliangstrom, as the names of
+    its detector products state them.
+    """
+    separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=channel).data)
+    return f"nslits{DEFAULTS_MUSE.number_of_slits_SG}_sep{separation.to_value(u.mAA):g}"
 
 
 def _sg_waveband(channel: int) -> u.Quantity:

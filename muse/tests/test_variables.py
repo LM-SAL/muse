@@ -151,7 +151,11 @@ def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
 
 def test_instrument_quantity_converter_normalizes_units():
     defaults = InstrumentDefaults(
-        spectral_slit_separation_SG=390.0 * u.mAA,
+        spectral_slit_separation_SG=xr.DataArray(
+            [389.0, 390.0, 391.0] * u.mAA,
+            coords={"channel": [108, 171, 284]},
+            dims="channel",
+        ),
         main_lines_SG_wavelength={"Fe IX 171.073": 171073 * u.mAA},
         target_doppler_velocity={"QS": np.array([1000, 2000]) * u.m / u.s},
         initial_wavelength_SG=xr.DataArray(
@@ -172,8 +176,8 @@ def test_instrument_quantity_converter_normalizes_units():
         lpi={284: 70 / imperial.inch},
     )
 
-    assert defaults.spectral_slit_separation_SG.unit == u.AA
-    np.testing.assert_allclose(defaults.spectral_slit_separation_SG.value, 0.39)
+    assert defaults.spectral_slit_separation_SG.data.unit == u.AA
+    np.testing.assert_allclose(defaults.spectral_slit_separation_SG.data.value, [0.389, 0.39, 0.391])
     assert defaults.main_lines_SG_wavelength["Fe IX 171.073"].unit == u.AA
     assert defaults.target_doppler_velocity["QS"].unit == u.km / u.s
     assert defaults.initial_wavelength_SG.data.unit == u.AA
