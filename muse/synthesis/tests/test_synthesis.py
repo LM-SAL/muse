@@ -416,18 +416,34 @@ def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, raster, legacy_in
     [
         ("raster_without_slit", "response has a slit dimension"),
         ("response_without_slit", "raster has a slit dimension but response does not"),
+        ("wavelength_response_without_slit", "raster has a slit dimension but response does not"),
     ],
 )
 def test_vdem_synthesis_rejects_mismatched_slit_dimensions(response, raster, case, match) -> None:
-    # The slit axis has to be present on both sides or neither; contracting a multi-slit
-    # response against a raster that has no slit axis is not a meaningful synthesis.
+    # A spectrograph response and its raster have the slit axis on both sides or on neither; contracting
+    # a multi-slit response against a raster that has no slit axis is not a meaningful synthesis.
     if case == "raster_without_slit":
         raster = raster.isel(slit=0, drop=True)
     else:
         response = response.isel(slit=0, drop=True)
+    if case == "wavelength_response_without_slit":
+        # the spectral dimension of a response that is still in wavelength space
+        response = response.rename(detector_x_pixel="wavelength_bin")
 
     with pytest.raises(ValueError, match=match):
         vdem_synthesis(raster, response)
+
+
+def test_vdem_synthesis_images_each_slit_position_with_an_imager_response(response, raster, vdem) -> None:
+    # An imager response has no slit and no spectral axis, as map_response_to_ci_detector returns it.
+    imager = response.isel(slit=0, detector_x_pixel=0, drop=True)
+
+    out = vdem_synthesis(raster, imager)
+
+    # The same image as synthesizing the field in x and y and putting it on the raster afterwards.
+    expected = reshape_x_to_slit_step(vdem_synthesis(vdem, imager))
+    assert set(out.flux.dims) == {"step", "slit", "y", "line"}
+    xr.testing.assert_allclose(out.flux.transpose(*expected.flux.dims), expected.flux)
 
 
 def test_vdem_synthesis_requires_present_arrays(response, raster) -> None:
