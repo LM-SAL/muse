@@ -54,10 +54,10 @@ def load_or_create_line_list(
     Read a line list from a cache directory, creating it first if it is not there.
 
     The file is ``line_list_<backend>_<lower>-<upper>A_<abundance>.zarr.zip``, with
-    ``_density`` before the suffix for a density grid. A file that holds more plasma points than requested
-    serves the requested ones. One created on other temperatures, without one of the requested
-    plasma points or with another minimum abundance is refused and left as it is, as a line
-    list takes hours and other processes may be reading it.
+    ``_density`` before the suffix for a density grid. A file that holds more plasma points
+    than requested serves the requested ones. One created on other temperatures, without one
+    of the requested plasma points or with another minimum abundance is refused and left as
+    it is: a line list is costly to create, and other processes may be reading the file.
 
     While a file is being created, ``<file>.lock`` stands beside it and says which process
     is creating it; another call for the same file raises instead of waiting. A process that
@@ -86,10 +86,10 @@ def load_or_create_line_list(
         ChiantiPy and ``XUVTOP``. The file name carries the backend, so the line lists of the
         two never mix.
     create_if_missing : `bool`, optional
-        If `False`, a missing file raises instead of being created, so that one of many
-        processes that expect the file does not start hours of work.
+        If `False`, raise for a missing file instead of creating it, so that one of many
+        processes that expect the file does not start the costly creation; by default `True`.
     chianti_version : `str`, optional
-        Refuse a line list made from another CHIANTI version than this, e.g. ``"11.0.2"``, as
+        Refuse a line list made from a CHIANTI version other than this, e.g. ``"11.0.2"``, as
         the file name does not carry the version; by default any version is accepted.
     workers : `int`, optional
         Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every CPU
@@ -170,10 +170,8 @@ def load_or_create_continuum(
 
     It is the rest-frame continuum of one abundance on one wavelength grid. The file is
     ``continuum_<backend>_<lower>-<upper>A_n<wavelengths>_<abundance>.zarr.zip``, with
-    ``_density`` before the suffix for a density grid. A file that holds more plasma points than requested
-    serves the requested ones. One created on other temperatures or wavelengths, without one
-    of the requested plasma points or with another minimum abundance is refused and left as it
-    is. The lock file is as for `load_or_create_line_list`.
+    ``_density`` before the suffix for a density grid. It is served, refused and locked as
+    for `load_or_create_line_list`; a file created on other wavelengths is refused as well.
 
     Parameters
     ----------
@@ -193,10 +191,9 @@ def load_or_create_continuum(
     Returns
     -------
     `xarray.Dataset`
-        The continuum as `muse.instrument.create_fiasco_continuum` gives it:
-        ``spectral_response`` in 1e-27 erg cm3 / (Angstrom s sr) for the three components along
-        ``line``, on the requested ``logT`` and ``pressure`` or ``logD`` values and on
-        ``wavelength_grid`` in Angstrom.
+        The continuum as `muse.instrument.create_fiasco_continuum` gives it, with its three
+        components along ``line``, on the requested ``logT`` and ``pressure`` or ``logD``
+        values and on ``wavelength_grid``.
 
     Raises
     ------
@@ -291,7 +288,7 @@ def _cache_path(
         raise ValueError(msg)
     _require_name_part("abundance", abundance, "._+-")
     suffix = "_density" if request.density is not None else ""
-    # The ends are not rounded to whole Angstrom: 25.4-900 must not find the file of 25-900.
+    # The ends keep six significant digits, not whole Angstrom: 25.4-900 must not find the file of 25-900.
     return Path(cache_directory) / f"{kind}_{backend}_{span}_{abundance}{suffix}.zarr.zip"
 
 
@@ -319,8 +316,8 @@ def _load_or_create(
     wavelength_grid: np.ndarray | None = None,
 ) -> xr.Dataset:
     """
-    The one flow of both caches: create the file if it is missing, read it, check it
-    against the request and return the requested part of it.
+    Shared by both caches: create the file if it is missing, read it, check it against
+    the request and return the requested part of it.
     """
     if not path.exists():
         if not create_if_missing:
@@ -333,7 +330,7 @@ def _load_or_create(
                 # on what a backend stores.
                 created = create().assign_attrs(minimum_abundance=minimum_abundance)
                 # One chunk per plasma point and temperature, so that a call for one pressure reads
-                # that pressure alone and no chunk outgrows what the compressor takes.
+                # that pressure alone and no chunk exceeds the size limit of the compressor.
                 chunks = {
                     name: {
                         "chunks": tuple(

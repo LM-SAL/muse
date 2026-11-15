@@ -223,15 +223,16 @@ def map_response_to_sg_detector(
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid).swap_dims(
         wavelength_bin="wavelength_grid"
     )
-    # What does not lie along the wavelengths is kept as it is; the rest is replaced by the detector.
+    # Coordinates that do not lie along the wavelength axis are kept; the others are replaced by
+    # those of the detector.
     kept = {name: coord for name, coord in spectral_response.coords.items() if "wavelength_grid" not in coord.dims}
     spectral_response = spectral_response.drop_vars(
         [name for name in spectral_response.coords if name not in kept and name != "wavelength_grid"]
     )
     leading_dims = [dim for dim in spectral_response.dims if dim != "wavelength_grid"]
     if isinstance(spectral_response.data, np.ndarray):
-        # One slit at a time, into an array allocated once: interpolated in one call, the slits
-        # hold several copies of the result at once, about six times its size.
+        # One slit at a time, into an array allocated once, so that the temporaries of the
+        # interpolation are those of one slit, not of the whole result.
         values = np.empty((*(spectral_response.sizes[dim] for dim in leading_dims), number_of_slits, detector_pixels))
         for slit in range(number_of_slits):
             on_slit = spectral_response.interp(
@@ -314,7 +315,7 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
         # midpoint rule for samples at the bin centers.
         bounds = response.wavelength_bounds
         if "units" not in bounds.attrs:
-            # A netCDF file keeps the units of the bounds on the grid alone, as CF has it.
+            # A netCDF file keeps the units of the bounds on the grid alone, as the CF conventions prescribe.
             bounds = bounds.assign_attrs(units=response.wavelength_grid.attrs.get("units"))
         bounds = coord_as_unit(
             response.assign_coords(wavelength_bounds=bounds), "wavelength_bounds", u.AA, "response.wavelength_bounds"

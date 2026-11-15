@@ -129,9 +129,10 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
     Parameters
     ----------
     response : `xarray.Dataset`
-        The response to check: ``detector_response``, ``logT`` and ``doppler_velocity``
-        coordinates in temperature and velocity units, a ``line`` or ``channel`` dimension,
-        ``line_wavelength`` in a wavelength unit, and ``detector_wavelength`` likewise when present.
+        The response to check. It must hold ``detector_response``, the ``logT`` and
+        ``doppler_velocity`` coordinates in temperature and velocity units, a ``line`` or
+        ``channel`` dimension, ``line_wavelength`` in a wavelength unit and, if present,
+        ``detector_wavelength`` in one too.
     label : `str`
         Name of the dataset in error messages.
 
@@ -141,7 +142,8 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
         With the first failing requirement; a file in the legacy MUSE layout is named as such.
     """
     if "detector_response" not in response.data_vars:
-        hint = " (the legacy MUSE names; migrate the file first)" if "SG_resp" in response else ""
+        legacy = " (it has the legacy MUSE names; convert it to the layout save_response writes)"
+        hint = legacy if "SG_resp" in response else ""
         msg = f"{label} must contain detector_response{hint}"
         raise ValueError(msg)
     require_unit(response, "logT", f"{label}.logT", coord_only=True, convertible_to=u.dex(u.K))
@@ -157,7 +159,8 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
 
 
 def _open_response_file(response_file: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
-    # open_zarr chunks with dask by default; eager means the file's own lazy arrays, as for netCDF.
+    # open_zarr chunks with dask by default; chunks=None gives the file's lazily indexed arrays
+    # without dask, as open_dataset does for netCDF.
     kwargs = {"chunks": {} if chunked else None, "decode_coords": decode_coords}
     if response_file.suffix == ".zip":
         # Reads lazily like a directory. xarray closes only the stores it opens itself, and
@@ -218,16 +221,17 @@ def read_response(
     Returns
     -------
     `xarray.Dataset`
-        The response dataset. The file is read as `save_response` writes it: the
-        ``detector_response``, ``detector_wavelength``, ``detector_x_pixel``,
-        ``line_wavelength`` and ``doppler_velocity`` names, a ``line`` dimension,
-        and units on the axes.
+        The response dataset, with a ``gain`` coordinate. Only the layout `save_response`
+        writes is read: ``detector_response`` and ``line_wavelength``, a ``line`` or ``channel``
+        dimension, and units on ``logT``, ``doppler_velocity`` and the wavelengths.
 
     Raises
     ------
     ValueError
-        If the ``logT``/``doppler_velocity`` axes are malformed, or the loaded dataset is
-        missing the ``detector_response`` variable or the ``logT``/``doppler_velocity`` coordinates.
+        If the requested ``logT`` or ``doppler_velocity`` axis is empty, not finite, in units
+        that do not convert to the response's or wholly outside its range; if the file is not
+        in the layout `save_response` writes; or if ``gain`` is not given and the response has
+        no MUSE ``channel`` to take it from.
     """
     response_file = Path(response_file)
 

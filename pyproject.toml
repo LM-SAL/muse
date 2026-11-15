@@ -44,7 +44,7 @@ optional-dependencies.chianti = [
   "periodictable>=2.1.0",
 ]
 optional-dependencies.fiasco = [
-  "fiasco>=0.9.0", # the first release with IonCollection.build_line_list and the free-free emission the continuum's 4 pi assumes
+  "fiasco>=0.9.0", # the minimum _import_fiasco checks; muse/instrument/atomic/backends.py says why
   "joblib>=1.5.0",
 ]
 optional-dependencies.dev = ["muse[all,docs,tests]", "setuptools-scm>=10.2.0"]

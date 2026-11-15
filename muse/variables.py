@@ -98,7 +98,7 @@ MUSE_DEFAULTS_DICT = {
     "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
     "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
     "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
-    "minimum_abundance": 1e-21,
+    "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
     "num_lines_keep": 2,  # nervous about this since there are 3 mainlines in 108 due to repeat wavelength.  Not used in pipeline
     "sum_lines": False,
     "initial_wavelength_SG": xr.DataArray(

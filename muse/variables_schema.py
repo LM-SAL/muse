@@ -335,15 +335,16 @@ class InstrumentDefaults:
         default=None, converter=_data_array(u.AA), eq=_data_array_eq
     )
     """
-    Spectral separation of adjacent SG slits for each channel, stated at second order.
+    Spectral separation of adjacent SG slits for each channel, as seen at second order;
+    at spectral order n the separation is 2 / n times this value.
 
     Values normalized to Angstroms.
     """
 
     waveband_half_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
     """
-    Half of the wavelength range an SG channel covers at first order; divide by the
-    spectral order.
+    Half of the wavelength range an SG channel covers at first order; at spectral order
+    n the half width is this value over n.
 
     Normalized to Angstroms.
     """

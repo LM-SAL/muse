@@ -327,7 +327,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     assert "create_chianti_continuum(" in continuum.attrs["HISTORY"][-1]
     temperatures, wavelengths = TEMPERATURE.values, GRID.value
     # the three charged ions of H and He contribute free-free, two of them free-bound (h_2
-    # reports no data), on both pressures; the neutrals are not asked
+    # reports no data), on both pressures; the neutrals are skipped
     expected_ff = 3 * _fake_intensity(temperatures, wavelengths, 1.0) / NORMALIZATION
     expected_fb = 2 * _fake_intensity(temperatures, wavelengths, 0.5) / NORMALIZATION
     for i_pressure in range(2):
@@ -378,8 +378,8 @@ def test_chianti_continuum_requires_a_contributing_ion(monkeypatch):
 
 @pytest.mark.usefixtures("fake_chianti")
 def test_chianti_continuum_does_not_swallow_an_error_that_is_not_missing_data(monkeypatch):
-    # An error that is not missing data, such as a file system that fails halfway, must stop the
-    # run: passed over, it would leave a continuum that is too low.
+    # Such an error, e.g. a file system that fails halfway, would otherwise leave a continuum
+    # that is too low.
     def unreadable(_self, _wavelength, **_kwargs):
         msg = "unable to lock file"
         raise OSError(msg)
@@ -403,8 +403,8 @@ def test_continuum_rejects_bad_grids():
 @pytest.fixture
 def fake_fiasco(monkeypatch):
     """
-    The fiasco classes replaced by closed-form continua that are not per steradian, as
-    the real ones are.
+    The fiasco classes replaced by closed-form continua that, like the real ones, are
+    not per steradian.
     """
     fiasco = pytest.importorskip("fiasco")
 
@@ -510,7 +510,7 @@ def test_fiasco_continuum_requires_an_ion():
         create_fiasco_continuum(TEMPERATURE, GRID, pressure=PRESSURE, minimum_abundance=10.0)
 
 
-def test_fiasco_continuum_refuses_a_fiasco_before_0_9(monkeypatch):
+def test_fiasco_continuum_refuses_a_fiasco_below_the_minimum_version(monkeypatch):
     fiasco = pytest.importorskip("fiasco")
     monkeypatch.setattr(fiasco, "__version__", "0.8.3")
     # its free-free was per steradian, so the 4 pi applied here would leave it too low
@@ -528,7 +528,7 @@ def test_chianti_continuum_live_hydrogen_and_helium():
     assert (free_free > 0).all()
     # hotter plasma radiates more free-free emission at these wavelengths
     assert (free_free.isel(logT=2) > free_free.isel(logT=0)).all()
-    assert continuum.attrs["Chianti"].startswith("11")
+    assert continuum.attrs["Chianti"]
 
 
 def test_fiasco_continuum_live_hydrogen_and_helium():

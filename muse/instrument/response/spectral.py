@@ -30,9 +30,8 @@ def create_log_wavelength_edges(wavelength_range: u.Quantity, fractional_width: 
     """
     Create the edges of logarithmically spaced wavelength bins that cover a range.
 
-    Each bin is ``fractional_width`` wide relative to its lower edge, so every bin spans the
-    same velocity width; pass the result to `create_spectral_response` as ``wavelength_edges``
-    for a coarse imager grid.
+    Every bin spans the same velocity width; pass the result to `create_spectral_response` as
+    ``wavelength_edges`` for a coarse imager grid.
 
     Parameters
     ----------
@@ -240,7 +239,7 @@ def _create_wavelength_response(
     gaussian_norm = np.sqrt(2 * np.pi)
 
     # With bin averages a curve is taken at each line's own center. A scalar area, or a curve with
-    # bin_method="center", scales the gridded response further down.
+    # bin_method="center", is applied to the gridded response below.
     area_at_center = None
     if bin_method == "average" and effective_area is not None and "wavelength" in effective_area.dims:
         area_at_center = (
@@ -443,7 +442,7 @@ def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> x
     if not area_unit.is_equivalent(u.cm**2):
         carries_gain = area_unit.is_equivalent(u.cm**2 * u.DN / u.ph)
         hint = (
-            "; this area includes the conversion from photons to DN, pass one in cm2, "
+            "; this area includes the conversion from photons to DN: pass one in cm2, "
             "e.g. from create_aia_effective_area(..., include_gain=False)"
         ) * carries_gain
         msg = f"effective_area units must be convertible to cm2{hint}"
@@ -731,13 +730,13 @@ def create_continuum_response(
     """
     Fold a rest-frame continuum through an effective area onto wavelength bins.
 
-    For every Doppler velocity the continuum is shifted (light observed at a wavelength was
-    emitted at that wavelength over ``1 + v / c``, and a spectrum stretched by that factor is
-    fainter by it per unit wavelength, as a shifted line keeps its area), multiplied by the
-    area at the observed wavelength and averaged over each bin, so a bin keeps the structure
-    of the area inside it. Between its samples the continuum is joined by straight lines;
-    beyond the first and the last it is held constant, which fills the gap a Doppler shift
-    opens at one end and the part of an end bin that sticks out.
+    For every Doppler velocity the continuum is shifted, multiplied by the area at the observed
+    wavelength and averaged over each bin, so a bin keeps the structure of the area inside it.
+    Light observed at a wavelength was emitted at that wavelength divided by ``1 + v / c``, and
+    the shifted spectrum is fainter by the same factor per unit wavelength, so that its
+    integral is kept, as a shifted line keeps its area. The continuum is interpolated linearly
+    between its samples and held constant beyond the first and the last; that covers the gap a
+    Doppler shift opens at one end, and any part of an end bin that lies outside the samples.
 
     The result has the dimensions and coordinates of a `create_spectral_response` result with
     ``bin_method="average"``, though not always in the same order, and `xarray.concat` joins
@@ -800,7 +799,8 @@ def create_continuum_response(
     for velocity in velocities:
         stretch = 1 + float(velocity) / const.c.to_value(u.km / u.s)
         # And at the samples of the continuum, both where they are observed and at rest: the
-        # first keeps the shape of the shifted continuum, the second that of an area on its grid.
+        # first keeps the shape of the shifted continuum, the second that of an area that is
+        # sampled on the grid of the continuum.
         positions = np.unique(np.concatenate([*fixed, grid, grid * stretch]))
         positions = positions[(positions >= edges[0]) & (positions <= edges[-1])]
         area_there = area

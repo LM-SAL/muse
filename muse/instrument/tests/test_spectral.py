@@ -354,7 +354,7 @@ def test_scalar_effective_area_matches_flat_curve():
 
 
 def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():
-    # create_aia_effective_area gives cm2 DN / ph by default; the response builders take cm2.
+    # An area that carries the gain is in cm2 DN / ph; the response builders take cm2.
     with_gain = synthetic_effective_area(area_units="cm2 DN / ph")
 
     with pytest.raises(ValueError, match="convertible to cm2; this area includes the conversion from photons to DN"):
@@ -646,8 +646,8 @@ def _integral_ratio(response, line_list, index=0):
 
 
 def test_average_conserves_the_area_of_an_unresolved_line():
-    # An Fe line at 171 A has sigma ~5.5-8.7 mA at logT 5.8-6.2; on 20 mA bins the midpoint
-    # rule miscounts it by up to about 2 exp(-2 pi^2 sigma^2 / h^2), the bin average is exact.
+    # The thermal width of the line is well below the 20 mA bins: the midpoint rule miscounts
+    # it by up to about 2 exp(-2 pi^2 sigma^2 / h^2); the bin average is exact.
     line_list = synthetic_line_list(1)
     grid = np.arange(170.0, 172.02, 0.02) * u.AA
     kwargs = {"main_lines": [line_list.full_name[0].item()], "doppler_velocity": DOPPLER_VELOCITY}
@@ -689,7 +689,7 @@ def test_wavelength_edges_define_the_bins():
     np.testing.assert_allclose(_bin_width(response).values, np.diff(edges.value))
     assert response.wavelength_grid.attrs["bounds"] == "wavelength_bounds"
     assert response.wavelength_bounds.attrs["units"] == "Angstrom"
-    # a line with sigma ~5.5-8.7 mA inside a ~1.7 A bin is still exactly conserved
+    # a line far narrower than its bin is conserved exactly
     np.testing.assert_allclose(_integral_ratio(response, line_list), 1.0, rtol=1e-12)
 
 

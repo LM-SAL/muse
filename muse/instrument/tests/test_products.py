@@ -174,7 +174,6 @@ def test_every_sg_product_is_written_once(sg_products):
         f"respfunc_171_contaminants_waveband_{TAIL}_TEST",
         f"respfunc_171_contaminants_{GEOMETRY}_{TAIL}_TEST",
     ]
-    # each product is one file
     assert all(path.is_file() and path.name.endswith(".zarr.zip") for path in sg_products)
     # nothing else in the directory: no staging file is left
     assert sorted(path.name for path in sg_products[0].parent.iterdir()) == sorted(path.name for path in sg_products)
@@ -240,8 +239,8 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert "maximum_contaminants=3" in response.attrs["HISTORY"][-2]
 
     cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
-    # The continuum of an imager cube: that it is there, what made it and on which minimum
-    # abundance, and its own calls where it joined the lines, before the units were converted.
+    # An imager cube records its continuum: that it is included, its backend and minimum
+    # abundance, and the calls that made it, which enter the history before the unit conversion.
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
     assert cube.attrs["minimum_abundance"] == 1e-21
     assert cube.attrs["continuum_fiasco"] == "0.0.test"
@@ -285,7 +284,7 @@ def test_the_sg_grid_has_one_length_whatever_the_round_off():
     grids = [products_module._sg_waveband_grid(channel, step) for channel in (108, 171)]
     assert [grid.size for grid in grids] == [3501, 3501]
     np.testing.assert_allclose(grids[0][[0, -1]].value, [90.5, 125.5])
-    # the default step does not divide the waveband: the last sample is the nearest to its end
+    # the last sample is the one nearest the upper end of the waveband
     assert abs(products_module._sg_waveband_grid(171)[-1].value - 188.5) < 0.0049 / 2
 
 
@@ -421,7 +420,7 @@ def test_the_main_line_products_do_not_depend_on_the_contaminants(inputs, sg_pro
 def test_settings_keyed_by_a_wavelength_count_as_those_keyed_by_a_number(inputs, sg_products, tmp_path):
     """
     A key given as a wavelength, such as ``17.1 * u.nm``, selects the channel as the
-    number 171 does; a key that is no SG channel raises.
+    number 171 does, for the main lines and for the instrumental widths.
     """
     line = "Fe X 174.500"
     by_number = _sg(inputs, tmp_path / "number", main_lines_by_channel={171: [line]}, maximum_contaminants=0)
@@ -464,9 +463,9 @@ def test_a_pressure_is_taken_by_value_from_a_longer_line_list(inputs, sg_product
 
 def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
     """
-    On other temperatures it would be joined with the continuum on the union of both
-    temperature axes and leave the cube part NaN; of another abundance it would give
-    products that carry the wrong name.
+    On other temperatures the lines would be joined with the continuum on the union of
+    both temperature axes, which leaves part of the cube NaN; of another abundance they
+    would give products that carry the wrong name.
     """
     other = xr.DataArray(10 ** np.array([5.5, 6.0, 6.6]) * u.K, dims="logT")
     with pytest.raises(ValueError, match=r"line_list_pressure\.nc is on other temperatures than requested"):
@@ -555,7 +554,7 @@ def line_list_calls(inputs, monkeypatch):
     return calls
 
 
-def test_calls_for_single_files_share_the_line_list_of_them_all(inputs, tmp_path, line_list_calls):
+def test_calls_with_one_wavelength_range_share_one_cached_line_list(inputs, tmp_path, line_list_calls):
     options = {
         "maximum_contaminants": 0,
         "line_list_file": None,
@@ -655,7 +654,7 @@ def test_a_failed_write_leaves_no_product_behind(inputs, tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         _sg(inputs, tmp_path, maximum_contaminants=0)
 
-    # the cube before it is whole; of the failed detector response neither a file nor a staging store
+    # the cube written before it is whole; the failed detector response leaves neither a file nor a staging store
     assert _prefixes(tmp_path.iterdir()) == [f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST"]
 
 
@@ -695,8 +694,9 @@ SCALE_OF_ABUNDANCE = {ABUNDANCE: 1.0, OTHER_ABUNDANCE: 5.0}
 @pytest.fixture
 def _backends_that_scale(monkeypatch):
     """
-    A line list and a continuum that grow with the abundance, by the factors above, and
-    with the pressure, in proportion.
+    A line list that grows with the abundance, by the factors above, and in proportion
+    to the pressure, and a continuum that grows with the abundance; of its parts, the
+    synthetic continuum makes the two-photon one alone grow with the pressure.
     """
 
     def line_list_backend(_temperature, *, pressure, abundance, **_kwargs):
@@ -816,9 +816,6 @@ def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
     ],
 )
 def test_bad_options_stop_the_call_before_any_work(inputs, tmp_path, line_list_calls, generate, overrides, match):
-    """
-    An option that cannot work is refused in the first second, not after the line list.
-    """
     with pytest.raises((ValueError, TypeError), match=match):
         generate(inputs, tmp_path / "run", **{"line_list_file": None, **overrides})
     assert not line_list_calls
@@ -873,8 +870,8 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
 @pytest.mark.usefixtures("_synthetic_continuum")
 def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
     """
-    Both abundances and the three pressures, one product each as the line products are,
-    on velocities that are coarser than those of the lines and reach as far.
+    Every default abundance and pressure gets one product, as for the lines, on the
+    default continuum velocities: coarser than those of the lines, with the same ends.
     """
     written = generate_sg_continuum_responses(
         output_directory=tmp_path,
