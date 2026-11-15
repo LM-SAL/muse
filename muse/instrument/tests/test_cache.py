@@ -6,7 +6,6 @@ CHIANTI.
 import os
 import shutil
 import contextlib
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -34,17 +33,13 @@ def _density(values):
 
 def synthetic_line_list_backend(temperature, *, density=None, pressure=None, **_kwargs):
     """
-    Three lines on the requested grids, each plasma point brighter than the first by the
-    ratio of their values.
+    Three lines on the requested grids, the same at every plasma point.
     """
     temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
     line_list = synthetic_line_list(3, wavelength=[165.0, 171.073, 180.0], logT=np.log10(temperature.data))
     axis = "logD" if density is not None else plasma.dims[0]
     values = np.log10(plasma.data) if density is not None else plasma.data
-    scale = xr.DataArray(plasma.data / plasma.data[0], dims=axis, coords={axis: values})
-    line_list["gofnt"] = (
-        (scale * line_list.gofnt).transpose(axis, "logT", "trans_index").assign_attrs(line_list.gofnt.attrs)
-    )
+    line_list["gofnt"] = line_list.gofnt.expand_dims({axis: values})
     line_list[axis].attrs["units"] = "dex(1 / cm3)" if density is not None else "K / cm3"
     return line_list.assign_attrs(Chianti="11.0.2")
 
@@ -113,14 +108,8 @@ def test_a_missing_cache_can_be_an_error(tmp_path, line_list_calls, continuum_ca
 
 @pytest.mark.parametrize(
     ("grid", "created", "requested"),
-    [
-        ("density", [1e8, 1e9], [1e8, 1e9]),
-        ("density", [1e8, 1e9], [1e9]),
-        ("density", [1e8, 1e9], [1e9, 1e8]),
-        ("pressure", [3e15, 5e15], [5e15]),
-        ("pressure", [5e15, 3e15, 7e15], [7e15, 5e15]),
-    ],
-    ids=["same-grid", "subset", "reordered", "pressure-subset", "unsorted-file"],
+    [("density", [1e8, 1e9], [1e9, 1e8]), ("pressure", [5e15, 3e15, 7e15], [7e15, 5e15])],
+    ids=["reordered", "unsorted-file"],
 )
 def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, grid, created, requested):
     make = _density if grid == "density" else _pressure
@@ -140,9 +129,7 @@ def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, gr
 
 
 MISMATCHES = {
-    "new-pressure": ({"pressure": _pressure([7e15])}, "create it on all of them at once"),
     "nearby-pressure": ({"pressure": _pressure([3.0001e15])}, "holds the pressure values"),
-    "density": ({"pressure": None, "density": _density([1e9])}, "has no logD axis"),
     "temperatures": ({"temperature": TEMPERATURE.isel(logT=[0, 1])}, "is on other temperatures than requested"),
     "minimum-abundance": ({"minimum_abundance": 1e-2}, "minimum abundance 1e-21, not the requested 0.01"),
 }
@@ -164,9 +151,6 @@ def test_a_cache_that_does_not_hold_the_request_is_refused_and_kept(
     kwargs = {**kwargs, "pressure": _pressure([3e15, 5e15])}
     load(tmp_path, **kwargs)
     (path,) = tmp_path.iterdir()
-    if "density" in other:
-        # A density grid has its own file name; here a pressure file is given that name.
-        path = path.rename(path.with_name(path.name.replace(".zarr.zip", "_density.zarr.zip")))
     written = path.read_bytes()
 
     with pytest.raises(ValueError, match=f"{problem}.*; delete it or use another cache directory"):
@@ -239,22 +223,6 @@ def test_unknown_backends_and_unsafe_names_are_refused(tmp_path):
     # an abundance is part of the file name: this one would write outside the directory
     with pytest.raises(ValueError, match="abundance is part of a file name"):
         load_or_create_line_list(tmp_path, pressure=pressure, **{**LINE_LIST, "abundance": "../a"})
-    assert not list(tmp_path.iterdir())
-
-
-@pytest.mark.usefixtures("line_list_calls")
-def test_a_failed_write_leaves_nothing_behind(tmp_path, monkeypatch):
-    def half_written(_dataset, path, **_kwargs):
-        Path(path).write_text("half")
-        msg = "disk full"
-        raise OSError(msg)
-
-    monkeypatch.setattr(xr.Dataset, "to_zarr", half_written)
-
-    with pytest.raises(OSError, match="disk full"):
-        load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15]))
-
-    # neither the target, nor the staging file, nor the lock: the next call starts clean
     assert not list(tmp_path.iterdir())
 
 

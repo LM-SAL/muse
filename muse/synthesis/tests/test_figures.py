@@ -3,8 +3,7 @@ import numpy as np
 
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
-from muse.tests.helpers import fake_vdem_single_doppler_velocity, figure_test
-from muse.transforms.transforms import reshape_x_to_slit_step
+from muse.tests.helpers import figure_test
 
 
 @figure_test
@@ -39,27 +38,6 @@ def test_vdem_synthesis_fov(response, raster):
     ax_coarse.set_title("slit-summed (y, step)")
     full.plot(ax=ax_full)
     ax_full.set_title("full resolution (y, x pixel)")
-    return fig
-
-
-@figure_test
-def test_vdem_synthesis_doppler_shift(response):
-    """
-    Line-0 spectra synthesized at doppler_velocity -300/0/+300 km/s march across
-    wavelength about the rest line.
-    """
-    fig, ax = plt.subplots()
-    for vdop_kms in (-300.0, 0.0, 300.0):
-        reshaped_vdem = reshape_x_to_slit_step(fake_vdem_single_doppler_velocity(vdop_kms), nslits=35, nraster=11)
-        flux = vdem_synthesis(reshaped_vdem, response, sum_over=("logT", "doppler_velocity")).flux
-        spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"])
-        wavelength = flux.detector_wavelength.isel(line=0, slit=17).values
-        ax.plot(wavelength, spectrum.values, label=f"doppler_velocity={vdop_kms:+.0f} km/s")
-    ax.axvline(108.355, ls="--", color="k", alpha=0.4, label="rest 108.355 A")
-    ax.set_xlim(107.0, 109.5)  # zoom on the line so the ~0.1 A shift is visible
-    ax.set_xlabel("detector wavelength [Angstrom]")
-    ax.set_ylabel("flux [ph / s]")
-    ax.legend()
     return fig
 
 

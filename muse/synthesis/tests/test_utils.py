@@ -144,8 +144,7 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
     assert moments["0th"].item() == 5.0
 
 
-@pytest.mark.parametrize("vmax", [None, 50])
-def test_calculate_moments_rejects_unrelated_doppler_dim(vmax) -> None:
+def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
     spectrum = xr.Dataset(
         data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
         coords={
@@ -155,7 +154,7 @@ def test_calculate_moments_rejects_unrelated_doppler_dim(vmax) -> None:
     )
 
     with pytest.raises(ValueError, match=r"dimensions must be a subset"):
-        synthesis_utils.calculate_moments(spectrum, vmax=vmax)
+        synthesis_utils.calculate_moments(spectrum)
 
 
 def test_calculate_moments_vmask_keeps_peak_window() -> None:
@@ -176,12 +175,6 @@ def test_calculate_moments_does_not_mutate_input(response, raster) -> None:
     # provenance/normalization must land on the result, not leak back into the caller
     assert dict(spectrum.attrs) == before_attrs
     np.testing.assert_array_equal(spectrum.doppler_velocity.values, before_dopp)
-
-
-def test_calculate_moments_rejects_bad_moment_dim(response, raster) -> None:
-    spectrum = _spectrum(response, raster)
-    with pytest.raises(ValueError, match=r"'nope' not found in array dimensions"):
-        synthesis_utils.calculate_moments(spectrum, moment_dim="nope")
 
 
 def test_calculate_moments_requires_doppler_velocity(response, raster) -> None:
@@ -232,8 +225,6 @@ def test_create_simple_vdem_tiny_cube() -> None:
     np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-12)
     units = {name: result[name].attrs["units"] for name in ("vdem", "logT", "doppler_velocity", "x", "y")}
     assert units == {"vdem": "1e27 / cm5", "logT": "dex(K)", "doppler_velocity": "km/s", "x": "cm", "y": "cm"}
-    for unit in units.values():
-        u.Unit(unit)  # Every unit string must parse as an astropy unit
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
 
 

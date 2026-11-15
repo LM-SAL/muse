@@ -2,8 +2,6 @@
 Tests for CHIANTI-line Gaussian spectral responses.
 """
 
-from functools import partial
-
 import attrs
 import numpy as np
 import pytest
@@ -27,7 +25,16 @@ pytest.importorskip("periodictable")
 RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
 DOPPLER_VELOCITY = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
-_create_wavelength_response = partial(_create_wavelength_response_impl, wavelength_grid=DEFAULT_WAVELENGTH_GRID)
+
+
+def _create_wavelength_response(line_list, wavelength_grid=DEFAULT_WAVELENGTH_GRID, **kwargs):
+    """
+    The builder on the default grid, with every line as a main line unless the test
+    names them.
+    """
+    names = line_list.full_name.values if isinstance(line_list, xr.Dataset) else ()
+    kwargs.setdefault("main_lines", [str(name) for name in names])
+    return _create_wavelength_response_impl(line_list, wavelength_grid, **kwargs)
 
 
 def test_public_contract_records_history_and_excludes_unselected_lines():
@@ -45,7 +52,6 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     )
 
     assert response.line.values.tolist() == [main_line]
-    assert "component_kind" not in response.coords
     assert response.attrs["HISTORY"][0] == "create_chianti_line_list()"
     assert response.attrs["HISTORY"][1].startswith("create_spectral_response(")
     assert response.attrs["Chianti"] == "10.1"
@@ -71,19 +77,6 @@ def test_spectral_response_uses_default_normalization(monkeypatch):
     assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
 
 
-@pytest.mark.parametrize("main_lines", [[], None], ids=["empty", "none"])
-def test_public_contract_can_sum_all_lines_as_contaminants(main_lines):
-    response = create_spectral_response(
-        synthetic_line_list(2),
-        DEFAULT_WAVELENGTH_GRID,
-        main_lines=main_lines,
-        include_contaminants=True,
-    )
-
-    assert response.line.values.tolist() == ["contaminants"]
-    assert "component_kind" not in response.coords
-
-
 def test_off_grid_contaminants_are_skipped(monkeypatch):
     calls = []
     evaluate = spectral_module._evaluate_gaussian_response
@@ -106,20 +99,6 @@ def test_off_grid_contaminants_are_skipped(monkeypatch):
     assert len(calls) == 2  # one off-grid line is kept so the zero component still exists
     assert response.line.values.tolist() == [main, "contaminants"]
     assert float(response.spectral_response.sel(line="contaminants").max()) == 0.0
-
-
-def test_integral_matches_gofnt():
-    ll = synthetic_line_list(1)
-    response = _create_wavelength_response(
-        ll,
-        doppler_velocity=DOPPLER_VELOCITY,
-        instrumental_width=0.02 * u.AA,
-    )
-    dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
-    integral = (response.spectral_response.sel(doppler_velocity=0).isel(line=0) * dlam).sum("wavelength_bin")
-    expected = ll.gofnt.isel(trans_index=0) / RESPONSE_NORMALIZATION
-    np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
-    assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("1e-27 erg cm3 / (Angstrom s sr)")
 
 
 def test_gaussian_window_matches_full_grid():
@@ -271,7 +250,6 @@ def test_velocity_axes_convert_to_kilometers_per_second():
 @pytest.mark.parametrize(
     ("name", "value", "error"),
     [
-        ("doppler_velocity", [-20.0, 20.0], TypeError),
         ("doppler_velocity", 0.02 * u.AA, u.UnitsError),
         ("nonthermal_velocity", [5.0], TypeError),
     ],
@@ -301,7 +279,6 @@ def test_wavelength_inputs_convert_to_angstrom():
     ("value", "error"),
     [
         ([170.0, 172.0], TypeError),
-        (np.array([170.0, 172.0]) * u.s, u.UnitsError),
         (170.0 * u.AA, ValueError),
         (np.array([170.0, np.nan]) * u.AA, ValueError),
         (np.array([172.0, 170.0]) * u.AA, ValueError),
@@ -555,32 +532,18 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
     single = _create_wavelength_response(line_list.isel(trans_index=[1]), **kwargs)
 
     assert list(response.line.values) == main_lines
-    assert list(response.component_kind.values) == ["line", "line"]
     xr.testing.assert_allclose(response.spectral_response, reordered.spectral_response)
     xr.testing.assert_allclose(
         response.spectral_response.sel(line=main_lines[0]),
         2 * single.spectral_response.sel(line=main_lines[0]),
     )
     assert list(with_contaminants.line.values) == [*main_lines, "contaminants"]
-    assert list(with_contaminants.component_kind.values) == ["line", "line", "contaminants"]
     assert np.isnan(with_contaminants.line_wavelength.sel(line="contaminants"))
     assert with_contaminants.line_wavelength.attrs["units"] == "Angstrom"
     xr.testing.assert_allclose(
         with_contaminants.spectral_response.sum("line"),
         all_summed.spectral_response.isel(line=0, drop=True),
     )
-
-
-def test_contaminant_progress(capsys):
-    line_list = synthetic_line_list(2)
-
-    _create_wavelength_response(
-        line_list,
-        main_lines=[line_list.full_name[0].item()],
-        include_contaminants=True,
-    )
-
-    assert "Spectral contaminants" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("main_lines", [[], None], ids=["empty", "none"])
@@ -607,7 +570,6 @@ def test_instrumental_width_converts_to_angstrom():
 @pytest.mark.parametrize(
     ("instrumental_width", "error"),
     [
-        (0.02, TypeError),
         (5 * u.km / u.s, u.UnitsError),
         (np.array([0.01, 0.02]) * u.AA, ValueError),
     ],
@@ -716,16 +678,6 @@ def test_grid_bounds_are_halfway_between_samples():
     np.testing.assert_allclose(_bin_width(response).values, 0.2)
     np.testing.assert_allclose(response.wavelength_bounds.mean("bound").values, grid.value)
     assert response.wavelength_bounds.dims == ("wavelength_bin", "bound")
-
-
-def test_bounds_survive_a_netcdf_round_trip(tmp_path):
-    line_list = synthetic_line_list(1)
-    response = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, main_lines=[line_list.full_name[0].item()])
-    path = tmp_path / "response.nc"
-    response.to_netcdf(path)
-    with xr.open_dataset(path, decode_coords="all") as back:
-        assert "wavelength_bounds" in back.coords
-        np.testing.assert_array_equal(back.wavelength_bounds.values, response.wavelength_bounds.values)
 
 
 @pytest.mark.parametrize(

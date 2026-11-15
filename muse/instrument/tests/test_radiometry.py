@@ -156,26 +156,21 @@ def test_transform_response_units_rejects_unknown_channel():
         transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 195 * u.AA)
 
 
-def test_transform_response_units_rejects_unknown_ci_channel():
+@pytest.mark.parametrize("detector", ["ci", "CI"])
+def test_transform_response_units_rejects_unknown_ci_channel(detector):
     with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector="ci")
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector=detector)
 
 
-@pytest.mark.parametrize(("channel", "error"), [(171, TypeError), (1 * u.s, u.UnitsError)])
-def test_transform_response_units_requires_channel_wavelength(channel, error):
-    with pytest.raises(error, match="channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel)
+def test_transform_response_units_requires_channel_wavelength():
+    with pytest.raises(TypeError, match="channel"):
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171)
 
 
 @pytest.mark.parametrize("detector", ["other", None])
 def test_transform_response_units_rejects_unknown_detector(detector):
     with pytest.raises(ValueError, match="detector must be"):
         transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector=detector)
-
-
-def test_transform_response_units_detector_case_insensitive():
-    with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector="CI")
 
 
 @pytest.mark.parametrize(

@@ -177,17 +177,6 @@ def map_response_to_sg_detector(
             msg = f"channel or explicit detector geometry is required; missing: {', '.join(missing)}"
             raise ValueError(msg)
 
-    if "component_kind" in response.coords:
-        component_kind = np.asarray(response.component_kind)
-        valid_lines = np.isfinite(line_wavelength) & (line_wavelength > 0)
-        missing_contaminants = ~valid_lines & (component_kind == "contaminants")
-        physical_lines = valid_lines & (component_kind == "line")
-        if missing_contaminants.any() and physical_lines.any():
-            line_wavelength = np.where(
-                missing_contaminants,
-                line_wavelength[physical_lines][0],
-                line_wavelength,
-            )
     for name, value in (("number_of_slits", number_of_slits), ("detector_pixels", detector_pixels)):
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:
             msg = f"{name} must be a positive integer"

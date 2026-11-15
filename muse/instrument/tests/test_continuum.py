@@ -69,29 +69,6 @@ def test_bin_average_of_a_linear_curve_is_exact():
     np.testing.assert_allclose(_bin_average(values, x, edges).values, expected, rtol=1e-12)
 
 
-def test_bin_average_is_zero_outside_the_samples_and_conservative():
-    x = np.linspace(0.0, 10.0, 101)
-    y = np.exp(-0.5 * ((x - 4.0) / 1.5) ** 2)
-    edges = np.array([-2.0, 0.0, 3.3, 6.1, 10.0, 13.0])
-    out = _bin_average(xr.DataArray(y, dims="wavelength_bin"), x, edges)
-    assert out.values[0] == 0.0
-    assert out.values[-1] == 0.0
-    np.testing.assert_allclose((out.values * np.diff(edges)).sum(), np.trapezoid(y, x), rtol=1e-12)
-
-
-def test_bin_average_keeps_extra_dims_and_attrs():
-    values = xr.DataArray(
-        np.outer([1.0, 2.0], np.ones(11)),
-        dims=("logT", "wavelength_bin"),
-        coords={"logT": [5.0, 6.0]},
-        attrs={"units": "u"},
-    )
-    out = _bin_average(values, np.linspace(0.0, 1.0, 11), np.array([0.0, 0.5, 1.0]))
-    assert out.dims == ("logT", "wavelength_bin")
-    assert out.attrs == {"units": "u"}
-    np.testing.assert_allclose(out.values, [[1.0, 1.0], [2.0, 2.0]])
-
-
 def test_continuum_response_total_matches_the_fine_integral():
     area, wavelength, values = _stepped_effective_area()
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)

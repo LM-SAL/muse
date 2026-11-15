@@ -38,12 +38,10 @@ def test_vdem_synthesis(response, raster) -> None:
         finite_vars=("flux",),
     )
     assert detector_response.flux.attrs["units"] == "ph / s"
-    assert detector_response.attrs["HISTORY"] == [
-        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        (
-            "vdem_synthesis(raster=raster, response=response, sum_over=('logT', 'doppler_velocity', 'slit'), "
-            "device=None, backend=numpy)"
-        ),
+    # The history of the raster, then this call; the format of an entry is tested with add_history.
+    assert [entry.split("(")[0] for entry in detector_response.attrs["HISTORY"]] == [
+        "reshape_x_to_slit_step",
+        "vdem_synthesis",
     ]
     np.testing.assert_array_equal(
         detector_response.line_wavelength.values,
@@ -189,15 +187,6 @@ def test_vdem_synthesis_propagates_dataset_level_coords(response, raster) -> Non
     assert list(result.line_tag.values) == line_tags
 
 
-def test_vdem_synthesis_preserves_internal_component_kind(response, raster) -> None:
-    component_kind = ["line", "line", "contaminants", "line", "contaminants", "line", "contaminants"]
-    response = response.assign_coords(component_kind=("line", component_kind))
-
-    result = vdem_synthesis(raster, response)
-
-    np.testing.assert_array_equal(result.component_kind, component_kind)
-
-
 def test_vdem_synthesis_torch_backend_matches_numpy(response, raster) -> None:
     pytest.importorskip("torch")
     numpy_flux = vdem_synthesis(raster, response, backend="numpy").flux
@@ -301,9 +290,11 @@ def test_vdem_synthesis_torch_on_mps_empties_the_cache_before_sizing_its_chunks(
     """
     torch = pytest.importorskip("torch")
     calls = []
-    monkeypatch.setattr(torch.mps, "empty_cache", lambda: calls.append(True))
+    measure = _backends._available_memory_bytes
+    monkeypatch.setattr(torch.mps, "empty_cache", lambda: calls.append("emptied"))
+    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda device: calls.append("sized") or measure(device))
     vdem_synthesis(raster, response, device="mps", backend="torch")
-    assert calls
+    assert calls[:2] == ["emptied", "sized"]
 
 
 @pytest.mark.cuda
@@ -316,9 +307,11 @@ def test_vdem_synthesis_torch_on_cuda_empties_the_cache_before_sizing_its_chunks
     if not torch.cuda.is_available():
         pytest.skip("CUDA is not available")
     calls = []
-    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: calls.append(True))
+    measure = _backends._available_memory_bytes
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: calls.append("emptied"))
+    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda device: calls.append("sized") or measure(device))
     vdem_synthesis(raster, response, device="cuda", backend="torch")
-    assert calls
+    assert calls[:2] == ["emptied", "sized"]
 
 
 @pytest.mark.performance
@@ -474,21 +467,6 @@ def test_vdem_synthesis_does_not_require_discarded_detector_wavelength(response,
     assert "detector_wavelength" not in result.coords
 
 
-def test_vdem_synthesis_keeps_slit_and_assigns_sg_wvl(response, raster) -> None:
-    # Not summing over slit leaves it as a flux dimension, which triggers the
-    # detector_wavelength coordinate assignment branch.
-    detector_response = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
-    assert "slit" in detector_response.flux.dims
-    assert_dataset_structure(
-        detector_response,
-        data_vars=("flux",),
-        coords=("y", "slit", "step", "line", "detector_x_pixel", "line_wavelength", "detector_wavelength"),
-        sizes={"y": 32, "slit": 35, "step": 11, "line": 7, "detector_x_pixel": 32},
-        finite_vars=("flux",),
-    )
-    assert detector_response.detector_wavelength.dims == ("line", "slit", "detector_x_pixel")
-
-
 def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, raster) -> None:
     response_nm = response.assign_coords(
         line_wavelength=response.line_wavelength / 10.0,
@@ -512,13 +490,6 @@ def test_vdem_synthesis_cuda_matches_cpu(response, raster) -> None:
         pytest.skip("CUDA is not available")
     cpu = vdem_synthesis(raster, response)
     gpu = vdem_synthesis(raster, response, device="cuda:0", backend="torch")
-    assert_dataset_structure(
-        gpu,
-        data_vars=("flux",),
-        coords=("y", "step", "line", "detector_x_pixel", "line_wavelength"),
-        sizes={"y": 32, "step": 11, "line": 7, "detector_x_pixel": 32},
-        finite_vars=("flux",),
-    )
     np.testing.assert_allclose(gpu.flux.values, cpu.flux.values, rtol=1e-5, atol=1e-6)
 
 

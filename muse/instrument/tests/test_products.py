@@ -65,10 +65,12 @@ def _area_file(directory, *, unit=u.cm**2, channel=CHANNEL, wavelength=(150.0, 1
     return path
 
 
-def _line_list(plasma="pressure"):
+def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
     """
     Six lines across the waveband on one pressure (or two densities), each fainter than
     the one before; the main line is the third.
+
+    Given several values of ``pressure``, each holds the lines times its ``scale``.
     """
     line_list = synthetic_line_list(
         6, wavelength=[155.0, 165.0, 171.073, 174.5, 180.0, 188.0], logT=np.array([5.5, 6.0, 6.5])
@@ -80,7 +82,9 @@ def _line_list(plasma="pressure"):
         upper_level_index=("trans_index", [2, 3, 13, 4, 5, 6]),
     ).assign_attrs(fiasco="0.0.test", Chianti="11.0.2")
     if plasma == "pressure":
-        line_list["gofnt"] = line_list.gofnt.expand_dims(pressure=[3e15]).transpose("pressure", "logT", "trans_index")
+        factor = xr.DataArray(np.asarray(scale, dtype=float), dims="pressure", coords={"pressure": list(pressure)})
+        gofnt = (factor * line_list.gofnt).transpose("pressure", "logT", "trans_index")
+        line_list["gofnt"] = gofnt.assign_attrs(line_list.gofnt.attrs)
         line_list.pressure.attrs["units"] = "K / cm3"  # as the line-list builders label it
     else:
         line_list["gofnt"] = line_list.gofnt.expand_dims(logD=[9.0, 10.0]).transpose("logT", "logD", "trans_index")
@@ -410,27 +414,21 @@ def test_an_sg_file_is_converted_with_its_own_detector(inputs, sg_products, tmp_
     xr.testing.assert_allclose(_main_response(written), 2 * _main_response(sg_products))
 
 
-def test_the_main_line_products_do_not_depend_on_the_contaminants(inputs, sg_products, tmp_path):
-    written = _sg(inputs, tmp_path, maximum_contaminants=0)
-
-    assert _prefixes(written) == _prefixes(sg_products)[:2]
-    xr.testing.assert_allclose(_main_response(written), _main_response(sg_products), rtol=1e-12)
-
-
 def test_settings_keyed_by_a_wavelength_count_as_those_keyed_by_a_number(inputs, sg_products, tmp_path):
     """
     A key given as a wavelength, such as ``17.1 * u.nm``, selects the channel as the
     number 171 does, for the main lines and for the instrumental widths.
     """
-    line = "Fe X 174.500"
-    by_number = _sg(inputs, tmp_path / "number", main_lines_by_channel={171: [line]}, maximum_contaminants=0)
     # one line alone may be given as its name
     by_wavelength = _sg(
-        inputs, tmp_path / "wavelength", main_lines_by_channel={17.1 * u.nm: line}, maximum_contaminants=0
+        inputs, tmp_path / "wavelength", main_lines_by_channel={17.1 * u.nm: "Fe X 174.500"}, maximum_contaminants=0
     )
 
-    assert _prefixes(by_wavelength) == _prefixes(by_number)
-    assert "FeX174.500" in by_number[0].name
+    # the names of channel 171
+    assert _prefixes(by_wavelength) == [
+        f"respfunc_171_FeX174.500_waveband_{TAIL}_TEST",
+        f"respfunc_171_FeX174.500_{GEOMETRY}_{TAIL}_TEST",
+    ]
     wider = _sg(inputs, tmp_path / "wider", instrumental_width_by_channel={171 * u.AA: 0.1 * u.AA})
     assert float(_main_response(wider).max()) < float(_main_response(sg_products).max())
 
@@ -440,16 +438,9 @@ def test_a_pressure_is_taken_by_value_from_a_longer_line_list(inputs, sg_product
     A call for one pressure reads a line list made for several and takes its own by
     value, not by position.
     """
-    line_list = xr.load_dataset(inputs["line_list"])
-    # Another pressure first and ten times brighter: taking the first would show.
-    gofnt = xr.concat(
-        [10 * line_list.gofnt.assign_coords(pressure=[3e14]), line_list.gofnt],
-        dim="pressure",
-        join="exact",
-        combine_attrs="override",
-    )
     path = tmp_path / "two_pressures.nc"
-    line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt).to_netcdf(path)
+    # Another pressure first and ten times brighter: taking the first would show.
+    _line_list(pressure=[3e14, 3e15], scale=[10, 1]).to_netcdf(path)
     options = {"maximum_contaminants": 0, "line_list_file": path}
 
     written = _sg(inputs, tmp_path / "run", **options)
@@ -475,6 +466,11 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
     xr.load_dataset(inputs["line_list"]).assign_attrs(abundance=OTHER_ABUNDANCE).to_netcdf(photospheric)
     with pytest.raises(ValueError, match=rf"photospheric\.nc is of the abundance {OTHER_ABUNDANCE}, not {ABUNDANCE}"):
         _sg(inputs, tmp_path / "run", line_list_file=photospheric)
+
+    # on pressures, where densities are requested
+    density = xr.DataArray([1e9] * u.cm**-3, dims="density")
+    with pytest.raises(ValueError, match=r"line_list_pressure\.nc has no logD axis"):
+        _sg(inputs, tmp_path / "run", pressure=None, density=density)
 
     assert not (tmp_path / "run").exists()
 
@@ -575,13 +571,6 @@ def test_calls_with_one_wavelength_range_share_one_cached_line_list(inputs, tmp_
     attrs = read_response(first[1]).attrs
     assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", 1e-21)
     assert "line_list_file" not in attrs
-    for wrong_range, match in (
-        ([160, 170] * u.AA, "does not cover what the products need"),
-        ([100, 200, 300] * u.AA, "must hold a lower and an upper wavelength"),
-    ):
-        with pytest.raises(ValueError, match=match):
-            _sg(inputs, tmp_path / "third", **{**options, "line_list_wavelength_range": wrong_range})
-    assert not (tmp_path / "third").exists()
 
 
 def test_the_default_line_list_spans_what_the_products_use(inputs, tmp_path, line_list_calls):
@@ -637,7 +626,8 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
         msg = "work was done for products that exist"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(xr, "load_dataset", not_called)
+    # what the generators read a line list with, and what builds a response
+    monkeypatch.setattr(products_module, "_open_response_file", not_called)
     monkeypatch.setattr(products_module, "create_spectral_response", not_called)
 
     assert _sg(inputs, tmp_path, skip_existing=True) == first
@@ -663,15 +653,8 @@ def test_close_pressures_get_their_own_products(inputs, tmp_path):
     3.0e15 and 3.4e15 K / cm3 are named pressure_3e+15 and pressure_3.4e+15: a name
     rounded to one digit would give both the same product.
     """
-    line_list = xr.load_dataset(inputs["line_list"])
-    gofnt = xr.concat(
-        [line_list.gofnt, 2 * line_list.gofnt.assign_coords(pressure=[3.4e15])],
-        dim="pressure",
-        join="exact",
-        combine_attrs="override",
-    )
     path = tmp_path / "close_pressures.nc"
-    line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt).to_netcdf(path)
+    _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
     pressure = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
 
     written = _sg(inputs, tmp_path / "run", pressure=pressure, line_list_file=path, maximum_contaminants=0)
@@ -700,14 +683,8 @@ def _backends_that_scale(monkeypatch):
     """
 
     def line_list_backend(_temperature, *, pressure, abundance, **_kwargs):
-        line_list = _line_list()
         values = pressure.data.to_value(u.K / u.cm**3)
-        scale = xr.DataArray(
-            SCALE_OF_ABUNDANCE[abundance] * values / 3e15, dims="pressure", coords={"pressure": values}
-        )
-        gofnt = (line_list.gofnt.isel(pressure=0, drop=True) * scale).transpose("pressure", "logT", "trans_index")
-        gofnt.pressure.attrs["units"] = "K / cm3"
-        return line_list.drop_vars(["gofnt", "pressure"]).assign(gofnt=gofnt.assign_attrs(line_list.gofnt.attrs))
+        return _line_list(pressure=values, scale=SCALE_OF_ABUNDANCE[abundance] * values / 3e15)
 
     def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
         continuum = synthetic_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
@@ -767,7 +744,8 @@ def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_pa
         msg = "work was done before the names were checked"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(xr, "load_dataset", not_called)
+    # what the generators read a line list with
+    monkeypatch.setattr(products_module, "_open_response_file", not_called)
     second = _area_file(tmp_path, name="another_171.zarr")
     twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
 
@@ -806,13 +784,14 @@ def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
         (_sg, {"instrumental_width_by_channel": {193 * u.AA: 1 * u.AA}}, "the SG channels are 108, 171, 284"),
         (_sg, {"main_lines_by_channel": {171: [MAIN_LINE, "FeIX 171.073"]}}, "would get one file name"),
         (_sg, {"instrumental_width_by_channel": {171: 0.02}}, "must be one wavelength, such as 0.02"),
-        # what goes into a file name: a slash makes a directory, a brace or a bracket a pattern
+        # what goes into a file name: not empty, no slash, which makes a directory, and no underscore in the label
         (_sg, {"author": ""}, "author is part of a file name"),
         (_sg, {"author": "A/B"}, "author is part of a file name"),
-        (_sg, {"effective_area_label": "Zr{thin}"}, "effective_area_label is part of a file name"),
-        (_sg, {"effective_area_label": "Zr[1]"}, "effective_area_label is part of a file name"),
         (_sg, {"effective_area_label": "Al_Zr"}, "effective_area_label is part of a file name"),
         (_sg, {"abundances": ["../coronal"]}, "abundance is part of a file name"),
+        # a line-list range that does not cover the products, and one that is no pair of wavelengths
+        (_sg, {"line_list_wavelength_range": [160, 170] * u.AA}, "does not cover what the products need"),
+        (_sg, {"line_list_wavelength_range": [100, 200, 300] * u.AA}, "must hold a lower and an upper wavelength"),
     ],
 )
 def test_bad_options_stop_the_call_before_any_work(inputs, tmp_path, line_list_calls, generate, overrides, match):
@@ -921,16 +900,8 @@ def test_the_generators_on_live_chianti(tmp_path):
     elements, one pressure, no continuum.
     """
     pytest.importorskip("ChiantiPy")
-    area = _area_file(tmp_path, wavelength=(165.0, 178.0))
+    files = {"area": _area_file(tmp_path, wavelength=(165.0, 178.0)), "line_list": None}
     options = {
-        "output_directory": tmp_path / "run",
-        "author": "TEST",
-        "effective_area_label": "testea",
-        "effective_area_files": [area],
-        "abundances": [ABUNDANCE],
-        "pressure": PRESSURE,
-        "temperature": TEMPERATURE,
-        "doppler_velocity": DOPPLER_VELOCITY,
         "minimum_abundance": 3e-5,
         "line_list_backend": "chianti",
         # The 171 waveband, which the SG call asks for whatever the area spans: given to the
@@ -938,8 +909,8 @@ def test_the_generators_on_live_chianti(tmp_path):
         "line_list_wavelength_range": [153.5, 188.5] * u.AA,
     }
 
-    sg = generate_sg_responses(main_lines_by_channel={CHANNEL: [MAIN_LINE]}, maximum_contaminants=3, **options)
-    ci = generate_ci_responses(maximum_lines=3, include_continuum=False, units=["ph"], **options)
+    sg = _sg(files, tmp_path / "run", **options)
+    ci = _ci(files, tmp_path / "run", include_continuum=False, units=["ph"], **options)
 
     assert (len(sg), len(ci)) == (4, 2)
     main = read_response(_only(sg, f"FeIX171.073_{GEOMETRY}"))
