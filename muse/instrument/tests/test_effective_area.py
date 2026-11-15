@@ -58,6 +58,17 @@ def test_create_effective_area_takes_one_curve_of_one_channel():
         _area(components={"mirror": np.ones(3) * u.one})
     with pytest.raises(ValueError, match="holds one channel"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH, channel=[171, 284] * u.AA)
+    # a component of that name would take the place of the area
+    with pytest.raises(ValueError, match="cannot be named effective_area"):
+        _area(components={"effective_area": np.ones(5) * u.cm**2})
+
+
+def test_create_effective_area_converts_wavelength_and_channel_to_angstrom():
+    in_nm = create_effective_area(np.arange(1.0, 6.0) * u.cm**2, WAVELENGTH.to(u.nm), channel=17.1 * u.nm)
+
+    xr.testing.assert_allclose(in_nm.effective_area, _area().effective_area)
+    np.testing.assert_allclose(in_nm.wavelength, WAVELENGTH.value)
+    np.testing.assert_allclose(float(in_nm.channel), 171.0)
 
 
 @pytest.mark.parametrize("suffix", [".zarr", ".nc"])

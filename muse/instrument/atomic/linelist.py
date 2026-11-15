@@ -207,7 +207,8 @@ def _line_list_dataset(
         line_list[plasma_dim].attrs["units"] = _plasma_axis_units(plasma_dim)
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
-    return line_list.isel(trans_index=in_range)
+    # isel copies every array, the contribution functions among them: skipped when nothing is cut.
+    return line_list if bool(in_range.all()) else line_list.isel(trans_index=in_range)
 
 
 def _validate_line_list_inputs(
@@ -392,11 +393,13 @@ def create_fiasco_line_list(
         raise ValueError(msg)
     from astropy.table import vstack  # noqa: PLC0415
 
-    table = vstack(tables)
-    # The workers take the ions one by one, those with the most levels first, so the rows are
+    # The workers take the ions one by one, those with the most levels first, so the tables are
     # put back in the order of the ions: the line list is the same for any number of workers.
+    # The tables are sorted, not the rows of the stacked one, which would be one more copy of it.
     ion_order = {ion.ion_name_roman: index for index, ion in enumerate(ions)}
-    table = table[np.argsort([ion_order[name] for name in np.asarray(table["ion name"]).astype(str)], kind="stable")]
+    tables.sort(key=lambda table: ion_order[str(table["ion name"][0])])
+    table = vstack(tables)
+    del tables
     # CHIANTI's name of an ion, fe_9, from fiasco's public attributes; list_ions gives "Fe 9".
     roman_to_name = {ion.ion_name_roman: f"{ion.atomic_symbol.lower()}_{ion.ionization_stage}" for ion in ions}
     spectroscopic_name = np.asarray(table["ion name"]).astype(str)
@@ -476,9 +479,11 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
         factor = factor.where(~_match_transition(line_list, transition), value)
     boosted = line_list.copy()
     boosted["gofnt"] = (line_list.gofnt * factor).assign_attrs(line_list.gofnt.attrs)
-    boosted.attrs["transition_boosts"] = json.dumps(
-        {f"{ion} {lower}-{upper}": value for (ion, lower, upper), value in boosts.items()}
-    )
+    # A line list that was boosted before records the product of both factors.
+    recorded = json.loads(line_list.attrs.get("transition_boosts", "{}"))
+    for (ion, lower, upper), value in boosts.items():
+        recorded[f"{ion} {lower}-{upper}"] = recorded.get(f"{ion} {lower}-{upper}", 1) * value
+    boosted.attrs["transition_boosts"] = json.dumps(recorded)
     return boosted
 
 
@@ -557,9 +562,10 @@ def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, i
     keep = xr.zeros_like(line_list.wavelength, dtype=bool)
     for transition in transitions:
         keep = keep | _match_transition(line_list, transition)
-    selected = line_list.isel(trans_index=keep.values)
-    selected.attrs["transition_selection"] = json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in transitions])
-    return selected
+    # assign_attrs, as isel shares the attributes of the input, which must stay as it is
+    return line_list.isel(trans_index=keep.values).assign_attrs(
+        transition_selection=json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in transitions])
+    )
 
 
 def _match_transition(line_list: xr.Dataset, transition: tuple[str, int, int]) -> xr.DataArray:

@@ -144,7 +144,9 @@ def create_chianti_continuum(
         grid=grid,
         attrs={"Chiantipy": chiantipy_version, "Chianti": chio.versionRead(), "minimum_abundance": minimum_abundance},
     )
-    add_history(continuum, call_inputs, create_chianti_continuum)
+    # The abundance set that was used, also when none was named.
+    abundance = abundance or chdata.Defaults["abundfile"]
+    add_history(continuum, {**call_inputs, "abundance": abundance}, create_chianti_continuum)
     return continuum
 
 
@@ -249,9 +251,16 @@ def create_fiasco_continuum(
         temperature_bc=temperature_bc,
         extra_coords=extra_coords,
         grid=grid,
-        attrs={"fiasco": fiasco.__version__, "minimum_abundance": minimum_abundance},
+        attrs={
+            "fiasco": fiasco.__version__,
+            # as fiasco's own line list takes the version of the database
+            **({"Chianti": str(ions[0]._elvlc.version)} if hasattr(ions[0], "_elvlc") else {}),
+            "minimum_abundance": minimum_abundance,
+        },
     )
-    add_history(continuum, call_inputs, create_fiasco_continuum)
+    # The abundance set that was used, also when none was named.
+    abundance = getattr(ions[0], "_dset_names", {}).get("abundance", abundance)
+    add_history(continuum, {**call_inputs, "abundance": abundance}, create_fiasco_continuum)
     return continuum
 
 

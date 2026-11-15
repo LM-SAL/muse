@@ -447,6 +447,11 @@ def test_boost_transitions():
     assert boosted.gofnt.attrs == line_list.gofnt.attrs
     assert boosted.attrs["transition_boosts"] == '{"he_2 1-3": 20}'
     assert (line_list.gofnt.values == 1).all()
+    assert "transition_boosts" not in line_list.attrs
+    # boosted again, the line list records the product, as its contribution function holds it
+    twice = boost_transitions(boosted, {("he_2", 1, 3): 2, ("fe_9", 1, 13): 3})
+    assert twice.gofnt.values[0].tolist() == [40.0, 1.0, 3.0]
+    assert twice.attrs["transition_boosts"] == '{"he_2 1-3": 40, "fe_9 1-13": 3}'
     with pytest.raises(ValueError, match="0 transitions match he_2 1-5"):
         boost_transitions(line_list, {("he_2", 1, 5): 20})
     # A line name where a transition is meant used to fail with "too many values to unpack".
@@ -491,5 +496,7 @@ def test_select_transitions():
     doublet = select_transitions(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
     assert doublet.wavelength.values.tolist() == [303.786, 303.785]
     assert doublet.attrs["transition_selection"] == '["he_2 1-3", "he_2 1-4"]'
+    # the input is left as it was: a full line list must not come to say it is a selection
+    assert "transition_selection" not in line_list.attrs
     with pytest.raises(ValueError, match="0 transitions match fe_9 1-5"):
         select_transitions(line_list, [("fe_9", 1, 5)])

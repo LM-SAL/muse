@@ -81,6 +81,10 @@ def create_effective_area(
         msg = "channel must be one wavelength: an effective-area dataset holds one channel"
         raise ValueError(msg)
 
+    if "effective_area" in (components or {}):
+        msg = "a component cannot be named effective_area: that is the area itself"
+        raise ValueError(msg)
+
     def _as_curve(name: str, values: u.Quantity, *, broadcast: bool) -> xr.DataArray:
         data = np.asarray(values.value, dtype=float)
         if broadcast and data.size == 1:

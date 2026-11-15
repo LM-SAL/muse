@@ -289,7 +289,9 @@ def fake_chianti(monkeypatch):
 
     core = SimpleNamespace(continuum=Continuum, ion=Ion)
     constants = SimpleNamespace(El=["h", "he", "li"])
-    data = SimpleNamespace(AbundanceDefault={"abundance": np.array([1.0, 0.085, 1e-9])})
+    data = SimpleNamespace(
+        AbundanceDefault={"abundance": np.array([1.0, 0.085, 1e-9])}, Defaults={"abundfile": "the_default_set"}
+    )
     io = SimpleNamespace(
         abundanceRead=lambda _name: {"abundance": np.array([1.0, 0.085, 1e-9])}, versionRead=lambda: "fake 11"
     )
@@ -355,6 +357,8 @@ def test_chianti_continuum_density_grid_and_single_temperature():
     np.testing.assert_allclose(one.logD.values, [9.0, 10.0])
     assert one.logD.attrs["units"] == "dex(1 / cm3)"
     assert one.sizes["logT"] == 1
+    # no abundance was named: the set that was used is recorded, not left out
+    assert one.attrs["abundance"] == "the_default_set"
     two_photon = one.spectral_response.sel(line="two-photon").isel(logT=0)
     np.testing.assert_allclose(two_photon.isel(logD=1).values, 10 * two_photon.isel(logD=0).values, rtol=1e-12)
 
