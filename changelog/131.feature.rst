@@ -1,0 +1,1 @@
+``map_response_to_sg_detector`` maps a response that is in memory one slit at a time, which needs about a third of the memory (3.8 GB at its peak instead of 11.6 GB for a detector response of 2 GB) and gives the same numbers. A chunked response is mapped lazily as before.

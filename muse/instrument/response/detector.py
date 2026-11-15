@@ -219,18 +219,44 @@ def map_response_to_sg_detector(
         attrs={"units": str(u.AA)},
     )
 
-    spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
-    mapped = (
-        spectral_response.swap_dims(wavelength_bin="wavelength_grid")
-        .interp(wavelength_grid=detector_wavelength, kwargs={"fill_value": 0})
-        .rename(wavelength_grid="detector_wavelength")
+    spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid).swap_dims(
+        wavelength_bin="wavelength_grid"
     )
-    mapped = mapped * dispersion_value
-    leading_dims = [dim for dim in mapped.dims if dim not in ("slit", "detector_x_pixel")]
-    mapped = mapped.transpose(*leading_dims, "slit", "detector_x_pixel").assign_coords(
-        detector_wavelength=detector_wavelength
+    # What does not lie along the wavelengths is kept as it is; the rest is replaced by the detector.
+    kept = {name: coord for name, coord in spectral_response.coords.items() if "wavelength_grid" not in coord.dims}
+    spectral_response = spectral_response.drop_vars(
+        [name for name in spectral_response.coords if name not in kept and name != "wavelength_grid"]
     )
-    mapped.attrs["units"] = str(response_unit * u.AA)
+    leading_dims = [dim for dim in spectral_response.dims if dim != "wavelength_grid"]
+    if isinstance(spectral_response.data, np.ndarray):
+        # One slit at a time, into an array allocated once: interpolated in one call, the slits
+        # hold several copies of the result at once, about six times its size.
+        values = np.empty((*(spectral_response.sizes[dim] for dim in leading_dims), number_of_slits, detector_pixels))
+        for slit in range(number_of_slits):
+            on_slit = spectral_response.interp(
+                wavelength_grid=detector_wavelength.isel(slit=slit, drop=True), kwargs={"fill_value": 0}
+            )
+            values[..., slit, :] = on_slit.transpose(*leading_dims, "detector_x_pixel").values
+        values *= dispersion_value
+        mapped = xr.DataArray(
+            values,
+            dims=(*leading_dims, "slit", "detector_x_pixel"),
+            coords={
+                **kept,
+                "slit": detector_wavelength.slit,
+                "detector_x_pixel": detector_wavelength.detector_x_pixel,
+                "detector_wavelength": detector_wavelength,
+            },
+        )
+    else:
+        # A chunked response stays lazy: dask evaluates the one interpolation chunk by chunk.
+        mapped = spectral_response.interp(wavelength_grid=detector_wavelength, kwargs={"fill_value": 0})
+        mapped = (mapped.drop_vars("wavelength_grid") * dispersion_value).transpose(
+            *leading_dims, "slit", "detector_x_pixel"
+        )
+        mapped = mapped.assign_coords(detector_wavelength=detector_wavelength)
+    # The attributes of the spectral response, such as its bin method, with the units of the mapped one.
+    mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
     mapped.detector_wavelength.attrs["units"] = str(u.AA)
 
     result = response.drop_dims("wavelength_bin")

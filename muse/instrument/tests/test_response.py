@@ -547,3 +547,43 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
         map_response_to_ci_detector(back, 171 * u.AA).detector_response,
         map_response_to_ci_detector(response, 171 * u.AA).detector_response,
     )
+
+
+def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once():
+    """
+    A response in memory is interpolated one slit at a time, which needs a fraction of
+    the memory, and a chunked one in one lazy call: both give the same detector
+    response.
+    """
+    response = _spectral_response(contaminants=True)
+    kwargs = {
+        "number_of_slits": 3,
+        "dispersion": 0.02 * u.AA / u.pix,
+        "slit_spacing": 5 * u.pix,
+        "detector_pixels": 40,
+        "wavelength_start": 170.6 * u.AA,
+    }
+
+    in_memory = map_response_to_sg_detector(response, **kwargs)
+    chunked = map_response_to_sg_detector(response.chunk({"logT": 1}), **kwargs)
+
+    assert isinstance(in_memory.detector_response.data, np.ndarray)
+    assert isinstance(chunked.detector_response.data, da.Array)
+    xr.testing.assert_identical(chunked.compute().drop_attrs(), in_memory.drop_attrs())
+    assert chunked.detector_response.attrs == in_memory.detector_response.attrs
+    # what the spectral response says of itself stays on the mapped one, with the new units
+    assert in_memory.detector_response.attrs == {
+        **response.spectral_response.attrs,
+        "units": in_memory.detector_response.attrs["units"],
+    }
+    # and that is the interpolation of every slit at once, times the width of a pixel
+    grid = response.spectral_response.assign_coords(wavelength_grid=response.wavelength_grid).swap_dims(
+        wavelength_bin="wavelength_grid"
+    )
+    at_once = grid.interp(wavelength_grid=in_memory.detector_wavelength, kwargs={"fill_value": 0}) * 0.02
+    np.testing.assert_allclose(
+        in_memory.detector_response.values,
+        at_once.transpose(*in_memory.detector_response.dims).values,
+        rtol=1e-12,
+    )
+    assert float(in_memory.detector_response.max()) > 0
