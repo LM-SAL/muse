@@ -357,7 +357,7 @@ def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():
     # create_aia_effective_area gives cm2 DN / ph by default; the response builders take cm2.
     with_gain = synthetic_effective_area(area_units="cm2 DN / ph")
 
-    with pytest.raises(ValueError, match="convertible to cm2; an area that carries the camera gain"):
+    with pytest.raises(ValueError, match="convertible to cm2; this area includes the conversion from photons to DN"):
         _create_wavelength_response(synthetic_line_list(1), effective_area=with_gain)
 
 
@@ -375,7 +375,7 @@ def test_scalar_effective_area_is_validated():
         _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3))  # no units anywhere
     with pytest.raises(ValueError, match="contradict the data unit"):
         # Both the payload and the attrs declare a unit and they disagree; neither can be
-        # trusted, so this must not be silently resolved in favour of one of them.
+        # trusted, so this must not be silently resolved in favor of one of them.
         _create_wavelength_response(line_list, effective_area=xr.DataArray(4.3 * u.cm**2, attrs={"units": "s"}))
 
 
@@ -645,31 +645,31 @@ def _integral_ratio(response, line_list, index=0):
     return (integral / (line_list.gofnt.isel(trans_index=index) / RESPONSE_NORMALIZATION)).values
 
 
-def test_integrate_conserves_the_area_of_an_unresolved_line():
-    # An Fe line at 171 A has sigma ~5-7 mA at logT 5.8-6.2; on 20 mA bins the midpoint
-    # rule miscounts it by about 2 exp(-2 pi^2 sigma^2 / h^2), the integral is exact.
+def test_average_conserves_the_area_of_an_unresolved_line():
+    # An Fe line at 171 A has sigma ~5.5-8.7 mA at logT 5.8-6.2; on 20 mA bins the midpoint
+    # rule miscounts it by up to about 2 exp(-2 pi^2 sigma^2 / h^2), the bin average is exact.
     line_list = synthetic_line_list(1)
     grid = np.arange(170.0, 172.02, 0.02) * u.AA
     kwargs = {"main_lines": [line_list.full_name[0].item()], "doppler_velocity": DOPPLER_VELOCITY}
-    integrated = create_spectral_response(line_list, grid, bin_method="average", **kwargs)
-    sampled = create_spectral_response(line_list, grid, **kwargs)
-    np.testing.assert_allclose(_integral_ratio(integrated, line_list), 1.0, rtol=1e-12)
-    assert np.abs(_integral_ratio(sampled, line_list) - 1.0).max() > 0.01
-    assert integrated.spectral_response.attrs["bin_method"] == "average"
-    assert sampled.spectral_response.attrs["bin_method"] == "center"
+    averaged = create_spectral_response(line_list, grid, bin_method="average", **kwargs)
+    centered = create_spectral_response(line_list, grid, **kwargs)
+    np.testing.assert_allclose(_integral_ratio(averaged, line_list), 1.0, rtol=1e-12)
+    assert np.abs(_integral_ratio(centered, line_list) - 1.0).max() > 0.01
+    assert averaged.spectral_response.attrs["bin_method"] == "average"
+    assert centered.spectral_response.attrs["bin_method"] == "center"
 
 
-def test_integrate_matches_sample_when_the_line_is_resolved():
+def test_average_matches_center_when_the_line_is_resolved():
     # sigma / h ~ 25: the midpoint total is exact and the per-bin values differ only
     # by the curvature term (h / sigma)^2 / 24.
     line_list = synthetic_line_list(2)
     kwargs = {"main_lines": list(line_list.full_name.values), "instrumental_width": 0.05 * u.AA}
-    integrated = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
-    sampled = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
-    assert integrated.spectral_response.dims == sampled.spectral_response.dims
-    peak = float(integrated.spectral_response.max())
+    averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
+    centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
+    assert averaged.spectral_response.dims == centered.spectral_response.dims
+    peak = float(averaged.spectral_response.max())
     xr.testing.assert_allclose(
-        integrated.spectral_response, sampled.spectral_response, atol=peak * (0.002 / 0.05) ** 2 / 24
+        averaged.spectral_response, centered.spectral_response, atol=peak * (0.002 / 0.05) ** 2 / 24
     )
 
 
@@ -689,7 +689,7 @@ def test_wavelength_edges_define_the_bins():
     np.testing.assert_allclose(_bin_width(response).values, np.diff(edges.value))
     assert response.wavelength_grid.attrs["bounds"] == "wavelength_bounds"
     assert response.wavelength_bounds.attrs["units"] == "Angstrom"
-    # a 2-3 mA line inside a ~1.7 A bin is still exactly conserved
+    # a line with sigma ~5.5-8.7 mA inside a ~1.7 A bin is still exactly conserved
     np.testing.assert_allclose(_integral_ratio(response, line_list), 1.0, rtol=1e-12)
 
 
@@ -770,18 +770,19 @@ def test_methods_agree_on_the_fine_grid():
         "doppler_velocity": DOPPLER_VELOCITY,
         "effective_area": _stepped_effective_area(),
     }
-    sampled = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
-    integrated = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
-    assert sampled.spectral_response.attrs["effective_area_at"] == "bin center"
-    assert integrated.spectral_response.attrs["effective_area_at"] == "line center"
+    centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
+    averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
+    assert centered.spectral_response.attrs["effective_area_at"] == "bin center"
+    assert averaged.spectral_response.attrs["effective_area_at"] == "line center"
     # the lines sit on the smooth 1 %/A slope: the area at the center and the area across
     # the 2 mA grid differ only through the slope times the line width
-    np.testing.assert_allclose(_total(integrated).values, _total(sampled).values, rtol=1e-5)
+    np.testing.assert_allclose(_total(averaged).values, _total(centered).values, rtol=1e-5)
 
 
 def test_coarse_bins_keep_the_fine_grid_total():
     """
-    Bins ten times wider than the lines, one of them straddling the area step.
+    Bins of 0.85 A, about fifty times the width of the lines, one of them straddling the
+    area step.
     """
     line_list = synthetic_line_list(3)
     kwargs = {
@@ -797,7 +798,7 @@ def test_coarse_bins_keep_the_fine_grid_total():
     np.testing.assert_allclose(_total(coarse).values, _total(fine).values, rtol=1e-6)
 
 
-def test_area_is_zero_outside_the_table():
+def test_area_is_zero_outside_the_curve():
     line_list = synthetic_line_list(1)
     area = synthetic_effective_area(np.ones(51), np.linspace(172.0, 177.0, 51))
     response = create_spectral_response(

@@ -299,7 +299,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
 
 def test_map_response_to_ci_detector_accepts_any_channel():
     # The channel is only recorded in the output coordinates, so non-MUSE
-    # imagers (e.g. AIA 171) pass their own band centre.
+    # imagers (e.g. AIA 171) pass their own band center.
     response = _ci_spectral_response()
 
     mapped = map_response_to_ci_detector(response, 171 * u.AA)

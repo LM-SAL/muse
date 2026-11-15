@@ -557,7 +557,7 @@ def test_align_response_and_vdem_honors_custom_coord_methods() -> None:
 
     xr.testing.assert_equal(nearest_response.logT, nearest_vdem.logT)
     xr.testing.assert_equal(nearest_response.doppler_velocity, nearest_vdem.doppler_velocity)
-    # Nearest-neighbour velocity resampling must differ from the default linear interpolation.
+    # Nearest-neighbor velocity resampling must differ from the default linear interpolation.
     assert not np.allclose(nearest_response.detector_response, default_response.detector_response)
 
 

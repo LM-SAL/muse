@@ -523,8 +523,8 @@ def load_and_concat_responses(
 
 def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> None:
     """
-    Save a wavelength-space response, e.g. a waveband cube from
-    `create_spectral_response`.
+    Save a wavelength-space response, e.g. from `create_spectral_response` or
+    `create_continuum_response`.
 
     Parameters
     ----------
@@ -533,6 +533,14 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
     response_file : `str` or `pathlib.Path`
         Destination ending in ``.zarr``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
         destinations are not overwritten.
+
+    Raises
+    ------
+    TypeError
+        If ``response`` is not an `xarray.Dataset`.
+    ValueError
+        If one of those variables is missing, or the destination exists or does not end in
+        one of those suffixes.
     """
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
@@ -555,12 +563,19 @@ def read_spectral_response(response_file: str | Path) -> xr.Dataset:
     Parameters
     ----------
     response_file : `str` or `pathlib.Path`
-        A zarr store or a netCDF file.
+        A zarr store (a directory or a ``.zip``) or a netCDF file.
 
     Returns
     -------
     `xarray.Dataset`
-        The response with its ``wavelength_bounds`` restored as a coordinate.
+        The response, with ``wavelength_bounds`` as a coordinate. The arrays are read from
+        the file on demand, so the file stays open: call ``.load()`` to bring them into
+        memory, or ``.close()`` when done.
+
+    Raises
+    ------
+    ValueError
+        If the file does not contain ``spectral_response``.
     """
     response_file = Path(response_file)
     response = _open_response_file(response_file, decode_coords="all")

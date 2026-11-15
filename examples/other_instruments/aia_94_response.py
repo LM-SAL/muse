@@ -5,7 +5,7 @@ Create an AIA 94 Å response
 
 This example demonstrates how to create a broadband imaging response for the
 SDO/AIA 94 Å channel by combining a precomputed CHIANTI line list with the
-wavelength response and plate scale from `aiapy`.
+effective area and pixel size from `aiapy`.
 
 Unlike a spectrograph, an imager integrates over its whole bandpass, so the
 main product is a temperature response rather than a line profile. We compute
@@ -29,13 +29,13 @@ from muse.data import fetch_example_data
 from muse.instrument import create_aia_effective_area, create_spectral_response
 
 ##############################################################################
-# :func:`muse.instrument.create_aia_effective_area` reads the channel from
-# `aiapy`: the effective area with the wavelength-dependent detector gain
-# folded in, in cm2 DN / ph, and the size of a detector pixel in its
-# attributes. Dividing by the photon energy converts CHIANTI's energy radiance
-# to photons, and multiplying by the solid angle of a pixel converts
-# per-steradian radiance to the signal in one detector pixel.
-# We leave the EVE normalization out, which gives the baseline calibration
+# :func:`muse.instrument.create_aia_effective_area` builds the effective area of
+# the channel from `aiapy`. By default the area includes the wavelength-dependent
+# conversion from photons to DN, so it is in cm2 DN / ph. The attributes of the
+# dataset give the size of a detector pixel. Dividing by the photon energy
+# converts CHIANTI's energy radiance to photons, and multiplying by the solid
+# angle of a pixel converts per-steradian radiance to the signal in one detector
+# pixel. We leave the EVE normalization out, which gives the baseline calibration
 # without any time-dependent correction.
 
 effective_area = create_aia_effective_area(94 * u.AA, include_eve_correction=False)

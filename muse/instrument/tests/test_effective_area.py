@@ -51,7 +51,7 @@ def test_create_effective_area_accepts_dn_per_photon_and_rejects_other_units():
 
 
 def test_create_effective_area_takes_one_curve_of_one_channel():
-    # A (channel, wavelength) table used to be reshaped into a scrambled curve.
+    # A (channel, wavelength) table is refused: reshaped into one curve it would be scrambled.
     with pytest.raises(ValueError, match="area must have one value per wavelength"):
         create_effective_area(np.ones((2, 5)) * u.cm**2, WAVELENGTH, channel=171 * u.AA)
     with pytest.raises(ValueError, match="mirror must have one value per wavelength"):
@@ -88,7 +88,7 @@ def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
         save_effective_area(effective_area, path)
 
 
-def test_save_effective_area_rejects_another_suffix_and_layout(tmp_path):
+def test_save_effective_area_rejects_an_unknown_suffix_and_a_wrong_layout(tmp_path):
     with pytest.raises(ValueError, match="effective_area_file must end in"):
         save_effective_area(_area(), tmp_path / "area.txt")
     with pytest.raises(ValueError, match="channel coordinate"):
@@ -184,7 +184,7 @@ def fake_aiapy(monkeypatch):
 @pytest.mark.usefixtures("fake_aiapy")
 def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
     effective_area = create_aia_effective_area(304 * u.AA)
-    # crosstalk and the launch-epoch EVE factor, no degradation, the gain folded in
+    # crosstalk and the EVE factor of the default epoch, no degradation, the gain folded in
     np.testing.assert_allclose(effective_area.effective_area, 3.0 * 1.5 * _FakeChannel.gain.value)
     assert u.Unit(effective_area.effective_area.attrs["units"]) == u.cm**2 * u.DN / u.ph
     assert float(effective_area.channel) == 304.0

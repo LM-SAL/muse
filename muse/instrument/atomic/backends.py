@@ -169,22 +169,31 @@ def _fiasco_ion_kwargs(abundance: str | None, hdf5_dbase_root: str | Path | None
 
 def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = False, **kwargs) -> list:
     """
-    ``function(ions, *args, **kwargs)`` on all of ``ions`` at once when ``workers`` is
-    1, and otherwise on groups of them in ``workers`` processes.
+    Call ``function(group, *args, **kwargs)`` on groups of ``ions`` and return the
+    results, one per group.
 
-    A group is every n-th ion, one group per worker: the ions of one element sit together and
-    differ in cost, so blocks of neighbours would leave one worker with most of the work. With
-    ``single_ions`` a group is one ion, those with the most levels first, and a free worker
-    takes the next: for work whose cost grows with the levels, as a line list's does, where
-    even groups are still uneven. The results are not in the order of ``ions``: a caller that
-    keeps an order has to restore it.
+    With ``workers`` equal to 1, or a single ion, there is one group, all of ``ions``,
+    and no process is started. Otherwise the groups run in ``workers`` processes.
+
+    By default there is one group per worker, and a group is every n-th ion. The ions of
+    one element are neighbors in the list and differ widely in cost, so a block of
+    neighbors would leave one worker with most of the work.
+
+    With ``single_ions`` every ion is its own group. The ions with the most levels go
+    first, and a free worker takes the next ion. This suits work whose cost grows with
+    the number of levels, as that of a line list does: a few ions then hold most of the
+    work, and groups of every n-th ion are still unequal.
+
+    The results are not in the order of ``ions``. A caller that needs that order has to
+    restore it.
     """
     if workers < 1 and workers != -1:
         msg = f"workers must be at least 1, or -1 for every CPU this process may use, got {workers}"
         raise ValueError(msg)
     if workers == -1:
-        # The CPUs this process may run on, not the machine's: on a Slurm node every core
-        # is reported, and one worker per core runs a 16-CPU job out of memory.
+        # os.process_cpu_count gives the CPUs this process may run on. os.cpu_count gives every
+        # core of the machine, also on a Slurm node where the job holds a few: one worker per
+        # core there ran a 16-CPU job out of memory.
         workers = os.process_cpu_count() or 1
     if workers == 1 or len(ions) <= 1:
         return [function(list(ions), *args, **kwargs)]
@@ -203,7 +212,7 @@ def _over_ions(function, ions: list, workers: int, *args, single_ions: bool = Fa
     with warnings.catch_warnings():
         # loky restarts a worker whose memory grew, as it does when a worker first loads the
         # database, and says so in a warning. Where warnings are errors, that error is raised in
-        # loky's own thread and the run waits for ever.
+        # loky's own thread and the run waits forever.
         warnings.filterwarnings("ignore", "A worker stopped while some jobs were given to the executor", UserWarning)
-        # batch_size=1: joblib would otherwise bundle short tasks, and a bundle is a block of neighbours again.
+        # batch_size=1: joblib would otherwise bundle short tasks, and a bundle is a block of neighbors again.
         return Parallel(n_jobs=workers, batch_size=1)(delayed(function)(group, *args, **kwargs) for group in groups)

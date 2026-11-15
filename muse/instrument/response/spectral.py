@@ -1,5 +1,6 @@
 """
-Spectral response functions built from CHIANTI line lists.
+Wavelength-space responses: spectral lines from a line list, and the continuum, on
+wavelength bins.
 """
 
 from collections.abc import Sequence
@@ -27,7 +28,7 @@ _BIN_METHODS = ("center", "average")
 @u.quantity_input(wavelength_range=u.AA)
 def create_log_wavelength_edges(wavelength_range: u.Quantity, fractional_width: float) -> u.Quantity:
     """
-    Edges of logarithmically spaced wavelength bins covering a range.
+    Create the edges of logarithmically spaced wavelength bins that cover a range.
 
     Each bin is ``fractional_width`` wide relative to its lower edge, so every bin spans the
     same velocity width; pass the result to `create_spectral_response` as ``wavelength_edges``
@@ -44,12 +45,16 @@ def create_log_wavelength_edges(wavelength_range: u.Quantity, fractional_width: 
     -------
     `astropy.units.Quantity`
         The bin edges in Angstrom, one more than the number of bins.
+
+    Raises
+    ------
+    ValueError
+        If ``wavelength_range`` is not positive and increasing, or ``fractional_width`` is
+        not positive.
     """
     lower, upper = np.asarray(wavelength_range.to_value(u.AA), dtype=float).reshape(-1)[[0, -1]]
     if not (0 < lower < upper) or not fractional_width > 0:
-        msg = (
-            "create_log_wavelength_edges needs an increasing positive wavelength_range and a positive fractional_width"
-        )
+        msg = "wavelength_range must be positive and increasing, and fractional_width must be positive"
         raise ValueError(msg)
     number_of_bins = int(np.ceil(np.log(upper / lower) / np.log1p(fractional_width)))
     return lower * (1 + fractional_width) ** np.arange(number_of_bins + 1) * u.AA
@@ -74,11 +79,12 @@ def create_spectral_response(
     Parameters
     ----------
     line_list : `xarray.Dataset`
-        CHIANTI line list with its ``logT`` coordinate in ``dex(K)``, e.g. from
-        `muse.instrument.create_chianti_line_list`.
+        Line list with its ``logT`` coordinate in ``dex(K)``, e.g. from
+        `muse.instrument.create_chianti_line_list` or
+        `muse.instrument.create_fiasco_line_list`.
     wavelength_grid : `astropy.units.Quantity`, optional
         One-dimensional wavelength samples for one channel and spectral order; the bins
-        extend halfway to the neighbouring samples. Either this or ``wavelength_edges``.
+        extend halfway to the neighboring samples. Either this or ``wavelength_edges``.
     main_lines : sequence of `str` or `None`
         Stable ``full_name`` values to retain, in output order. Repeated
         transitions with the same name are summed. If `None` or empty, no
@@ -106,11 +112,13 @@ def create_spectral_response(
         ``wavelength_grid``; the bin centers become ``wavelength_grid``. Meant for coarse or
         non-uniform bins, such as `create_log_wavelength_edges` for an imager.
     bin_method : {"center", "average"}, optional
-        ``"center"`` samples each Gaussian at the bin center and under-counts lines narrower
-        than a bin; ``"average"`` stores the bin average, which conserves the line area on
-        any grid and weights each line by a curve ``effective_area`` at its own
-        Doppler-shifted center. By default ``"center"`` with ``wavelength_grid`` and
-        ``"average"`` with ``wavelength_edges``.
+        ``"center"`` samples each Gaussian at the bin center, which miscounts a line
+        narrower than a bin: too high when the line sits on a bin center, too low when it
+        sits between two. ``"average"`` stores the average of the Gaussian over each bin,
+        which conserves the area of a line on any grid that covers it. With ``"average"``
+        an ``effective_area`` curve is applied to each line at its own Doppler-shifted
+        center; with ``"center"`` it is applied at each bin center. By default
+        ``"center"`` with ``wavelength_grid`` and ``"average"`` with ``wavelength_edges``.
 
     Returns
     -------
@@ -231,7 +239,8 @@ def _create_wavelength_response(
     doppler_widths = np.sqrt(doppler_widths_squared)
     gaussian_norm = np.sqrt(2 * np.pi)
 
-    # Bin averages take a curve at each line's own center; a scalar or sampled area scales the grid below.
+    # With bin averages a curve is taken at each line's own center. A scalar area, or a curve with
+    # bin_method="center", scales the gridded response further down.
     area_at_center = None
     if bin_method == "average" and effective_area is not None and "wavelength" in effective_area.dims:
         area_at_center = (
@@ -335,7 +344,7 @@ def _wavelength_bins(
     The bin centers as a ``wavelength_bin`` array and the bin edges, from either input.
     """
     if (wavelength_grid is None) == (wavelength_edges is None):
-        msg = "pass exactly one of wavelength_grid and wavelength_edges"
+        msg = "exactly one of wavelength_grid and wavelength_edges must be given"
         raise ValueError(msg)
     if wavelength_edges is not None:
         edges = np.asarray(wavelength_edges.to_value(u.AA), dtype=float)
@@ -366,7 +375,7 @@ def _wavelength_bin_coords(centers, edges: np.ndarray) -> dict:
 
 def _centers_to_edges(centers: np.ndarray) -> np.ndarray:
     """
-    Edges halfway between neighbouring centers, extrapolated by half a bin at the ends.
+    Edges halfway between neighboring centers, extrapolated by half a bin at the ends.
     """
     centers = np.asarray(centers, dtype=float)
     if centers.size < 2:
@@ -433,7 +442,10 @@ def _effective_area_in_canonical_units(effective_area: xr.DataArray | None) -> x
     area_unit = require_unit(dataset, "effective_area", "effective_area")
     if not area_unit.is_equivalent(u.cm**2):
         carries_gain = area_unit.is_equivalent(u.cm**2 * u.DN / u.ph)
-        hint = "; an area that carries the camera gain is not taken here, build it without the gain" * carries_gain
+        hint = (
+            "; this area includes the conversion from photons to DN, pass one in cm2, "
+            "e.g. from create_aia_effective_area(..., include_gain=False)"
+        ) * carries_gain
         msg = f"effective_area units must be convertible to cm2{hint}"
         raise ValueError(msg)
     wavelength = coord_as_unit(dataset, "wavelength", u.AA, "effective_area wavelength coordinate")

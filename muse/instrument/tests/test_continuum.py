@@ -1,5 +1,5 @@
 """
-Tests for the continuum calculators and the fold onto bins.
+Tests for the continuum builders and the fold onto bins.
 """
 
 import sys
@@ -47,9 +47,9 @@ def _continuum_cube():
     response.
     """
     _, wavelength, _ = _stepped_effective_area()
-    density = (1.0 + 0.2 * (wavelength - 165.0)) * np.array([1.0, 2.0, 3.0])[:, None]
+    spectrum = (1.0 + 0.2 * (wavelength - 165.0)) * np.array([1.0, 2.0, 3.0])[:, None]
     response = xr.DataArray(
-        np.stack([density, 0.5 * density, 0.1 * density]),
+        np.stack([spectrum, 0.5 * spectrum, 0.1 * spectrum]),
         dims=("line", "logT", "wavelength_bin"),
         coords={"line": ["free-free", "free-bound", "two-photon"], "logT": [5.5, 6.0, 6.5]},
         attrs={"units": "1e-27 erg cm3 / (Angstrom s sr)"},
@@ -61,7 +61,7 @@ def _continuum_cube():
     )
 
 
-def test_linear_density_is_exact():
+def test_bin_average_of_a_linear_curve_is_exact():
     x = np.linspace(0.0, 10.0, 101)
     values = xr.DataArray(2.0 + 0.5 * x, dims="wavelength_bin")
     edges = np.array([0.0, 1.3, 2.0, 7.7, 10.0])
@@ -69,7 +69,7 @@ def test_linear_density_is_exact():
     np.testing.assert_allclose(_bin_average(values, x, edges).values, expected, rtol=1e-12)
 
 
-def test_zero_outside_the_samples_and_conservative():
+def test_bin_average_is_zero_outside_the_samples_and_conservative():
     x = np.linspace(0.0, 10.0, 101)
     y = np.exp(-0.5 * ((x - 4.0) / 1.5) ** 2)
     edges = np.array([-2.0, 0.0, 3.3, 6.1, 10.0, 13.0])
@@ -79,7 +79,7 @@ def test_zero_outside_the_samples_and_conservative():
     np.testing.assert_allclose((out.values * np.diff(edges)).sum(), np.trapezoid(y, x), rtol=1e-12)
 
 
-def test_extra_dims_and_attrs_are_kept():
+def test_bin_average_keeps_extra_dims_and_attrs():
     values = xr.DataArray(
         np.outer([1.0, 2.0], np.ones(11)),
         dims=("logT", "wavelength_bin"),
@@ -92,7 +92,7 @@ def test_extra_dims_and_attrs_are_kept():
     np.testing.assert_allclose(out.values, [[1.0, 1.0], [2.0, 2.0]])
 
 
-def test_total_matches_the_fine_integral():
+def test_continuum_response_total_matches_the_fine_integral():
     area, wavelength, values = _stepped_effective_area()
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
     out = create_continuum_response(_continuum_cube(), edges, effective_area=area)
@@ -108,12 +108,12 @@ def test_total_matches_the_fine_integral():
     for i_line, factor in enumerate([1.0, 0.5, 0.1]):
         for i_t, scale in enumerate([1.0, 2.0, 3.0]):
             expected = factor * scale * np.trapezoid((1.0 + 0.2 * (x - 165.0)) * np.interp(x, wavelength, values), x)
-            # the product of density and area is sampled on the 0.1 A grid and joined by
+            # the product of continuum and area is sampled on the 0.1 A grid and joined by
             # straight lines; the reference integrates the exact quadratic product
             np.testing.assert_allclose(float(total.isel(line=i_line, logT=i_t)), expected, rtol=2e-4)
 
 
-def test_doppler_shift():
+def test_continuum_response_doppler_shift():
     area, _, _ = _stepped_effective_area()
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
     velocities = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
@@ -125,11 +125,11 @@ def test_doppler_shift():
         out.spectral_response.sel(doppler_velocity=0.0, drop=True), still.spectral_response, rtol=1e-12
     )
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
-    # the density rises with wavelength: light observed at lambda was emitted at
+    # the continuum rises with wavelength: light observed at lambda was emitted at
     # lambda / (1 + v / c), so a redshift shows the fainter short-wavelength emission
     assert (total.sel(doppler_velocity=200.0) < total.sel(doppler_velocity=0.0)).all()
     assert (total.sel(doppler_velocity=-200.0) > total.sel(doppler_velocity=0.0)).all()
-    # to first order in v / c: the slope of the density, and the stretch of the spectrum itself
+    # to first order in v / c: the slope of the continuum, and the stretch of the spectrum itself
     expected = -200.0 / const.c.to_value(u.km / u.s) * (171.0 * 0.2 / (1.0 + 0.2 * 6.0) + 1.0)
     ratio = (total.sel(doppler_velocity=200.0) / total.sel(doppler_velocity=0.0) - 1.0).values
     np.testing.assert_allclose(ratio, expected, rtol=0.05)
@@ -221,7 +221,7 @@ def test_a_doppler_shift_conserves_the_continuum():
     np.testing.assert_allclose(total, 3.0, rtol=1e-12)
 
 
-def test_one_area_value_holds_at_every_wavelength():
+def test_continuum_response_one_area_value_holds_at_every_wavelength():
     # As create_spectral_response takes it: the same as a flat curve of that value.
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
     flat = synthetic_effective_area([2.0, 2.0], [100.0, 300.0])
@@ -232,7 +232,7 @@ def test_one_area_value_holds_at_every_wavelength():
     xr.testing.assert_allclose(out.spectral_response, expected.spectral_response, rtol=1e-12)
 
 
-def test_rejects_bad_inputs():
+def test_continuum_response_rejects_bad_inputs():
     area, _, _ = _stepped_effective_area()
     with pytest.raises(ValueError, match="increasing"):
         create_continuum_response(_continuum_cube(), np.array([170.0, 171.0, 170.5]) * u.AA, effective_area=area)
@@ -378,7 +378,8 @@ def test_chianti_continuum_requires_a_contributing_ion(monkeypatch):
 
 @pytest.mark.usefixtures("fake_chianti")
 def test_chianti_continuum_does_not_swallow_an_error_that_is_not_missing_data(monkeypatch):
-    # A file system that fails halfway used to leave a continuum that was too low, and cached.
+    # An error that is not missing data, such as a file system that fails halfway, must stop the
+    # run: passed over, it would leave a continuum that is too low.
     def unreadable(_self, _wavelength, **_kwargs):
         msg = "unable to lock file"
         raise OSError(msg)
@@ -402,7 +403,8 @@ def test_continuum_rejects_bad_grids():
 @pytest.fixture
 def fake_fiasco(monkeypatch):
     """
-    Fiasco replaced by closed-form continua that are not per steradian, as fiasco's are.
+    The fiasco classes replaced by closed-form continua that are not per steradian, as
+    the real ones are.
     """
     fiasco = pytest.importorskip("fiasco")
 

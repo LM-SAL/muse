@@ -27,7 +27,7 @@ _DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
 # Attributes with which an effective-area file describes its own detector: the keywords of
 # transform_response_units, as "<value> <unit>" strings.
 _DETECTOR_ATTRS = ("pixel_width", "pixel_height", "gain", "pair_energy")
-# SolarSoft's default aia_get_response epoch: the instrument at launch and its EVE factors.
+# SolarSoft's default aia_get_response epoch, the start of the science mission.
 _AIA_LAUNCH_EPOCH = "2010-05-01T00:00:00.000"
 # Mean energy that frees one electron-hole pair in silicon, as the SolarSoft AIA tables take it.
 _AIA_PAIR_ENERGY = 3.65 * u.eV / u.electron
@@ -48,19 +48,21 @@ def create_effective_area(
     Parameters
     ----------
     area : `astropy.units.Quantity`
-        The area at each wavelength, in cm2, or in cm2 DN / ph for an area that carries the
-        camera gain.
+        The area at each wavelength, in cm2, or in cm2 DN / ph for an area that includes
+        the camera's conversion from photons to DN.
     wavelength : `astropy.units.Quantity`
         Increasing wavelengths of the samples.
     channel : `astropy.units.Quantity`
-        Nominal wavelength of the channel, one value.
+        Nominal wavelength of the channel, a scalar such as ``171 * u.AA``.
     components : `dict`, optional
         Further curves of any unit, such as ``mirror``, ``filter``, ``ccd`` or ``grating``,
         stored alongside under their names. Each has one value per wavelength, or a single
         value that holds at every wavelength.
     attrs : `dict`, optional
-        Attributes to record, e.g. the coating, or the detector of another imager as the
-        attributes ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy``.
+        Attributes to record, e.g. the coating. To describe the detector of an imager other
+        than MUSE, give ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` as
+        strings of a value and a unit, such as ``"0.6 arcsec"`` and ``"18 electron / DN"``;
+        they are the keywords of `muse.instrument.transform_response_units`.
 
     Returns
     -------
@@ -71,14 +73,15 @@ def create_effective_area(
     Raises
     ------
     ValueError
-        If ``wavelength`` is not increasing, ``channel`` is not one value, or ``area`` or a
-        component does not have one value per wavelength.
+        If ``wavelength`` is not increasing, ``channel`` is not a scalar, a component is
+        named ``effective_area``, or ``area`` or a component does not have one value per
+        wavelength.
     """
     call_inputs = dict(locals())
     wavelengths = np.asarray(wavelength.to_value(u.AA), dtype=float).reshape(-1)
     _require_increasing_axis(wavelengths, "wavelength", positive=True)
     if not channel.isscalar:
-        msg = "channel must be one wavelength: an effective-area dataset holds one channel"
+        msg = "channel must be a scalar wavelength, such as 171 * u.AA: an effective-area dataset holds one channel"
         raise ValueError(msg)
 
     if "effective_area" in (components or {}):
@@ -134,32 +137,35 @@ def create_aia_effective_area(
     channel : `astropy.units.Quantity`
         The AIA channel, e.g. ``304 * u.AA``.
     obstime : `astropy.time.Time` or `str`, optional
-        Epoch of the degradation and of the EVE normalization, by default the launch epoch,
-        1 May 2010, as in SolarSoft.
+        Epoch of the degradation and of the EVE normalization, by default 1 May 2010, the
+        start of the AIA science mission, as in SolarSoft.
     include_crosstalk : `bool`, optional
         Add the light of the other channel on the same telescope that leaks through this
         channel's focal-plane filter (94 with 304, 131 with 335), by default `True`. For 335
         the leak rivals the channel's own peak.
     include_degradation : `bool`, optional
         Apply ``aiapy.calibrate.degradation`` at ``obstime``, by default `False`, as aiapy's
-        degradation at the launch epoch is not exactly 1. Set it, with ``obstime``, to compare
-        with observations.
+        degradation on 1 May 2010 is not exactly 1. Set it, with ``obstime``, to compare with
+        observations.
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
     include_gain : `bool`, optional
-        Fold the camera gain in, by default `True`: the area is then in cm2 DN / ph and a
-        response built from it integrates DN over wavelength. `False` leaves the area in cm2,
-        which is what `muse.instrument.create_spectral_response` and
-        `muse.instrument.create_continuum_response` take.
+        Multiply the area by the DN that one photon gives, aiapy's ``Channel.gain``, which
+        varies with wavelength, by default `True`. The area is then in cm2 DN / ph, and
+        `muse.instrument.create_spectral_response` and
+        `muse.instrument.create_continuum_response` refuse it. Pass `False` for an area in
+        cm2, which they take. This factor is not the camera gain in electron / DN, which is
+        always recorded in the ``gain`` attribute.
 
     Returns
     -------
     `xarray.Dataset`
-        As `create_effective_area` returns, with the curves ``mirror``, ``filter``, ``ccd``,
-        ``contamination``, ``crosstalk`` and ``dn_per_photon`` alongside. The attributes
-        ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` describe the AIA
-        detector.
+        The dataset `create_effective_area` returns, with the curves ``mirror``, ``filter``,
+        ``ccd``, ``contamination``, ``crosstalk`` and ``dn_per_photon`` alongside. The
+        attributes ``pixel_width`` and ``pixel_height`` (arcsec), ``gain`` (electron / DN)
+        and ``pair_energy`` (eV / electron) describe the AIA detector, as strings of a value
+        and a unit.
 
     Notes
     -----
@@ -183,8 +189,8 @@ def create_aia_effective_area(
     area = (aia_channel.effective_area + crosstalk) * degradation_factor * eve_factor
     if include_gain:
         area = area * aia_channel.gain
-    # aiapy's gain is the photon energy over the pair energy and the camera gain, so the
-    # camera gain follows from any one wavelength.
+    # aiapy's Channel.gain is DN per photon: the photon energy over the pair energy and the
+    # camera gain (electron / DN). So the camera gain follows from any one wavelength.
     photon_energy = (const.h * const.c / aia_channel.wavelength[0]).to(u.eV) / u.ph
     camera_gain = (photon_energy / _AIA_PAIR_ENERGY / aia_channel.gain[0]).to(u.electron / u.DN)
     pixel_size = ((aia_channel.plate_scale * u.pix) ** 0.5).to(u.arcsec)
@@ -224,7 +230,10 @@ def _validated(effective_area: xr.Dataset, label: str) -> xr.Dataset:
         msg = f"{label} must carry effective_area and a channel coordinate"
         raise ValueError(msg)
     if effective_area.effective_area.dims != ("wavelength",) or effective_area.channel.ndim != 0:
-        msg = f"{label}: effective_area must lie along wavelength alone, for the one channel of a scalar coordinate"
+        msg = (
+            f"{label}: effective_area must lie along wavelength alone and channel must be a scalar coordinate: "
+            "a dataset holds one channel"
+        )
         raise ValueError(msg)
     unit = require_unit(effective_area, "effective_area", f"{label}: effective_area")
     if not (unit.is_equivalent(u.cm**2) or unit.is_equivalent(_DN_PER_PHOTON)):
@@ -252,8 +261,8 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
     Raises
     ------
     ValueError
-        If the dataset does not have that layout, or the destination exists or has another
-        suffix.
+        If the dataset does not have that layout, or the destination exists or does not end
+        in one of those suffixes.
     """
     validated = _validated(effective_area, "effective_area").drop_encoding()
     destination = _check_destination(effective_area_file, what="effective area", argument="effective_area_file")
@@ -303,20 +312,27 @@ def read_effective_area(effective_area_file: str | Path) -> xr.Dataset:
 
 def effective_area_wavelength_range(effective_areas: Sequence[xr.Dataset]) -> u.Quantity:
     """
-    The wavelength range every effective area spans together, as a line list must cover.
+    Return the wavelength range that a set of effective areas spans together.
+
+    A line list or a continuum that serves all of them must cover this range.
 
     Parameters
     ----------
     effective_areas : `list` of `xarray.Dataset`
-        From `create_effective_area` or `read_effective_area`.
+        Effective-area datasets from `create_effective_area` or `read_effective_area`.
 
     Returns
     -------
     `astropy.units.Quantity`
-        The lowest and the highest wavelength of all of them.
+        The lowest and the highest wavelength of all of them, in Angstrom.
+
+    Raises
+    ------
+    ValueError
+        If ``effective_areas`` is empty, or a ``wavelength`` coordinate lacks a unit.
     """
     if not effective_areas:
-        msg = "pass at least one effective area"
+        msg = "effective_areas must hold at least one effective area"
         raise ValueError(msg)
     wavelengths = [np.asarray(coord_as_unit(area, "wavelength", u.AA, "wavelength")) for area in effective_areas]
     return [min(w.min() for w in wavelengths), max(w.max() for w in wavelengths)] * u.AA

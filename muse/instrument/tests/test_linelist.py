@@ -319,8 +319,8 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     assert line_list.logT.attrs["units"] == "dex(K)"
     assert line_list.pressure.attrs["units"] == "K / cm3"
     np.testing.assert_allclose(line_list.logT.values, np.linspace(5.5, 6.5, 5))
-    # the contribution function per steradian, on the density pressure / temperature
-    # The whole grid, so that a swap of the pressure and the temperature axis cannot pass.
+    # The contribution function per steradian, at the density pressure / temperature. The whole
+    # grid is compared, so that a swap of the pressure and temperature axes cannot pass.
     density = pressure.values[:, None] / temperature.values[None, :]
     peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
     expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
@@ -371,24 +371,24 @@ def test_fiasco_line_list_refuses_a_fiasco_before_0_9(temperature, monkeypatch):
         )
 
 
-def _chunk_sum(chunk, offset):
-    return sum(chunk) + offset
+def _group_sum(group, offset):
+    return sum(group) + offset
 
 
-def _chunk_itself(chunk):
-    return chunk
+def _group_itself(group):
+    return group
 
 
 def test_over_ions_runs_every_ion():
     pytest.importorskip("joblib")
-    assert linelist._over_ions(_chunk_sum, [1, 2, 3, 4, 5], 1, 10) == [25]
-    assert sorted(linelist._over_ions(_chunk_sum, [1, 2, 3, 4, 5], 2, 10)) == [16, 19]
-    # Every n-th ion to a worker: neighbours, the ions of one element, go to different ones.
-    assert linelist._over_ions(_chunk_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
+    assert linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], 1, 10) == [25]
+    assert sorted(linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], 2, 10)) == [16, 19]
+    # Every n-th ion to a worker: neighbors, the ions of one element, go to different ones.
+    assert linelist._over_ions(_group_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
 
 
-def _levels_of(chunk):
-    return [ion.n_levels for ion in chunk]
+def _levels_of(group):
+    return [ion.n_levels for ion in group]
 
 
 def test_over_ions_hands_out_single_ions_with_the_most_levels_first():
@@ -420,7 +420,7 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
 
 def test_over_ions_rejects_a_worker_count_below_one():
     with pytest.raises(ValueError, match="workers must be at least 1"):
-        linelist._over_ions(_chunk_sum, [1, 2, 3], 0, 10)
+        linelist._over_ions(_group_sum, [1, 2, 3], 0, 10)
 
 
 def test_over_ions_counts_the_allocation_not_the_machine(monkeypatch):
@@ -428,7 +428,7 @@ def test_over_ions_counts_the_allocation_not_the_machine(monkeypatch):
     monkeypatch.setattr(os, "process_cpu_count", lambda: 2)
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
     # two groups, as the two usable CPUs give; the machine's 64 would give five
-    assert sorted(linelist._over_ions(_chunk_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
+    assert sorted(linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
 
 
 def test_boost_transitions():
@@ -454,7 +454,7 @@ def test_boost_transitions():
     assert twice.attrs["transition_boosts"] == '{"he_2 1-3": 40, "fe_9 1-13": 3}'
     with pytest.raises(ValueError, match="0 transitions match he_2 1-5"):
         boost_transitions(line_list, {("he_2", 1, 5): 20})
-    # A line name where a transition is meant used to fail with "too many values to unpack".
+    # A line name where a transition is meant gets the explanation, not "too many values to unpack".
     with pytest.raises(ValueError, match="a transition is \\(ion_name, lower_level_index, upper_level_index\\)"):
         boost_transitions(line_list, {"He II 303.786": 20})
 

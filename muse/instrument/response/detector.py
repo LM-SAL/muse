@@ -254,8 +254,14 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
     ----------
     response : `xarray.Dataset`
         Wavelength-space response containing ``spectral_response``,
-        ``wavelength_grid``, and ``line_wavelength``. The wavelength grid may
-        be nonuniform.
+        ``wavelength_grid``, and ``line_wavelength``. If it carries
+        ``wavelength_bounds``, as every response from
+        `muse.instrument.create_spectral_response` and
+        `muse.instrument.create_continuum_response` does, each bin is multiplied
+        by its width and the bins are summed, which is exact for
+        ``bin_method="average"``. Without bounds the response is integrated
+        between the bin centers by the trapezoidal rule. The wavelength grid may
+        be non-uniform.
     channel : `astropy.units.Quantity`
         Nominal channel wavelength recorded in the output coordinates.
 

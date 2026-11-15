@@ -324,20 +324,23 @@ def create_fiasco_line_list(
     temperature, density, pressure, wavelength_range
         As for `create_chianti_line_list`.
     abundance : `str`, optional
-        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``; fiasco's
-        default applies when omitted. The resolved name is recorded in the
-        ``abundance`` attribute.
+        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``. If not given,
+        fiasco's default applies (``sun_coronal_1992_feldman_ext`` in fiasco 0.9.0),
+        which is not ChiantiPy's default; give the name to compare the two backends.
+        The resolved name is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
-        Ions of elements with an abundance below this are skipped, by default
-        ``DEFAULTS_MUSE.minimum_abundance``. Unlike `create_chianti_line_list` this
-        combines with ``ion_list``.
+        Elements with an abundance relative to hydrogen below this are skipped, by
+        default ``DEFAULTS_MUSE.minimum_abundance`` (1e-21, which keeps every element
+        of the abundance file). Unlike in `create_chianti_line_list`, it combines with
+        ``ion_list``.
     ion_list : `list` of `str`, optional
-        fiasco ion names to include, such as ``"fe_9"``; by default every ion in
-        the database.
+        CHIANTI ion names to include, such as ``"fe_9"`` (not fiasco's ``"Fe 9"``); by
+        default every ion in the database.
     workers : `int`, optional
-        Processes the ions are split over, by default 1; ``-1`` uses every CPU this
-        process may run on. Each worker holds the level populations of its ions on the
-        whole grid.
+        Number of processes that share the ions, by default 1; ``-1`` uses every CPU
+        this process may run on. A worker computes one ion at a time and holds the
+        level populations of that ion on the whole grid, so the memory in use grows
+        with ``workers``.
     hdf5_dbase_root : `str` or `pathlib.Path`, optional
         fiasco's HDF5 database; by default its configured one.
 
@@ -436,7 +439,7 @@ def create_fiasco_line_list(
 
 def _fiasco_line_table(ions: list, density: u.Quantity, **kwargs):
     """
-    The line table of one chunk of ions, or `None` when fiasco finds no lines in it.
+    The line table of the ions given, or `None` when fiasco finds no lines in them.
     """
     from fiasco import IonCollection  # noqa: PLC0415
 
@@ -452,7 +455,7 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     """
     Multiply the contribution functions of chosen transitions by a factor.
 
-    SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 A line by 20 to stand
+    SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 Angstrom line by 20 to stand
     in for its optical depth, and every SolarSoft AIA temperature response carries that
     factor; a response meant to be compared with them needs the same.
 
@@ -467,7 +470,9 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     Returns
     -------
     `xarray.Dataset`
-        A copy with ``gofnt`` scaled; the input is untouched.
+        A copy with ``gofnt`` scaled; the input is untouched. The attribute
+        ``transition_boosts`` records the factors, and for a line list that was boosted
+        before, the product of both.
 
     Raises
     ------
@@ -489,7 +494,7 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
 
 def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | None = None) -> xr.Dataset:
     """
-    Sort the transitions by brightness, brightest first.
+    Sort the transitions by the peak of their contribution function, largest first.
 
     Parameters
     ----------
@@ -504,8 +509,8 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | None = 
     -------
     `xarray.Dataset`
         The line list reordered along ``trans_index``, with a ``brightness`` variable:
-        the peak of ``gofnt`` over temperature and the plasma axis, times the area when
-        one is given, with its units.
+        the largest value of ``gofnt`` over the temperatures and over the densities or
+        pressures, times the area when one is given, with its units.
 
     Raises
     ------
@@ -546,17 +551,19 @@ def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, i
     transitions : iterable of `tuple`
         ``(ion_name, lower_level_index, upper_level_index)`` per transition, the levels
         numbered as in the line list, e.g. ``[("he_2", 1, 3), ("he_2", 1, 4)]`` for the
-        He II doublet at 303.78 A.
+        He II doublet at 303.78 Angstrom.
 
     Returns
     -------
     `xarray.Dataset`
-        The line list reduced to those transitions, in the list's order.
+        The line list reduced to those transitions, in the order of the line list, not of
+        ``transitions``. The attribute ``transition_selection`` records the selection.
+        The input is untouched.
 
     Raises
     ------
     ValueError
-        If a key is not such a tuple, or matches no transition or more than one.
+        If an entry is not such a tuple, or matches no transition or more than one.
     """
     transitions = list(transitions)
     keep = xr.zeros_like(line_list.wavelength, dtype=bool)
