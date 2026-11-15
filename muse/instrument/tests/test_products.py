@@ -30,7 +30,7 @@ from muse.instrument.atomic import cache
 from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_dataset_file
-from muse.tests.helpers import synthetic_continuum, synthetic_line_list
+from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.variables import DEFAULTS_MUSE
 
 pytest.importorskip("numexpr")
@@ -72,7 +72,7 @@ def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
 
     Given several values of ``pressure``, each holds the lines times its ``scale``.
     """
-    line_list = synthetic_line_list(
+    line_list = fake_line_list(
         6, wavelength=[155.0, 165.0, 171.073, 174.5, 180.0, 188.0], logT=np.array([5.5, 6.0, 6.5])
     )
     line_list = line_list.assign(
@@ -109,7 +109,7 @@ def inputs(tmp_path_factory):
 
 @pytest.fixture
 def _synthetic_continuum(monkeypatch):
-    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+    monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
 
 
 def _options(inputs, output_directory, **overrides):
@@ -150,7 +150,7 @@ def sg_products(inputs, tmp_path_factory):
 @pytest.fixture(scope="module")
 def ci_products(inputs, tmp_path_factory):
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
         return _ci(inputs, tmp_path_factory.mktemp("ci"))
 
 
@@ -687,7 +687,7 @@ def _backends_that_scale(monkeypatch):
         return _line_list(pressure=values, scale=SCALE_OF_ABUNDANCE[abundance] * values / 3e15)
 
     def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
-        continuum = synthetic_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
+        continuum = fake_continuum(temperature, wavelength_grid, abundance=abundance, **kwargs)
         scaled = (continuum.spectral_response * SCALE_OF_ABUNDANCE[abundance]).assign_attrs(
             continuum.spectral_response.attrs
         )
@@ -939,7 +939,7 @@ def test_the_detector_products_follow_the_slit_separation_of_their_channel(input
 
     lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0)
     with pytest.MonkeyPatch.context() as continuum:
-        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", synthetic_continuum)
+        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
         continua = _sg_continuum(inputs, tmp_path / "continuum")
 
     assert _prefixes(lines) == [

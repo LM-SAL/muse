@@ -17,7 +17,7 @@ from muse.instrument.atomic.linelist import (
     rank_line_list,
     select_transitions,
 )
-from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
+from muse.tests.helpers import fake_effective_area, fake_line_list
 
 TEMPERATURE = xr.DataArray([1e6] * u.K, dims="logT")
 PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
@@ -452,11 +452,11 @@ def test_boost_transitions():
 
 
 def test_rank_line_list_orders_by_peak_times_area():
-    line_list = synthetic_line_list(3)  # peaks 1.0, 0.75, 0.5 at 170.6, 171.0, 171.4 A
+    line_list = fake_line_list(3)  # peaks 1.0, 0.75, 0.5 at 170.6, 171.0, 171.4 A
     by_peak = rank_line_list(line_list)
     assert by_peak.full_name.values.tolist() == line_list.full_name.values.tolist()
     np.testing.assert_allclose(by_peak.brightness.values, [1e-25, 0.75e-25, 0.5e-25])
-    area = synthetic_effective_area([1.0, 0.0, 10.0], [170.5, 171.0, 171.5])
+    area = fake_effective_area([1.0, 0.0, 10.0], [170.5, 171.0, 171.5])
     by_area = rank_line_list(line_list, area)
     assert by_area.full_name.values.tolist() == [
         line_list.full_name[2].item(),

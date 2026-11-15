@@ -5,7 +5,7 @@ import pytest
 import astropy.units as u
 
 from muse.instrument.response.spectral import create_spectral_response
-from muse.tests.helpers import figure_test, synthetic_line_list
+from muse.tests.helpers import fake_line_list, figure_test
 
 pytest.importorskip("numexpr")
 pytest.importorskip("periodictable")
@@ -14,7 +14,7 @@ WAVELENGTH_GRID = np.linspace(170.75, 171.25, 501) * u.AA
 
 
 def _line_list_and_name():
-    line_list = synthetic_line_list(wavelength=[171.0])
+    line_list = fake_line_list(wavelength=[171.0])
     return line_list, [line_list.full_name.item()]
 
 

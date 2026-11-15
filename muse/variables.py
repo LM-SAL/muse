@@ -15,12 +15,13 @@ __all__ = [
 ]
 
 
-MUSE_DEFAULTS_DICT = {
-    # CI
+# The headings are those of `InstrumentDefaults`. The order of the entries has no effect.
+_DEFAULTS_MUSE_VALUES = {
+    # Context Imager (CI) parameters
     "dx_pixel_CI": 0.143 * u.arcsec,
     "dy_pixel_CI": 0.143 * u.arcsec,
     "full_well_depth_CI": 120000 * u.DN,
-    # SG
+    # Spectrograph (SG) parameters
     "dx_pixel_SG": 0.4 * u.arcsec,
     "dy_pixel_SG": 0.167 * u.arcsec,
     "pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
@@ -35,7 +36,7 @@ MUSE_DEFAULTS_DICT = {
     "waveband_half_width_SG": 35.0 * u.AA,
     "wavelength_step_SG": 4.9 * u.mAA,
     "steps_per_raster_SG": 11,
-    # Diffraction
+    # Diffraction parameters
     "mesh_transmission": {284: 0.81},
     "oversample_x_SG": 7,
     "oversample_y_SG": 3,
@@ -44,7 +45,7 @@ MUSE_DEFAULTS_DICT = {
     "psf_fwhm_x": 0.25 * u.arcsec,  # 0.25 in x and 0.5 in y.
     "psf_fwhm_y": 0.5 * u.arcsec,
     "psf_fwhm": 0.5 * u.arcsec,
-    # Other
+    # Other Properties
     "data_compression": 1,
     "gain_SG": xr.DataArray(
         np.array([10.0, 10.0, 10.0]) * u.electron / u.DN,
@@ -80,6 +81,7 @@ MUSE_DEFAULTS_DICT = {
     "fov_mode": "wrap",
     "fov_x_extent": "tile",
     "fov_sub_interpolation": 2,
+    # Target grids
     "target_logT": {
         "QS": np.arange(4.8, 6.7, 0.1),
         "AR": np.arange(4.8, 7.2, 0.1),
@@ -90,7 +92,7 @@ MUSE_DEFAULTS_DICT = {
         "AR": np.arange(-300, 310, 20) * u.km / u.s,
         "FL": np.arange(-500, 510, 20) * u.km / u.s,
     },
-    # Response
+    # Response creation
     "response_abundances": ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund"),
     "response_temperature": xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT"),
     "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
@@ -107,6 +109,7 @@ MUSE_DEFAULTS_DICT = {
     # Value provided by Paul B.; spectral plate scale baked in. Replace with a measured
     # calibration when one exists.
     "instrumental_fwhm_SG": 0.0815 * u.AA,
+    # Effective areas
     "main_line_effective_area_SG": xr.DataArray(
         np.array([2.6, 4.3, 0.87]) * u.cm**2,
         coords={"channel": [108, 171, 284]},
@@ -136,7 +139,7 @@ MUSE_DEFAULTS_DICT = {
     },
 }
 
-DEFAULTS_MUSE = InstrumentDefaults(**MUSE_DEFAULTS_DICT)
+DEFAULTS_MUSE = InstrumentDefaults(**_DEFAULTS_MUSE_VALUES)
 """
 Default MUSE instrument parameters.
 

@@ -13,7 +13,7 @@ from muse.instrument.response.io import read_response, read_spectral_response, s
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
-from muse.tests.helpers import synthetic_line_list
+from muse.tests.helpers import fake_line_list
 from muse.variables import DEFAULTS_MUSE
 
 
@@ -400,7 +400,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
 
 
 def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
-    line_list = synthetic_line_list(1)
+    line_list = fake_line_list(1)
     response = create_spectral_response(
         line_list,
         main_lines=[line_list.full_name[0].item()],
@@ -422,7 +422,7 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
     back without them must still give the bin widths.
     """
     response = create_spectral_response(
-        synthetic_line_list(),
+        fake_line_list(),
         wavelength_edges=np.linspace(170.0, 172.0, 9) * u.AA,
         main_lines=None,
         include_contaminants=True,

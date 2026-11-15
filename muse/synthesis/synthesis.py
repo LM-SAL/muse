@@ -20,7 +20,7 @@ __all__ = ["vdem_synthesis"]
 
 # Wavelength-space names from create_spectral_response, accepted as aliases for
 # the detector-style names the synthesis contract uses.
-_GENERIC_RESPONSE_NAMES = {
+_WAVELENGTH_SPACE_ALIASES = {
     "spectral_response": "detector_response",
     "wavelength_grid": "detector_wavelength",
 }
@@ -176,7 +176,7 @@ def vdem_synthesis(
     """
     renames = {
         old: new
-        for old, new in _GENERIC_RESPONSE_NAMES.items()
+        for old, new in _WAVELENGTH_SPACE_ALIASES.items()
         if (old in response.variables or old in response.dims) and new not in response.variables
     }
     if renames:
@@ -233,16 +233,16 @@ def vdem_synthesis(
     flux.attrs = {"units": str(vdem_unit * response_unit)}
     ds = flux.to_dataset(name="flux")
     # apply_ufunc drops coords the inputs disagree on and never materializes index
-    # coords for bare dims.
-    out_dims = set(ds.flux.dims)
+    # coords for bare dims. The dims of flux are output_dims: every input dim is a core dim.
     # Response-only output dims own their coordinates; scalar conflicts keep the VDEM's metadata.
     response_only_dims = set(response.detector_response.dims) - set(vdem.vdem.dims)
-    restored = {name: coord for name, coord in vdem.coords.items() if set(coord.dims) <= out_dims}
+    restored = {name: coord for name, coord in vdem.coords.items() if set(coord.dims) <= set(output_dims)}
     restored.update(
         {
             name: coord
             for name, coord in response.coords.items()
-            if set(coord.dims) <= out_dims and (name not in restored or response_only_dims.intersection(coord.dims))
+            if set(coord.dims) <= set(output_dims)
+            and (name not in restored or response_only_dims.intersection(coord.dims))
         }
     )
     restored |= {
@@ -253,10 +253,10 @@ def vdem_synthesis(
     ds = ds.assign_coords(restored)
     ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
     # detector_wavelength carries a slit dimension, so only attach it when slit
-    # survives in the output (or the response never had one); otherwise it would
-    # re-introduce slit.
-    slit_preserved = "slit" not in response.detector_response.dims or "slit" in ds.flux.dims
-    if slit_preserved and "detector_wavelength" in response.coords:
+    # survives in the output (or the response never had one); once slit is summed
+    # away it would re-introduce slit.
+    slit_summed = "slit" in response.detector_response.dims and "slit" not in ds.flux.dims
+    if not slit_summed and "detector_wavelength" in response.coords:
         ds = ds.assign_coords(
             detector_wavelength=coord_as_unit(
                 response,

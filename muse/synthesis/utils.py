@@ -177,8 +177,8 @@ def create_simple_vdem(
     # Contiguous half-open velocity bins [center - dv/2, center + dv/2): a voxel sitting exactly
     # on an edge lands in the upper bin, matching the half-open temperature-bin convention below.
     velocity_edges = np.append(velocity_axis - velocity_bin_width / 2.0, velocity_axis[-1] + velocity_bin_width / 2.0)
-    temperature_lower_edge = log_temperature_axis[0] - log_temperature_bin_width / 2.0
-    temperature_upper_edge = log_temperature_axis[-1] + log_temperature_bin_width / 2.0
+    log_temperature_lower_edge = log_temperature_axis[0] - log_temperature_bin_width / 2.0
+    log_temperature_upper_edge = log_temperature_axis[-1] + log_temperature_bin_width / 2.0
     cell_length_los = cell_length.reshape(1, -1)
 
     # Only the output scales with n_x; full-cube intermediates stay bounded by the
@@ -193,10 +193,10 @@ def create_simple_vdem(
         # Each line-of-sight cell spans the temperatures between it and its neighbour; its
         # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
         log_temperature_slice = np.log10(temperature[ix])
-        log_temperature_prev = np.roll(log_temperature_slice, 1, axis=1)
-        log_temperature_prev[:, 0] = 2.0  # boundary cell is entered from 100 K
-        max_log_temperature = np.maximum(log_temperature_slice, log_temperature_prev)
-        min_log_temperature = np.minimum(log_temperature_slice, log_temperature_prev)
+        log_temperature_previous = np.roll(log_temperature_slice, 1, axis=1)
+        log_temperature_previous[:, 0] = 2.0  # boundary cell is entered from 100 K
+        max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
+        min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
         # Every voxel falls in exactly one velocity bin, so scatter each voxel onto a flat
         # (velocity_bin, y) index; that index has no z axis, so np.bincount's accumulation
         # is the line-of-sight sum.
@@ -204,25 +204,25 @@ def create_simple_vdem(
         voxel_mask = (
             (velocity_bin >= 0)
             & (velocity_bin < n_velocity_bins)
-            & (max_log_temperature >= temperature_lower_edge)
-            & (min_log_temperature < temperature_upper_edge)
+            & (max_log_temperature >= log_temperature_lower_edge)
+            & (min_log_temperature < log_temperature_upper_edge)
         )
         scatter_index = velocity_bin * n_y + np.arange(n_y).reshape(n_y, 1)
 
         # Flatten the contributing voxels; each spans [segment_lo, segment_hi] in log T,
         # clamped to the temperature axis.
-        n_spatial = n_velocity_bins * n_y
-        spatial_index = scatter_index[voxel_mask]
+        n_velocity_y = n_velocity_bins * n_y
+        velocity_y_index = scatter_index[voxel_mask]
         emission = emission_slice[voxel_mask]
-        segment_lo = np.clip(min_log_temperature[voxel_mask], temperature_lower_edge, temperature_upper_edge)
-        segment_hi = np.clip(max_log_temperature[voxel_mask], temperature_lower_edge, temperature_upper_edge)
+        segment_lo = np.clip(min_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
+        segment_hi = np.clip(max_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
         bin_lo = np.clip(
-            ((segment_lo - temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
+            ((segment_lo - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
             0,
             n_temperature_bins - 1,
         )
         bin_hi = np.clip(
-            ((segment_hi - temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
+            ((segment_hi - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
             0,
             n_temperature_bins - 1,
         )
@@ -232,8 +232,8 @@ def create_simple_vdem(
         # usually differ by less than a bin) are expanded per spanned bin with np.repeat.
         single = bin_lo == bin_hi
         multi = ~single
-        upper_edge_of_bin_lo = temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
-        lower_edge_of_bin_hi = temperature_lower_edge + bin_hi[multi] * log_temperature_bin_width
+        upper_edge_of_bin_lo = log_temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
+        lower_edge_of_bin_hi = log_temperature_lower_edge + bin_hi[multi] * log_temperature_bin_width
         interior_counts = bin_hi[multi] - bin_lo[multi] - 1
         first_interior_bin = np.repeat(bin_lo[multi] + 1, interior_counts)
         total_interior = first_interior_bin.size
@@ -243,10 +243,10 @@ def create_simple_vdem(
         point_bins = np.concatenate((bin_lo[single], bin_lo[multi], bin_hi[multi], interior_bins))
         point_index = np.concatenate(
             (
-                spatial_index[single],
-                spatial_index[multi],
-                spatial_index[multi],
-                np.repeat(spatial_index[multi], interior_counts),
+                velocity_y_index[single],
+                velocity_y_index[multi],
+                velocity_y_index[multi],
+                np.repeat(velocity_y_index[multi], interior_counts),
             )
         )
         point_weights = np.concatenate(
@@ -258,9 +258,9 @@ def create_simple_vdem(
             )
         )
         binned = np.bincount(
-            point_bins * n_spatial + point_index,
+            point_bins * n_velocity_y + point_index,
             weights=point_weights,
-            minlength=n_temperature_bins * n_spatial,
+            minlength=n_temperature_bins * n_velocity_y,
         )
         vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)
 
@@ -341,11 +341,11 @@ def calculate_moments(
     if doppler_name not in spectrum.coords:
         msg = f"spectrum is missing the {doppler_name!r} coordinate; run wavelength_to_doppler first to add it."
         raise ValueError(msg)
-    dopp_unit = require_unit(
+    doppler_unit = require_unit(
         spectrum, doppler_name, f"spectrum.{doppler_name}", coord_only=True, convertible_to=u.km / u.s
     )
     # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
-    spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * dopp_unit.to(u.km / u.s)})
+    spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * doppler_unit.to(u.km / u.s)})
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
     if not set(spectrum[doppler_name].dims).issubset(spectrum[integration_name].dims):
         msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{integration_name} dimensions"
@@ -407,10 +407,10 @@ def wavelength_to_doppler(data: xr.Dataset) -> xr.Dataset:
         the ``doppler_velocity`` axis of a VDEM or a response, which stays as
         it is.
     """
-    c_kms = speed_of_light.to_value(u.km / u.s)
+    speed_of_light_kms = speed_of_light.to_value(u.km / u.s)
     detector_wavelength = coord_as_unit(data, "detector_wavelength", u.AA, "data.detector_wavelength")
     line_wavelength = coord_as_unit(data, "line_wavelength", u.AA, "data.line_wavelength")
-    detector_doppler_velocity = (detector_wavelength / line_wavelength - 1) * c_kms
+    detector_doppler_velocity = (detector_wavelength / line_wavelength - 1) * speed_of_light_kms
     detector_doppler_velocity.attrs["units"] = str(u.km / u.s)
     result = data.assign_coords(detector_doppler_velocity=detector_doppler_velocity)
     add_history(result, locals(), wavelength_to_doppler)
@@ -437,10 +437,10 @@ def doppler_to_wavelength(data: xr.Dataset, *, doppler_name: str = "detector_dop
         A new dataset with an added ``detector_wavelength`` coordinate in
         Angstrom.
     """
-    c_kms = speed_of_light.to_value(u.km / u.s)
+    speed_of_light_kms = speed_of_light.to_value(u.km / u.s)
     line_wavelength = coord_as_unit(data, "line_wavelength", u.AA, "data.line_wavelength")
     doppler_velocity = coord_as_unit(data, doppler_name, u.km / u.s, f"data.{doppler_name}")
-    detector_wavelength = line_wavelength * (1 + doppler_velocity / c_kms)
+    detector_wavelength = line_wavelength * (1 + doppler_velocity / speed_of_light_kms)
     detector_wavelength.attrs["units"] = str(u.AA)
     result = data.assign_coords(detector_wavelength=detector_wavelength)
     add_history(result, locals(), doppler_to_wavelength)
