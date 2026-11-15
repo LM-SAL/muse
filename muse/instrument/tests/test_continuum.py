@@ -129,9 +129,96 @@ def test_doppler_shift():
     # lambda / (1 + v / c), so a redshift shows the fainter short-wavelength emission
     assert (total.sel(doppler_velocity=200.0) < total.sel(doppler_velocity=0.0)).all()
     assert (total.sel(doppler_velocity=-200.0) > total.sel(doppler_velocity=0.0)).all()
-    expected = -200.0 / const.c.to_value(u.km / u.s) * 171.0 * 0.2 / (1.0 + 0.2 * 6.0)
+    # to first order in v / c: the slope of the density, and the stretch of the spectrum itself
+    expected = -200.0 / const.c.to_value(u.km / u.s) * (171.0 * 0.2 / (1.0 + 0.2 * 6.0) + 1.0)
     ratio = (total.sel(doppler_velocity=200.0) / total.sel(doppler_velocity=0.0) - 1.0).values
-    np.testing.assert_allclose(ratio, expected, rtol=0.1)
+    np.testing.assert_allclose(ratio, expected, rtol=0.05)
+
+
+def _flat_continuum(grid, values=None):
+    """
+    A continuum of one component at one temperature: 1 at every wavelength, or
+    ``values``.
+    """
+    response = xr.DataArray(
+        np.ones((1, 1, grid.size)) if values is None else np.asarray(values, dtype=float)[None, None, :],
+        dims=("line", "logT", "wavelength_bin"),
+        coords={"line": ["free-free"], "logT": [6.0]},
+        attrs={"units": "1e-27 erg cm3 / (Angstrom s sr)"},
+    )
+    return xr.Dataset(
+        {"spectral_response": response},
+        coords={"wavelength_grid": ("wavelength_bin", grid, {"units": "Angstrom"})},
+    )
+
+
+ONE_CM2 = xr.DataArray(1.0, attrs={"units": "cm2"})
+
+
+def test_continuum_response_keeps_the_flux_at_the_ends_of_the_continuum():
+    """
+    The end bins of a continuum reach half a step beyond its end samples, and a Doppler
+    shift moves a sample off the end: neither may empty a bin.
+    """
+    grid = np.arange(170.0, 172.001, 0.25)
+    own_edges = np.concatenate([[grid[0] - 0.125], 0.5 * (grid[1:] + grid[:-1]), [grid[-1] + 0.125]]) * u.AA
+    velocities = np.array([-50.0, 0.0, 1.0, 50.0]) * u.km / u.s
+
+    out = create_continuum_response(
+        _flat_continuum(grid), own_edges, effective_area=ONE_CM2, doppler_velocity=velocities
+    )
+
+    # a flat continuum stays flat in every bin, fainter by the stretch of the spectrum alone
+    stretch = 1 + velocities.value / const.c.to_value(u.km / u.s)
+    expected = np.broadcast_to(1 / stretch[:, None], (velocities.size, grid.size))
+    np.testing.assert_allclose(out.spectral_response.squeeze(["line", "logT"]).values, expected, rtol=1e-12)
+
+
+def test_continuum_response_refuses_a_bin_beyond_the_continuum():
+    grid = np.arange(90.0, 100.001, 0.5)
+    for edges in ([85, 90, 95] * u.AA, [95, 100, 105] * u.AA):
+        with pytest.raises(ValueError, match="reach beyond the continuum, which is given from 90 to 100 Angstrom"):
+            create_continuum_response(_flat_continuum(grid), edges, effective_area=ONE_CM2)
+    # a bin that reaches over an end is filled with the end value
+    out = create_continuum_response(_flat_continuum(grid), [88, 92, 101] * u.AA, effective_area=ONE_CM2)
+    np.testing.assert_allclose(out.spectral_response.values.ravel(), [1.0, 1.0], rtol=1e-12)
+
+
+def test_continuum_response_ends_where_the_area_ends():
+    """
+    As for an imager: the continuum on the wavelengths of the area, and a last bin that
+    reaches beyond them, where the area is zero.
+    """
+    grid = np.linspace(150.0, 192.0, 85)
+    area = synthetic_effective_area([2.0, 2.0], [150.0, 192.0])
+    edges = create_log_wavelength_edges([150, 192] * u.AA, 0.01)
+    assert edges[-1].value > 192.0
+
+    out = create_continuum_response(_flat_continuum(grid), edges, effective_area=area)
+
+    expected = np.full(edges.size - 1, 2.0)
+    expected[-1] = 2.0 * (192.0 - edges[-2].value) / (edges[-1] - edges[-2]).value
+    np.testing.assert_allclose(out.spectral_response.values.ravel(), expected, rtol=1e-9)
+
+
+def test_a_doppler_shift_conserves_the_continuum():
+    """
+    A shifted line keeps its area, and so does the continuum: per unit wavelength it is
+    fainter by the factor the spectrum is stretched by.
+    """
+    grid = np.arange(160.0, 180.001, 0.1)
+    bump = np.clip(1.0 - np.abs(grid - 170.0) / 3.0, 0.0, None)
+    velocities = np.array([-3000.0, -300.0, 0.0, 300.0, 3000.0]) * u.km / u.s
+
+    out = create_continuum_response(
+        _flat_continuum(grid, bump),
+        np.arange(160.0, 180.001, 0.37) * u.AA,
+        effective_area=ONE_CM2,
+        doppler_velocity=velocities,
+    )
+
+    total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin").values.ravel()
+    np.testing.assert_allclose(total, 3.0, rtol=1e-12)
 
 
 def test_one_area_value_holds_at_every_wavelength():

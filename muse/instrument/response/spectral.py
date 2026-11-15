@@ -720,10 +720,16 @@ def create_continuum_response(
     Fold a rest-frame continuum through an effective area onto wavelength bins.
 
     For every Doppler velocity the continuum is shifted (light observed at a wavelength was
-    emitted at that wavelength over ``1 + v / c``), multiplied by the area at the observed
-    wavelength and averaged over each bin, so a bin keeps the structure of the area inside it.
-    The result has the layout of `create_spectral_response` with ``bin_method="average"`` and
-    concatenates with a line response along ``line``.
+    emitted at that wavelength over ``1 + v / c``, and a spectrum stretched by that factor is
+    fainter by it per unit wavelength, as a shifted line keeps its area), multiplied by the
+    area at the observed wavelength and averaged over each bin, so a bin keeps the structure
+    of the area inside it. Between its samples the continuum is joined by straight lines;
+    beyond the first and the last it is held constant, which fills the gap a Doppler shift
+    opens at one end and the part of an end bin that sticks out.
+
+    The result has the dimensions and coordinates of a `create_spectral_response` result with
+    ``bin_method="average"``, though not always in the same order, and `xarray.concat` joins
+    the two along ``line``.
 
     Parameters
     ----------
@@ -744,6 +750,13 @@ def create_continuum_response(
     `xarray.Dataset`
         ``spectral_response`` on the bins in the continuum's units times cm2, with
         ``wavelength_grid`` at the bin centers and ``wavelength_bounds``.
+
+    Raises
+    ------
+    ValueError
+        If ``effective_area`` is `None` or not in units convertible to cm2, ``wavelength_edges``
+        is not increasing, a bin lies wholly beyond the samples of the continuum, or the
+        continuum lacks units or has fewer than two wavelengths.
     """
     call_inputs = dict(locals())
     response_unit = require_unit(continuum, "spectral_response", "continuum.spectral_response")
@@ -752,23 +765,47 @@ def create_continuum_response(
     if effective_area is None:
         msg = "effective_area is required: a continuum response is the continuum seen through an area"
         raise ValueError(msg)
-    area_on_grid = _effective_area_in_canonical_units(effective_area)
-    if area_on_grid.ndim:
-        area_on_grid = (
-            area_on_grid.interp(wavelength=xr.DataArray(grid, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
+    if grid.size < 2:
+        msg = "the continuum needs at least two wavelength samples to average over bins"
+        raise ValueError(msg)
+    if edges[1] <= grid[0] or edges[-2] >= grid[-1]:
+        msg = (
+            f"wavelength_edges reach beyond the continuum, which is given from {grid[0]:g} to {grid[-1]:g} Angstrom: "
+            "a bin lies wholly outside it"
         )
+        raise ValueError(msg)
+    area = _effective_area_in_canonical_units(effective_area)
+    # Where the product of continuum and area is evaluated before it is averaged, whatever the
+    # velocity: at the two outer edges and, for a curve, at its two ends and just beyond them,
+    # where the area drops to zero.
+    fixed = [edges[[0, -1]]]
+    if area.ndim:
+        ends = area.wavelength.values[[0, -1]]
+        fixed += [ends, np.nextafter(ends, [-np.inf, np.inf])]
     rest = continuum.spectral_response.assign_coords(wavelength_bin=grid)
-
+    velocities = [0.0] if doppler_velocity is None else np.atleast_1d(doppler_velocity.to_value(u.km / u.s))
+    pieces = []
+    for velocity in velocities:
+        stretch = 1 + float(velocity) / const.c.to_value(u.km / u.s)
+        # And at the samples of the continuum, both where they are observed and at rest: the
+        # first keeps the shape of the shifted continuum, the second that of an area on its grid.
+        positions = np.unique(np.concatenate([*fixed, grid, grid * stretch]))
+        positions = positions[(positions >= edges[0]) & (positions <= edges[-1])]
+        area_there = area
+        if area.ndim:
+            area_there = (
+                area.interp(wavelength=xr.DataArray(positions, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
+            )
+        # Clipped to the samples, which holds the continuum constant beyond its two ends.
+        emitted = rest.interp(wavelength_bin=np.clip(positions / stretch, grid[0], grid[-1]))
+        product = emitted.assign_coords(wavelength_bin=positions) / stretch * area_there
+        pieces.append(_bin_average(product, positions, edges))
     if doppler_velocity is None:
-        binned = _bin_average(rest * area_on_grid, grid, edges)
+        binned = pieces[0]
     else:
-        velocities = np.atleast_1d(doppler_velocity.to_value(u.km / u.s)).astype(float)
-        speed_of_light = const.c.to_value(u.km / u.s)
-        pieces = []
-        for velocity in velocities:
-            shifted = rest.interp(wavelength_bin=grid / (1 + velocity / speed_of_light), kwargs={"fill_value": 0.0})
-            pieces.append(_bin_average(shifted.assign_coords(wavelength_bin=grid) * area_on_grid, grid, edges))
-        axis = xr.DataArray(velocities, dims="doppler_velocity", attrs={"units": str(u.km / u.s)})
+        axis = xr.DataArray(
+            np.asarray(velocities, dtype=float), dims="doppler_velocity", attrs={"units": str(u.km / u.s)}
+        )
         binned = xr.concat(pieces, dim=axis).transpose("line", "doppler_velocity", ...)
     binned.attrs = {
         **continuum.spectral_response.attrs,
@@ -785,14 +822,14 @@ def create_continuum_response(
 
 def _bin_average(values: xr.DataArray, x: np.ndarray, edges: np.ndarray) -> xr.DataArray:
     """
-    Average a density sampled at ``x`` (the ``wavelength_bin`` axis) over the bins
-    between ``edges``.
+    Average a quantity per unit wavelength, sampled at ``x`` (the ``wavelength_bin``
+    axis), over the bins between ``edges``.
 
-    The samples are joined by straight lines and that piecewise-linear density is
-    integrated exactly over every bin; the density is zero outside the sampled range.
+    The samples are joined by straight lines and that piecewise-linear curve is
+    integrated exactly over every bin; it is zero outside the sampled range.
     """
     if x.size < 2:
-        msg = "the continuum needs at least two wavelength samples to average over bins"
+        msg = "at least two samples are needed to average over bins"
         raise ValueError(msg)
     y = np.moveaxis(np.asarray(values.data, dtype=float), values.get_axis_num("wavelength_bin"), -1)
     dx = np.diff(x)

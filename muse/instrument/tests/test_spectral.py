@@ -818,3 +818,51 @@ def test_create_log_wavelength_edges():
     assert edges[-2] < 900 * u.AA <= edges[-1]
     with pytest.raises(ValueError, match="fractional_width"):
         create_log_wavelength_edges([100, 50] * u.AA, 0.01)
+
+
+def test_contaminants_take_the_area_at_their_own_wavelengths():
+    """
+    All lines summed into the contaminants, as an imager takes them, are the sum of the
+    same lines kept apart: each is weighted by the area at its own wavelength.
+    """
+    line_list = synthetic_line_list(3, wavelength=[170.2, 171.0, 171.8])
+    area = synthetic_effective_area([1.0, 3.0], [170.0, 172.0])
+    edges = np.linspace(170.0, 172.0, 9) * u.AA
+    velocities = [-100.0, 0.0, 100.0] * u.km / u.s
+    options = {"wavelength_edges": edges, "effective_area": area, "doppler_velocity": velocities}
+
+    summed = create_spectral_response(line_list, main_lines=None, include_contaminants=True, **options)
+    apart = create_spectral_response(line_list, main_lines=list(line_list.full_name.values), **options)
+
+    np.testing.assert_allclose(
+        summed.spectral_response.sel(line="contaminants").values,
+        apart.spectral_response.sum("line").transpose(*summed.spectral_response.sel(line="contaminants").dims).values,
+        rtol=1e-12,
+    )
+
+
+def test_inputs_in_other_units_give_the_same_response():
+    """
+    Edges in nm and velocities in m / s are converted, not taken as Angstrom and km / s.
+    """
+    line_list = synthetic_line_list(2)
+    edges = np.linspace(170.0, 172.0, 9) * u.AA
+    velocities = [-100.0, 0.0, 100.0] * u.km / u.s
+
+    reference = create_spectral_response(
+        line_list, wavelength_edges=edges, main_lines=None, include_contaminants=True, doppler_velocity=velocities
+    )
+    converted = create_spectral_response(
+        line_list,
+        wavelength_edges=edges.to(u.nm),
+        main_lines=None,
+        include_contaminants=True,
+        doppler_velocity=velocities.to(u.m / u.s),
+    )
+
+    xr.testing.assert_allclose(converted.spectral_response, reference.spectral_response, rtol=1e-12)
+    np.testing.assert_allclose(converted.wavelength_bounds, reference.wavelength_bounds)
+    np.testing.assert_allclose(
+        create_log_wavelength_edges([17.0, 17.2] * u.nm, 0.01).value,
+        create_log_wavelength_edges([170.0, 172.0] * u.AA, 0.01).value,
+    )

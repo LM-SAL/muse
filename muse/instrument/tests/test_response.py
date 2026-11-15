@@ -7,7 +7,7 @@ import astropy.units as u
 
 from muse.instrument import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.atomic.linelist import create_chianti_line_list
-from muse.instrument.response.io import read_response
+from muse.instrument.response.io import read_response, read_spectral_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
@@ -524,3 +524,26 @@ def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
     np.testing.assert_allclose((mapped.detector_response.isel(line=0) / expected).values, 1.0, rtol=1e-12)
     assert "bound" not in mapped.dims
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA
+
+
+@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_path, suffix):
+    """
+    A netCDF file keeps the units of the bin bounds on the grid alone: the bounds read
+    back without them must still give the bin widths.
+    """
+    response = create_spectral_response(
+        synthetic_line_list(),
+        wavelength_edges=np.linspace(170.0, 172.0, 9) * u.AA,
+        main_lines=None,
+        include_contaminants=True,
+        effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}),
+    )
+    save_spectral_response(response, tmp_path / f"cube{suffix}")
+
+    back = read_spectral_response(tmp_path / f"cube{suffix}")
+
+    xr.testing.assert_allclose(
+        map_response_to_ci_detector(back, 171 * u.AA).detector_response,
+        map_response_to_ci_detector(response, 171 * u.AA).detector_response,
+    )

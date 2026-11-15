@@ -277,8 +277,15 @@ def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr
 
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
     if "wavelength_bounds" in response.coords:
-        # Bin averages times the bin widths: exact for bin-integrated profiles on any grid.
-        bounds = coord_as_unit(response, "wavelength_bounds", u.AA, "response.wavelength_bounds")
+        # The value of each bin times its width: exact for bin averages on any grid, the
+        # midpoint rule for samples at the bin centers.
+        bounds = response.wavelength_bounds
+        if "units" not in bounds.attrs:
+            # A netCDF file keeps the units of the bounds on the grid alone, as CF has it.
+            bounds = bounds.assign_attrs(units=response.wavelength_grid.attrs.get("units"))
+        bounds = coord_as_unit(
+            response.assign_coords(wavelength_bounds=bounds), "wavelength_bounds", u.AA, "response.wavelength_bounds"
+        )
         width = bounds.isel(bound=1) - bounds.isel(bound=0)
         mapped = (spectral_response * width).sum("wavelength_bin")
     else:
