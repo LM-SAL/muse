@@ -15,7 +15,7 @@ from muse.instrument.response.io import (
     save_response,
     save_spectral_response,
 )
-from muse.instrument.response.radiometry import transform_response_units
+from muse.instrument.response.radiometry import transform_flux_units, transform_response_units
 from muse.instrument.response.spectral import (
     create_continuum_response,
     create_log_wavelength_edges,
@@ -34,5 +34,6 @@ __all__ = [
     "read_spectral_response",
     "save_response",
     "save_spectral_response",
+    "transform_flux_units",
     "transform_response_units",
 ]

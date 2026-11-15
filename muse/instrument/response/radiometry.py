@@ -15,7 +15,7 @@ from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
 
-__all__ = ["transform_response_units"]
+__all__ = ["transform_flux_units", "transform_response_units"]
 
 
 def _unit_power(unit: u.UnitBase | str, base: u.UnitBase) -> float | Fraction:
@@ -27,6 +27,48 @@ def _unit_power(unit: u.UnitBase | str, base: u.UnitBase) -> float | Fraction:
     """
     unit = u.Unit(unit)
     return unit.powers[unit.bases.index(base)] if base in unit.bases else 0
+
+
+def _chain_steps(old_unit: u.UnitBase, target_unit: u.UnitBase) -> tuple[float, float, float]:
+    """
+    How often the photon, electron and DN steps of the detector chain are taken from
+    ``old_unit`` to ``target_unit``; zero for a step that is not taken.
+    """
+    # Each `+` below is load-bearing: the chain is energy -> photon -> electron -> DN,
+    # so a step carries the steps downstream of it. Asking for DN from a photon
+    # quantity needs the electron step too, which independent per-base deltas
+    # would skip, leaving an erg/electron residue that cannot reach the target.
+    to_dn = _unit_power(target_unit, u.DN) - _unit_power(old_unit, u.DN)
+    to_electron = _unit_power(target_unit, u.electron) - _unit_power(old_unit, u.electron) + to_dn
+    to_photon = _unit_power(target_unit, u.ph) - _unit_power(old_unit, u.ph) + to_electron
+    return to_photon, to_electron, to_dn
+
+
+def _detector_chain_factor(
+    old_unit: u.UnitBase,
+    target_unit: u.UnitBase,
+    photon_energy: u.Quantity,
+    pair_energy: u.Quantity | None,
+    gain: u.Quantity | None,
+) -> u.Quantity:
+    """
+    The factor that takes ``old_unit`` to ``target_unit`` along the detector chain
+    energy -> photon -> electron -> data number (DN).
+
+    ``pair_energy`` and ``gain`` are read only when their step is taken.
+    """
+    to_photon, to_electron, to_dn = _chain_steps(old_unit, target_unit)
+    factor = (1 / photon_energy) ** to_photon
+    for name, value, steps in (("pair_energy", pair_energy, to_electron), ("gain", gain, to_dn)):
+        # A zero would give an infinite flux and a negative value a negative one, without an error.
+        if steps and not np.all(np.isfinite(value.value) & (value.value > 0)):
+            msg = f"{name} must be finite and positive, got {value}"
+            raise ValueError(msg)
+    if to_electron:
+        factor = factor * ((photon_energy * u.ph / pair_energy).to(u.electron) / u.ph) ** to_electron
+    if to_dn:
+        factor = factor * (1 / gain) ** to_dn
+    return factor
 
 
 @format_docstring(
@@ -140,22 +182,9 @@ def transform_response_units(
     wavelength = coord_as_unit(response, "wavelength_grid", u.AA, "response.wavelength_grid")
 
     photon_energy = (const.h * const.c / (np.asarray(wavelength) * u.AA)).to(u.erg) / u.ph
-    electrons_per_photon = (photon_energy * u.ph / pair_energy).to(u.electron) / u.ph
     solid_angle = (pixel_width * pixel_height).to(u.sr)
-    # Each `+` below is load-bearing: the chain is energy -> photon -> electron -> DN,
-    # so a step carries the steps downstream of it. Asking for DN from a photon
-    # response needs the electron step too, which independent per-base deltas
-    # would skip, leaving an erg/electron residue that cannot reach the target.
-    to_dn = _unit_power(target_unit, u.DN) - _unit_power(old_unit, u.DN)
-    to_electron = _unit_power(target_unit, u.electron) - _unit_power(old_unit, u.electron) + to_dn
-    to_photon = _unit_power(target_unit, u.ph) - _unit_power(old_unit, u.ph) + to_electron
     to_pixel = _unit_power(target_unit, u.sr) - _unit_power(old_unit, u.sr)
-    factor = (
-        solid_angle**to_pixel
-        * (1 / photon_energy) ** to_photon
-        * electrons_per_photon**to_electron
-        * (1 / gain) ** to_dn
-    )
+    factor = solid_angle**to_pixel * _detector_chain_factor(old_unit, target_unit, photon_energy, pair_energy, gain)
     try:
         residual = (1.0 * old_unit * factor.unit).to_value(target_unit)
     except u.UnitConversionError as exc:
@@ -171,4 +200,118 @@ def transform_response_units(
     )
     result = response.assign(spectral_response=converted)
     add_history(result, locals(), transform_response_units)
+    return result
+
+
+@u.quantity_input(gain=u.electron / u.DN, pair_energy=u.eV / u.electron)
+def transform_flux_units(
+    spectrum: xr.Dataset,
+    new_units: str,
+    *,
+    detector: str = "SG",
+    gain: u.Quantity | None = None,
+    pair_energy: u.Quantity | None = None,
+) -> xr.Dataset:
+    """
+    Convert the flux of a spectrum between photons, electrons and data numbers (DN).
+
+    The conversion follows the detector chain photon -> electron -> DN, line by
+    line: a photon at the wavelength of the line frees
+    ``h c / line_wavelength / pair_energy`` electrons, and ``gain`` electrons
+    make one DN. The rest of the unit, such as ``/ s``, can only change to an
+    equivalent unit, such as ``/ min``.
+
+    Parameters
+    ----------
+    spectrum : `xarray.Dataset`
+        Spectrum, e.g. from `muse.synthesis.vdem_synthesis`. ``flux`` and the
+        ``line_wavelength`` coordinate must define units, and
+        ``line_wavelength`` must lie along one dimension of ``flux``, such as
+        ``line`` or ``channel``. An entry without a line wavelength (NaN), such
+        as the continuum, has no photon energy: its flux comes out as NaN from
+        a conversion between photons and electrons or DN.
+    new_units : `str`
+        Target units, as an `astropy.units.Unit` string, e.g. ``"DN / s"``.
+    detector : {"SG", "CI"}, optional
+        Detector whose default calibration to use, case-insensitive, by default
+        ``"SG"``.
+    gain : `astropy.units.Quantity`, optional
+        Camera gain, convertible to electron/DN: one value, or one per line.
+        If `None`, use the ``gain`` coordinate of ``spectrum`` when it has one,
+        otherwise the value of each line's channel from
+        `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion to or from
+        DN.
+    pair_energy : `astropy.units.Quantity`, optional
+        Mean energy that frees one electron-hole pair in silicon: one value, or
+        one per line. If `None`, use the value of each line's channel from
+        `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion between
+        photons and electrons or DN.
+
+    Returns
+    -------
+    `xarray.Dataset`
+        Copy of ``spectrum`` whose ``flux`` is in ``new_units``.
+
+    Raises
+    ------
+    ValueError
+        If ``flux`` or ``line_wavelength`` has no units, if the detector chain
+        cannot take the units of ``flux`` to ``new_units``, or if a default is
+        needed and ``spectrum`` has no ``channel`` coordinate or has a channel
+        that ``detector`` does not have.
+    """
+    if not isinstance(detector, str) or detector.lower() not in ("sg", "ci"):
+        msg = "detector must be 'SG' or 'CI' (case-insensitive)"
+        raise ValueError(msg)
+    old_unit = require_unit(spectrum, "flux", "spectrum.flux")
+    target_unit = u.Unit(new_units)
+    wavelength = coord_as_unit(spectrum, "line_wavelength", u.AA, "spectrum.line_wavelength")
+    if wavelength.ndim != 1 or wavelength.dims[0] not in spectrum.flux.dims:
+        msg = "spectrum.line_wavelength must lie along one dimension of spectrum.flux"
+        raise ValueError(msg)
+
+    # The gain and the pair energy are read only for a step the conversion takes: electrons to DN
+    # needs no pair energy, and photons to electrons no gain, whatever the spectrum carries.
+    _, to_electron, to_dn = _chain_steps(old_unit, target_unit)
+    if to_dn and gain is None and "gain" in spectrum.coords:
+        gain = u.Quantity(
+            coord_as_unit(spectrum, "gain", u.electron / u.DN, "spectrum.gain").broadcast_like(wavelength).values,
+            u.electron / u.DN,
+        )
+    needs_gain, needs_pair_energy = bool(to_dn) and gain is None, bool(to_electron) and pair_energy is None
+    if needs_gain or needs_pair_energy:
+        if "channel" not in spectrum.coords:
+            msg = "spectrum has no channel coordinate to select the default calibration; pass gain and pair_energy"
+            raise ValueError(msg)
+        try:
+            if needs_gain:
+                gain = u.Quantity(
+                    getattr(DEFAULTS_MUSE, f"ccd_gain_{detector.upper()}").sel(channel=spectrum.channel).data
+                )
+            if needs_pair_energy:
+                pair_energy = u.Quantity(
+                    getattr(DEFAULTS_MUSE, f"pair_creation_energy_{detector.upper()}")
+                    .sel(channel=spectrum.channel)
+                    .data
+                )
+        except KeyError:
+            channels = np.unique(spectrum.channel.values).tolist()
+            msg = f"unsupported MUSE {detector.upper()} channel among {channels}"
+            raise ValueError(msg) from None
+
+    photon_energy = (const.h * const.c / (wavelength.values * u.AA)).to(u.erg) / u.ph
+    factor = _detector_chain_factor(old_unit, target_unit, photon_energy, pair_energy, gain)
+    try:
+        residual = (1.0 * old_unit * factor.unit).to_value(target_unit)
+    except u.UnitConversionError as exc:
+        msg = (
+            f"spectrum.flux units {old_unit} are not convertible to {target_unit} "
+            "along the detector chain photon -> electron -> DN"
+        )
+        raise ValueError(msg) from exc
+
+    conversion = xr.DataArray(np.broadcast_to(factor.value * residual, wavelength.shape), dims=wavelength.dims)
+    flux = (spectrum.flux * conversion).assign_attrs({**spectrum.flux.attrs, "units": str(target_unit)})
+    result = spectrum.assign(flux=flux)
+    add_history(result, locals(), transform_flux_units)
     return result
