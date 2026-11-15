@@ -566,9 +566,11 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
         A new dataset in which ``channel`` replaces ``line``. Every data
         variable along ``line`` is the sum of the lines of the channel, and a
         NaN in a line stays a NaN in the sum. Every coordinate along ``line``,
-        such as ``line_wavelength`` and ``gain``, takes the value of the first
-        line of the channel. The channels keep the order in which they first
-        appear. With ``sum_slits``, the coordinates along ``slit`` are dropped.
+        such as ``gain``, takes the value of the first line of the channel;
+        ``line_wavelength`` does too where every line of the channel has the
+        same wavelength, and is NaN otherwise. The channels keep the order in
+        which they first appear. With ``sum_slits``, the coordinates along
+        ``slit`` are dropped.
 
     Raises
     ------
@@ -578,10 +580,11 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
 
     Notes
     -----
-    Sum after converting photons to electrons or DN, not before. The sum keeps
-    the wavelength of the first line of a channel, so
-    `muse.instrument.transform_flux_units` would apply the photon energy of
-    that line to every line of the channel.
+    Sum after converting photons to electrons or DN, not before. A channel
+    whose lines differ in wavelength has no single photon energy, so its
+    ``line_wavelength`` is NaN in the sum and
+    `muse.instrument.transform_flux_units` refuses to take it across the photon
+    step.
     """
     if "line" not in data.dims or "channel" not in data.coords or data.channel.dims != ("line",):
         msg = "data must have a line dimension and a channel coordinate along it"
@@ -597,6 +600,12 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
             continue
         summed = variable.groupby("channel").sum(skipna=False, keep_attrs=True).sel(channel=channels)
         result[name] = summed.transpose(*("channel" if dim == "line" else dim for dim in variable.dims))
+    if "line_wavelength" in data.coords and data.line_wavelength.dims == ("line",):
+        # The sum of lines at different wavelengths has no single photon energy: without a wavelength,
+        # transform_flux_units refuses the photon step instead of taking the first line's for all.
+        wavelengths = data.line_wavelength.groupby("channel")
+        mixed = (wavelengths.max(skipna=False) != wavelengths.min(skipna=False)).sel(channel=channels)
+        result = result.assign_coords(line_wavelength=result.line_wavelength.where(~mixed.values))
     if sum_slits and "slit" in result.dims:
         result = result.sum("slit", skipna=False, keep_attrs=True)
     add_history(result, locals(), sum_lines_per_channel)

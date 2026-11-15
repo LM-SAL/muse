@@ -404,6 +404,7 @@ def test_remove_exposure_time_requires_a_recorded_time() -> None:
 def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
     # Without its first line, the first and the last line of a channel differ in wavelength.
     response = response.isel(line=slice(1, None))
+    response = response.assign_coords(position=("line", np.arange(response.sizes["line"])))
     history = list(response.attrs.get("HISTORY", []))
 
     out = synthesis_utils.sum_lines_per_channel(response)
@@ -420,7 +421,13 @@ def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
         expected = response.detector_response.isel(line=lines).sum("line")
         np.testing.assert_allclose(out.detector_response.sel(channel=channel).values, expected.values)
         # The first line of the channel gives its coordinates.
-        assert float(out.line_wavelength.sel(channel=channel)) == float(response.line_wavelength[lines[0]])
+        assert int(out.position.sel(channel=channel)) == lines[0]
+        # A wavelength only where every line of the channel has the same one.
+        wavelengths = response.line_wavelength.values[lines]
+        expected_wavelength = wavelengths[0] if np.all(wavelengths == wavelengths[0]) else np.nan
+        np.testing.assert_equal(float(out.line_wavelength.sel(channel=channel)), expected_wavelength)
+    assert bool(np.isnan(out.line_wavelength).any())  # the fixture has such a channel
+    assert out.line_wavelength.attrs["units"] == response.line_wavelength.attrs["units"]
     assert out.attrs["HISTORY"][-1].startswith("sum_lines_per_channel(")
     assert response.attrs.get("HISTORY", []) == history  # the entry goes to the result alone
 
