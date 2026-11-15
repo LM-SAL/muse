@@ -479,7 +479,7 @@ def test_align_response_and_vdem_honors_custom_coord_methods() -> None:
     vdem = fake_vdem()
     nearest = {"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("nearest", u.km / u.s)}
 
-    nearest_response, nearest_vdem = align_response_and_vdem(response, vdem, coord_methods=nearest)
+    nearest_response, nearest_vdem = align_response_and_vdem(response, vdem, coordinate_methods=nearest)
     default_response, _ = align_response_and_vdem(response, vdem)
 
     xr.testing.assert_equal(nearest_response.logT, nearest_vdem.logT)

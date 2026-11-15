@@ -19,12 +19,10 @@ MUSE_DEFAULTS_DICT = {
     # CI
     "dx_pixel_CI": 0.143 * u.arcsec,
     "dy_pixel_CI": 0.143 * u.arcsec,
-    "slit_sep_CI": 27 * u.pixel,
     "full_well_depth_CI": 120000 * u.DN,
     # SG
     "dx_pixel_SG": 0.4 * u.arcsec,
     "dy_pixel_SG": 0.167 * u.arcsec,
-    "slit_sep_SG": None,
     "pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
@@ -99,7 +97,6 @@ MUSE_DEFAULTS_DICT = {
     "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
     "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
     "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
-    "num_lines_keep": 2,  # nervous about this since there are 3 mainlines in 108 due to repeat wavelength.  Not used in pipeline
     "sum_lines": False,
     "initial_wavelength_SG": xr.DataArray(
         np.array([107.68034, 170.62314, 283.01608]) * u.AA,

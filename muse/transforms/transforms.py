@@ -152,20 +152,20 @@ def _fit_axis(ds: xr.Dataset, axis: str, size: int, mode: str, *, extend: bool) 
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    dx_pix="dx_pixel_SG",
-    dy_pix="dy_pixel_SG",
+    pixel_width="dx_pixel_SG",
+    pixel_height="dy_pixel_SG",
     nslits="number_of_slits_SG",
     nraster="steps_per_raster_SG",
     x_extent="fov_x_extent",
     mode="fov_mode",
     sub_interpolation="fov_sub_interpolation",
 )
-@u.quantity_input(dx_pix=u.arcsec, dy_pix=u.arcsec)
+@u.quantity_input(pixel_width=u.arcsec, pixel_height=u.arcsec)
 def match_fov(
     vdem: xr.Dataset,
     *,
-    dx_pix: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
-    dy_pix: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
+    pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
+    pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
     nslits: int = DEFAULTS_MUSE.number_of_slits_SG,
     nraster: int = DEFAULTS_MUSE.steps_per_raster_SG,
     x_extent: str = DEFAULTS_MUSE.fov_x_extent,
@@ -181,10 +181,10 @@ def match_fov(
     ----------
     vdem : `xarray.Dataset`
         VDEM dataset. The ``x`` and ``y`` coordinates must define units.
-    dx_pix : `astropy.units.Quantity`, optional
-        Pixel size in arcsec along the x axis, by default is {dx_pix}
-    dy_pix : `astropy.units.Quantity`, optional
-        Pixel size in arcsec along the y axis, by default is {dy_pix}
+    pixel_width : `astropy.units.Quantity`, optional
+        Pixel size in arcsec along the x axis, by default is {pixel_width}
+    pixel_height : `astropy.units.Quantity`, optional
+        Pixel size in arcsec along the y axis, by default is {pixel_height}
     nslits : `int`
         Number of slits, by default is {nslits}.
     nraster : `int`
@@ -253,8 +253,8 @@ def match_fov(
     if y_pixels is not None and y_pixels < 1:
         msg = f"y_pixels must be at least 1, got {y_pixels}"
         raise ValueError(msg)
-    dx_pix = dx_pix.to("arcsec")
-    dy_pix = dy_pix.to("arcsec")
+    pixel_width = pixel_width.to("arcsec")
+    pixel_height = pixel_height.to("arcsec")
     target_width = nslits * nraster
 
     if rotate:
@@ -262,8 +262,8 @@ def match_fov(
         vdem = vdem.rename({"y": "x"})
         vdem = vdem.rename({"ynew": "y"})
 
-    x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), dx_pix.value)
-    y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), dy_pix.value)
+    x_at_pixel = _spacing_matches(vdem.coords["x"], _coordinate_unit_to(vdem, "x", u.arcsec), pixel_width.value)
+    y_at_pixel = _spacing_matches(vdem.coords["y"], _coordinate_unit_to(vdem, "y", u.arcsec), pixel_height.value)
     resolution_matches = (x_at_pixel and (y_at_pixel or vdem.coords["y"].size < 2)) or (
         y_at_pixel and vdem.coords["x"].size < 2
     )
@@ -284,8 +284,8 @@ def match_fov(
     vdem_xr = vdem.copy()
 
     if not resolution_matches:
-        vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", dx_pix.value, sub_interpolation)
-        vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", dy_pix.value, sub_interpolation)
+        vdem_xr = _resample_axis_to_pixel(vdem_xr, "x", pixel_width.value, sub_interpolation)
+        vdem_xr = _resample_axis_to_pixel(vdem_xr, "y", pixel_height.value, sub_interpolation)
         # The unstack inside the resampling moves the resampled axis last; restore each
         # variable's original dimension order so downstream plots keep their orientation.
         vdem_xr = vdem_xr.assign({name: vdem_xr[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
@@ -295,8 +295,8 @@ def match_fov(
     if y_pixels is not None and vdem_xr.y.size > 1:
         vdem_xr = _fit_axis(vdem_xr, "y", y_pixels, mode, extend=x_extent == "tile")
 
-    vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * dx_pix.value
-    vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * dy_pix.value
+    vdem_xr.coords["x"] = np.arange(vdem_xr.x.size) * pixel_width.value
+    vdem_xr.coords["y"] = np.arange(vdem_xr.y.size) * pixel_height.value
     vdem_xr.x.attrs["units"] = "arcsec"
     vdem_xr.y.attrs["units"] = "arcsec"
     for var in vdem.data_vars:

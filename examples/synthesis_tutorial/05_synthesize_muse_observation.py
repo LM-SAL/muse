@@ -67,7 +67,7 @@ print(response)
 response, vdem_raster = align_response_and_vdem(
     response,
     vdem_raster,
-    coord_methods={"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)},
+    coordinate_methods={"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)},
 )
 
 print(response)

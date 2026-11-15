@@ -134,7 +134,7 @@ aia_response = map_response_to_ci_detector(response, 94 * u.AA)
 # :func:`muse.instrument.align_response_and_vdem` puts the response and the
 # VDEM on shared temperature and velocity grids.
 
-vdem_aia = match_fov(vdem, dx_pix=aia_pixel, dy_pix=aia_pixel, x_extent="keep")
+vdem_aia = match_fov(vdem, pixel_width=aia_pixel, pixel_height=aia_pixel, x_extent="keep")
 aia_response, vdem_aia = align_response_and_vdem(aia_response, vdem_aia)
 
 ##############################################################################
