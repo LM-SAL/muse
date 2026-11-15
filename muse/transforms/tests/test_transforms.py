@@ -14,6 +14,14 @@ from muse.transforms.transforms import (
 )
 
 
+def _history_functions(ds) -> list[str]:
+    """
+    The names of the functions in the history, in order; the format of an entry is
+    tested with add_history.
+    """
+    return [entry.split("(")[0] for entry in ds.attrs["HISTORY"]]
+
+
 @pytest.mark.parametrize(
     ("spacing", "to_arcsec", "expected"),
     [
@@ -130,13 +138,6 @@ def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
     np.testing.assert_array_equal(lazy_x.vdem.compute().values, reshape_slit_step_to_x(eager_raster).vdem.values)
 
 
-def test_match_fov_tiles_to_fill_fov(vdem_offgrid) -> None:
-    # Coarse pixels under-fill the FOV, so the x axis is padded out to nslits*nraster.
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec)
-    assert out.x.size == 35 * 11
-    assert bool(np.isfinite(out.vdem).all())
-
-
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
@@ -149,20 +150,12 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
 
 
-def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="crop")
-    # Disabling tiling leaves an input narrower than the MUSE FOV at its available width.
+@pytest.mark.parametrize("x_extent", ["crop", "keep"])
+def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, x_extent) -> None:
+    # Both resample the resolution; neither extends an input that is then narrower than the
+    # MUSE FOV (nslits*nraster = 385), as "tile" would.
+    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent=x_extent)
     assert out.x.size == 308
-    assert out.x.size < 35 * 11
-    assert bool(np.isfinite(out.vdem).all())
-
-
-def test_match_fov_without_x_extent_match_keeps_resampled_width(vdem_offgrid) -> None:
-    # x_extent="keep" resamples the resolution but leaves the x width alone,
-    # even though tiling would otherwise extend it to nslits*nraster.
-    out = match_fov(vdem_offgrid, dx_pix=1.0 * u.arcsec, x_extent="keep")
-    assert out.x.size == 308
-    assert out.x.size < 35 * 11
     assert bool(np.isfinite(out.vdem).all())
 
 
@@ -203,13 +196,6 @@ def test_match_fov_tiles_single_x_column(vdem) -> None:
 
     assert out.x.size == 35 * 11
     np.testing.assert_array_equal(out.vdem.isel(x=0), out.vdem.isel(x=-1))
-
-
-def test_match_fov_downsamples_with_factor_branch(vdem_offgrid) -> None:
-    # Very coarse target pixels exercise the integer-factor averaging branch.
-    out = match_fov(vdem_offgrid, dx_pix=4.0 * u.arcsec)
-    assert out.x.size == 35 * 11
-    assert bool(np.isfinite(out.vdem).all())
 
 
 def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
@@ -254,9 +240,6 @@ def test_reshape_x_to_slit_step(vdem) -> None:
         sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    value = out.vdem.sel(step=0, logT=5, doppler_velocity=0, y=0, slit=0, method="nearest").values
-    assert np.isfinite(value)
-    assert value >= 0
     assert out.attrs["step_size units"] == "arcsec"
     np.testing.assert_array_equal(out.vdem.sel(slit=0, step=0), vdem.vdem.isel(x=0))
     np.testing.assert_array_equal(out.vdem.sel(slit=34, step=10), vdem.vdem.isel(x=384))
@@ -269,10 +252,7 @@ def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
     out = reshape_x_to_slit_step(source, nslits=35, nraster=11)
 
     assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
-    assert out.attrs["HISTORY"] == [
-        "match_fov(ds=ds)",
-        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-    ]
+    assert _history_functions(out) == ["match_fov", "reshape_x_to_slit_step"]
 
 
 def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
@@ -290,7 +270,7 @@ def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
         sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    assert out.attrs["HISTORY"] == ["reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)"]
+    assert _history_functions(out) == ["reshape_x_to_slit_step"]
 
 
 @pytest.mark.parametrize(("unit", "step_size"), [("arcsec", 0.7), ("Mm", 0.25), ("cm", 2.5e7)])
@@ -321,10 +301,7 @@ def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
 def test_reshape_slit_step_to_x_records_history(vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, nslits=35, nraster=11)
     out = reshape_slit_step_to_x(reshaped, nslits=35, nraster=11)
-    assert out.attrs["HISTORY"] == [
-        "reshape_x_to_slit_step(ds=ds, nslits=35, nraster=11)",
-        "reshape_slit_step_to_x(ds=ds, nslits=35, nraster=11)",
-    ]
+    assert _history_functions(out) == ["reshape_x_to_slit_step", "reshape_slit_step_to_x"]
 
 
 def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:

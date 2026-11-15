@@ -141,7 +141,6 @@ def create_spectral_response(
         wavelength_edges=wavelength_edges,
         bin_method=bin_method,
     )
-    response = response.drop_vars("component_kind")
     update_attrs(response, line_list, **response.attrs)
     add_history(response, call_inputs, create_spectral_response, sources=(line_list,))
     return response
@@ -162,7 +161,7 @@ def _create_wavelength_response(
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
-    main_lines: Sequence[str] | None = None,
+    main_lines: Sequence[str],
     include_contaminants: bool = False,
     wavelength_edges: u.Quantity | None = None,
     bin_method: str | None = None,
@@ -192,7 +191,6 @@ def _create_wavelength_response(
         )
     line_list = _validate_line_list(line_list)
     line_names = tuple(str(name) for name in line_list.full_name.values)
-    all_lines_requested = main_lines is None
     main_lines = _validate_main_lines(line_names, main_lines)
     if len(main_lines) > 10:
         logger.warning(
@@ -202,7 +200,7 @@ def _create_wavelength_response(
     if not main_lines and not include_contaminants:
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)
-    if not include_contaminants and not all_lines_requested:
+    if not include_contaminants:
         # Only the selected lines are evaluated, but the per-transition centers and
         # widths below are computed for the whole list; a broad-band list can carry
         # thousands of transitions (dominating peak memory), so drop the rest first.
@@ -264,7 +262,6 @@ def _create_wavelength_response(
         line_response = line_response.expand_dims(line=[line_name])
         line_response = line_response.assign_coords(
             line_wavelength=("line", [line_list.wavelength.isel(trans_index=i).item()], {"units": str(u.AA)}),
-            component_kind=("line", ["line"]),
         )
         main_response_parts[line_name].append(line_response)
 
@@ -308,7 +305,6 @@ def _create_wavelength_response(
         contaminant_response = contaminant_response.expand_dims(line=["contaminants"])
         contaminant_response = contaminant_response.assign_coords(
             line_wavelength=("line", [np.nan], {"units": str(u.AA)}),
-            component_kind=("line", ["contaminants"]),
         )
         responses.append(contaminant_response)
 
@@ -581,9 +577,7 @@ def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
     return line_list.assign(wavelength=wavelength, gofnt=gofnt)
 
 
-def _validate_main_lines(line_names: tuple[str, ...], main_lines: Sequence[str] | None) -> tuple[str, ...]:
-    if main_lines is None:
-        return tuple(dict.fromkeys(line_names))
+def _validate_main_lines(line_names: tuple[str, ...], main_lines: Sequence[str]) -> tuple[str, ...]:
     if isinstance(main_lines, str) or not isinstance(main_lines, Sequence):
         msg = "main_lines must be a sequence of full_name strings or None"
         raise TypeError(msg)

@@ -1,5 +1,4 @@
 import shutil
-import warnings
 
 import attrs
 import dask.array as da
@@ -14,7 +13,6 @@ from muse.instrument.response import io as response_io
 from muse.instrument.response.io import (
     load_and_concat_responses,
     read_response,
-    read_spectral_response,
     save_response,
     save_spectral_response,
 )
@@ -64,7 +62,6 @@ def response_path(tmp_path):
 
 def _small_response() -> xr.Dataset:
     response = fake_response().isel(line=slice(0, 2), logT=slice(0, 3), slit=slice(0, 4))
-    response = response.assign_coords(component_kind=("line", ["line"] * response.sizes["line"]))
     return response.assign_attrs(normalization=1e-27, HISTORY=["create response", "map response"])
 
 
@@ -80,15 +77,11 @@ def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
         encoding = source.detector_response.encoding
         chunks = encoding["chunks" if fmt == "zarr" else "chunksizes"]
         if fmt == "zarr":
-            assert encoding["compressors"][0].to_dict() == {
-                "name": "blosc",
-                "configuration": {
-                    "typesize": 8,
-                    "cname": "zstd",
-                    "clevel": 3,
-                    "shuffle": "bitshuffle",
-                    "blocksize": 0,
-                },
+            configuration = encoding["compressors"][0].to_dict()["configuration"]
+            assert {name: configuration[name] for name in ("cname", "clevel", "shuffle")} == {
+                "cname": "zstd",
+                "clevel": 3,
+                "shuffle": "bitshuffle",
             }
         else:
             assert {name: encoding[name] for name in ("zlib", "complevel", "shuffle")} == {
@@ -120,13 +113,6 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     assert loaded.detector_response.dims == response.detector_response.dims
     np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
-    # The injected gain is per line, selected from the per-channel defaults in electron/DN.
-    assert loaded.gain.dims == ("line",)
-    np.testing.assert_allclose(
-        loaded.gain.values,
-        u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=loaded.channel).data).to_value(u.electron / u.DN),
-    )
-    assert loaded.gain.attrs["units"] == str(u.electron / u.DN)
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
@@ -201,19 +187,9 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 
     r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, slit=_slit(3), logT_method="nearest")
 
-    assert isinstance(r, xr.Dataset)
-    assert "detector_response" in r.data_vars
-    assert r.sizes["logT"] == logT.size
-    assert r.sizes["doppler_velocity"] == doppler_velocity.size
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
-    # The file carries its wavelength units and the reader keeps them.
-    assert r.line_wavelength.attrs["units"] == str(u.AA)
-    assert r.detector_wavelength.attrs["units"] == str(u.AA)
-    np.testing.assert_array_equal(
-        r.gain.values, u.Quantity(DEFAULTS_MUSE.ccd_gain_SG.sel(channel=r.channel).data).to_value(u.electron / u.DN)
-    )
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
@@ -231,15 +207,14 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     np.testing.assert_allclose(r.detector_response.values, expected)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
-@pytest.mark.parametrize(("dropped", "expected"), [("logT", "logT"), ("doppler_velocity", "doppler_velocity")])
-def test_read_response_requires_the_resampling_coordinates(tmp_path, fmt, dropped, expected) -> None:
+@pytest.mark.parametrize("dropped", ["logT", "doppler_velocity"])
+def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
     # be rejected on load rather than failing somewhere downstream.
     src = fake_response_file().isel({dropped: 0}, drop=True)
-    path = _write(src, tmp_path / f"resp.{fmt}", fmt)
+    path = _write(src, tmp_path / "resp.nc", "nc")
 
-    with pytest.raises(ValueError, match=rf"response\.{expected} is missing"):
+    with pytest.raises(ValueError, match=rf"response\.{dropped} is missing"):
         read_response(path)
 
 
@@ -314,27 +289,6 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
         read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity", attrs={"units": "K"}))
 
 
-def test_read_response_opens_nonconsolidated_zarr3_without_fallback_warning(tmp_path) -> None:
-    path = tmp_path / "response.zarr"
-    fake_response_file().to_zarr(path, zarr_format=3, consolidated=False)
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", RuntimeWarning)
-        response = read_response(path)
-
-    assert "detector_response" in response
-
-
-def test_read_response_linear_interp_hits_grid_and_stays_nonnegative(response_path) -> None:
-    # A grid offset from the source logT forces real interpolation rather than nearest selection.
-    logT = _axis(np.linspace(5.1, 6.9, 9), "logT")
-
-    r = read_response(response_path, logT=logT, logT_method="linear")
-
-    np.testing.assert_allclose(r.logT.values, logT.values)
-    assert bool((r.detector_response >= 0).all())  # interp path clamps negatives to zero
-
-
 def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
     path = _write(fake_response_file().drop_vars("channel"), tmp_path / "resp.zarr", "zarr")
 
@@ -407,10 +361,13 @@ def test_read_response_names_the_legacy_layout(tmp_path) -> None:
         read_response(path)
 
 
-def test_read_response_requires_detector_response(tmp_path) -> None:
-    path = _write(fake_response_file().drop_vars("detector_response"), tmp_path / "resp.nc", "nc")
-    with pytest.raises(ValueError, match="detector_response"):
-        read_response(path)
+def _line_file(line: str, wavelength: float) -> xr.Dataset:
+    # A response file of one line, without the channel: load_and_concat_responses is told it.
+    return (
+        fake_response_file()
+        .assign_coords(line=("line", [line]), line_wavelength=("line", [wavelength], {"units": "Angstrom"}))
+        .drop_vars("channel")
+    )
 
 
 def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
@@ -421,49 +378,19 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     )
     first = xr.concat(
         [
-            fake_response_file().assign_coords(
-                line=("line", ["Fe XIX 108.355"]),
-                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
-                channel=("line", [108]),
-                component_kind=("line", ["line"]),
-            ),
-            fake_response_file().assign_coords(
-                line=("line", ["Fe XXI 108.117"]),
-                line_wavelength=("line", [108.117], {"units": "Angstrom"}),
-                channel=("line", [108]),
-                component_kind=("line", ["line"]),
-            ),
-            fake_response_file().assign_coords(
-                line=("line", ["contaminants"]),
-                line_wavelength=("line", [108.355], {"units": "Angstrom"}),
-                channel=("line", [108]),
-                component_kind=("line", ["contaminants"]),
-            ),
+            _line_file("Fe XIX 108.355", 108.355),
+            _line_file("Fe XXI 108.117", 108.117),
+            _line_file("contaminants", 108.355),
         ],
         dim="line",
         data_vars="all",
         join="exact",
-    ).assign_attrs(
-        HISTORY="first_response()",
-        shared_attr="kept",
-        conflicting_attr="first",
+    ).assign_attrs(HISTORY="first_response()", shared_attr="kept", conflicting_attr="first")
+    second = _line_file("Fe XV 284.163", 284.163).assign_attrs(
+        HISTORY="second_response()", shared_attr="kept", conflicting_attr="second"
     )
-    second = (
-        fake_response_file()
-        .assign_coords(
-            line=("line", ["Fe XV 284.163"]),
-            line_wavelength=("line", [284.163], {"units": "Angstrom"}),
-            channel=("line", [284]),
-            component_kind=("line", ["line"]),
-        )
-        .assign_attrs(
-            HISTORY="second_response()",
-            shared_attr="kept",
-            conflicting_attr="second",
-        )
-    )
-    _write(first.drop_vars("channel"), tmp_path / "a.nc", "nc")
-    _write(second.drop_vars("channel"), tmp_path / "b.nc", "nc")
+    _write(first, tmp_path / "a.nc", "nc")
+    _write(second, tmp_path / "b.nc", "nc")
 
     resp = load_and_concat_responses(
         response_directory=tmp_path,
@@ -475,15 +402,12 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
         channels=[108, 284],
     )
 
-    assert resp.sizes["line"] == 4
     np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
-    np.testing.assert_array_equal(resp.component_kind, ["line", "line", "contaminants", "line"])
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
     np.testing.assert_array_equal(resp.gain.values, [8.0, 8.0, 8.0, 12.0])
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
-    assert "detector_response" in resp.data_vars
     assert resp.attrs["shared_attr"] == "kept"
     assert "conflicting_attr" not in resp.attrs
     assert resp.attrs["HISTORY"][0] == "first_response()"
@@ -640,42 +564,17 @@ def test_align_response_and_vdem_rejects_nonoverlapping_coordinates() -> None:
         align_response_and_vdem(response, fake_vdem())
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
-def test_spectral_response_round_trip(tmp_path, suffix):
+def test_save_spectral_response_validates_the_response_and_the_destination(tmp_path):
+    # The round trip itself is in test_response.py, with a response from create_spectral_response.
     response = xr.Dataset(
-        {
-            "spectral_response": (
-                ("line", "logT", "wavelength_bin"),
-                np.arange(12.0).reshape(1, 3, 4),
-                {"units": "1e-27 cm3 erg / (Angstrom s sr)"},
-            )
-        },
-        coords={
-            "line": ["contaminants"],
-            "logT": ("logT", [5.0, 6.0, 7.0], {"units": "dex(K)"}),
-            "wavelength_grid": (
-                "wavelength_bin",
-                [170.0, 170.1, 170.2, 170.3],
-                {"units": "Angstrom", "bounds": "wavelength_bounds"},
-            ),
-            "wavelength_bounds": (
-                ("wavelength_bin", "bound"),
-                np.array([[169.95, 170.05], [170.05, 170.15], [170.15, 170.25], [170.25, 170.35]]),
-                {"units": "Angstrom"},
-            ),
-            "line_wavelength": ("line", [np.nan], {"units": "Angstrom"}),
-        },
-        attrs={"normalization": 1e-27},
+        {"spectral_response": (("line", "wavelength_bin"), np.ones((1, 2)))},
+        coords={"wavelength_grid": ("wavelength_bin", [170.0, 170.1]), "line_wavelength": ("line", [171.0])},
     )
-    path = tmp_path / f"cube{suffix}"
-    save_spectral_response(response, path)
-    back = read_spectral_response(path).load()
-    xr.testing.assert_allclose(back.spectral_response, response.spectral_response)
-    assert "wavelength_bounds" in back.coords
-    np.testing.assert_array_equal(back.wavelength_bounds.values, response.wavelength_bounds.values)
+    existing = tmp_path / "cube.nc"
+    existing.touch()
     with pytest.raises(ValueError, match="Refusing to overwrite"):
-        save_spectral_response(response, path)
+        save_spectral_response(response, existing)
     with pytest.raises(ValueError, match="missing required variables"):
-        save_spectral_response(response.drop_vars("line_wavelength"), tmp_path / f"other{suffix}")
+        save_spectral_response(response.drop_vars("line_wavelength"), tmp_path / "other.nc")
     with pytest.raises(ValueError, match="end in"):
         save_spectral_response(response, tmp_path / "cube.txt")

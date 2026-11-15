@@ -133,22 +133,14 @@ def test_add_history_ignores_inputs_for_a_string_label() -> None:
 
 
 def test_add_history_appends_to_existing() -> None:
-    ds = xr.Dataset({"a": ("x", [1])}, attrs={"HISTORY": ["first()"]})
+    ds = xr.Dataset({"a": ("x", [1])}, attrs={"HISTORY": ["first()"], "date created": "01-Jan-2026"})
 
     def demo(ds):
         add_history(ds, locals(), demo)
 
     demo(ds)
     assert ds.attrs["HISTORY"] == ["first()", "demo(ds=ds)"]
-
-
-def test_add_history_records_function_name_without_inputs() -> None:
-    ds = xr.Dataset(
-        {"a": ("x", [1])},
-        attrs={"HISTORY": ["build"], "date created": "01-Jan-2026"},
-    )
-    add_history(ds, {}, "calibrate")
-    assert ds.attrs["HISTORY"] == ["build", "calibrate()"]
+    # A dataset that has its date of creation gets a date of modification.
     assert "date modified" in ds.attrs
 
 

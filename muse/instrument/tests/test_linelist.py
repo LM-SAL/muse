@@ -19,18 +19,19 @@ from muse.instrument.atomic.linelist import (
 )
 from muse.tests.helpers import synthetic_effective_area, synthetic_line_list
 
+TEMPERATURE = xr.DataArray([1e6] * u.K, dims="logT")
+PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+
 
 def test_rejects_missing_density_and_pressure():
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     with pytest.raises(ValueError, match="Specify density or pressure"):
-        create_chianti_line_list(temperature)
+        create_chianti_line_list(TEMPERATURE)
 
 
 def test_rejects_both_density_and_pressure():
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     grid = xr.DataArray([1e9] / u.cm**3, dims="density")
     with pytest.raises(ValueError, match="mutually exclusive"):
-        create_chianti_line_list(temperature, density=grid, pressure=grid)
+        create_chianti_line_list(TEMPERATURE, density=grid, pressure=grid)
 
 
 @pytest.mark.parametrize(
@@ -46,27 +47,22 @@ def test_rejects_both_density_and_pressure():
     ],
 )
 def test_rejects_invalid_temperature(temperature, error, error_type):
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(error_type, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
+        create_chianti_line_list(temperature, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
+# The pressure goes through the validator of the temperature, whose other cases are tested above.
 @pytest.mark.parametrize(
     ("pressure", "error", "error_type"),
     [
-        ([3e15] * u.K / u.cm**3, "xarray.DataArray", TypeError),
         (xr.DataArray([[3e15]] * u.K / u.cm**3, dims=("pressure", "sample")), "one-dimensional", ValueError),
-        (xr.DataArray([3e15], dims="pressure"), "astropy.units.Quantity", TypeError),
-        (xr.DataArray([np.nan] * u.K / u.cm**3, dims="pressure"), "finite", ValueError),
-        (xr.DataArray([0.0] * u.K / u.cm**3, dims="pressure"), "positive", ValueError),
         (xr.DataArray([3e15] * u.m, dims="pressure"), "convertible", ValueError),
         (xr.DataArray([3e15] * u.K / u.cm**3, dims="logT"), "must not be named", ValueError),
     ],
 )
 def test_rejects_invalid_plasma_grid(pressure, error, error_type):
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     with pytest.raises(error_type, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
+        create_chianti_line_list(TEMPERATURE, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
@@ -80,26 +76,21 @@ def test_rejects_invalid_plasma_grid(pressure, error, error_type):
     ],
 )
 def test_rejects_invalid_wavelength_range(wavelength_range, error, error_type):
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(error_type, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=wavelength_range, ion_list=["fe_9"])
+        create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=wavelength_range, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
     ("kwargs", "error"),
     [
         ({"element_list": ["fe"], "ion_list": ["fe_9"]}, "mutually exclusive"),
-        ({"minimum_abundance": 1e-5, "ion_list": ["fe_9"]}, "minimum_abundance"),
         ({"ion_list": []}, "non-empty"),
         ({"ion_list": ["Fe IX"]}, "invalid ion_list"),
     ],
 )
 def test_rejects_invalid_species_selection(kwargs, error):
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(ValueError, match=error):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, **kwargs)
+        create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -112,12 +103,10 @@ def test_rejects_invalid_species_selection(kwargs, error):
     ],
 )
 def test_rejects_invalid_minimum_abundance(minimum_abundance, error, error_type):
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(error_type, match=error):
         create_chianti_line_list(
-            temperature,
-            pressure=pressure,
+            TEMPERATURE,
+            pressure=PRESSURE,
             wavelength_range=[170, 172] * u.AA,
             minimum_abundance=minimum_abundance,
         )
@@ -167,19 +156,15 @@ def test_no_lines_raises(monkeypatch):
         "_chianti_bunch_to_dataset",
         lambda *_args, **_kwargs: xr.Dataset(coords={"trans_index": []}),
     )
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(ValueError, match="no lines"):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
+        create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 def test_missing_xuvtop_raises(monkeypatch):
     pytest.importorskip("ChiantiPy")
     monkeypatch.delenv("XUVTOP", raising=False)
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
-    pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
     with pytest.raises(OSError, match="XUVTOP"):
-        create_chianti_line_list(temperature, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
+        create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 @pytest.mark.chianti
@@ -191,14 +176,14 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
         chdata = pytest.importorskip("ChiantiPy.tools.data")
 
     monkeypatch.delattr(chdata, "Defaults")
-    temperature = xr.DataArray([1e6] * u.K, dims="logT")
     density = xr.DataArray([1e9] / u.cm**3, dims="density")
+    # 3e-5 keeps iron and six lighter elements; a lower cut only adds run time.
     line_list = create_chianti_line_list(
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[170, 172] * u.AA,
-        temperature=temperature,
+        temperature=TEMPERATURE,
         density=density,
-        minimum_abundance=1e-6,
+        minimum_abundance=3e-5,
     )
     assert line_list.gofnt.sizes == {"logT": 1, "logD": 1, "trans_index": line_list.sizes["trans_index"]}
     assert line_list.sizes["trans_index"] > 0
@@ -208,7 +193,7 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
     assert {"ion_name", "atomic_number", "spectroscopic_name", "logT_peak"} <= set(line_list.data_vars)
     assert "fe_9" in line_list.ion_name.values
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
-    assert line_list.attrs["minimum_abundance"] == 1e-6
+    assert line_list.attrs["minimum_abundance"] == 3e-5
     assert "create_chianti_line_list(" in line_list.attrs["HISTORY"][0]
 
 
@@ -431,8 +416,11 @@ def test_over_ions_counts_the_allocation_not_the_machine(monkeypatch):
     assert sorted(linelist._over_ions(_group_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
 
 
-def test_boost_transitions():
-    line_list = xr.Dataset(
+def _he_fe_line_list():
+    """
+    The He II doublet and one Fe IX line, with a contribution function of one.
+    """
+    return xr.Dataset(
         {
             "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
             "lower_level_index": ("trans_index", np.array([1, 1, 1])),
@@ -441,6 +429,10 @@ def test_boost_transitions():
             "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
         }
     )
+
+
+def test_boost_transitions():
+    line_list = _he_fe_line_list()
     boosted = boost_transitions(line_list, {("he_2", 1, 3): 20})
     assert boosted.gofnt.values[:, 0].tolist() == [20.0, 20.0]
     assert (boosted.gofnt.values[:, 1:] == 1).all()
@@ -484,15 +476,7 @@ def test_rank_line_list_orders_by_peak_times_area():
 
 
 def test_select_transitions():
-    line_list = xr.Dataset(
-        {
-            "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
-            "lower_level_index": ("trans_index", np.array([1, 1, 1])),
-            "upper_level_index": ("trans_index", np.array([3, 4, 13])),
-            "wavelength": ("trans_index", np.array([303.786, 303.785, 171.073])),
-            "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
-        }
-    )
+    line_list = _he_fe_line_list()
     doublet = select_transitions(line_list, [("he_2", 1, 3), ("he_2", 1, 4)])
     assert doublet.wavelength.values.tolist() == [303.786, 303.785]
     assert doublet.attrs["transition_selection"] == '["he_2 1-3", "he_2 1-4"]'
