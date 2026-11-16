@@ -259,7 +259,7 @@ def _entry_value(value: object) -> str:
     """
     # .data reads a file-backed array, which is never a Quantity
     if isinstance(value, xr.DataArray) and _loaded(value) and isinstance(value.data, u.Quantity):
-        value = value.data  # a Quantity in a DataArray, as the line-list builders take a temperature
+        value = value.data  # a Quantity in a DataArray, such as a field of InstrumentDefaults
     if isinstance(value, xr.Dataset):
         return f"<Dataset of {', '.join(map(str, value.data_vars))}>" if value.data_vars else "<Dataset>"
     if isinstance(value, u.Quantity):

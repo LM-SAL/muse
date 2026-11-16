@@ -138,8 +138,7 @@ def generate_sg_responses(
         CHIANTI abundance names, by default ``sun_coronal_2021_chianti`` and
         ``sun_photospheric_2021_asplund``.
     temperature : `astropy.units.Quantity`, optional
-        Temperatures convertible to K, by default
-        10**4.5 to 10**7.9 K in steps of 0.1 dex.
+        Temperatures convertible to K, by default 10**4.5 to 10**7.9 K in steps of 0.1 dex.
     pressure, density : `astropy.units.Quantity`, optional
         The plasma points, as for `muse.instrument.create_chianti_line_list`; at most one
         of the two, by default 3e14, 3e15 and 3e16 K / cm3.
@@ -157,8 +156,7 @@ def generate_sg_responses(
         How many of the brightest other lines of a waveband are summed into the contaminant
         products, by default 10000; below 1 there are none.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out of the line list, by default
-        1e-21.
+        Elements less abundant than this are left out of the line list, by default 1e-21.
     line_list_backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
@@ -337,8 +335,7 @@ def generate_sg_continuum_responses(
     wavelength_step : `astropy.units.Quantity`, optional
         Sampling of the fine grid, by default 0.01 Angstrom.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out of the continuum, by default
-        1e-21.
+        Elements less abundant than this are left out of the continuum, by default 1e-21.
     continuum_backend : {"chianti", "fiasco"}, optional
         What creates a missing continuum, by default ``"fiasco"``.
     cache_directory : `str` or `pathlib.Path`, optional

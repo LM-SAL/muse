@@ -72,14 +72,10 @@ def load_or_create_line_list(
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``.
     wavelength_range : `astropy.units.Quantity`
         The lowest and the highest wavelength of the line list.
-    temperature : `astropy.units.Quantity`
-        As for `muse.instrument.create_chianti_line_list`.
-    pressure, density : `astropy.units.Quantity`, optional
-        The plasma points: pressures convertible to K / cm3, or densities convertible to
-        cm-3. Give exactly one of the two. Densities are stored as their log10 along ``logD``.
+    temperature, pressure, density : `astropy.units.Quantity`
+        As for `muse.instrument.create_chianti_line_list`; give exactly one of pressure and density.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out, by default
-        1e-21.
+        Elements less abundant than this are left out, by default 1e-21.
     backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``; ``"chianti"`` needs
         ChiantiPy and ``XUVTOP``. The file name carries the backend, so the line lists of the

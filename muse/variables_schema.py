@@ -4,6 +4,7 @@ Validated attrs schemas for package-wide variables.
 
 import numbers
 from contextlib import suppress
+from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
@@ -96,7 +97,16 @@ _int_converter = Converter(_optional_int, takes_field=True)
 
 
 def _frozen_lines(value):
-    return FrozenDict({channel: lines if isinstance(lines, str) else tuple(lines) for channel, lines in value.items()})
+    if not isinstance(value, Mapping):
+        msg = "main_lines_by_channel_SG must be a mapping from channel to line names"
+        raise TypeError(msg)
+    # Keyed by the channel in Angstrom, as the generators' main_lines_by_channel is.
+    return FrozenDict(
+        {
+            round(u.Quantity(channel, u.AA).value): lines if isinstance(lines, str) else tuple(lines)
+            for channel, lines in value.items()
+        }
+    )
 
 
 def _set_readonly(value):

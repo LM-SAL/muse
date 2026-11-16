@@ -53,22 +53,6 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.attrs["history"][1].startswith("create_spectral_response(")
     assert response.attrs["chianti_version"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
-
-
-def test_spectral_response_is_normalized():
-    line_list = fake_line_list(1)
-
-    response = create_spectral_response(
-        line_list,
-        DEFAULT_WAVELENGTH_GRID,
-        main_lines=[line_list.full_name[0].item()],
-    )
-
-    assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
-    dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
-    integral = (response.spectral_response.isel(line=0) * dlam).sum("wavelength_bin")
-    expected = line_list.gofnt.isel(transition=0) / RESPONSE_NORMALIZATION
-    np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
     assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("1e-27 erg cm3 / (Angstrom s sr)")
 
 

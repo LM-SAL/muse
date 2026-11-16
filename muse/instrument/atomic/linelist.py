@@ -328,8 +328,7 @@ def create_fiasco_line_list(
         the two backends. The resolved name is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by
-        default 1e-21, which keeps every element of a CHIANTI abundance file. Unlike in `create_chianti_line_list`,
-        it combines with ``ion_list``.
+        default 1e-21. Unlike in `create_chianti_line_list`, it combines with ``ion_list``.
     ion_list : `list` of `str`, optional
         CHIANTI ion names to include, such as ``"fe_9"`` (not fiasco's ``"Fe 9"``); by
         default every ion in the database.

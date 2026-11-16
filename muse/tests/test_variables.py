@@ -86,6 +86,8 @@ def test_instrument_defaults_validate_spectral_channels():
         InstrumentDefaults(wavelength_start_SG=initial, pair_energy_SG=mismatched_pair_energy)
     with pytest.raises(ValueError, match=r"main_lines_by_channel_SG must be keyed by .*\[108, 171\]"):
         InstrumentDefaults(wavelength_start_SG=initial, main_lines_by_channel_SG={108: "Fe XIX 108.355"})
+    with pytest.raises(TypeError, match="must be a mapping"):
+        InstrumentDefaults(main_lines_by_channel_SG=[["Fe XIX 108.355"]])
 
 
 def test_ci_calibrations_require_channel_dimension():

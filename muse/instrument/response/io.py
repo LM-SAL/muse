@@ -233,7 +233,6 @@ def read_response(
     """
     response_file = Path(response_file)
 
-    # Rebound under their own names, so that the history names the axes instead of listing them.
     logT = _requested_axis(logT, "logT")
     doppler_velocity = _requested_axis(doppler_velocity, "doppler_velocity")
     for name, axis in (("logT", logT), ("doppler_velocity", doppler_velocity)):
