@@ -211,8 +211,8 @@ def read_response(
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
-        peak memory stays bounded by the chunks. By default `False`: without dask, the
-        arrays are read from the file when used, by resampling at once.
+        peak memory stays bounded by the chunks. By default `False`: numpy arrays, read
+        from the file when first used (resampling reads them at once).
 
     Returns
     -------
