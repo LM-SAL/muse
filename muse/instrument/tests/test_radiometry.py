@@ -228,6 +228,16 @@ def test_transform_response_units_selects_detector_calibration():
     ci = transform_response_units(
         _spectral_response(), target_unit, 195 * u.AA, detector="ci", instrument_defaults=defaults
     )
+    # a channel the given pair energy makes the pair-energy table unnecessary for
+    lacking = attrs.evolve(defaults, pair_energy_CI=ci_pair_energy.sel(channel=[195]))
+    transform_response_units(
+        _spectral_response(),
+        target_unit,
+        304 * u.AA,
+        detector="ci",
+        pair_energy=7.3 * u.eV / u.electron,
+        instrument_defaults=lacking,
+    )
 
     sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
     ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)

@@ -163,11 +163,13 @@ def transform_response_units(
     pixel_height = _required(defaults, f"dy_pixel_{suffix}") if pixel_height is None else pixel_height
 
     if gain is None or pair_energy is None:
-        gains, pair_energies = _required(defaults, f"gain_{suffix}"), _required(defaults, f"pair_energy_{suffix}")
         if channel is None:
             msg = "channel is required unless both gain and pair_energy are given"
             raise ValueError(msg)
-        channel_value = _channel_as_angstrom(channel, pair_energies["channel"], detector)
+        # Only the tables a value comes from: the CI ones may hold different channels.
+        gains = _required(defaults, f"gain_{suffix}") if gain is None else None
+        pair_energies = _required(defaults, f"pair_energy_{suffix}") if pair_energy is None else None
+        channel_value = _channel_as_angstrom(channel, (pair_energies if gains is None else gains)["channel"], detector)
         try:
             if gain is None:
                 gain = u.Quantity(gains.sel(channel=channel_value).data)
