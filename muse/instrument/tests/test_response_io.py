@@ -196,6 +196,17 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert "date_modified" not in r.attrs
 
 
+def test_read_response_reads_the_provenance_of_a_file_of_muse_0_3(tmp_path) -> None:
+    old = {"HISTORY": ["create response"], "date created": "01-Mar-2026", "version": "0.3.0", "chunked": 0}
+    path = _write(fake_response_file_contents().assign_attrs(old), tmp_path / "old.nc", "nc")
+
+    r = read_response(path)
+
+    assert r.attrs["history"][0] == "create response"
+    assert (r.attrs["date_created"], r.attrs["muse_version"]) == ("2026-03-01", "0.3.0")
+    assert not {"HISTORY", "date created", "version", "chunked", "logT_method"} & set(r.attrs)
+
+
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # Files with non-0-based slit numbering must come back 0-based so downstream
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
@@ -395,9 +406,19 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
         dim="line",
         data_vars="all",
         join="exact",
-    ).assign_attrs(history="first_response()", shared_attr="kept", conflicting_attr="first")
+    ).assign_attrs(
+        history="first_response()",
+        shared_attr="kept",
+        conflicting_attr="first",
+        muse_version="0.4.0",
+        date_created="2026-01-01T00:00:00Z",
+    )
     second = _line_file("Fe XV 284.163", 284.163).assign_attrs(
-        history="second_response()", shared_attr="kept", conflicting_attr="second"
+        history="second_response()",
+        shared_attr="kept",
+        conflicting_attr="second",
+        muse_version="0.4.0",
+        date_created="2026-02-01T00:00:00Z",
     )
     _write(first, tmp_path / "a.nc", "nc")
     _write(second, tmp_path / "b.nc", "nc")
@@ -424,7 +445,9 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     assert resp.attrs["history"][0] == "first_response()"
     assert "second_response()" in resp.attrs["history"]
     assert resp.attrs["history"][-1].startswith("read_responses(")
-    assert "date_created" not in resp.attrs  # a reader dates nothing, nor a set of files of several dates
+    # what the files agree on, their muse included, and not a date they do not share, nor the read's
+    assert resp.attrs["muse_version"] == "0.4.0"
+    assert "date_created" not in resp.attrs
 
 
 def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:

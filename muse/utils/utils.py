@@ -2,6 +2,7 @@
 Functions whose scope is not limited to one part of the muse package.
 """
 
+import re
 import inspect
 import zipfile
 import datetime as dt
@@ -159,6 +160,10 @@ _EXECUTION_OPTIONS = frozenset(
 )
 
 
+# The time and version that end a history entry.
+_STAMP = re.compile(r" \[[^\[\]]* muse [^\[\]]*\]$")
+
+
 def _history_entries(history: str | list[str] | None) -> list[str]:
     if history is None:
         return []
@@ -178,8 +183,10 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
         return
     history = _history_entries(ds.attrs.get("history"))
     shared = 0
+    # Without the stamps: the two outputs of one call, such as align_response_and_vdem, may be
+    # stamped a second apart and are still one step.
     for ours, theirs in zip(history, source_history, strict=False):
-        if ours != theirs:
+        if _STAMP.sub("", ours) != _STAMP.sub("", theirs):
             break
         shared += 1
     ds.attrs["history"] = [*history, *source_history[shared:]]
@@ -216,6 +223,8 @@ def _entry_value(value: object) -> str:
 
     Nothing lazy is computed.
     """
+    if isinstance(value, xr.DataArray) and isinstance(value.data, u.Quantity):
+        value = value.data  # a Quantity in a DataArray, as the line-list builders take a temperature
     if isinstance(value, xr.Dataset):
         return f"<Dataset of {', '.join(map(str, value.data_vars))}>" if value.data_vars else "<Dataset>"
     if isinstance(value, u.Quantity):
@@ -301,6 +310,8 @@ def add_history(
         `True` for a call that reads a file: its entry is added, and the dates and
         version stay as the file has them. By default `False`.
     """
+    # A dataset that took the attributes of a file of muse 0.3 by xarray keeps their lineage.
+    ds.attrs = _current_attrs(ds.attrs)
     # A string label has no signature to inspect, so it records no inputs.
     params = inspect.signature(func).parameters if callable(func) else {}
     formatted_args = []
@@ -389,9 +400,30 @@ def _current_attrs(attrs: dict) -> dict:
     """
     ``attrs`` under their current names; where both an old and a current name are there,
     the current one wins.
+
+    An old date takes the ISO form, and the options that only said how the code ran are
+    left out.
     """
-    renamed = {_OLD_ATTRS[name]: value for name, value in attrs.items() if name in _OLD_ATTRS}
-    return renamed | {name: value for name, value in attrs.items() if name not in _OLD_ATTRS}
+    # muse wrote "version" beside "HISTORY"; a "version" without it is another tool's own.
+    old_names = {old: new for old, new in _OLD_ATTRS.items() if old != "version" or "HISTORY" in attrs}
+    renamed = {
+        old_names[name]: _iso_date(value) if name in ("date created", "date modified") else value
+        for name, value in attrs.items()
+        if name in old_names
+    }
+    kept = {name: value for name, value in attrs.items() if name not in old_names and name not in _EXECUTION_OPTIONS}
+    return renamed | kept
+
+
+def _iso_date(value: object) -> object:
+    """
+    A date as muse 0.3 wrote it, such as ``01-Mar-2026``, in ISO 8601; anything else as
+    it is.
+    """
+    try:
+        return dt.datetime.strptime(value, "%d-%b-%Y").date().isoformat()  # NOQA: DTZ007
+    except (TypeError, ValueError):
+        return value
 
 
 def _with_current_names(dataset: xr.Dataset) -> xr.Dataset:

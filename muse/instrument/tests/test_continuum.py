@@ -81,6 +81,10 @@ def test_continuum_response_total_matches_the_fine_integral():
     np.testing.assert_allclose(_bin_width(out).values, np.diff(edges.value))
     assert "create_continuum_response(" in out.attrs["history"][-1]
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
+    # new data: not dated as the continuum it is made from
+    dated = _continuum_cube().assign_attrs(date_created="2026-01-01T00:00:00Z", muse_version="0.1")
+    made = create_continuum_response(dated, edges, effective_area=area).attrs
+    assert (made["date_created"], made["muse_version"]) != ("2026-01-01T00:00:00Z", "0.1")
     x = np.linspace(edges[0].value, edges[-1].value, 200001)
     for i_line, factor in enumerate([1.0, 0.5, 0.1]):
         for i_t, scale in enumerate([1.0, 2.0, 3.0]):

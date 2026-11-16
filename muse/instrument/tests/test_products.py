@@ -230,6 +230,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert response.attrs["line_list_file"] == "line_list_pressure.nc"
     assert "line_list_backend" not in response.attrs
     assert "minimum_abundance" not in response.attrs
+    assert not {"workers", "threads", "skip_existing", "create_if_missing"} & set(response.attrs)
     # the database and the software of the line list, and the whole chain of calls up to this read
     assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
     assert [entry.split("(")[0] for entry in response.attrs["history"]] == [

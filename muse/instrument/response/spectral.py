@@ -836,9 +836,9 @@ def create_continuum_response(
         "effective_area_at": "bin average",
         "bin_method": "average",
     }
-    result = xr.Dataset({"spectral_response": binned}, attrs=dict(continuum.attrs)).assign_coords(
-        _wavelength_bin_coords(centers, edges)
-    )
+    result = xr.Dataset({"spectral_response": binned}).assign_coords(_wavelength_bin_coords(centers, edges))
+    # New data: the attributes of the continuum, but not its dates or the muse that made it.
+    update_attrs(result, continuum)
     add_history(result, call_inputs, create_continuum_response, sources=(continuum,))
     return result
 

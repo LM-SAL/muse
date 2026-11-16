@@ -61,10 +61,16 @@ def test_add_history_records_the_call_with_its_time_and_version() -> None:
 
 def test_a_history_entry_keeps_units_and_summarises_arrays() -> None:
     grid = xr.DataArray(np.arange(5.0), dims="x", attrs={"units": "K"})
+    quantity_grid = xr.DataArray([3e14, 1e15] * u.K / u.cm**3, dims="pressure")
 
-    ds = _record(xr.Dataset(), shift=3 * u.km / u.s, weights=grid)
+    ds = _record(xr.Dataset(), gain=quantity_grid, shift=[1.0, 2.0] * u.km / u.s, weights=grid)
 
-    assert "shift=3.0 km / s, flag=True, weights=<5 values, 0.0 to 4.0 K>" in ds.attrs["history"][0]
+    assert _calls(ds) == [
+        (
+            "_record(ds=<Dataset>, gain=<2 values, 300000000000000.0 to 1000000000000000.0 K / cm3>, "
+            "shift=<2 values, 1.0 to 2.0 km / s>, flag=True, weights=<5 values, 0.0 to 4.0 K>, label=muse)"
+        )
+    ]
 
 
 def test_options_of_how_the_code_ran_stay_out_of_the_attributes() -> None:
@@ -147,13 +153,13 @@ def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
     def demo(ds, lazy_array=None, lazy_dataarray=None):
         add_history(ds, locals(), demo)
 
-    lazy_array = da.from_delayed(dask.delayed(explode)(), shape=(), dtype=float)
+    lazy_array = da.from_delayed(dask.delayed(explode)(), shape=(5,), dtype=float)
     lazy_dataarray = xr.DataArray(lazy_array)
     ds = xr.Dataset()
 
     demo(ds, lazy_array=lazy_array, lazy_dataarray=lazy_dataarray)
 
-    assert _calls(ds) == ["demo(ds=<Dataset>, lazy_array=<array of shape ()>, lazy_dataarray=<array of shape ()>)"]
+    assert _calls(ds) == ["demo(ds=<Dataset>, lazy_array=<array of shape (5,)>, lazy_dataarray=<array of shape (5,)>)"]
     assert "lazy_array" not in ds.attrs
     assert "lazy_dataarray" not in ds.attrs
     assert "serializable" not in caplog.text
@@ -209,6 +215,35 @@ def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
 
     update_attrs(ds, source, level=2)
     assert ds.attrs == {"instrument": "MUSE", "level": 2}
+
+
+def test_a_dataset_with_the_attributes_of_an_old_file_keeps_their_lineage() -> None:
+    # as a result made by an xarray operation on a file of muse 0.3 has them
+    ds = xr.Dataset(attrs={"HISTORY": ["load"], "date created": "01-Mar-2026", "version": "0.3.0", "workers": 4})
+
+    add_history(ds, {}, "demo")
+
+    assert _calls(ds) == ["load", "demo()"]
+    assert (ds.attrs["date_created"], ds.attrs["muse_version"]) == ("2026-03-01", "0.3.0")
+    assert not {"HISTORY", "date created", "version", "workers"} & set(ds.attrs)
+
+
+def test_a_version_attribute_of_another_tool_is_kept() -> None:
+    ds = xr.Dataset()
+
+    update_attrs(ds, xr.Dataset(attrs={"version": "table v3"}))
+
+    assert ds.attrs == {"version": "table v3"}
+
+
+def test_the_two_outputs_of_one_call_are_one_step_even_stamped_apart() -> None:
+    first = xr.Dataset(attrs={"history": ["load", "align() [2026-01-01T00:00:00Z muse 0.4.0]"]})
+    second = xr.Dataset(attrs={"history": ["load", "align() [2026-01-01T00:00:01Z muse 0.4.0]"]})
+    ds = xr.Dataset()
+
+    add_history(ds, {}, "synthesis", sources=(first, second))
+
+    assert _calls(ds) == ["load", "align()", "synthesis()"]
 
 
 def test_a_source_read_without_the_library_passes_on_its_old_names_as_current_ones() -> None:
