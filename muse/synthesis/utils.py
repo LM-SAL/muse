@@ -459,8 +459,7 @@ def doppler_to_wavelength(data: xr.Dataset, *, doppler_name: str = "detector_dop
     Raises
     ------
     ValueError
-        If ``data`` already has a ``detector_wavelength`` coordinate, such as the
-        detector geometry of a mapped response; drop it first to replace it.
+        If ``data`` already has a ``detector_wavelength`` coordinate.
     """
     if "detector_wavelength" in data.coords:
         msg = "data already has a detector_wavelength coordinate; drop it first to replace it"

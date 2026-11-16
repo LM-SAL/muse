@@ -161,25 +161,13 @@ Install ``muse`` into the activated environment and check the installed package:
 Optional extras
 ===============
 
-The core install builds responses from line lists you already have and synthesizes spectra from them.
-Extras add the rest; install one with, for example, ``pip install "muse[fiasco]"``.
+``pip install "muse[<extra>]"`` adds:
 
-.. list-table::
-    :header-rows: 1
-
-    * - Extra
-      - Adds
-    * - ``fiasco``
-      - Line lists and continua from CHIANTI with `fiasco <https://fiasco.readthedocs.io/>`__, the default backend, which the response generators use to build their line lists.
-        fiasco reads CHIANTI from an HDF5 copy of the database that it builds on first use; see its documentation.
-    * - ``chianti``
-      - The same with `ChiantiPy <https://chiantipy.readthedocs.io/>`__, which reads the CHIANTI ASCII database that the ``XUVTOP`` environment variable points to.
-    * - ``aia``
-      - SDO/AIA effective areas from `aiapy <https://aiapy.readthedocs.io/>`__.
-    * - ``torch``
-      - The Torch backend of the synthesis, see :ref:`muse-installing-torch`.
-    * - ``all``
-      - All of the above.
+* ``fiasco``: CHIANTI line lists and continua with `fiasco <https://fiasco.readthedocs.io/>`__, the default backend.
+* ``chianti``: the same with ChiantiPy, which reads the database that ``XUVTOP`` points to.
+* ``aia``: SDO/AIA effective areas.
+* ``torch``: the Torch synthesis backend, see below.
+* ``all``: all of these.
 
 .. _muse-installing-torch:
 

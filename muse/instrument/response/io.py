@@ -210,8 +210,7 @@ def read_response(
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
     doppler_velocity_method : `str`, optional
-        Interpolation method for doppler_velocity, by default "linear", as
-        `muse.instrument.align_response_and_vdem` resamples.
+        Interpolation method for doppler_velocity, by default "linear".
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. By default the ``gain`` attribute of
         the file, which the generators write.
@@ -490,8 +489,7 @@ def read_responses(
         Interpolation method for doppler_velocity, by default "linear".
         Passed to `muse.instrument.read_response`.
     gain : `astropy.units.Quantity`, optional
-        Camera gain of every file, convertible to electron/DN, for files that state
-        none. Passed to `muse.instrument.read_response`.
+        Passed to `muse.instrument.read_response`.
     chunked : `bool`, optional
         When `True`, load each response dask-backed so the concatenated
         response stays lazy and synthesis peak memory stays bounded by the

@@ -17,9 +17,7 @@ We will use the default per-channel effective areas
     are applied uniformly across the band, so contaminant counts away from the
     main line are only approximate.
 
-:func:`muse.instrument.generate_sg_responses` and its siblings for the continuum
-and the context imager run these steps for every channel and abundance and write
-the product files; this tutorial runs them by hand to show each one.
+:func:`muse.instrument.generate_sg_responses` runs these steps for every channel.
 
 To see how the response changes with other parameters — an electron-density
 grid instead of a fixed pressure, or nonthermal broadening from unresolved
