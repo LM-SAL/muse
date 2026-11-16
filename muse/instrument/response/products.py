@@ -795,10 +795,16 @@ _SHAPING_INPUTS = ("temperature", "density", "doppler_velocity", "transition_boo
 def _line_list_identity(line_list_file: str | Path) -> dict:
     """
     What tells a given line-list file from another of its name without reading it: its
-    size and the time it was last written, which any rewrite changes.
+    size and the time it was last written, which any rewrite changes; of a zarr store
+    that is a folder, those of the files in it.
     """
-    status = Path(line_list_file).stat()
-    return {"name": Path(line_list_file).name, "size": status.st_size, "written": status.st_mtime_ns}
+    path = Path(line_list_file)
+    statuses = [part.stat() for part in ([path] if path.is_file() else path.rglob("*")) if part.is_file()]
+    return {
+        "name": path.name,
+        "size": sum(status.st_size for status in statuses),
+        "written": max((status.st_mtime_ns for status in statuses), default=0),
+    }
 
 
 def _write_sg_products(

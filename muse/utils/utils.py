@@ -219,8 +219,9 @@ def _written_in_full(value: object) -> str:
     integer equals its float, and coordinates in the order of their names.
     """
     if isinstance(value, xr.DataArray):
+        # with its dimensions and unit: the same numbers along another axis or in another unit differ
         coords = {name: _written_in_full(value.coords[name].values) for name in sorted(value.coords)}
-        return f"{_written_in_full(value.data)} {coords}"
+        return f"{_written_in_full(value.data)} {value.dims} {value.attrs.get('units')} {coords}"
     if isinstance(value, u.Quantity):
         return f"{_written_in_full(value.value)} {value.unit}"
     if isinstance(value, np.ndarray | np.number | int | float):

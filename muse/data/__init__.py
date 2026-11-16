@@ -53,7 +53,7 @@ _REGISTRY = {
     ),
     "muse_synthetic_spectra.nc": (
         f"{_EXAMPLE_DATA_URL}muse_synthetic_spectra.nc",
-        "sha256:098eef7a57549bbff1519bece9652fd04c4296aaf7939c21a2dac88a155a663a",
+        "sha256:a34d4cd82288435f7d3df56d8069a34915eb9057998b57b4684d2796ff6e5c27",
         "synthesis_tutorial",
     ),
 }
