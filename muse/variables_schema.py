@@ -20,13 +20,11 @@ __all__ = [
 
 class FrozenDict(dict):
     """
-    A read-only `dict` subclass.
+    A read-only `dict`.
 
-    Unlike `types.MappingProxyType`, instances are picklable, which keeps frozen
-    defaults usable with multiprocessing. The mapping itself stays read-only across a
-    pickle round-trip, but numpy or `astropy.units.Quantity` values it holds regain
-    their writable flag on unpickle; this is harmless because each process operates on
-    its own copy.
+    Unlike `types.MappingProxyType` it pickles, so frozen defaults work with
+    multiprocessing. Array values are writable again after unpickling, which is harmless
+    as each process has its own copy.
     """
 
     def _readonly(self, *_args, **_kwargs):
@@ -50,8 +48,7 @@ class FrozenDict(dict):
 
 def _required_quantity(unit):
     """
-    Converter factory: coerce the value to `astropy.units.Quantity` and normalize it to
-    ``unit``.
+    Converter to a read-only `astropy.units.Quantity` in ``unit``.
     """
 
     def to_unit(value):
@@ -69,8 +66,7 @@ def _quantity(unit):
 
 def _data_array(unit=None):
     """
-    Converter factory: copy an `xarray.DataArray`, make its data read-only, and
-    optionally normalize quantity-valued data to ``unit``.
+    Converter to a read-only copy of an `xarray.DataArray`, in ``unit`` when given.
 
     `None` passes through.
     """
@@ -168,99 +164,80 @@ _data_array_eq = cmp_using(eq=_eq_optional(lambda a, b: a.equals(b)), class_name
 @define(frozen=True, kw_only=True, hash=False)
 class InstrumentDefaults:
     """
-    Container of instrument properties used by functions and methods within the muse
-    library; not a general-purpose instrument defaults class.
+    Instrument properties the muse functions use.
 
-    Every parameter is optional and defaults to `None`. Populate the ones a given
-    instrument needs (see `muse.variables` for the MUSE instance). Each field documents
-    its meaning and the unit it is normalized to.
+    Every field is optional and defaults to `None`; set the ones an instrument needs
+    (`muse.variables` holds the MUSE values). On construction each field is validated,
+    copied and normalized to the unit it documents.
 
-    Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
-    the ``_SG``/``_CI`` field suffix identifies the detector, and the two channel sets
-    are independent of each other.
+    Per-channel fields have a ``channel`` dimension. The ``_SG`` and ``_CI`` suffixes
+    name the detector, and the two channel sets are independent. CI fields may cover
+    different channels from one another.
 
-    Fields are validated and normalized on construction. Instances prevent top-level
-    attribute reassignment; create modified copies with `attrs.evolve`.
-
-    This is not a deeply immutable container. The converters copy input values and make
-    array buffers read-only, but `xarray.DataArray` fields can still have ``.data``,
-    coordinates, ``.attrs`` and ``.encoding`` reassigned or mutated through xarray APIs.
-    Because nested state can change, instances are intentionally unhashable.
+    Fields cannot be reassigned; make a modified copy with `attrs.evolve`. Array buffers
+    are read-only, but xarray can still change the ``.data``, coordinates, ``.attrs``
+    and ``.encoding`` of an `xarray.DataArray` field, so instances are unhashable.
     """
 
     # Context Imager (CI) parameters
     pixel_width_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
-    Spatial pixel size along x-axis for the CI.
-
-    Normalized to arcseconds.
+    CI pixel size along x, in arcseconds.
     """
 
     pixel_height_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
-    Spatial pixel size along y-axis for the CI.
-
-    Normalized to arcseconds.
+    CI pixel size along y, in arcseconds.
     """
 
     # Spectrograph (SG) parameters
     pixel_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
-    Spatial pixel size along x-axis for the SG.
-
-    Normalized to arcseconds.
+    SG pixel size along x, in arcseconds.
     """
 
     pixel_height_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
-    Spatial pixel size along y-axis for the SG.
-
-    Normalized to arcseconds.
+    SG pixel size along y, in arcseconds.
     """
 
     detector_x_pixels_SG: int | None = field(default=None, converter=_int_converter)
     """
-    Number of pixels along the spectral dimension for the SG.
+    SG detector size along the spectral dimension, a number of pixels.
     """
 
     number_of_slits_SG: int | None = field(default=None, converter=_int_converter)
     """
-    Number of slits in the SG.
+    Number of SG slits.
     """
 
     pixels_between_slits_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pixel))
     """
-    Number of pixels between slits for the SG.
+    Detector distance between adjacent SG slits, in pixels.
     """
 
     spectral_slit_separation_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.AA), eq=_data_array_eq
     )
     """
-    Nominal spectral separation of adjacent SG slits on the detector, for each channel
-    at its own spectral order.
-
-    Values normalized to Angstroms.
+    Nominal spectral separation of adjacent SG slits on the detector for each channel,
+    at the order of the channel, in Angstroms.
     """
 
     waveband_half_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
     """
-    Half of the wavelength range an SG channel covers at first order; at spectral order
-    n the half width is this value over n.
-
-    Normalized to Angstroms.
+    Half the wavelength range of an SG channel at first order, in Angstroms; at order n
+    it is this over n.
     """
 
     wavelength_step_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
     """
-    Sampling of the wavelength grid an SG spectral response is built on.
-
-    Normalized to Angstroms.
+    Step of the wavelength grid SG spectral responses are built on, in Angstroms.
     """
 
     steps_per_raster_SG: int | None = field(default=None, converter=_int_converter)
     """
-    Number of steps per raster for the SG.
+    Number of steps in an SG raster.
     """
 
     # Effective areas
@@ -268,72 +245,62 @@ class InstrumentDefaults:
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
-    Effective area of the main line for the SG.
-
-    Normalized to square centimeters.
+    SG effective area at the main line of each channel, in square centimeters.
     """
 
     main_line_effective_area_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.cm**2), eq=_data_array_eq
     )
     """
-    Effective area of the main line for the CI.
-
-    Normalized to square centimeters and keyed by ``channel``.
+    CI effective area at the main line of each channel, in square centimeters.
     """
 
     # Other Properties
     gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
-    SG CCD gain in electrons per DN, keyed by ``channel``.
+    SG CCD gain of each channel, in electrons per DN.
     """
 
     gain_CI: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
-    CI CCD gain in electrons per DN, keyed by ``channel``.
+    CI CCD gain of each channel, in electrons per DN.
     """
 
     pair_energy_SG: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
-    Mean energy that frees one electron-hole pair in the SG detector, keyed by
-    ``channel``.
+    Mean energy that frees one electron-hole pair in the SG detector for each channel,
+    in eV per electron.
     """
 
     pair_energy_CI: xr.DataArray | None = field(
         default=None, converter=_data_array(u.eV / u.electron), eq=_data_array_eq
     )
     """
-    Mean energy that frees one electron-hole pair in the CI detector, keyed by
-    ``channel``.
-
-    CI calibration fields may cover different channel sets.
+    Mean energy that frees one electron-hole pair in the CI detector for each channel,
+    in eV per electron.
     """
 
     main_lines_by_channel_SG: FrozenDict | None = field(default=None, converter=converters.optional(_frozen_lines))
     """
-    Main spectral lines for the SG, keyed by channel.
+    Names of the main SG lines, keyed by channel.
     """
 
     wavelength_start_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
-    Wavelength at detector pixel zero for slit zero, in Angstroms.
-
-    Values normalized to Angstroms.
+    Wavelength at detector pixel zero of slit zero for each channel, in Angstroms.
     """
 
     channel_spectral_order_SG: xr.DataArray | None = field(default=None, converter=_data_array(), eq=_data_array_eq)
     """
-    Spectral order of main line for each band (channel)
+    Spectral order at which each SG channel observes its main line.
     """
 
     instrumental_fwhm_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
-    Instrumental FWHM of each SG channel, with the spectral plate scale and the spectral
-    order of the channel baked in.
-
-    Values normalized to Angstroms.
+    Instrumental FWHM of each SG channel in Angstroms, the plate scale and order of the
+    channel included.
     """
 
     def __repr__(self) -> str:
@@ -350,10 +317,7 @@ class InstrumentDefaults:
         self._validate_channel_fields()
 
     def _validate_channel_fields(self):
-        # SG and CI calibrations share the "channel" dimension name but carry
-        # independent channel sets. The _CI suffix identifies a detector's fields:
-        # CI DataArrays are checked for the dimension and excluded from the SG
-        # cross-field matching below.
+        # CI fields share the dimension name, not the channels, so they skip the SG matching.
         array_fields = {
             a.name: value for a in fields(type(self)) if isinstance(value := getattr(self, a.name), xr.DataArray)
         }
@@ -379,8 +343,7 @@ class InstrumentDefaults:
 
 def _required(defaults: InstrumentDefaults, name: str):
     """
-    The field ``name`` of ``defaults``, which the caller cannot do without: a custom
-    object that leaves it unset is refused with the name of the field.
+    The field ``name`` of ``defaults``, or a `ValueError` naming it when it is unset.
     """
     value = getattr(defaults, name)
     if value is None:

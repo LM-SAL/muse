@@ -3,14 +3,12 @@
 Prepare CHIANTI line lists
 ==========================
 
-This example computes the CHIANTI line lists used by the response examples in
-this section.
+Compute the CHIANTI line lists of the response examples in this section.
 
 .. warning::
 
-    This example requires the optional CHIANTI dependencies and a local CHIANTI
-    database. Install them with ``pip install "muse[chianti]"`` and configure
-    ``XUVTOP`` before running the script.
+    Requires the optional CHIANTI dependencies, ``pip install "muse[chianti]"``,
+    and a local CHIANTI database in ``XUVTOP``.
 """
 
 import os
@@ -22,15 +20,9 @@ import astropy.units as u
 
 from muse.instrument import create_chianti_line_list
 
-##############################################################################
-# We first confirm that the local environment is working.
-
 if not os.environ.get("XUVTOP"):
     msg = "XUVTOP is not set. Run `export XUVTOP=/path/to/CHIANTI_11.0.2_database` first."
     raise OSError(msg)
-
-##############################################################################
-# Now we need to configure the line-list calculations.
 
 abundance = "sun_coronal_2021_chianti"
 temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
@@ -39,7 +31,7 @@ output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples
 output_dir.mkdir(parents=True, exist_ok=True)
 
 ##############################################################################
-# AIA 94 Å: retain iron lines across the channel bandpass.
+# AIA 94 Å: the iron lines across the band.
 
 line_list = create_chianti_line_list(
     temperature=temperature,

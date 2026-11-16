@@ -3,7 +3,7 @@
 02 - Matching a VDEM to MUSE's FOV
 ==================================
 
-This tutorial demonstrates how to match a Velocity-Differential Emission Measure (VDEM) to MUSE's Field of View (FOV).
+Match a velocity-differential emission measure (VDEM) to the MUSE field of view (FOV).
 """
 
 import matplotlib.pyplot as plt
@@ -17,28 +17,17 @@ from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit
 ##############################################################################
 # Loading a VDEM
 #
-# In the :ref:`previous tutorial <sphx_glr_generated_gallery_synthesis_tutorial_skip_01_create_vdem.py>`,
-# we created a simple VDEM using ``create_simple_vdem``.
-# We will download this VDEM (from a personal data archive) using
-# :func:`muse.data.fetch_example_data`, which caches it locally via
-# `pooch <https://www.fatiando.org/pooch/latest/>`__, and then load it using xarray.
+# :func:`muse.data.fetch_example_data` downloads and caches the VDEM of the
+# :ref:`previous tutorial <sphx_glr_generated_gallery_synthesis_tutorial_skip_01_create_vdem.py>`.
 
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
-
-##############################################################################
-# First, let's print the VDEM to see what it looks like.
 
 print(vdem)
 
 ##############################################################################
-# Now we can do several transforms to the VDEM, such as matching the FOV and
-# reshaping to include/exclude the slits.
-#
-# First we will match the MUSE FOV to the VDEM and compare them.
-#
 # MUSE samples its field of view with 35 slits at 11 raster positions.
-# :func:`muse.transforms.match_fov` crops or interpolates the VDEM to
-# the instrument pixel scale and required spatial extent.
+# :func:`muse.transforms.match_fov` crops or interpolates the VDEM to the MUSE
+# pixel scale and extent.
 
 vdem_muse_fov = match_fov(vdem)
 original_intensity = vdem.vdem.sum(dim=["logT", "doppler_velocity"], skipna=False)
@@ -51,29 +40,19 @@ full_intensity.plot(x="x", y="y", norm=colors.LogNorm(vmin=1), ax=ax2)
 ax2.set_title("VDEM matched to MUSE FOV")
 
 ##############################################################################
-# MUSE is a slit-scanning spectrograph.
-#
-# :func:`muse.transforms.reshape_x_to_slit_step` transforms the x-axis into
-# slit and raster-step dimensions to match how MUSE observes.
-#
-# In future, the step will include temporal evolution. However, for this VDEM
-# and tutorial, temporal evolution is ignored.
+# MUSE is a slit-scanning spectrograph:
+# :func:`muse.transforms.reshape_x_to_slit_step` splits the x axis into slit
+# and raster-step dimensions. Here the steps have no time evolution.
 
 vdem_muse_fov_slit = reshape_x_to_slit_step(vdem_muse_fov)
-
-##############################################################################
-# Now when we print the reshaped VDEM, we can see that it has been reshaped to
-# match the MUSE slit step configuration.
 
 print(vdem_muse_fov_slit)
 
 ##############################################################################
 # Compare one raster step with one slit
 #
-# Plotting directly against the compact ``slit`` index would hide the physical
-# gaps between slits. The left panel restores the spatial x-axis and masks the
-# positions not sampled at step 0. The right panel shows the central slit as it
-# moves through all 11 raster positions.
+# Left: the positions sampled at step 0, on the spatial x axis, which keeps
+# the gaps between slits. Right: the central slit through all 11 raster positions.
 
 slit_step_intensity = reshape_x_to_slit_step(full_intensity.to_dataset(name="vdem")).vdem
 selected_step = 0
@@ -91,9 +70,7 @@ slit_step_intensity.isel(slit=selected_slit).plot(ax=axes[1], x="step", y="y", n
 axes[1].set_title(f"Slit {selected_slit} across raster steps")
 
 ##############################################################################
-# If we want to go back to the original VDEM, we can use
-# :func:`muse.transforms.reshape_slit_step_to_x` to reshape the reshaped VDEM
-# back to the original shape.
+# :func:`muse.transforms.reshape_slit_step_to_x` reverts the reshape.
 
 vdem_muse_fov_original = reshape_slit_step_to_x(vdem_muse_fov_slit)
 

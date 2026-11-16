@@ -1,5 +1,5 @@
 """
-Helpers for downloading the example data used by the documentation gallery.
+Download the example data of the documentation gallery.
 """
 
 import os
@@ -89,24 +89,23 @@ _REGISTRY = {
 }
 
 
-def fetch_example_data(name):
+def fetch_example_data(name: str):
     """
-    Download and cache one of the example data files used by the documentation gallery.
+    Download and cache an example data file of the documentation gallery.
 
-    A VDEM or synthetic spectrum already present in the synthesis-tutorial
-    output directory (``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``, defaulting to
-    ``examples/synthesis_tutorial/artifacts``) is returned without downloading.
-    Every other file comes from the published copy.
+    The VDEM and synthetic spectra the synthesis tutorial wrote to
+    ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR`` (by default
+    ``examples/synthesis_tutorial/artifacts``) are used without downloading.
 
     Parameters
     ----------
     name : `str`
-        Name of the file to fetch, e.g. ``"muse_example_vdem.zarr"``.
+        File name, e.g. ``"muse_example_vdem.zarr"``.
 
     Returns
     -------
     `pathlib.Path`
-        Path to the local copy of the file.
+        Path to the local copy.
     """
     if name not in _REGISTRY:
         msg = f"{name!r} is not a known example data file, expected one of: {sorted(_REGISTRY)}"

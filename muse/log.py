@@ -11,20 +11,17 @@ __all__ = ["change_logging_level", "log_gpu_status", "logger"]
 
 def change_logging_level(level: str) -> None:
     """
-    Reconfigure the process-global Loguru logger to show ``level`` and above.
+    Show Loguru messages at ``level`` and above, for scripts and notebooks.
 
-    This is an application-level convenience for scripts and notebooks. Loguru
-    uses one global logger, so this removes **every** existing Loguru sink
-    (including any the host application added) and installs a single
-    ``sys.stderr`` sink at ``level``. Applications that manage their own Loguru
-    configuration should configure Loguru directly instead of calling this.
-    Importing ``muse`` never calls it.
+    Loguru has one global logger: this removes **every** sink, those of the host
+    application included, and adds one ``sys.stderr`` sink at ``level``. Applications
+    that configure Loguru themselves should not call it; importing ``muse`` never does.
 
     Parameters
     ----------
     level : str
-        The minimum level to show. Must be one of the following:
-        "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"
+        Minimum level: ``"TRACE"``, ``"DEBUG"``, ``"INFO"``, ``"SUCCESS"``,
+        ``"WARNING"``, ``"ERROR"`` or ``"CRITICAL"``.
     """
     logger.remove()
     logger.add(sys.stderr, level=level)
@@ -32,10 +29,9 @@ def change_logging_level(level: str) -> None:
 
 def log_gpu_status() -> None:
     """
-    Log CUDA/GPU availability.
+    Log at debug level whether torch finds a CUDA GPU.
 
-    Optional accelerator backends are imported lazily and this is not called at import
-    time, so importing this module (or :mod:`muse`) stays backend-free.
+    Importing ``muse`` neither calls it nor imports torch.
     """
     import importlib.util  # NOQA: PLC0415
 

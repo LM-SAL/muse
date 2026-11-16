@@ -43,21 +43,17 @@ def save_response(
     response : `xarray.Dataset`
         Dataset containing ``detector_response``.
     response_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``.
-        A ``.zarr.zip`` destination is one file: the zarr store packed into a zip.
-        Existing destinations are not overwritten.
+        A zarr store, as a ``.zarr`` directory or one ``.zip`` file, or a netCDF file ending
+        in ``.nc``, ``.ncdf`` or ``.netcdf``. An existing one is not overwritten.
     chunks : mapping of `str` to `int`, optional
-        Per-dimension overrides for the benchmark-backed defaults:
-        ``line=1``, ``doppler_velocity=20``, ``logT=1``, ``pressure=1``,
-        ``abundance=1``, and complete ``slit``/``detector_x_pixel`` planes.
-        Unspecified dimensions retain the defaults. Values larger than a
-        dimension use the full dimension.
+        Per-dimension overrides of the defaults ``line=1``, ``doppler_velocity=20``, ``logT=1``,
+        ``pressure=1``, ``abundance=1`` and whole ``slit``/``detector_x_pixel`` planes. A value
+        larger than its dimension takes the whole dimension.
 
     Notes
     -----
-    Zarr responses use Blosc/Zstd level 3 with bit-shuffle. NetCDF responses
-    use zlib level 1 with shuffle. These defaults were selected independently
-    using the full 171 response.
+    Zarr uses Blosc/Zstd level 3 with bit-shuffle, netCDF zlib level 1 with shuffle, each
+    chosen by benchmark on the full 171 response.
     """
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
@@ -78,7 +74,7 @@ def _check_destination(destination: str | Path, *, what: str = "response", argum
         raise ValueError(msg)
     suffix = destination.suffix.lower()
     if suffix not in _ZARR_SUFFIXES and suffix not in _NETCDF_SUFFIXES:
-        msg = f"{argument} must end in .zarr, .zarr.zip, .nc, .ncdf, or .netcdf"
+        msg = f"{argument} must end in .zarr, .zip, .nc, .ncdf, or .netcdf"
         raise ValueError(msg)
     return destination
 
@@ -124,22 +120,21 @@ def _response_chunks(response: xr.Dataset, overrides: Mapping[str, int] | None) 
 
 def _validate_response(response: xr.Dataset, label: str) -> None:
     """
-    Reject a response that is not in the layout `save_response` writes.
+    Reject a response not in the layout `save_response` writes.
 
     Parameters
     ----------
     response : `xarray.Dataset`
-        The response to check. It must hold ``detector_response``, the ``logT`` and
-        ``doppler_velocity`` coordinates in temperature and velocity units, a ``line`` or
-        ``channel`` dimension, ``line_wavelength`` in a wavelength unit and, if present,
-        ``detector_wavelength`` in one too.
+        Must hold ``detector_response``, ``logT`` and ``doppler_velocity`` coordinates in
+        temperature and velocity units, a ``line`` or ``channel`` dimension, and
+        ``line_wavelength`` and any ``detector_wavelength`` in a wavelength unit.
     label : `str`
         Name of the dataset in error messages.
 
     Raises
     ------
     ValueError
-        With the first failing requirement; a file in the legacy MUSE layout is named as such.
+        At the first failing requirement, naming a legacy MUSE file as such.
     """
     if "detector_response" not in response.data_vars:
         legacy = " (it has the legacy MUSE names; convert it to the layout save_response writes)"
@@ -159,18 +154,15 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
 
 
 def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
-    # open_zarr chunks with dask by default; chunks=None gives the file's lazily indexed arrays
-    # without dask, as open_dataset does for netCDF.
+    # chunks=None: lazily indexed arrays without dask, as open_dataset gives for netCDF.
     kwargs = {"chunks": {} if chunked else None, "decode_coords": decode_coords}
     if response_file.suffix == ".zip":
-        # Reads lazily like a directory. xarray closes only the stores it opens itself, and
-        # zarr reopens the archive on demand after a close.
+        # xarray closes only the stores it opens itself; zarr reopens a closed archive on demand.
         store = ZipStore(response_file, mode="r")
         response = xr.open_zarr(store, consolidated=False, **kwargs)
         response.set_close(store.close)
-    # One call covers both zarr layouts, v3 (zarr.json) and v2 (.zgroup); consolidated=False
-    # also stops the missing-consolidated-metadata fallback warning from firing.
     elif response_file.is_dir():
+        # consolidated=False reads zarr v2 and v3 alike, without the missing-metadata warning.
         response = xr.open_zarr(response_file, consolidated=False, **kwargs)
     else:
         response = xr.open_dataset(response_file, **kwargs)
@@ -188,48 +180,43 @@ def read_response(
     chunked: bool = False,
 ) -> xr.Dataset:
     """
-    Reads a response function into an `xarray.Dataset` interpolating if needed in
-    doppler_velocity, and logT.
+    Read a response file, resampled onto ``logT`` and ``doppler_velocity`` if given.
 
     Parameters
     ----------
     response_file : `str` | `pathlib.Path`
-        A zarr store (a directory or a ``.zip``) or a netCDF file.
+        A zarr store (a directory or a ``.zip``) or a netCDF file, in the layout
+        `save_response` writes: ``detector_response`` and ``line_wavelength``, a ``line`` or
+        ``channel`` dimension, and units on ``logT``, ``doppler_velocity`` and the wavelengths.
     logT : `astropy.units.Quantity`, optional
-        Temperature axis to (re)sample onto, in a unit convertible to the response's,
-        e.g. ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)``.
+        Temperature axis to resample onto, in a unit convertible to the response's, e.g.
+        ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)``.
     doppler_velocity : `astropy.units.Quantity`, optional
-        Velocity axis to (re)sample onto, in the same way as ``logT``.
+        Velocity axis to resample onto, as for ``logT``.
     number_of_slits : `int`, optional
-        Keep the first ``number_of_slits`` slits of the response, relabelled from 0,
-        e.g. to match a raster from `muse.transforms.reshape_x_to_slit_step`. By
-        default every slit is kept.
+        Keep the first ``number_of_slits`` slits, relabelled from 0, e.g. to match a raster
+        from `muse.transforms.reshape_x_to_slit_step`. By default all.
     logT_method : `str`, optional
-        Interpolation method for logT, by default "nearest".
+        Interpolation method for ``logT``, by default "nearest".
     doppler_velocity_method : `str`, optional
-        Interpolation method for doppler_velocity, by default "linear".
+        Interpolation method for ``doppler_velocity``, by default "linear".
     chunked : `bool`, optional
-        When `True`, open the file dask-backed using its on-disk chunking, so
-        the response stays lazy through resampling and downstream synthesis and
-        peak memory stays bounded by the chunks. By default `False`: numpy arrays, read
-        from the file when first used (resampling reads them at once).
+        If `True`, dask-backed with the on-disk chunks, so the response stays lazy and memory
+        bounded through resampling and synthesis. By default `False`: numpy arrays read on
+        first use (resampling reads them at once).
 
     Returns
     -------
     `xarray.Dataset`
-        The response dataset, with ``gain`` and ``pair_energy`` coordinates when the file
-        states them, as the generators write them. Only the layout
-        `save_response` writes is read: ``detector_response`` and ``line_wavelength``, a ``line`` or ``channel``
-        dimension, and units on ``logT``, ``doppler_velocity`` and the wavelengths.
+        The response, with ``gain`` and ``pair_energy`` coordinates when the file states them.
 
     Raises
     ------
     TypeError
         If ``logT`` or ``doppler_velocity`` is not a Quantity.
     ValueError
-        If the requested ``logT`` or ``doppler_velocity`` axis is empty, not finite, in
-        units that do not convert to the response's or wholly outside its range; or if the
-        file is not in the layout `save_response` writes.
+        If a requested axis is empty, not finite, not convertible to the response's units or
+        wholly outside its range, or the file is not in that layout.
     """
     response_file = Path(response_file)
 
@@ -266,8 +253,7 @@ def read_response(
         # Relabelled from 0, so that downstream exact joins see byte-identical axes.
         response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
-    # The calibration the file states, per line, so that transform_flux_units converts a spectrum
-    # made from this response with the detector the response was made for.
+    # Per line, so transform_flux_units converts with the detector this response was made for.
     dim = "channel" if "channel" in response.dims else "line"
     for name, unit in (("gain", u.electron / u.DN), ("pair_energy", u.eV / u.electron)):
         if name in response.coords:
@@ -294,17 +280,13 @@ def _requested_axis(axis: u.Quantity | None, name: str) -> xr.DataArray | None:
 
 def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
     """
-    Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or
-    ``doppler_velocity``).
+    Resample onto ``axis`` along ``name``, dropping points beyond the response range.
 
-    Out-of-range requested points are trimmed to the response grid first. The
-    ``"nearest"`` method selects existing samples; any other method interpolates and
-    clamps the result to be finite and non-negative.
+    ``"nearest"`` selects samples, any other method interpolates; either way the result
+    is clamped to finite, non-negative values.
     """
     if axis is None:
         return response
-    # The requested axis is converted to the response's units, so the range check, the
-    # resampling and the result share one unit.
     response_unit = require_unit(response, name, f"response.{name}", coord_only=True)
     axis_attrs = dict(response[name].attrs)
     try:
@@ -325,20 +307,15 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
     else:
         nearest = response[name].sel({name: axis}, method="nearest").values
         if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=1e-12, atol=0.0):
-            # Every requested point already sits on the response grid, where interpolation
-            # reduces to selection; selecting also reads only the needed slabs of a
-            # dask-backed response instead of the full axis.
+            # On the grid, selection equals interpolation and reads only the needed dask slabs.
             response = response.sel({name: axis}, drop=True, method="nearest")
         else:
             response = response.interp({name: axis}, method=method)
-    # Clamp on every path so nearest and interpolated responses behave consistently.
     response["detector_response"] = (
         response.detector_response.fillna(0).clip(min=0).assign_attrs(response.detector_response.attrs)
     )
     if response.detector_response.chunks is not None:
-        # Response files store tiny chunks along logT; point selection above keeps one
-        # dask chunk per selected point, which shatters downstream synthesis graphs.
-        # Consolidate the resampled axis into a single chunk.
+        # Point selection leaves one dask chunk per point, which shatters downstream graphs.
         response = response.chunk({name: -1})
     return response.assign_coords({name: axis.assign_attrs(axis_attrs)})
 
@@ -352,24 +329,22 @@ def align_response_and_vdem(
     ),
 ) -> tuple[xr.Dataset, xr.Dataset]:
     """
-    Resample response onto the overlapping VDEM temperature and velocity grids.
+    Resample the response onto the overlapping VDEM temperature and velocity grids.
 
     Parameters
     ----------
     response : `xarray.Dataset`
-        Response dataset containing ``detector_response``.
+        Dataset containing ``detector_response``.
     vdem : `xarray.Dataset`
-        VDEM dataset containing ``vdem``.
+        Dataset containing ``vdem``.
     coordinate_methods : `~collections.abc.Mapping`, optional
-        Maps each coordinate name to align to a ``(resampling method, unit)``
-        tuple, by default ``{"logT": ("nearest", u.dex(u.K)),
-        "doppler_velocity": ("linear", u.km / u.s)}``. Coordinates not listed
-        are left unaligned.
+        A ``(resampling method, unit)`` for each coordinate to align, by default ``logT``
+        nearest in dex(K) and ``doppler_velocity`` linear in km / s. Others are left alone.
 
     Returns
     -------
     response, vdem : `tuple` of `xarray.Dataset`
-        New datasets with identical ``logT`` and ``doppler_velocity`` coordinates.
+        New datasets with identical aligned coordinates.
 
     Raises
     ------
@@ -431,34 +406,21 @@ def read_responses(
     chunked: bool = False,
 ) -> xr.Dataset:
     """
-    Load several response functions and concatenate them along ``line``.
-
-    Each file gives its channel in its ``channel`` coordinate, as the products of the
-    generators do.
+    Read several response files and concatenate them along ``line``.
 
     Parameters
     ----------
     response_files : `Sequence` of `str` or `pathlib.Path`
-        Response files, in order.
-    logT, doppler_velocity : `astropy.units.Quantity`, optional
-        Axes to (re)sample onto, as for `muse.instrument.read_response`.
-    number_of_slits : `int`, optional
-        How many slits to keep. Passed to `muse.instrument.read_response`.
-    logT_method : `str`, optional
-        Interpolation method for logT, by default "nearest".
-        Passed to `muse.instrument.read_response`.
-    doppler_velocity_method : `str`, optional
-        Interpolation method for doppler_velocity, by default "linear".
-        Passed to `muse.instrument.read_response`.
+        Response files, in order, each with a ``channel`` coordinate.
+    logT, doppler_velocity, number_of_slits, logT_method, doppler_velocity_method
+        As for `muse.instrument.read_response`.
     chunked : `bool`, optional
-        When `True`, the concatenated response stays dask-backed. Passed to
-        `muse.instrument.read_response`. By default `False`: in memory.
+        If `True`, the result stays dask-backed. By default `False`: in memory.
 
     Returns
     -------
     `xarray.Dataset`
-        Concatenated response dataset with the ``channel`` coordinate of the files
-        along ``line``.
+        The concatenated response, with the files' ``channel`` along ``line``.
 
     Raises
     ------
@@ -487,7 +449,7 @@ def read_responses(
             if "channel" not in dataset.coords:
                 msg = f"{response_file} has no channel coordinate, which read_responses takes the channel from"
                 raise ValueError(msg)
-            # one channel per line, also from a file that states one for all
+            # A file may state one channel for all lines.
             dataset = dataset.assign_coords(channel=dataset.channel.broadcast_like(dataset.line))
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
@@ -524,16 +486,15 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
     response : `xarray.Dataset`
         Dataset containing ``spectral_response``, ``wavelength_grid`` and ``line_wavelength``.
     response_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``. Existing
-        destinations are not overwritten.
+        As for `save_response`.
 
     Raises
     ------
     TypeError
         If ``response`` is not an `xarray.Dataset`.
     ValueError
-        If one of those variables is missing, or the destination exists or does not end in
-        one of those suffixes.
+        If one of those variables is missing, or the destination exists or has an unknown
+        suffix.
     """
     if not isinstance(response, xr.Dataset):
         msg = "response must be an xarray.Dataset"
@@ -561,9 +522,8 @@ def read_spectral_response(response_file: str | Path) -> xr.Dataset:
     Returns
     -------
     `xarray.Dataset`
-        The response, with ``wavelength_bounds`` as a coordinate. The arrays are read from
-        the file on demand, so the file stays open: call ``.load()`` to bring them into
-        memory, or ``.close()`` when done.
+        The response, with ``wavelength_bounds`` as a coordinate. Its arrays are read on
+        demand, so the file stays open: ``.load()`` them, or ``.close()`` it when done.
 
     Raises
     ------

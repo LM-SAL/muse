@@ -7,31 +7,24 @@
 Installation
 ************
 
-This is the first chapter in the ``muse`` tutorial, and by the end of it you should have a working installation of Python and ``muse``.
-
-For further information and alternative methods for installing ``muse`` beyond the recommended approach outlined below, refer to sunpy's documentation (:ref:`sunpy-topic-guide-installing`) and :ref:`muse-installing-pypi`.
+This page sets up Python and ``muse``.
+For other methods, see :ref:`muse-installing-pypi` and sunpy's guide (:ref:`sunpy-topic-guide-installing`).
 
 Installing Python
 =================
 
-There are many ways to install Python, but even if you have Python installed somewhere on your computer we recommend following these instructions anyway.
-That's because we will create a new Python virtual environment.
-As well as containing a Python installation, this virtual environment provides an isolated place to install Python packages (like ``muse``) without affecting any other current Python installation.
-If you already have Python and ``conda`` working you can skip the next section.
+Follow these steps even if you have Python: they create a virtual environment, an isolated place to install packages (like ``muse``) without affecting any other Python installation.
+If you already use miniforge, skip the next section.
 
-`If you are using Anaconda, we recommend that you uninstall it as the default package channel(s) have a restrictive license which means you might not be able to use it for free <https://sunpy.org/posts/2024/2024-08-09-anaconda/>`__.
-Instead, we recommend that you use miniforge which is a minimal installer that set ups ``conda`` with the ``conda-forge`` channel, which is free to use for everyone.
-If you are using miniforge, you can skip the next section.
+If you use Anaconda, we recommend replacing it with miniforge: `the default Anaconda channels have a restrictive license <https://sunpy.org/posts/2024/2024-08-09-anaconda/>`__, while miniforge sets up ``conda`` with the ``conda-forge`` channel, free for everyone.
 
 .. _muse-installing-miniforge:
 
 Installing miniforge (and conda)
 ================================
 
-If you don't already have a Python installation then we recommend installing Python with `miniforge <https://github.com/conda-forge/miniforge/#miniforge>`__.
-Miniforge will install ``conda`` and automatically configure the default channel (a channel is a remote software repository) to be ``conda-forge``, which is where ``muse`` is available.
-
-First, download the installer for your system and architecture from the links below:
+`Miniforge <https://github.com/conda-forge/miniforge/#miniforge>`__ installs ``conda`` with ``conda-forge``, the channel (a remote software repository) that has ``muse``, as its default.
+Download the installer for your system and architecture:
 
 .. grid:: 3
 
@@ -62,94 +55,65 @@ Then select your platform to install miniforge:
     .. tab-item:: Linux & Mac
         :sync: platform
 
-        For Linux & Mac, run the downloaded script above using the following command:
-        ``bash <filename>``. The following should work:
+        Run the downloaded script:
 
         .. code-block:: console
 
             bash Miniforge3-$(uname)-$(uname -m).sh
 
-        Once the installer has completed, restart your terminal or log-out and log-in if the changes don't take effect.
+        Then restart your terminal, or log out and in if the changes don't take effect.
 
     .. tab-item:: Windows
         :sync: platform
 
-        Double click the executable file downloaded from the links above.
-
-        Once the installer has completed you should have a new "Miniforge Prompt" entry in your start menu.
+        Double click the downloaded executable.
+        It adds a "Miniforge Prompt" entry to your start menu.
 
 In a new terminal (Miniforge Prompt on Windows) run ``conda list`` to test that the install has worked.
 
 Installing muse from conda-forge
 ================================
 
-To install ``muse``, start by launching a terminal (under a UNIX-like system) or the Miniforge Prompt (under Windows).
-Now we will create and activate a new virtual environment to install ``muse`` into (using the latest version of Python):
+In a terminal (the Miniforge Prompt on Windows), create and activate a virtual environment, here named ``muse``:
 
 .. code-block:: bash
 
     $ conda create --name muse
     $ conda activate muse
 
-In this case the virtual environment is named 'muse'.
-Feel free to change this to a different environment name.
-
-The benefit of using a virtual environment is that it allows you to install packages without affecting any other Python installations or versions on your system.
-This also means you can work on multiple projects (research or coding) with different package requirements without them interfering with each other.
-
 .. dropdown:: Click here if you haven't installed miniforge
     :color: warning
 
-    If you have installed miniforge or are using Anaconda you need to configure conda to get your packages from conda-forge as well as the defaults channel.
-
-    You should no longer use the defaults channel at all, see `this blog post <https://sunpy.org/posts/2024/2024-08-09-anaconda/>`__ for details as to why.
-    Therefore, if you are using Anaconda or miniconda we would suggest you uninstall it and install miniforge in its place.
-
-    We also appreciate this isn't going to be possible for everyone, so what follows is our best instructions for how to proceed if you are using miniconda or Anaconda.
-
-    The commands you need to run to add conda-forge and make it the default location to install conda packages from are:
+    If you cannot replace Anaconda or miniconda with miniforge (see `this blog post <https://sunpy.org/posts/2024/2024-08-09-anaconda/>`__ for why you should), make conda-forge the default channel:
 
     .. code-block:: bash
 
         $ conda config --add channels conda-forge
         $ conda config --set channel_priority strict
 
-    These commands are taken from the
-    `conda-forge documentation <https://conda-forge.org/docs/user/introduction/#how-can-i-install-packages-from-conda-forge>`__.
+    These commands, from the `conda-forge documentation <https://conda-forge.org/docs/user/introduction/#how-can-i-install-packages-from-conda-forge>`__, affect every environment, the base one included.
+    Do not install or upgrade packages in the base environment: a new environment for each project avoids the pitfalls of `multiple channels <https://conda-forge.org/docs/user/tipsandtricks/#multiple-channels>`__.
 
-    Running these commands affect all the environments in your conda installation, critically, including the base Anaconda environment.
-    We highly recommend that you do not install new packages, upgrade packages or use your base environment.
-    Instead create new environments for all your projects, as you are much less likely to run into any pitfalls while using `multiple channels <https://conda-forge.org/docs/user/tipsandtricks/#multiple-channels>`__ by doing this.
-
-Now that we have a fresh virtual environment, we can proceed with installing ``muse``:
+Then install ``muse``:
 
 .. code-block:: bash
 
     $ conda install -c conda-forge musepy-lmsal
 
-This will install ``muse`` and all of its dependencies.
-The conda-forge package is named ``musepy-lmsal``, but you still import it in Python as ``muse``.
-If you are planning on using muse in jupyter notebooks we also recommend you install the ``ipywidgets`` and ``itables`` packages.
-
-To ensure that ``muse`` was installed correctly, run the following command:
+The conda-forge package is named ``musepy-lmsal``, but you import it in Python as ``muse``.
+For Jupyter notebooks, also install ``ipywidgets`` and ``itables``.
+Check the installation with:
 
 .. code-block:: bash
 
     $ conda list musepy-lmsal
-
-This checks if ``muse`` was installed correctly.
-
-If you want to install another package later, you can run ``conda install <package_name>``.
 
 .. _muse-installing-pypi:
 
 Installing muse from PyPI
 =========================
 
-If you are comfortable managing your own Python installation, virtual environments, and dependencies, you can install the ``muse`` package from PyPI.
-Use Python 3.13 or later and create a virtual environment with your preferred method and activate it the environment using the correct command for your platform.
-
-Install ``muse`` into the activated environment and check the installed package:
+If you manage your own Python (3.13 or later) and virtual environments, install ``muse`` from PyPI into an activated environment and check it:
 
 .. code-block:: bash
 
@@ -174,10 +138,8 @@ Optional extras
 Installing Torch (optional)
 ===========================
 
-``muse`` synthesizes spectra with NumPy by default; `PyTorch <https://pytorch.org/>`__ is an optional accelerator backend (``vdem_synthesis(..., backend="torch")``).
-Torch is never selected implicitly, so you only need this section if you want the speed-up.
-
-The correct Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Apple Silicon), and the generic PyPI wheel is not always the one you want: on Linux it bundles the multi-gigabyte CUDA stack even on machines without a GPU.
+``muse`` synthesizes spectra with NumPy unless asked for the optional `PyTorch <https://pytorch.org/>`__ backend (``vdem_synthesis(..., backend="torch")``).
+The right Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Apple Silicon): on Linux the generic PyPI wheel bundles the multi-gigabyte CUDA stack even without a GPU.
 
 .. tab-set::
 
@@ -191,14 +153,14 @@ The correct Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Appl
 
     .. tab-item:: pip
 
-        Install Torch first, following the selector on the `PyTorch install page <https://pytorch.org/get-started/locally/>`__ for your hardware, then install muse's extra; pip sees Torch is already satisfied and leaves it alone:
+        Install the Torch build for your hardware from the `PyTorch install page <https://pytorch.org/get-started/locally/>`__ first; the extra then leaves it alone:
 
         .. code-block:: bash
 
             $ pip install torch --index-url https://download.pytorch.org/whl/cpu  # CPU-only example
             $ pip install "muse[torch]"
 
-        On macOS and Windows the default ``pip install "muse[torch]"`` already gives a CPU (and Apple-Silicon ``mps``) build, so the two-step is only needed on Linux or for a specific CUDA version.
+        On macOS and Windows ``pip install "muse[torch]"`` alone gives a CPU (and Apple Silicon ``mps``) build; the two steps are for Linux or a specific CUDA version.
 
     .. tab-item:: uv
 

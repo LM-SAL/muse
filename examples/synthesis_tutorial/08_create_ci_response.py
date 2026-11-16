@@ -3,10 +3,8 @@
 08 - Create and synthesize a MUSE CI response
 =============================================
 
-This tutorial creates a main-line response for the MUSE context imager (CI)
-195 Angstrom channel and uses it directly to synthesize a CI image.
-
-CI is an imager, so
+Create a main-line response for the 195 Angstrom channel of the MUSE context
+imager (CI) and synthesize a CI image with it. CI is an imager, so
 :func:`muse.instrument.map_response_to_ci_detector` integrates the
 wavelength-space response over the band.
 """
@@ -28,22 +26,17 @@ from muse.instrument import (
 from muse.synthesis import vdem_synthesis
 from muse.variables import DEFAULTS_MUSE
 
-##############################################################################
-# Fetch the VDEM used throughout the synthesis tutorial.
-
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 
 ##############################################################################
-# Fetch a CHIANTI Fe XII line list around 195 Angstrom. CHIANTI emissivities
-# describe the plasma rather than a particular instrument, so the same
-# precomputed line list used by the EIS example is also valid here. The
-# instrument-specific calibration enters below.
+# A line list describes the plasma, not the instrument, so the Fe XII 195
+# Angstrom list of the EIS example serves here too.
 
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
 
 ##############################################################################
-# Build the wavelength-space response using a scalar CI effective area.
+# The wavelength-space response, with the scalar CI effective area.
 
 channel = 195 * u.AA
 waveband_response = create_spectral_response(
@@ -55,8 +48,8 @@ waveband_response = create_spectral_response(
 )
 
 ##############################################################################
-# Convert radiance to DN per CI pixel using the CI-specific pixel geometry,
-# CCD gain, and pair-creation energy, then integrate over wavelength.
+# Convert to DN per CI pixel, from the CI pixel size, gain and pair-creation
+# energy, then integrate over wavelength.
 
 waveband_response = transform_response_units(
     waveband_response,
@@ -72,10 +65,8 @@ response.detector_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="lin
 plt.title("MUSE CI 195 main-line temperature response")
 
 ##############################################################################
-# The band-integrated response feeds into the same synthesis function as the
-# SG and other-instrument responses, once
-# :func:`muse.instrument.align_response_and_vdem` has put it on the
-# temperature and velocity grids of the VDEM.
+# Once :func:`muse.instrument.align_response_and_vdem` puts it on the
+# temperature and velocity grids of the VDEM, the response synthesizes like any other.
 
 response, vdem = align_response_and_vdem(response, vdem)
 spectrum = vdem_synthesis(vdem, response)

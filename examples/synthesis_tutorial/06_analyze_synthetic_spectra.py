@@ -3,9 +3,9 @@
 06 - Analyze synthetic MUSE spectra
 ===================================
 
-This tutorial demonstrates how to visualize the detector spectra created by
-:ref:`example 05 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
-In addition to calculating the spectral moments.
+Plot the detector spectra of
+:ref:`example 05 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`
+and calculate their spectral moments.
 """
 
 import matplotlib.pyplot as plt
@@ -17,31 +17,18 @@ from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
 
 ##############################################################################
-# Load the saved MUSE spectrum from the
-# :ref:`previous example <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`.
-#
-# If the previous example wrote the spectrum to ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``
-# (or the default artifacts directory), that local file is used. Otherwise,
-# :func:`muse.data.fetch_example_data` downloads the published copy so this
-# example also works on its own.
+# :func:`muse.data.fetch_example_data` takes the spectrum example 05 saved, or
+# downloads the published copy.
 
 spectrum_path = fetch_example_data("muse_synthetic_spectra.nc")
 
 spectrum = xr.open_dataset(spectrum_path, engine="h5netcdf", chunks="auto")
 
 ##############################################################################
-# Visualizing synthetic spectra
-#
-# The synthetic spectra can be visualized as:
-#
-# - **Spectrograms**: intensity as a function of wavelength and spatial position
-# - **Line profiles**: spectra at specific spatial locations
-# - **Spatial maps**: intensity integrated over wavelength
-#
 # **Spectrogram**
 #
-# This image shows Fe IX 171.073 along slit 15 at raster step 2. The wavelength
-# coordinate depends on the selected slit.
+# Fe IX 171.073 along slit 15 at raster step 2. The wavelength coordinate
+# depends on the slit.
 
 spectrogram = spectrum.flux.sel(line="Fe IX 171.073").isel(step=2, slit=15, pressure=0)
 spectrogram_plot = spectrogram.plot.imshow(
@@ -57,8 +44,7 @@ spectrogram_plot.axes.set_title("Fe IX 171.073: raster step 2, slit 15")
 ##############################################################################
 # **Line profile**
 #
-# Selecting one y position from the spectrogram produces a conventional line
-# profile.
+# One y position of the spectrogram.
 
 profile = spectrogram.isel(y=spectrogram.sizes["y"] // 2)
 fig, ax = plt.subplots(figsize=(8, 4))
@@ -69,9 +55,8 @@ ax.set_title("Fe IX 171.073 at one spatial location")
 ##############################################################################
 # **Spatial map**
 #
-# Integrating over the detector pixels produces the 171 Angstrom intensity.
-# Restacking the slit and raster-step dimensions reconstructs the full spatial
-# field of view.
+# The 171 Angstrom intensity summed over detector pixels, with slit and step
+# restacked onto x.
 
 intensity = (
     spectrum[["flux"]].where((spectrum.channel == 171).compute(), drop=True).sum(dim=["line", "detector_x_pixel"])
@@ -82,21 +67,16 @@ image.plot(ax=ax, norm=colors.LogNorm())
 ax.set_title("Synthesized 171 Angstrom intensity")
 
 ##############################################################################
-# Finally we can calculate the spectral moments.
+# **Spectral moments**
 #
-# Spectral moments characterize the line properties:
-#
-# - **0th moment**: Total intensity (integrated flux)
-# - **1st moment**: Line-of-sight velocity (Doppler shift)
-# - **2nd moment**: Line width (thermal + non-thermal broadening)
-#
+# The 0th moment is the total intensity, the 1st the line-of-sight (Doppler)
+# velocity and the 2nd the line width, thermal and nonthermal.
 # :func:`muse.synthesis.wavelength_to_doppler` adds the velocity coordinate
-# required by :func:`muse.synthesis.calculate_moments`.
+# that :func:`muse.synthesis.calculate_moments` needs.
 
 velocity_spectrum = wavelength_to_doppler(spectrum)
 moments = calculate_moments(velocity_spectrum)
-# Materialize the small moment maps once; otherwise every panel below would
-# recompute the shared lazy moments graph from the chunked spectrum.
+# Compute once, or every panel below recomputes the lazy moments from the spectrum.
 moment_maps = reshape_slit_step_to_x(moments).isel(pressure=0).compute()
 
 fig, axes = plt.subplots(

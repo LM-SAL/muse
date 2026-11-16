@@ -2,18 +2,16 @@
 Design decisions
 ****************
 
-This page contains my latest ramblings on the design decisions behind ``muse`` that I have made.
-
 .. _observation-roadmap:
 
 Observation-handling roadmap
 ============================
 
-The longer-term goal is to support MUSE imaging (context imager) and spectral (spectrograph) observations.
-Planned data containers will connect observations with uncertainties, masks, world coordinate systems, and metadata.
-Calibration tools will cover exposure-time correction, conversion between data numbers and photons, and radiometric calibration, with support for custom calibration routines that produce level 3 data from level 2 inputs.
-The conversions exist for synthetic spectra; the observation containers and calibration routines are not yet implemented.
-Once available, `MUSE observations will be publicly accessible together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__.
+``muse`` will support MUSE context-imager and spectrograph observations.
+Planned data containers will hold observations with uncertainties, masks, world coordinate systems, and metadata.
+Calibration tools will cover exposure-time correction, conversion between data numbers and photons, and radiometric calibration, with custom routines that make level 3 data from level 2.
+Only the conversions exist yet, for synthetic spectra.
+`MUSE observations will be public together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__.
 
 Units are attrs
 ===============
@@ -21,12 +19,11 @@ Units are attrs
 Every physical quantity carries an ``astropy.units`` unit, stored as a string in the relevant ``.attrs["units"]``.
 We have converters which normalize to a canonical unit on construction (arcsec, Angstrom, km/s, etc), so downstream code can assume the canonical unit without re-checking.
 
-**Why** For now, ``astropy.units`` does not play well with xarray, and MUSE mixes wavelengths, Doppler velocities, and spatial scales.
-A silent unit mismatch (nm vs Angstrom, km/s vs m/s) will produce incorrect numbers that we can not catch.
-I hope by adding the units to the ``attrs``, we can at least catch these errors at a boundary.
+**Why.** ``astropy.units`` does not yet play well with xarray, and MUSE mixes wavelengths, Doppler velocities, and spatial scales.
+A unit in the ``attrs`` lets a boundary catch a mismatch (nm vs Angstrom, km/s vs m/s) that would otherwise give wrong numbers silently.
 
-**Consequence** Don't strip units from the ``attrs`` and don't do unit arithmetic on raw arrays without first normalizing.
-Validate input units with :func:`muse.utils.require_unit`, which checks presence, parseability, and (optionally) convertibility, then returns the parsed unit so the caller can rescale:
+**Consequence.** Keep the units in the ``attrs`` and normalize before arithmetic on raw arrays.
+Validate input units with :func:`muse.utils.require_unit`, which returns the unit so the caller can rescale:
 
 .. code-block:: python
 
@@ -39,64 +36,55 @@ Validate input units with :func:`muse.utils.require_unit`, which checks presence
     )
     detector_wavelength = response.coords["detector_wavelength"] * wavelength_unit.to(u.AA)
 
-One function does presence-and-units so the same checks are not re-implemented per module and every unit error reads the same.
-Domain checks compose on top of it rather than inside it: see ``muse.synthesis.synthesis._validate_inputs``, which checks slit consistency and ``sum_over`` membership itself and calls :func:`muse.utils.require_unit` for the units.
+One function does these checks, so every unit error reads the same.
+Domain checks call it rather than live in it, as ``muse.synthesis.synthesis._validate_inputs`` does.
 
 Datasets should be immutable
 ============================
 
 Treat every input :class:`~xarray.Dataset` as read-only.
-Produce results with ``assign`` / ``assign_coords`` / arithmetic, which return a *new* dataset that **shares** the underlying arrays.
-So adding a coordinate or attr is cheap and never duplicates the large data variables.
+``assign``, ``assign_coords`` and arithmetic return a *new* dataset that **shares** the underlying arrays, so adding a coordinate or attr is cheap.
 
-**Why.** We will have large data arrays (e.g., ``vdem``, ``detector_response``, ``flux``) whereas the coordinates and attrs are tiny.
-Avoiding ``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, which does not scale. In-place mutation (``ds.coords[...] = ...``) silently changes the caller's object, this is something we want to avoid.
+**Why.** The data arrays (``vdem``, ``detector_response``, ``flux``) are large and the coordinates and attrs tiny.
+``ds.copy(deep=True)`` to tweak one coordinate copies *everything*, and in-place mutation (``ds.coords[...] = ...``) silently changes the caller's object.
 
 **Rules.**
 
-- Never mutate an input in place.
-  Return a new object.
-- Deep-copy only the single array you actually overwrite:
+- Never mutate an input in place; return a new object.
+- Deep-copy only the array you overwrite, not the whole dataset:
 
   .. code-block:: python
 
       ds = ds.assign(detector_response=ds.detector_response.copy(deep=True))
 
-  not the whole dataset.
-
 - ``.attrs`` are shared on a shallow copy.
   Set attrs on a freshly computed ``DataArray`` *before* ``assign_coords``, or use ``.assign_attrs(...)``; mutating ``ds.var.attrs[...]`` on a shared object leaks back to the original.
 
 **Exception: finalizers.**
-:func:`muse.utils.add_history` and :func:`muse.utils.update_attrs` mutate the object they receive in place and return `None`.
-They must only ever be called on a newly constructed output that the calling function owns, never on a caller-owned input.
-Name the result before calling a finalizer so the ownership is visible at the call site.
+:func:`muse.utils.add_history` and :func:`muse.utils.update_attrs` mutate their argument in place and return `None`.
+Call them only on a new output the calling function owns, named before the call so the ownership shows.
 
 Importing ``muse`` must not configure the host
 ==============================================
 
 ``import muse`` leaves the host process untouched: no ``xarray.set_options`` call and no Loguru handler replacement.
-A library import that silently reconfigures process-wide state changes the behavior of the host application and of every other imported library.
+Reconfiguring process-wide state would change the host application and every other library.
 
-**Consequences for contributors.** ``muse`` code runs under whatever xarray options the host application set, so:
+**Consequences.** ``muse`` code runs under the host's xarray options, so:
 
-- Never assume attrs survive a reduction or arithmetic operation (the host may run with ``keep_attrs=False``, and the test suite does).
-  Set the attrs you need explicitly on the object you return, or pass ``keep_attrs=True`` to that one call.
-  Units are the load-bearing attrs and are re-validated at every trust boundary by :func:`muse.utils.require_unit`.
-- Pass the combine keyword arguments (``data_vars``, ``coords``, ``compat``, ``join``, ``combine_attrs``) explicitly to every ``xarray.concat`` / ``xarray.merge`` call.
-  With no explicit values, the behavior depends on the host's ``use_new_combine_kwarg_defaults`` setting, and ambiguous calls raise a ``FutureWarning``, which the test suite treats as an error.
+- Never assume attrs survive a reduction or arithmetic (the host may set ``keep_attrs=False``, and the test suite does).
+  Set the attrs you need on the result, or pass ``keep_attrs=True`` to that call.
+  :func:`muse.utils.require_unit` re-validates the units at every boundary.
+- Pass ``data_vars``, ``coords``, ``compat``, ``join`` and ``combine_attrs`` to every ``xarray.concat`` and ``xarray.merge``.
+  Their defaults depend on the host's ``use_new_combine_kwarg_defaults``, and ambiguous calls raise a ``FutureWarning``, an error in the test suite.
 - Logging configuration is the application's job.
-  For scripts and notebooks, :func:`muse.log.change_logging_level` sets the overall level explicitly at call time; it replaces every Loguru sink, so applications that manage their own Loguru configuration should configure Loguru directly instead.
-  Library code must never call it.
+  :func:`muse.log.change_logging_level` replaces every Loguru sink and is for scripts and notebooks; library code must never call it.
 
 Lineage
 =======
 
-Functions that return a dataset record the call that produced it via :func:`muse.utils.add_history`.
-This keeps a human-readable trail of the operations on the data itself.
-``add_history`` alone owns the provenance attributes (``history``, ``date_created``, ``date_modified``, ``muse_version``); a multi-input result inherits its inputs' histories by passing them as ``add_history(..., sources=...)``.
-:func:`muse.utils.update_attrs` copies the remaining (non-provenance) attributes from a source dataset.
+Functions that return a dataset record the call in its history with :func:`muse.utils.add_history`, a readable trail on the data itself.
+``add_history`` alone sets the provenance attributes (``history``, ``date_created``, ``date_modified``, ``muse_version``).
 
-A newly constructed dataset needs both halves of this finalization.
-Preserve attrs intrinsic to the new result, explicitly copy or merge non-provenance source attrs with ``update_attrs``, then call ``add_history(..., sources=...)`` so the output records every source lineage and its producing call.
-Concatenation must select ``combine_attrs`` deliberately rather than silently inheriting only the first input's attrs.
+A new dataset keeps its own attrs and is finalized in two steps: :func:`muse.utils.update_attrs` copies the other attrs of its sources, then ``add_history(..., sources=...)`` inherits their histories and records the call.
+Concatenation must choose ``combine_attrs`` deliberately rather than keep only the attrs of the first input.

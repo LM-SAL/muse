@@ -58,27 +58,25 @@ def create_effective_area(
     Parameters
     ----------
     area : `astropy.units.Quantity`
-        The area at each wavelength, in cm2.
+        Area at each wavelength, in cm2.
     wavelength : `astropy.units.Quantity`
         Increasing wavelengths of the samples.
     channel : `astropy.units.Quantity`
         Nominal wavelength of the channel, a scalar such as ``171 * u.AA``.
     components : `dict`, optional
-        Further curves of any unit, such as ``mirror``, ``filter``, ``ccd`` or ``grating``,
-        stored alongside under their names. Each has one value per wavelength, or a single
-        value that holds at every wavelength.
+        Further curves of any unit, e.g. ``mirror`` or ``filter``, stored under their names,
+        each with one value per wavelength or one value for all.
     attrs : `dict`, optional
         Attributes to record, e.g. the coating.
     pixel_width, pixel_height, gain, pair_energy : `astropy.units.Quantity`, optional
         The detector of an imager other than MUSE, as `muse.instrument.transform_response_units`
-        takes it. Each is recorded as an attribute, read back with
-        ``u.Quantity(effective_area.attrs["gain"])``.
+        takes it, recorded as attributes read back with ``u.Quantity(effective_area.attrs["gain"])``.
 
     Returns
     -------
     `xarray.Dataset`
-        ``effective_area(wavelength)`` with its units, the components, ``wavelength`` in
-        Angstrom and the scalar coordinate ``channel`` in Angstrom.
+        ``effective_area(wavelength)`` and the components, with ``wavelength`` and the scalar
+        coordinate ``channel`` in Angstrom.
 
     Raises
     ------
@@ -119,8 +117,7 @@ def create_effective_area(
         },
         attrs=dict(attrs or {}),
     )
-    # The components and the attributes are in the dataset itself; as dicts they would only
-    # fill the history with array dumps and cannot be stored as inputs.
+    # Already in the dataset; as history inputs they would only be array dumps.
     recorded_inputs = {name: value for name, value in call_inputs.items() if name not in ("components", "attrs")}
     add_history(dataset, recorded_inputs, create_effective_area)
     return dataset
@@ -148,16 +145,16 @@ def create_aia_effective_area(
     channel : `astropy.units.Quantity`
         The AIA channel, e.g. ``304 * u.AA``.
     obstime : `astropy.time.Time` or `str`, optional
-        Epoch of the degradation and of the EVE normalization, by default 1 May 2010, the
-        start of the AIA science mission, as in SolarSoft.
+        Epoch of the degradation and the EVE normalization, by default 1 May 2010, the start
+        of the science mission, as in SolarSoft.
     include_crosstalk : `bool`, optional
-        Add the light of the other channel on the same telescope that leaks through this
-        channel's focal-plane filter (94 with 304, 131 with 335), by default `True`. For 335
-        the leak rivals the channel's own peak.
+        Add the light of the telescope's other channel that leaks through the focal-plane
+        filter (94 with 304, 131 with 335), by default `True`. For 335 it rivals the
+        channel's own peak.
     include_degradation : `bool`, optional
-        Apply ``aiapy.calibrate.degradation`` at ``obstime``, by default `False`, as aiapy's
-        degradation at the default ``obstime`` is not exactly 1. Set it, with ``obstime``, to
-        compare with observations.
+        Apply ``aiapy.calibrate.degradation`` at ``obstime``, by default `False`, as it is
+        not exactly 1 even at the default ``obstime``. Set it, with ``obstime``, to compare
+        with observations.
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
@@ -165,9 +162,8 @@ def create_aia_effective_area(
     Returns
     -------
     `xarray.Dataset`
-        The dataset `create_effective_area` returns, with the curves ``mirror``, ``filter``,
-        ``ccd``, ``contamination``, ``crosstalk`` and ``dn_per_photon`` alongside, and the AIA
-        detector in the attributes of `create_effective_area`.
+        As `create_effective_area` returns, with the curves ``mirror``, ``filter``, ``ccd``,
+        ``contamination``, ``crosstalk`` and ``dn_per_photon`` and the AIA detector attributes.
 
     Notes
     -----
@@ -189,8 +185,7 @@ def create_aia_effective_area(
     degradation_factor = degradation(channel, obstime).to_value(u.one).item() if include_degradation else 1.0
     eve_factor = aia_channel.eve_correction(obstime).to_value(u.one).item() if include_eve_correction else 1.0
     area = (aia_channel.effective_area + crosstalk) * degradation_factor * eve_factor
-    # aiapy's Channel.gain is DN per photon: the photon energy over the pair energy and the
-    # camera gain (electron / DN). So the camera gain follows from any one wavelength.
+    # Channel.gain (DN / ph) is photon energy / pair energy / camera gain, so one wavelength gives the camera gain.
     photon_energy = (const.h * const.c / aia_channel.wavelength[0]).to(u.eV) / u.ph
     camera_gain = (photon_energy / _AIA_PAIR_ENERGY / aia_channel.gain[0]).to(u.electron / u.DN)
     pixel_size = ((aia_channel.plate_scale * u.pix) ** 0.5).to(u.arcsec)
@@ -259,15 +254,13 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
         ``effective_area(wavelength)`` with units convertible to cm2, and the scalar
         coordinate ``channel``.
     effective_area_file : `str` or `pathlib.Path`
-        Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``.
-        A ``.zarr.zip`` destination is one file: the zarr store packed into a zip. Existing
-        destinations are not overwritten.
+        As for `muse.instrument.save_response`.
 
     Raises
     ------
     ValueError
-        If the dataset does not have that layout, or the destination exists or does not end
-        in one of those suffixes.
+        If the dataset does not have that layout, or the destination exists or has an
+        unknown suffix.
     """
     validated = _validate_effective_area(effective_area, "effective_area").drop_encoding()
     destination = _check_destination(effective_area_file, what="effective area", argument="effective_area_file")
@@ -289,8 +282,8 @@ def read_effective_area(effective_area_file: str | Path) -> xr.Dataset:
     Returns
     -------
     `xarray.Dataset`
-        The dataset in memory: ``effective_area(wavelength)``, its units convertible to cm2,
-        with ``wavelength`` and the scalar ``channel`` converted to Angstrom.
+        In memory: ``effective_area(wavelength)`` in units convertible to cm2, with
+        ``wavelength`` and the scalar ``channel`` in Angstrom.
 
     Raises
     ------

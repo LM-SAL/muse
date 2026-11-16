@@ -2,6 +2,8 @@
 Continuum emission as wavelength-space responses: free-free, free-bound and two-photon.
 """
 
+from pathlib import Path
+
 import numpy as np
 import xarray as xr
 
@@ -38,25 +40,23 @@ def create_chianti_continuum(
     minimum_abundance: float = _MINIMUM_ABUNDANCE,
 ) -> xr.Dataset:
     """
-    Compute the continuum with ChiantiPy, summed over the ions of every element above
-    ``minimum_abundance``.
+    Compute the free-free, free-bound and two-photon continuum with ChiantiPy.
 
-    Free-free and free-bound emission do not depend on the density and are computed once;
-    the two-photon emission of the hydrogen- and helium-like ions is evaluated at every
-    density or pressure. The result is a wavelength-space response as
-    `muse.instrument.create_spectral_response` gives, with one ``line`` per component, at
-    rest and without an effective area: fold it onto bins with
-    `muse.instrument.create_continuum_response`.
+    Free-free and free-bound emission do not depend on density and are computed once; the
+    two-photon emission of hydrogen- and helium-like ions at every density or pressure.
+    The result is a rest-frame response like that of
+    `muse.instrument.create_spectral_response`, one ``line`` per component and without an
+    effective area; `muse.instrument.create_continuum_response` folds it onto bins.
 
     Parameters
     ----------
     temperature, density, pressure
-        As for `create_chianti_line_list`; a density grid comes out on ``logD``.
+        As for `create_chianti_line_list`.
     wavelength_grid : `astropy.units.Quantity`
         Increasing wavelengths the continuum is evaluated at.
     abundance : `str`, optional
-        CHIANTI abundance name. If not given, ChiantiPy's configured default applies. The
-        name of the set that was used is recorded in the ``abundance`` attribute.
+        CHIANTI abundance name; by default ChiantiPy's. The name used is recorded in the
+        ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by default
         1e-21.
@@ -64,14 +64,11 @@ def create_chianti_continuum(
     Returns
     -------
     `xarray.Dataset`
-        ``spectral_response`` in units of 1e-27 erg cm3 /
-        (Angstrom s sr). Its dimensions are ``(line, logT, logD, wavelength_bin)`` for a
-        density grid. For a pressure grid ``pressure`` takes the place of ``logD`` and comes
-        before ``logT``.
-        ``line`` holds the three components ``free-free``, ``free-bound`` and
-        ``two-photon``. The coordinates are ``wavelength_grid`` (the input wavelengths)
-        with its ``wavelength_bounds``, and ``line_wavelength``, which is NaN for every
-        component.
+        ``spectral_response`` in 1e-27 erg cm3 / (Angstrom s sr), along ``(line, logT,
+        logD, wavelength_bin)`` for a density grid and ``(line, pressure, logT,
+        wavelength_bin)`` for a pressure grid. ``line`` holds ``free-free``,
+        ``free-bound`` and ``two-photon``. The coordinates are ``wavelength_grid`` (the
+        input) with its ``wavelength_bounds``, and ``line_wavelength``, NaN throughout.
 
     Raises
     ------
@@ -110,9 +107,7 @@ def create_chianti_continuum(
     for z in elements:
         for stage in range(1, z + 2):
             ion_name = f"{chconst.El[z - 1]}_{stage}"
-            # A neutral has no charge to radiate free-free emission, and no electron recombines
-            # onto it; ChiantiPy divides by zero for one. So neutrals are skipped. A charged ion
-            # without the data of a component reports an errorMessage instead.
+            # A neutral has no free-free or free-bound emission, and ChiantiPy divides by zero for one.
             if stage > 1:
                 continuum = ch.continuum(ion_name, chianti_temperatures, abundance=abundance)
                 for component, method, result_name in (
@@ -165,7 +160,6 @@ def create_chianti_continuum(
             "minimum_abundance": minimum_abundance,
         },
     )
-    # The abundance set that was used, also when none was named.
     abundance = abundance or chdata.Defaults["abundfile"]
     add_history(continuum, {**call_inputs, "abundance": abundance}, create_chianti_continuum)
     return continuum
@@ -181,25 +175,22 @@ def create_fiasco_continuum(
     abundance: str | None = None,
     minimum_abundance: float = _MINIMUM_ABUNDANCE,
     workers: int = 1,
-    hdf5_dbase_root=None,
+    hdf5_dbase_root: str | Path | None = None,
 ) -> xr.Dataset:
     """
-    Compute the continuum with fiasco, summed over the ions of every element above
-    ``minimum_abundance``.
+    Compute the free-free, free-bound and two-photon continuum with fiasco.
 
-    The counterpart of `create_chianti_continuum` with the same output, built on
-    ``fiasco.IonCollection``, whose methods include the abundance and the ionization fraction
-    like ChiantiPy's ``includeAbund`` and ``includeIoneq``. fiasco's continuum emission is
-    not per steradian, so every component is divided by 4 pi to match ChiantiPy.
+    Built on ``fiasco.IonCollection``, with the output of `create_chianti_continuum`.
+    fiasco's continuum is not per steradian, so every component is divided by 4 pi.
 
     Parameters
     ----------
     temperature, wavelength_grid, density, pressure, abundance, minimum_abundance
-        As for `create_chianti_continuum`. If ``abundance`` is not given, fiasco's default
-        applies, which need not be ChiantiPy's.
+        As for `create_chianti_continuum`, but ``abundance`` defaults to fiasco's, which
+        need not be ChiantiPy's.
     workers : `int`, optional
-        Number of processes that share the ions, by default 1; ``-1`` uses every CPU this
-        process may run on.
+        Processes that share the ions, by default 1; ``-1`` uses every CPU this process
+        may run on.
     hdf5_dbase_root : `str` or `pathlib.Path`, optional
         fiasco's HDF5 database; by default its configured one.
 
@@ -234,7 +225,7 @@ def create_fiasco_continuum(
 
     from fiasco.util.exceptions import MissingDatasetException, MissingIonError  # noqa: PLC0415
 
-    # Computed once for all elements: each Element would otherwise compute it again.
+    # Once for all elements; each Element would otherwise compute it again.
     proton_electron_ratio = fiasco.proton_electron_ratio(temperatures, **ion_kwargs)
     ions, two_photon_ions = [], []
     for z in range(1, 31):
@@ -258,8 +249,7 @@ def create_fiasco_continuum(
     free_bound = sum(_map_ion_groups(_fiasco_component, ions, workers, "free_bound", wavelengths))
     two_photon = np.zeros((len(densities), temperatures.size, wavelength_grid.size))
     for plasma_index, electron_density in enumerate(densities):
-        # One density per temperature: fiasco pairs them itself and repeats the result along
-        # its density axis, so any column of it is the answer.
+        # couple_density_to_temperature repeats the result along fiasco's density axis; any column is it.
         parts = _map_ion_groups(
             _fiasco_component,
             two_photon_ions,
@@ -282,12 +272,11 @@ def create_fiasco_continuum(
         wavelength_grid=wavelength_grid,
         attrs={
             "fiasco_version": fiasco.__version__,
-            # The version of the database, read where fiasco's own line list reads it.
+            # Where fiasco's own line list reads the database version.
             **({"chianti_version": str(ions[0]._elvlc.version)} if hasattr(ions[0], "_elvlc") else {}),
             "minimum_abundance": minimum_abundance,
         },
     )
-    # The abundance set that was used, also when none was named.
     abundance = getattr(ions[0], "_dset_names", {}).get("abundance", abundance)
     add_history(continuum, {**call_inputs, "abundance": abundance}, create_fiasco_continuum)
     return continuum
@@ -307,8 +296,7 @@ def _densities_by_plasma_point(
     density_broadcast: xr.DataArray, temperature_broadcast: xr.DataArray
 ) -> list[np.ndarray]:
     """
-    One density array for each value of the density or pressure axis, each along the
-    temperature axis.
+    One density array along ``logT`` per plasma point.
     """
     plasma_dim = next(dim for dim in temperature_broadcast.dims if dim != "logT")
     return [np.asarray(row.data, dtype=float) for row in density_broadcast.transpose(plasma_dim, "logT")]
@@ -324,9 +312,7 @@ def _chianti_component(
     try:
         method(wavelength_grid, **kwargs)
     except AttributeError:
-        # How ChiantiPy fails for an ion without the levels of this component, as some
-        # hydrogen- and helium-like ions lack those of the two-photon emission. Any other error
-        # is raised.
+        # ChiantiPy's failure for an ion without this component's levels, as some H- and He-like ions for two-photon.
         return None
     result = getattr(method.__self__, result_name)
     if "errorMessage" in result:

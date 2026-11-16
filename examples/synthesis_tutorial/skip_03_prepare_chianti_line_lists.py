@@ -3,14 +3,12 @@
 03 - Prepare CHIANTI line lists
 ===============================
 
-This tutorial demonstrates how to compute the CHIANTI line lists needed to
-create a MUSE response.
+Compute the CHIANTI line lists that the MUSE responses need.
 
 .. warning::
 
-    This example requires the optional CHIANTI dependencies and a local CHIANTI
-    database. Install them with ``pip install "muse[chianti]"`` and configure
-    ``XUVTOP`` before running the script.
+    Requires the optional CHIANTI dependencies, ``pip install "muse[chianti]"``,
+    which also speed up the calculation, and a local CHIANTI database in ``XUVTOP``.
 """
 
 import os
@@ -23,41 +21,19 @@ import astropy.units as u
 from muse.instrument import create_chianti_line_list
 from muse.variables import DEFAULTS_MUSE
 
-##############################################################################
-# We first confirm that the local environment is working.
-
 if not os.environ.get("XUVTOP"):
     msg = "XUVTOP is not set. Run `export XUVTOP=/path/to/CHIANTI_11.0.2_database` first."
     raise OSError(msg)
 
 ##############################################################################
-# Now we need to configure the line-list calculations.
-#
-# For MUSE the options are:
-#
-# - Ion: fe_9, fe_15, fe_19 or fe_21
-# - Wavelength range of the location of the main line.
-#   You want to make sure the wavelength range is small to select a
-#   single line and this would be:
-#
-#   - For fe_9: [171.0,171.2]
-#   - For fe_15: [284.1, 284.2]
-#   - For fe_19: [108.3, 108.4]
-#   - For fe_21: [108.1, 108.2]
-#
-# - The temperature axis in dex(K) (min, max and step),
-# - LOS velocity in km/s (min, max and step)
-# - Abundances, e.g., "sun_coronal_2021_chianti"
-# - Pressure or density (see below).
-#
-# For a worked example of a line list computed on an electron-density grid,
-# see :ref:`sphx_glr_generated_gallery_synthesis_tutorial_07_density_and_nonthermal_responses.py`.
+# One line list per MUSE band, over the wavelength window of the band, with the
+# ions of its main lines. Pass ``density`` instead of ``pressure`` for an
+# electron-density grid, as in
+# :ref:`sphx_glr_generated_gallery_synthesis_tutorial_07_density_and_nonthermal_responses.py`.
 
 abundance = "sun_coronal_2021_chianti"
 temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
 pressure = [3e15] * u.K / u.cm**3
-# You can use density too and pass this instead into create_chianti_line_list
-# density = 10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3
 line_list_directory = Path(
     os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts")
 )
@@ -69,13 +45,8 @@ bands = {
 }
 
 ##############################################################################
-# Finally we can compute and save the line lists.
-#
-# The generated datasets record their CHIANTI versions and physical coordinates
-# and we use netCDF to save out the expensive results so they can be reused.
-#
-# Note that if you want to speed up the calculation, please make sure to install
-# ``muse[chianti]`` so that all optional dependencies are installed.
+# The line lists are expensive, so we save them to netCDF for reuse; each
+# records its CHIANTI version.
 
 for band, config in bands.items():
     spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item()

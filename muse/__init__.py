@@ -3,8 +3,8 @@
 muse
 ====
 
-A Python library focused on interfacing with data (real or synthetic) for
-NASA's Medium-Class Explorers (MIDEX) Multi-slit Solar Explorer (MUSE).
+A Python library for real and synthetic data of NASA's Multi-slit Solar Explorer
+(MUSE).
 
 * `Homepage <https://muse.lmsal.com/>`__
 * `NASA Homepage <https://science.nasa.gov/mission/muse/>`__

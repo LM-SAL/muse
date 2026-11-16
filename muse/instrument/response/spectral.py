@@ -1,6 +1,5 @@
 """
-Wavelength-space responses: spectral lines from a line list, and the continuum, on
-wavelength bins.
+Wavelength-space responses of spectral lines and the continuum.
 """
 
 from collections.abc import Sequence
@@ -85,56 +84,48 @@ def create_spectral_response(
         `muse.instrument.create_chianti_line_list` or
         `muse.instrument.create_fiasco_line_list`.
     wavelength_grid : `astropy.units.Quantity`, optional
-        One-dimensional wavelength samples for one channel and spectral order; the bins
-        extend halfway to the neighboring samples. Either this or ``wavelength_edges``.
+        One-dimensional bin centers for one channel and spectral order; each bin extends
+        halfway to its neighbors. Give this or ``wavelength_edges``.
     main_lines : sequence of `str` or `None`
-        Stable ``full_name`` values to retain, in output order. Repeated
-        transitions with the same name are summed. If `None` or empty, no
-        named lines are retained and ``include_contaminants`` must be `True`.
+        ``full_name`` values to keep, in output order; transitions that share a name are
+        summed. If `None` or empty, ``include_contaminants`` must be `True`.
     instrumental_fwhm : `astropy.units.Quantity`, optional
-        Scalar instrumental FWHM, by default 0 Angstrom. It is turned into the sigma of
-        the Gaussian profile, which adds in quadrature to the thermal and nonthermal
-        widths. For an SG channel of MUSE, take
+        Scalar instrumental FWHM, by default 0 Angstrom; its sigma adds in quadrature to
+        the thermal and nonthermal widths. For a MUSE SG channel,
         ``DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=171).data``.
     doppler_velocity : `astropy.units.Quantity`, optional
-        Scalar or one-dimensional Doppler-velocity axis. If `None`, line
-        centers remain at their rest wavelengths and no ``doppler_velocity``
-        dimension is added.
+        Scalar or one-dimensional; adds a ``doppler_velocity`` dimension. If `None`, lines
+        stay at their rest wavelengths.
     nonthermal_velocity : `astropy.units.Quantity`, optional
-        Nonthermal velocity xi, the 1/e (most probable) velocity of the EIS and IRIS
-        literature, which adds a sigma of lambda xi / (c sqrt 2): a scalar or a
-        one-dimensional axis. If `None`, no nonthermal broadening or
-        ``nonthermal_velocity`` dimension is added.
+        Scalar or one-dimensional 1/e (most probable) velocity xi of the EIS and IRIS
+        literature, which adds a sigma of lambda xi / (c sqrt 2) and a
+        ``nonthermal_velocity`` dimension. If `None`, no nonthermal broadening.
     effective_area : `xarray.DataArray` or `xarray.Dataset`, optional
-        Either a one-dimensional effective-area curve with a unit-bearing
-        ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
-        to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=171)``)
-        applied uniformly across the wavelength grid. The Dataset that
-        `muse.instrument.create_effective_area` returns is taken by its
-        ``effective_area``. If `None`, the response is not scaled by effective area.
+        A curve along a ``wavelength`` coordinate with units, or a zero-dimensional area
+        applied at every wavelength (e.g.
+        ``DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=171)``), convertible to
+        cm2; or the Dataset of `muse.instrument.create_effective_area`. If `None`, the
+        response is not scaled by an area.
     include_contaminants : `bool`, optional
-        If `True`, include all lines not in ``main_lines`` in a single
-        ``contaminants`` line. If `False`, only the main lines are returned.
+        If `True`, sum every line not in ``main_lines`` into one ``contaminants`` line.
     wavelength_edges : `astropy.units.Quantity`, optional
-        Strictly increasing bin edges, one more than the number of bins, instead of
-        ``wavelength_grid``; the bin centers become ``wavelength_grid``. Meant for coarse or
-        non-uniform bins, such as `create_log_wavelength_edges` for an imager.
+        Strictly increasing bin edges, one more than the bins, instead of
+        ``wavelength_grid``, e.g. from `create_log_wavelength_edges`; the bin centers
+        become ``wavelength_grid``.
     bin_method : {"center", "average"}, optional
         ``"center"`` samples each Gaussian at the bin center, which miscounts a line
-        narrower than a bin: too high when the line sits on a bin center, too low when it
-        sits between two. ``"average"`` stores the average of the Gaussian over each bin,
-        which conserves the area of a line on any grid that covers it. With ``"average"``
-        an ``effective_area`` curve is applied to each line at its own Doppler-shifted
-        center; with ``"center"`` it is applied at each bin center. By default
-        ``"average"``.
+        narrower than a bin (too high on a bin center, too low between two).
+        ``"average"``, the default, averages it over each bin, which conserves a line's
+        area on any grid that covers it. An ``effective_area`` curve is applied at each
+        line's Doppler-shifted center with ``"average"``, at each bin center with
+        ``"center"``.
 
     Returns
     -------
     `xarray.Dataset`
-        Dataset containing ``spectral_response`` with temperature, velocity,
-        line, and ``wavelength_bin`` dimensions. ``wavelength_grid`` contains
-        the wavelength of each bin and ``wavelength_bounds`` its two edges.
-        Detector geometry is not added.
+        ``spectral_response`` along temperature, velocity, ``line`` and
+        ``wavelength_bin``, with the bin centers in ``wavelength_grid`` and their edges
+        in ``wavelength_bounds``.
     """
     call_inputs = dict(locals())
     main_lines = () if main_lines is None else main_lines
@@ -178,7 +169,6 @@ def _build_spectral_response(
     include_contaminants: bool = False,
     wavelength_edges: u.Quantity | None = None,
     bin_method: str = "average",
-    progress: bool = True,
 ) -> xr.Dataset:
     """
     Build the wavelength-space response, optionally including contaminants.
@@ -211,9 +201,7 @@ def _build_spectral_response(
         msg = "main_lines cannot be empty unless include_contaminants=True"
         raise ValueError(msg)
     if not include_contaminants:
-        # Only the selected lines are evaluated, but the per-transition centers and
-        # widths below are computed for the whole list; a broad-band list can carry
-        # thousands of transitions (dominating peak memory), so drop the rest first.
+        # Centers and widths below are per transition; thousands of unselected ones dominate peak memory.
         selected = set(main_lines)
         keep = [i for i, name in enumerate(line_names) if name in selected]
         line_list = line_list.isel(transition=keep)
@@ -222,7 +210,7 @@ def _build_spectral_response(
     speed_of_light_kms = const.c.to_value(u.km / u.s)
     speed_of_light_ms = const.c.to_value(u.m / u.s)
     boltzmann = const.k_B.to_value(u.J / u.K)
-    # periodictable gives the mass of an element in atomic mass units, so the factor is u, not the proton mass.
+    # periodictable masses are in atomic mass units, not proton masses.
     atomic_mass_unit = const.u.to_value(u.kg)
 
     if doppler_velocity is not None:
@@ -240,8 +228,6 @@ def _build_spectral_response(
     line_widths = np.sqrt(line_widths_squared)
     gaussian_norm = np.sqrt(2 * np.pi)
 
-    # With bin averages a curve is taken at each line's own center. A scalar area, or a curve with
-    # bin_method="center", is applied to the gridded response below.
     area_at_center = None
     if bin_method == "average" and effective_area is not None and "wavelength" in effective_area.dims:
         area_at_center = (
@@ -280,8 +266,7 @@ def _build_spectral_response(
     if include_contaminants:
         contaminant_indices = [i for i, name in enumerate(line_names) if name not in main_response_parts]
         if contaminant_indices:
-            # A transition whose +-window (see _evaluate_gaussian_response) misses the grid
-            # contributes exactly zero, and a broad-band list is mostly such lines.
+            # A transition whose window misses the grid adds exactly zero; a broad-band list is mostly such.
             width_dims = [dim for dim in line_widths.dims if dim != "transition"]
             center_dims = [dim for dim in line_centers.dims if dim != "transition"]
             half_window = _GAUSSIAN_WINDOW_SIGMA * line_widths.max(dim=width_dims)
@@ -300,7 +285,6 @@ def _build_spectral_response(
             edges=edges,
             bin_method=bin_method,
             area_at_center=area_at_center,
-            progress=progress,
         )
     else:
         contaminant_response = None
@@ -317,7 +301,6 @@ def _build_spectral_response(
 
     if effective_area is not None:
         if area_at_center is None:
-            # A curve is resampled onto the grid; a zero-dimensional area needs no resampling.
             scaling = effective_area
             if "wavelength" in effective_area.dims:
                 scaling = (
@@ -414,8 +397,6 @@ def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> 
         )
         raise TypeError(msg)
     if effective_area.ndim == 0:
-        # A scalar area applies uniformly, so it stays zero-dimensional
-        # and simply multiplies the response.
         data = effective_area.data
         units = effective_area.attrs.get("units")
         try:
@@ -427,8 +408,7 @@ def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> 
             # attrs["units"] names the unit the raw value is already in.
             data = u.Quantity(data, units)
         elif units is not None and not units.is_equivalent(data.unit):
-            # The payload carries its own unit, so contradicting attrs are a bug, not a request
-            # to convert. Trusting either one silently is how a wrong effective area gets in.
+            # Contradicting attrs are a bug, not a request to convert.
             msg = f"effective_area units {units} contradict the data unit {data.unit}"
             raise ValueError(msg)
         try:
@@ -489,13 +469,11 @@ def _create_contaminant_response(
     edges: np.ndarray,
     bin_method: str,
     area_at_center: xr.DataArray | None = None,
-    progress: bool,
 ) -> xr.DataArray | None:
     if not contaminant_indices:
         return None
     accumulator = None
-    iterator = tqdm(contaminant_indices, desc="Spectral contaminants", unit="line") if progress else contaminant_indices
-    for i in iterator:
+    for i in tqdm(contaminant_indices, desc="Spectral contaminants", unit="line"):
         accumulator, template = _evaluate_gaussian_response(
             wavelength_grid,
             line_centers.isel(transition=i),
@@ -630,10 +608,8 @@ def _evaluate_gaussian_response(
     """
     Add one line's Gaussian to ``accumulator`` (a new full-grid array when `None`).
 
-    With ``bin_method="center"`` the Gaussian is sampled at the bin centers; with
-    ``"average"`` each bin, bounded by ``edges``, holds its average of the Gaussian, and
-    ``area_at_center`` (the effective area at the line center, which may vary with the
-    Doppler velocity) scales the line.
+    ``area_at_center``, the effective area at the line center for each Doppler velocity,
+    scales the line.
     """
     average = bin_method == "average"
     center, width_for_bounds = xr.broadcast(line_center, line_width)
@@ -647,10 +623,7 @@ def _evaluate_gaussian_response(
         start = np.searchsorted(wavelength_grid.data, window_lower, side="left")
         stop = np.searchsorted(wavelength_grid.data, window_upper, side="right")
 
-    # Broadcast only the +-window slice of the grid: the Gaussian is exactly zero
-    # outside it, and broadcasting the full grid first materializes several
-    # (logT x doppler x wavelength) float64 temporaries per line (~5 GB for the
-    # 108 band) where the window needs a small fraction of that.
+    # Broadcast only the window: the full grid makes ~5 GB of temporaries per line in the 108 band.
     window_points = (
         xr.DataArray(edges[start : stop + 1], dims="wavelength_bin")
         if average
@@ -722,17 +695,15 @@ def create_continuum_response(
     """
     Fold a rest-frame continuum through an effective area onto wavelength bins.
 
-    For every Doppler velocity the continuum is shifted, multiplied by the area at the observed
-    wavelength and averaged over each bin, so a bin keeps the structure of the area inside it.
-    Light observed at a wavelength was emitted at that wavelength divided by ``1 + v / c``, and
-    the shifted spectrum is fainter by the same factor per unit wavelength, so that its
-    integral is kept, as a shifted line keeps its area. The continuum is interpolated linearly
-    between its samples and held constant beyond the first and the last; that covers the gap a
-    Doppler shift opens at one end, and any part of an end bin that lies outside the samples.
+    For each Doppler velocity the continuum is shifted to ``lambda (1 + v / c)`` and divided
+    by ``1 + v / c``, which keeps its integral; the product with the area at the observed
+    wavelength is averaged over each bin, so a bin keeps the structure of the area inside it.
+    The continuum is linear between its samples and constant beyond them, which fills the gap
+    a shift opens at one end.
 
     The result has the dimensions and coordinates of a `create_spectral_response` result with
-    ``bin_method="average"``, though not always in the same order, and `xarray.concat` joins
-    the two along ``line``.
+    ``bin_method="average"``, not always in the same order; `xarray.concat` joins the two
+    along ``line``.
 
     Parameters
     ----------
@@ -743,9 +714,7 @@ def create_continuum_response(
     wavelength_edges : `astropy.units.Quantity`
         Strictly increasing bin edges, one more than the number of bins.
     effective_area : `xarray.DataArray` or `xarray.Dataset`
-        A curve with a ``wavelength`` coordinate, or one value that holds at every
-        wavelength, in units convertible to cm2, or an effective-area Dataset, as for
-        `create_spectral_response`.
+        As for `create_spectral_response`, but required.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional bulk velocities; adds a ``doppler_velocity`` dimension.
 
@@ -781,9 +750,7 @@ def create_continuum_response(
         )
         raise ValueError(msg)
     area = _effective_area_in_cm2(effective_area)
-    # Where the product of continuum and area is evaluated before it is averaged, whatever the
-    # velocity: at the two outer edges and, for a curve, at its two ends and just beyond them,
-    # where the area drops to zero.
+    # Samples for every velocity: the outer edges and a curve's ends and just beyond, where it drops to zero.
     fixed = [edges[[0, -1]]]
     if area.ndim:
         ends = area.wavelength.values[[0, -1]]
@@ -793,9 +760,7 @@ def create_continuum_response(
     pieces = []
     for velocity in velocities:
         stretch = 1 + float(velocity) / const.c.to_value(u.km / u.s)
-        # And at the samples of the continuum, both where they are observed and at rest: the
-        # first keeps the shape of the shifted continuum, the second that of an area that is
-        # sampled on the grid of the continuum.
+        # Observed samples keep the shifted continuum's shape, rest ones an area on the continuum grid.
         positions = np.unique(np.concatenate([*fixed, continuum_grid, continuum_grid * stretch]))
         positions = positions[(positions >= edges[0]) & (positions <= edges[-1])]
         area_there = area
@@ -803,7 +768,7 @@ def create_continuum_response(
             area_there = (
                 area.interp(wavelength=xr.DataArray(positions, dims="wavelength_bin")).fillna(0).drop_vars("wavelength")
             )
-        # Clipped to the samples, which holds the continuum constant beyond its two ends.
+        # Clipping holds the continuum constant beyond its ends.
         emitted = rest_continuum.interp(
             wavelength_bin=np.clip(positions / stretch, continuum_grid[0], continuum_grid[-1])
         )
@@ -825,20 +790,17 @@ def create_continuum_response(
     result = xr.Dataset({"spectral_response": binned}).assign_coords(_wavelength_bin_coords(centers, edges))
     # New data: the attributes of the continuum, but not its dates or the muse that made it.
     update_attrs(result, continuum)
-    area = call_inputs["effective_area"]
-    add_history(
-        result, call_inputs, create_continuum_response, sources=(continuum,) if area is None else (continuum, area)
-    )
+    add_history(result, call_inputs, create_continuum_response, sources=(continuum, effective_area))
     return result
 
 
 def _bin_average(values: xr.DataArray, x: np.ndarray, edges: np.ndarray) -> xr.DataArray:
     """
-    Average a quantity per unit wavelength, sampled at ``x`` (the ``wavelength_bin``
-    axis), over the bins between ``edges``.
+    Average ``values``, sampled at ``x`` along ``wavelength_bin``, over the bins between
+    ``edges``.
 
-    The samples are joined by straight lines and that piecewise-linear curve is
-    integrated exactly over every bin; it is zero outside the sampled range.
+    The piecewise-linear curve through the samples is integrated exactly; it is zero
+    outside ``x``.
     """
     if x.size < 2:
         msg = "at least two samples are needed to average over bins"
@@ -847,8 +809,7 @@ def _bin_average(values: xr.DataArray, x: np.ndarray, edges: np.ndarray) -> xr.D
     dx = np.diff(x)
     cumulative = np.zeros(y.shape)
     cumulative[..., 1:] = np.cumsum(0.5 * (y[..., 1:] + y[..., :-1]) * dx, axis=-1)
-    # The integral up to every edge: the cumulative value at the sample before it plus the
-    # exact integral of the linear segment up to the edge.
+    # The integral to each edge: the cumulative one at the sample before it plus the partial segment.
     index = np.clip(np.searchsorted(x, edges, side="right") - 1, 0, x.size - 2)
     t = np.clip(edges - x[index], 0.0, dx[index])
     slope = (y[..., index + 1] - y[..., index]) / dx[index]

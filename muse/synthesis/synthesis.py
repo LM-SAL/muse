@@ -16,8 +16,7 @@ if TYPE_CHECKING:
 
 __all__ = ["vdem_synthesis"]
 
-# Wavelength-space names from create_spectral_response, accepted as aliases for
-# the detector-style names the synthesis contract uses.
+# The names of create_spectral_response, accepted for the detector names.
 _WAVELENGTH_SPACE_ALIASES = {
     "spectral_response": "detector_response",
     "wavelength_grid": "detector_wavelength",
@@ -28,12 +27,10 @@ _SPECTRAL_DIMS = {"detector_x_pixel", "wavelength_bin"}
 
 def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray:
     """
-    Rechunk ``dims`` of a dask-backed array to a single chunk; return numpy-backed
-    arrays unchanged.
+    Rechunk ``dims`` of a dask-backed array to one chunk; return numpy arrays unchanged.
 
-    Contracted dims must be single-chunk before ``da.einsum``: it otherwise pairs every
-    chunk of one operand with every chunk of the other and tree-reduces the partial
-    products, exploding the task graph, runtime, and peak memory.
+    Otherwise ``da.einsum`` pairs every chunk of one operand with every chunk of the
+    other, which explodes the task graph, runtime and peak memory.
     """
     if not isinstance(array.data, da.Array):
         return array
@@ -42,28 +39,21 @@ def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray
 
 def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]) -> tuple[u.UnitBase, u.UnitBase]:
     """
-    Validate ``vdem``/``response`` structure and units for synthesis.
-
-    Checks slit-dimension consistency, that neither input still uses the legacy
-    ``vdop`` axis name, that every ``sum_over`` dimension exists on the response,
-    and that arrays used by the synthesis define valid units.
+    Check the slits, the legacy ``vdop`` axis, ``sum_over``, indexes and units.
 
     Returns
     -------
     `tuple` of `astropy.units.Unit`
-        ``(vdem.vdem unit, response.detector_response unit)``, reused for the
-        flux unit.
+        The units of ``vdem.vdem`` and ``response.detector_response``.
     """
     if "slit" in response.dims and "slit" not in vdem.dims and response.slit.size > 1:
         msg = "response has a slit dimension and number of slits are greater than one, but vdem does not"
         raise ValueError(msg)
-    # An imager response, one without a spectral axis, is the exception: it images every slit
-    # position on its own, so the slit axis is the VDEM's alone and stays in the output.
+    # An imager response images each slit position on its own, so only the VDEM may have slit.
     if "slit" not in response.dims and "slit" in vdem.dims and _SPECTRAL_DIMS & set(response.dims):
         msg = "vdem has a slit dimension but response does not"
         raise ValueError(msg)
-    # A legacy 'vdop' axis is not in sum_over, so einsum would keep it in the output and
-    # contract the other input's doppler_velocity on its own: no error, wrong flux.
+    # 'vdop' is not in sum_over: einsum would keep it and return a wrong flux without an error.
     for name, dataset in (("vdem", vdem), ("response", response)):
         if "vdop" in dataset.dims:
             msg = f"{name} uses the legacy 'vdop' dimension; rename it with {name}.rename(vdop='doppler_velocity')"
@@ -74,8 +64,7 @@ def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[
             raise ValueError(msg)
     vdem_unit = require_unit(vdem, "vdem", "vdem.vdem")
     response_unit = require_unit(response, "detector_response", "response.detector_response")
-    # join="exact" only validates indexed dims; a shared dim indexed on one side would
-    # otherwise contract positionally against unordered labels: no error, wrong flux.
+    # join="exact" checks only indexed dims; one indexed on one side would contract by position.
     for dim in sorted(set(vdem.vdem.dims) & set(response.detector_response.dims)):
         if (dim in vdem.xindexes) != (dim in response.xindexes):
             unindexed = "response" if dim in vdem.xindexes else "vdem"
@@ -106,8 +95,7 @@ def vdem_synthesis(
     backend: str = "numpy",
 ) -> xr.Dataset:
     """
-    Given a VDEM and response function(s), synthesize observables by computing the
-    tensor product.
+    Synthesize observables as the tensor product of a VDEM and a response.
 
     Parameters
     ----------
@@ -115,58 +103,44 @@ def vdem_synthesis(
         VDEM, as it is or reshaped onto slits and raster steps. Its ``vdem`` variable must
         define units in the attrs.
     response : `xarray.Dataset`
-        Response functions. ``detector_response`` and ``line_wavelength`` must
-        define units in the attrs. ``detector_wavelength`` must define units when
-        its slit dimension is retained in the output.
-        Indexed coordinates shared with ``vdem`` must match exactly; a
-        dimension indexed on only one input is rejected.
-        The wavelength-space names produced by
+        Response functions. ``detector_response`` and ``line_wavelength`` must define
+        units, and ``detector_wavelength`` too when its slit dimension stays in the output.
+        Indexed coordinates shared with ``vdem`` must match exactly; a dimension indexed
+        on only one input is rejected. The names of
         `muse.instrument.create_spectral_response` (``spectral_response``,
-        ``wavelength_grid``) are accepted and renamed to
-        the detector-style names. Note that such a response is still per
-        Å per steradian: no detector-pixel integration or photon
-        conversion has been applied.
-        An imager response, as `muse.instrument.map_response_to_ci_detector`
-        returns it, has neither a slit dimension nor a spectral axis. It is
-        accepted with a VDEM that has slits: each slit position is imaged
-        on its own and ``slit`` stays in the output.
+        ``wavelength_grid``) are renamed to the detector names; such a response is still
+        per Å per steradian, with no pixel integration or photon conversion. An imager
+        response, from `muse.instrument.map_response_to_ci_detector`, has no slit
+        dimension and no spectral axis; it images each slit of the VDEM on its own, and
+        ``slit`` stays in the output.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default ``("logT", "doppler_velocity", "slit")``.
-        ``"slit"`` is dropped from this when the response has no slit
-        dimension, so the MUSE default works for single-slit and imager
-        responses.
+        ``"slit"`` is dropped when the response has no slit dimension.
     device : `str`, `torch.device` or `None`, optional
-        Torch device of the product (requires ``backend="torch"``): ``"cpu"``,
-        ``"cuda:0"``, ``"mps"``, or ``"auto"`` for the first of CUDA, MPS and the
-        CPU that is available. Defaults to `None`, the CPU.
+        Torch device of the product (needs ``backend="torch"``): ``"cpu"``, ``"cuda:0"``,
+        ``"mps"``, or ``"auto"`` for the first available of CUDA, MPS and the CPU. By
+        default `None`, the CPU.
     backend : `str`, optional
-        ``"numpy"`` (default) or ``"torch"``. Torch is opt-in: it is never
-        selected implicitly, so results do not change with what is installed.
-        The Torch path downcasts float64 inputs to float32 and computes the
-        product in chunks sized to half of the free device and host memory; the
-        NumPy path keeps the input dtype.
+        ``"numpy"`` (default) or ``"torch"``, never chosen implicitly. Torch computes in
+        float32, in chunks sized to half the free device and host memory; NumPy keeps the
+        input dtype.
 
     Returns
     -------
     `xarray.Dataset`
-        Dataset of the spectrum on the detector, or of the image for an imager
-        response, whose ``flux`` keeps the ``slit`` axis of the VDEM. With the
-        default NumPy backend,
-        dask-backed inputs produce a lazy (dask-backed) ``flux``, so peak memory
-        stays bounded and writing streams chunk by chunk; the Torch backend
-        always computes its inputs eagerly.
+        The spectrum on the detector, or the image for an imager response, as ``flux``.
+        With NumPy, dask-backed inputs give a lazy ``flux``; Torch computes eagerly.
 
     Raises
     ------
     ValueError
-        If either input fails validation (missing units, mismatched slit
-        dimensions, the legacy ``vdop`` axis, a ``sum_over`` dimension missing
-        from the response, or a shared dimension indexed on only one input), or
-        if shared indexed coordinates do not match exactly — regrid with
-        `muse.instrument.align_response_and_vdem`.
+        If an input fails validation (missing units, mismatched slit dimensions, the
+        legacy ``vdop`` axis, a ``sum_over`` dimension missing from the response, or a
+        shared dimension indexed on only one input), or shared indexed coordinates differ;
+        regrid with `muse.instrument.align_response_and_vdem`.
     MemoryError
-        With ``backend="torch"`` on an accelerator, if one row of the product does
-        not fit next to the response.
+        With ``backend="torch"`` on an accelerator, if one row of the product does not fit
+        next to the response.
     """
     renames = {
         old: new
@@ -220,9 +194,7 @@ def vdem_synthesis(
         raise ValueError(msg) from err
     flux.attrs = {"units": str(vdem_unit * response_unit)}
     ds = flux.to_dataset(name="flux")
-    # apply_ufunc drops coords the inputs disagree on and never materializes index
-    # coords for bare dims. The dims of flux are output_dims: every input dim is a core dim.
-    # Response-only output dims own their coordinates; scalar conflicts keep the VDEM's metadata.
+    # apply_ufunc drops disagreeing coords: the VDEM's win, except along response-only dims.
     response_only_dims = set(response.detector_response.dims) - set(vdem.vdem.dims)
     restored = {name: coord for name, coord in vdem.coords.items() if set(coord.dims) <= set(output_dims)}
     restored.update(
@@ -240,9 +212,7 @@ def vdem_synthesis(
     }
     ds = ds.assign_coords(restored)
     ds = ds.assign_coords(line_wavelength=coord_as_unit(response, "line_wavelength", u.AA, "response.line_wavelength"))
-    # detector_wavelength carries a slit dimension, so only attach it when slit
-    # survives in the output (or the response never had one); once slit is summed
-    # away it would re-introduce slit.
+    # detector_wavelength runs along slit, which it would bring back once summed away.
     slit_summed = "slit" in response.detector_response.dims and "slit" not in ds.flux.dims
     if not slit_summed and "detector_wavelength" in response.coords:
         ds = ds.assign_coords(
