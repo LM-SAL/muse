@@ -54,13 +54,13 @@ def _waveband(channel):
     return channel + np.array([-1, 1]) * DEFAULTS_MUSE.waveband_half_width_SG.to_value(u.AA) / order
 
 
-def _area_file(directory, *, unit=u.cm**2, channel=CHANNEL, wavelength=(150.0, 192.0), name=None, attrs=DETECTOR):
+def _area_file(directory, *, channel=CHANNEL, wavelength=(150.0, 192.0), name=None, attrs=DETECTOR):
     """
     An effective area with a slope, by default wider than the whole 171 waveband.
     """
     wavelengths = np.linspace(*wavelength, 100)
     effective_area = create_effective_area(
-        10.0 * (1 + 0.01 * (wavelengths - 150.0)) * unit, wavelengths * u.AA, channel=channel * u.AA, attrs=attrs
+        10.0 * (1 + 0.01 * (wavelengths - 150.0)) * u.cm**2, wavelengths * u.AA, channel=channel * u.AA, attrs=attrs
     )
     path = directory / (name or f"effective_area_channel_{channel}_TEST.zarr")
     save_effective_area(effective_area, path)
@@ -188,7 +188,6 @@ def test_every_sg_product_is_written_once(sg_products):
 def test_every_ci_product_is_written_once(ci_products):
     assert _prefixes(ci_products) == [
         f"response_ci_171_waveband_{TAIL}",
-        f"response_ci_171_{TAIL}",
         f"response_ci_171_waveband_{TAIL}_DN",
         f"response_ci_171_{TAIL}_DN",
     ]
@@ -335,16 +334,16 @@ def test_cube_holds_the_lines_and_the_continuum_on_log_bins(ci_products):
     assert (cube.spectral_response.max(dim=[d for d in cube.spectral_response.dims if d != "line"]) > 0).all()
 
 
-def test_imager_response_is_the_cube_sum(ci_products):
-    cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}.zarr"))
-    summed = read_response(_only(ci_products, f"ci_171_{TAIL}.zarr"))
+def test_imager_response_is_the_dn_cube_sum(ci_products):
+    cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_DN"))
+    summed = read_response(_only(ci_products, f"ci_171_{TAIL}_DN"))
 
     width = cube.wavelength_bounds.isel(bound=1) - cube.wavelength_bounds.isel(bound=0)
     expected = (cube.spectral_response * width).sum(["wavelength_bin", "line"])
     assert list(summed.line.values) == ["171 lines + continuum"]
     assert summed.detector_response.dims == ("line", "doppler_velocity", "logT", "pressure")
     assert summed.attrs["number_of_lines"] == 3
-    assert summed.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
+    assert summed.detector_response.attrs["units"] == "1e-27 cm5 DN / s"
     assert (summed.channel == CHANNEL).all()
     np.testing.assert_allclose(
         summed.detector_response.isel(line=0).transpose(*expected.dims).values, expected.values, rtol=1e-12
@@ -365,25 +364,6 @@ def test_dn_product_follows_the_photon_energy(ci_products):
         np.testing.assert_allclose(values[mask], np.broadcast_to(expected, values.shape)[mask], rtol=1e-12)
 
 
-def test_an_area_in_dn_gives_dn_products_only(inputs, tmp_path):
-    area = _area_file(tmp_path, unit=u.cm**2 * u.DN / u.ph)
-    with pytest.raises(ValueError, match="only DN products exist for it"):
-        _ci(inputs, tmp_path / "ph", effective_area_files=[area], units=["ph"], include_continuum=False)
-
-    written = _ci(inputs, tmp_path / "dn", effective_area_files=[area], include_continuum=False)
-
-    assert _prefixes(written) == [f"response_ci_171_waveband_{TAIL}_DN", f"response_ci_171_{TAIL}_DN"]
-    summed = read_response(written[1])
-    assert summed.detector_response.attrs["units"] == "1e-27 cm5 DN / s"
-    assert list(summed.line.values) == ["171 lines"]
-    # The stored area keeps the unit it came with, the gain included.
-    assert summed.effective_area.attrs["units"] == "cm2 DN / ph"
-    # without a continuum none is claimed, and so no minimum abundance for the given line list
-    assert summed.attrs["include_continuum"] == 0
-    assert "continuum_backend" not in summed.attrs
-    assert "minimum_abundance" not in summed.attrs
-
-
 @pytest.mark.usefixtures("_fake_continuum_backend")
 def test_each_imager_file_is_converted_with_its_own_detector(inputs, ci_products, tmp_path):
     twice_the_gain = {"gain": "20.0 electron / DN", "pair_energy": "3.65 eV / electron"}
@@ -394,11 +374,10 @@ def test_each_imager_file_is_converted_with_its_own_detector(inputs, ci_products
         inputs,
         tmp_path / "gain",
         effective_area_files=str(_area_file(tmp_path, name="gain.zarr", attrs=twice_the_gain)),
-        units="DN",
     )
 
     # twice the electrons per DN halve the DN, and the product reads back with its own gain
-    doubled = read_response(gain[1])
+    doubled = read_response(_only(gain, f"response_ci_171_{TAIL}_DN"))
     assert doubled.gain.values.tolist() == [20.0]
     xr.testing.assert_allclose(doubled.detector_response.drop_vars("gain"), (reference / 2).drop_vars("gain"))
 
@@ -481,7 +460,7 @@ def test_a_density_grid_goes_into_one_product_whole(inputs, tmp_path):
         *_sg_continuum(inputs, tmp_path / "continuum", **options),
     ]
 
-    assert len(written) == 9
+    assert len(written) == 8
     assert all(path.name.endswith(("_density.zarr.zip", "_density_DN.zarr.zip")) for path in written)
     cube = read_spectral_response(_only(written, "ci_171_waveband_testea_density.zarr"))
     assert cube.sizes["logD"] == 2
@@ -723,10 +702,10 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
         return np.array(values) / values[0]
 
     sg = _sg(inputs, tmp_path / "sg", line_list_file=None, **options)
-    ci = _ci(inputs, tmp_path / "ci", line_list_file=None, units=["ph"], **options)
+    ci = _ci(inputs, tmp_path / "ci", line_list_file=None, **options)
     continuum = _sg_continuum(inputs, tmp_path / "continuum", **options)
 
-    assert (len(sg), len(ci), len(continuum)) == (16, 8, 4)
+    assert (len(sg), len(ci), len(continuum)) == (16, 12, 4)
     np.testing.assert_allclose(peaks(sg, "FeIX171.073_detector"), expected)
     # In an imager cube the lines and the two-photon continuum grow with both.
     np.testing.assert_allclose(peaks(ci, "ci_171_waveband", line="171 lines"), expected)
@@ -759,8 +738,6 @@ def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
 @pytest.mark.parametrize(
     ("generate", "overrides", "match"),
     [
-        (_ci, {"units": ["electrons"]}, "units must be 'ph', 'DN' or both"),
-        (_ci, {"units": []}, "units must be 'ph', 'DN' or both"),
         (_ci, {"maximum_lines": 0}, "maximum_lines must be at least 1"),
         (_ci, {"maximum_lines": 2.5}, "maximum_lines must be an integer"),
         (_ci, {"bin_fractional_width": 0.0}, "bin_fractional_width must be positive"),
@@ -797,15 +774,12 @@ def test_bad_options_stop_the_call_before_any_work(inputs, tmp_path, line_list_c
 
 def test_files_a_generator_cannot_use_stop_the_call_before_any_work(inputs, tmp_path, line_list_calls):
     other_channel = _area_file(tmp_path, channel=94)
-    with_the_gain = _area_file(tmp_path, unit=u.cm**2 * u.DN / u.ph, name="gain.zarr")
     no_detector = _area_file(tmp_path, name="no_detector.zarr", attrs={})
 
-    # the spectrograph: the MUSE channels alone, and an area in cm2
+    # the spectrograph: the MUSE channels alone
     for generate, options in ((_sg, {"line_list_file": None}), (_sg_continuum, {})):
         with pytest.raises(ValueError, match="is of channel 94 Angstrom; SG products exist for the MUSE channels 108"):
             generate(inputs, tmp_path / "run", effective_area_files=[other_channel], **options)
-        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the conversion to DN"):
-            generate(inputs, tmp_path / "run", effective_area_files=[with_the_gain], **options)
     # an imager: any channel, but one that is not of MUSE must describe its detector
     with pytest.raises(
         ValueError, match=r"no channel of the MUSE imager \(195, 304\), so it must give gain and pair_energy"
@@ -902,15 +876,15 @@ def test_the_generators_on_live_chianti(tmp_path):
     }
 
     sg = _sg(files, tmp_path / "run", **options)
-    ci = _ci(files, tmp_path / "run", include_continuum=False, units=["ph"], **options)
+    ci = _ci(files, tmp_path / "run", include_continuum=False, **options)
 
-    assert (len(sg), len(ci)) == (4, 2)
+    assert (len(sg), len(ci)) == (4, 3)
     main = read_response(_only(sg, "FeIX171.073_detector"))
     assert float(main.detector_response.max()) > 0
     # Fe IX 171.073 peaks near logT 5.9: the middle temperature of the grid is the brightest
     by_temperature = main.detector_response.sel(doppler_velocity=0).sum(["slit", "detector_x_pixel"]).squeeze().values
     assert np.argmax(by_temperature) == 1
-    cube = read_spectral_response(_only(ci, "ci_171_waveband"))
+    cube = read_spectral_response(_only(ci, f"ci_171_waveband_{TAIL}.zarr"))
     assert list(cube.line.values) == ["171 lines"]
     assert float(cube.spectral_response.max()) > 0
     # one line list, made by the first call and read by the second
@@ -997,7 +971,7 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
         gain_CI=xr.DataArray([20.0, 10.0] * u.electron / u.DN, **imager),
         pixel_width_CI=3 * DEFAULTS_MUSE.pixel_width_CI,
     )
-    options = {"effective_area_files": [area], "units": "DN", "include_continuum": False}
+    options = {"effective_area_files": [area], "include_continuum": False}
 
     default = _only(_ci(inputs, tmp_path / "default", **options), f"ci_195_{TAIL}_DN")
     custom = _only(_ci(inputs, tmp_path / "custom", instrument_defaults=defaults, **options), f"ci_195_{TAIL}_DN")
@@ -1007,6 +981,9 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
         read_response(custom).detector_response, 1.5 * read_response(default).detector_response, rtol=1e-12
     )
     assert read_response(custom).attrs["instrument_defaults"].startswith("custom ")
+    # without a continuum none is claimed, and so no minimum abundance for the given line list
+    attrs = read_response(default).attrs
+    assert (attrs["include_continuum"], "continuum_backend" in attrs, "minimum_abundance" in attrs) == (0, False, False)
 
 
 def test_imager_files_that_state_their_detector_need_no_imager_in_the_defaults(inputs, tmp_path):
@@ -1019,11 +996,10 @@ def test_imager_files_that_state_their_detector_need_no_imager_in_the_defaults(i
         tmp_path / "gain",
         effective_area_files=[gain_alone],
         include_continuum=False,
-        units="DN",
         instrument_defaults=no_gains,
     )
 
-    assert len(products) == 4
+    assert len(products) == 3
     pair_energy = u.Quantity(read_response(_only(dn, f"ci_195_{TAIL}_DN")).attrs["pair_energy"])
     assert pair_energy == DEFAULTS_MUSE.pair_energy_CI.sel(channel=195).data
 

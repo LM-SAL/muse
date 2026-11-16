@@ -445,12 +445,7 @@ def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> 
     dataset = xr.Dataset({"effective_area": effective_area})
     area_unit = require_unit(dataset, "effective_area", "effective_area")
     if not area_unit.is_equivalent(u.cm**2):
-        in_dn = area_unit.is_equivalent(u.cm**2 * u.DN / u.ph)
-        hint = (
-            "; this area includes the conversion from photons to DN: pass one in cm2, "
-            "e.g. from create_aia_effective_area(..., include_dn_per_photon=False)"
-        ) * in_dn
-        msg = f"effective_area units must be convertible to cm2{hint}"
+        msg = f"effective_area units {area_unit} must be convertible to cm2"
         raise ValueError(msg)
     wavelength = coord_as_unit(dataset, "wavelength", u.AA, "effective_area wavelength coordinate")
     converted = (effective_area * area_unit.to(u.cm**2)).assign_attrs({**effective_area.attrs, "units": str(u.cm**2)})

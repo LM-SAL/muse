@@ -38,15 +38,14 @@ from muse.instrument import (
 
 ##############################################################################
 # :func:`muse.instrument.create_aia_effective_area` builds the effective area of
-# the channel from `aiapy`. We ask for it in cm2 alone, without the conversion
-# from photons to DN, so that :func:`muse.instrument.transform_response_units`
-# makes that conversion from the camera gain and the silicon pair energy, which
-# the attributes of the area give along with the size of a detector pixel. We
+# the channel from `aiapy`, in cm2, with the camera gain, the silicon pair
+# energy and the size of a detector pixel in its attributes, from which
+# :func:`muse.instrument.transform_response_units` converts photons to DN. We
 # leave the EVE normalization out, which gives the baseline calibration without
 # any time-dependent correction.
 
 channel = 94 * u.AA
-effective_area = create_aia_effective_area(channel, include_eve_correction=False, include_dn_per_photon=False)
+effective_area = create_aia_effective_area(channel, include_eve_correction=False)
 detector = {
     name: u.Quantity(effective_area.attrs[name]) for name in ("pixel_width", "pixel_height", "gain", "pair_energy")
 }

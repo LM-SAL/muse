@@ -39,9 +39,9 @@ def test_create_effective_area_layout():
     assert "create_effective_area(" in effective_area.attrs["history"][-1]
 
 
-def test_create_effective_area_accepts_dn_per_photon_and_refuses_a_decreasing_wavelength():
-    effective_area = create_effective_area(np.ones(5) * u.cm**2 * u.DN / u.ph, WAVELENGTH, channel=94 * u.AA)
-    assert u.Unit(effective_area.effective_area.attrs["units"]) == u.cm**2 * u.DN / u.ph
+def test_create_effective_area_refuses_dn_per_photon_and_a_decreasing_wavelength():
+    with pytest.raises(u.UnitsError):
+        create_effective_area(np.ones(5) * u.cm**2 * u.DN / u.ph, WAVELENGTH, channel=94 * u.AA)
     with pytest.raises(ValueError, match="increasing"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH[::-1], channel=94 * u.AA)
 
@@ -116,6 +116,10 @@ def test_read_effective_area_rejects_bad_files(tmp_path):
     bad_units.to_netcdf(tmp_path / "bad_units.nc")
     with pytest.raises(ValueError, match="cm2"):
         read_effective_area(tmp_path / "bad_units.nc")
+    bad_units.effective_area.attrs["units"] = "cm2 DN / ph"
+    bad_units.to_netcdf(tmp_path / "dn.nc")
+    with pytest.raises(ValueError, match="give it in cm2, with the camera gain"):
+        read_effective_area(tmp_path / "dn.nc")
 
     # A table over several channels is not a file of one channel.
     table = xr.Dataset(
@@ -176,21 +180,17 @@ def fake_aiapy(monkeypatch):
 
 
 @pytest.mark.usefixtures("fake_aiapy")
-def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
+def test_create_aia_effective_area_defaults_are_solarsoft_evenorm(tmp_path):
     effective_area = create_aia_effective_area(304 * u.AA)
-    # crosstalk and the EVE factor of the default epoch, no degradation, the gain folded in
-    np.testing.assert_allclose(effective_area.effective_area, 3.0 * 1.5 * _FakeChannel.gain.value)
-    assert u.Unit(effective_area.effective_area.attrs["units"]) == u.cm**2 * u.DN / u.ph
+    # crosstalk and the EVE factor of the default epoch, no degradation
+    np.testing.assert_allclose(effective_area.effective_area, 3.0 * 1.5)
+    assert effective_area.effective_area.attrs["units"] == "cm2"
     assert float(effective_area.channel) == 304.0
     np.testing.assert_allclose(effective_area.mirror, 0.25)
     assert u.Unit(effective_area.dn_per_photon.attrs["units"]) == u.DN / u.ph
     attrs = effective_area.attrs
     assert (attrs["degradation"], attrs["eve_correction"]) == (1.0, 1.5)
-    assert (attrs["obstime"], attrs["include_crosstalk"], attrs["include_dn_per_photon"]) == (
-        "2010-05-01T00:00:00.000",
-        1,
-        1,
-    )
+    assert (attrs["obstime"], attrs["include_crosstalk"]) == ("2010-05-01T00:00:00.000", 1)
     # the detector, as the file describes it
     assert u.allclose(u.Quantity(attrs["pixel_width"]), 0.6 * u.arcsec)
     assert u.allclose(u.Quantity(attrs["gain"]), 18 * u.electron / u.DN)
@@ -203,10 +203,9 @@ def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
 @pytest.mark.usefixtures("fake_aiapy")
 def test_create_aia_effective_area_switches():
     effective_area = create_aia_effective_area(
-        304 * u.AA, obstime="2014-01-01", include_crosstalk=False, include_degradation=True, include_dn_per_photon=False
+        304 * u.AA, obstime="2014-01-01", include_crosstalk=False, include_degradation=True
     )
     np.testing.assert_allclose(effective_area.effective_area, 2.0 * 0.8 * 1.5)
-    assert effective_area.effective_area.attrs["units"] == "cm2"
     np.testing.assert_array_equal(effective_area.crosstalk, 0.0)
     assert effective_area.attrs["obstime"] == "2014-01-01T00:00:00.000"
 
@@ -219,4 +218,5 @@ def test_create_aia_effective_area_matches_aiapy_wavelength_response():
     response = pytest.importorskip("aiapy.response")
     expected = response.Channel(335 * u.AA).wavelength_response(obstime=Time("2014-01-01"), include_eve_correction=True)
     effective_area = create_aia_effective_area(335 * u.AA, obstime="2014-01-01", include_degradation=True)
-    np.testing.assert_allclose(effective_area.effective_area, expected.to_value(u.cm**2 * u.DN / u.ph), rtol=1e-12)
+    with_dn = effective_area.effective_area * effective_area.dn_per_photon
+    np.testing.assert_allclose(with_dn, expected.to_value(u.cm**2 * u.DN / u.ph), rtol=1e-12)
