@@ -2,10 +2,8 @@
 The response products of a set of effective-area files: named, generated and written.
 """
 
-import re
 from numbers import Integral
 from pathlib import Path
-from datetime import UTC, datetime
 from collections import Counter
 from collections.abc import Mapping, Callable, Iterable, Sequence
 
@@ -95,14 +93,14 @@ def generate_sg_responses(
     ``contaminants``; if the waveband holds no other line, a warning is logged and the channel
     gets none.
 
-    Each product is one file, a zarr store packed into a zip, named
-    ``respfunc_<channel>_<line>_<kind>_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
+    Each product is one file, a zarr store packed into a zip, in a folder named after its
+    abundance: ``<abundance>/response_sg_<channel>_<line>_<kind>_<label>_<plasma>.zarr.zip``.
     ``<line>`` is the name of the main line without spaces, or ``contaminants``; ``<kind>`` is
-    ``waveband`` for a cube and ``nslits<number>_sep<separation>`` for a detector response,
-    with the number of slits and the slit separation of the channel in milliangstrom;
-    ``<plasma>`` is ``density``, or ``pressure_<value>`` in K / cm3 to six significant digits,
-    e.g. ``pressure_3e+15``; ``<date>`` is the UTC date at the start of the call, as
-    ``YYYY-MM-DD``. All names are checked before any work is done.
+    ``waveband`` for a cube and ``detector`` for a detector response; ``<plasma>`` is
+    ``density``, or ``pressure_<value>`` in K / cm3 to six significant digits, e.g.
+    ``pressure_3e+15``. The name holds what selects a product; how it was made, such as the
+    author, the date, the number of slits and their separation, is in its attributes. All
+    names are checked before any work is done.
 
     The main lines are mapped onto the detector one at a time, so only one detector response
     is in memory at a time. It holds one value per Doppler velocity, temperature, slit and
@@ -113,10 +111,10 @@ def generate_sg_responses(
     output_directory : `str` or `pathlib.Path`
         Directory of the products; created if needed.
     author : `str`
-        Initials for the names and the attributes: letters, digits, ``.``, ``+`` and ``-``.
+        Initials for the attributes.
     effective_area_label : `str`
-        What tells these effective areas from others in the names, e.g. the coating; the same
-        characters as ``author``, so ``Al-Zr`` and not ``Al_Zr``.
+        What tells these effective areas from others in the names, e.g. the coating: letters,
+        digits, ``.``, ``+`` and ``-``, so ``Al-Zr`` and not ``Al_Zr``.
     effective_area_files : `list` of `str` or `pathlib.Path`
         Files of `muse.instrument.save_effective_area`, each of one SG channel of
         ``instrument_defaults``, in cm2. A file that describes its detector in the attributes
@@ -252,8 +250,9 @@ def generate_sg_responses(
                 *map(_line_tag, main_lines_by_sg_channel[channel]),
                 *(["contaminants"] if maximum_contaminants >= 1 else []),
             ]
-            kinds = {"waveband": "waveband", "detector": _sg_geometry_tag(channel, instrument_defaults)}
-            return {(tag, kind): (f"{channel}_{tag}_{part}", "") for tag in tags for kind, part in kinds.items()}
+            return {
+                (tag, kind): (f"sg_{channel}_{tag}_{kind}", "") for tag in tags for kind in ("waveband", "detector")
+            }
 
         for abundance, tasks in run.plan(names_of).items():
             line_list = load_line_list(abundance) if tasks else None
@@ -304,9 +303,9 @@ def generate_sg_continuum_responses(
     converted to photons and mapped onto the detector.
 
     Each product is one file, a zarr store packed into a zip, named
-    ``respfunc_<channel>_continuum_<backend>_<kind>_<abundance>_<label>_<plasma>_<author>_<date>.zarr.zip``:
-    ``<backend>`` is ``continuum_backend``; ``<kind>`` is that of a detector response and the
-    other parts and their rules are as in `generate_sg_responses`.
+    ``<abundance>/response_sg_<channel>_continuum_<backend>_detector_<label>_<plasma>.zarr.zip``:
+    ``<backend>`` is ``continuum_backend``, and the other parts and their rules are as in
+    `generate_sg_responses`.
 
     Parameters
     ----------
@@ -361,9 +360,7 @@ def generate_sg_continuum_responses(
         doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.continuum_response_doppler_velocity)
 
         def names_of(area: xr.Dataset) -> dict:
-            channel = _channel(area)
-            tag = _sg_geometry_tag(channel, instrument_defaults)
-            return {"continuum": (f"{channel}_continuum_{continuum_backend}_{tag}", "")}
+            return {"continuum": (f"sg_{_channel(area)}_continuum_{continuum_backend}_detector", "")}
 
         for abundance, tasks in run.plan(names_of).items():
             for area, plasma_point, names in tasks:
@@ -428,7 +425,7 @@ def generate_ci_responses(
     and the imager response, which is that cube summed over wavelength and over its parts.
 
     Each product is one file, a zarr store packed into a zip, named
-    ``respfunc_ci_<channel>[_waveband]_<abundance>_<label>_<plasma>[_DN]_<author>_<date>.zarr.zip``:
+    ``<abundance>/response_ci_<channel>[_waveband]_<label>_<plasma>[_DN].zarr.zip``:
     ``_waveband`` marks the cube and ``_DN`` the products in DN instead of photons; the other
     parts of the names and the rules for them are as in `generate_sg_responses`.
 
@@ -585,7 +582,6 @@ class _Run:
         """
         self.generator, self.settings = generator, settings
         self.author, self.effective_area_label = call_inputs["author"], call_inputs["effective_area_label"]
-        _require_name_part("author", self.author)
         _require_name_part("effective_area_label", self.effective_area_label)
         abundances = call_inputs["abundances"]
         # A repeated abundance is taken once.
@@ -599,7 +595,6 @@ class _Run:
         cache_directory = call_inputs["cache_directory"]
         self.cache_directory = self.output_directory / "cache" if cache_directory is None else Path(cache_directory)
         self.skip_existing = call_inputs["skip_existing"]
-        self.date = datetime.now(UTC).date()
         pressure, density = call_inputs["pressure"], call_inputs["density"]
         if pressure is None and density is None:
             pressure = DEFAULTS_MUSE.response_pressure
@@ -644,8 +639,8 @@ class _Run:
         missing.
 
         For one effective area, ``names_of(effective_area)`` maps a key of the caller's
-        choice to the ``(prefix, units tag)`` of each product. A name is a file name
-        without its date and suffix.
+        choice to the ``(prefix, units tag)`` of each product. A name is the path of a
+        product below the output directory, without its suffix.
         """
         tasks = {
             abundance: [
@@ -653,10 +648,7 @@ class _Run:
                     area,
                     plasma_point,
                     {
-                        key: (
-                            f"respfunc_{prefix}_{abundance}_{self.effective_area_label}"
-                            f"_{plasma_tag}{units_tag}_{self.author}"
-                        )
+                        key: f"{abundance}/response_{prefix}_{self.effective_area_label}_{plasma_tag}{units_tag}"
                         for key, (prefix, units_tag) in names_of(area).items()
                     },
                 )
@@ -672,30 +664,25 @@ class _Run:
                 "for two effective-area files of one channel, or pressures that agree to six significant digits"
             )
             raise ValueError(msg)
-        present = sorted(path.name for path in self.output_directory.glob("respfunc_*.zarr.zip"))
         for name in every_name:
-            self._paths[name] = self.output_directory / f"{name}_{self.date}.zarr.zip"
-            # Under any date: a call that goes on after midnight UTC must find what it wrote before,
-            # and a call on a later day must not write a second copy beside the first.
-            dated = re.compile(re.escape(name) + r"_\d{4}-\d{2}-\d{2}\.zarr\.zip")
-            found = [file_name for file_name in present if dated.fullmatch(file_name)]
-            if found and not self.skip_existing:
+            kept = self._paths[name] = self.output_directory / f"{name}.zarr.zip"
+            if not kept.exists():
+                continue
+            if not self.skip_existing:
                 msg = (
-                    f"the product {self.output_directory / found[-1]} is already there; pass skip_existing=True to "
-                    "keep it and make only what is missing, or use another output directory"
+                    f"the product {kept} is already there; pass skip_existing=True to keep it and make only "
+                    "what is missing, or use another output directory"
                 )
                 raise ValueError(msg)
-            if found:
-                kept = self.output_directory / found[-1]
-                made_with = _attribute_of_product(kept, "instrument_defaults")
-                wanted = _instrument_defaults_label(self.settings["instrument_defaults"])
-                if made_with != wanted:
-                    msg = (
-                        f"the product {kept} was made with {made_with or 'unrecorded'} instrument defaults and "
-                        f"this call uses {wanted} ones: use another output directory"
-                    )
-                    raise ValueError(msg)
-                self._done[name] = kept
+            made_with = _attribute_of_product(kept, "instrument_defaults")
+            wanted = _instrument_defaults_label(self.settings["instrument_defaults"])
+            if made_with != wanted:
+                msg = (
+                    f"the product {kept} was made with {made_with or 'unrecorded'} instrument defaults and "
+                    f"this call uses {wanted} ones: use another output directory"
+                )
+                raise ValueError(msg)
+            self._done[name] = kept
         return {
             abundance: [task for task in group if not all(name in self._done for name in task[2].values())]
             for abundance, group in tasks.items()
@@ -1141,15 +1128,6 @@ def _instrumental_fwhm_by_sg_channel(
             )
             raise ValueError(msg)
     return widths
-
-
-def _sg_geometry_tag(channel: int, instrument_defaults: InstrumentDefaults) -> str:
-    """
-    The number of slits and the slit separation of an SG channel in milliangstrom, as
-    the names of its detector products state them.
-    """
-    separation = u.Quantity(instrument_defaults.spectral_slit_separation_SG.sel(channel=channel).data)
-    return f"nslits{instrument_defaults.number_of_slits_SG}_sep{separation.to_value(u.mAA):g}"
 
 
 def _sg_waveband(channel: int, instrument_defaults: InstrumentDefaults) -> u.Quantity:

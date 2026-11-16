@@ -1,6 +1,5 @@
 import shutil
 
-import attrs
 import dask.array as da
 import numpy as np
 import pytest
@@ -9,10 +8,8 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument import align_response_and_vdem
-from muse.instrument.response import io as response_io
 from muse.instrument.response.io import read_response, read_responses, save_response, save_spectral_response
 from muse.tests.helpers import fake_response, fake_response_file_contents, fake_vdem
-from muse.variables import DEFAULTS_MUSE
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore::zarr.errors.UnstableSpecificationWarning"),
@@ -23,7 +20,6 @@ pytestmark = [
 
 
 # The shipped SG and CI gains are equal, so only a CI table that differs proves the CI table was read.
-_CI_GAIN = xr.DataArray(np.array([7.0, 7.0]) * u.electron / u.DN, coords={"channel": [195, 304]}, dims="channel")
 
 
 def _write(ds: xr.Dataset, path, fmt: str) -> str:
@@ -53,7 +49,9 @@ def response_path(tmp_path):
 
 def _small_response() -> xr.Dataset:
     response = fake_response().isel(line=slice(0, 2), logT=slice(0, 3), slit=slice(0, 4))
-    return response.assign_attrs(normalization=1e-27, history=["create response", "map response"])
+    return response.assign_attrs(
+        normalization=1e-27, gain="10.0 electron / DN", history=["create response", "map response"]
+    )
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
@@ -267,7 +265,7 @@ def test_read_responses_chunked_stays_lazy(tmp_path) -> None:
     for name in ("a.nc", "b.nc"):
         fake_response_file_contents().to_netcdf(tmp_path / name)
 
-    response = read_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171] * u.AA, chunked=True)
+    response = read_responses([tmp_path / "a.nc", tmp_path / "b.nc"], chunked=True)
 
     assert isinstance(response.detector_response.data, da.Array)
 
@@ -316,10 +314,12 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
         read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity"))
 
 
-def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
-    path = _write(fake_response_file_contents().drop_vars("channel"), tmp_path / "resp.zarr", "zarr")
+def test_read_response_without_a_gain_attribute_requires_gain(tmp_path) -> None:
+    source = fake_response_file_contents()
+    del source.attrs["gain"]
+    path = _write(source, tmp_path / "resp.zarr", "zarr")
 
-    with pytest.raises(ValueError, match="pass gain explicitly"):
+    with pytest.raises(ValueError, match="states no gain in its attributes; pass gain"):
         read_response(path)
 
 
@@ -349,18 +349,10 @@ def test_read_response_gain_accepts_quantity(response_path) -> None:
     assert r.gain.attrs["units"] == str(u.electron / u.DN)
 
 
-def test_read_response_uses_channel_gain(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        DEFAULTS_MUSE.gain_SG,
-        "data",
-        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
-    )
-    src = fake_response_file_contents().assign_coords(channel=("line", [284]))
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
+def test_read_response_takes_the_gain_of_the_file(tmp_path) -> None:
+    path = _write(fake_response_file_contents().assign_attrs(gain="12.0 electron / DN"), tmp_path / "resp.zarr", "zarr")
 
-    r = read_response(path)
-
-    np.testing.assert_array_equal(r.gain.values, [12.0])
+    np.testing.assert_array_equal(read_response(path).gain.values, [12.0])
 
 
 def test_read_response_gain_rejects_wrong_units(response_path) -> None:
@@ -388,38 +380,35 @@ def test_read_response_names_the_legacy_layout(tmp_path) -> None:
         read_response(path)
 
 
-def _line_file(line: str, wavelength: float) -> xr.Dataset:
-    # A response file of one line, without the channel: read_responses is told it.
-    return (
-        fake_response_file_contents()
-        .assign_coords(line=("line", [line]), line_wavelength=("line", [wavelength], {"units": "Angstrom"}))
-        .drop_vars("channel")
+def _line_file(line: str, wavelength: float, channel: int) -> xr.Dataset:
+    # A response file of one line, with its channel.
+    return fake_response_file_contents().assign_coords(
+        line=("line", [line]),
+        line_wavelength=("line", [wavelength], {"units": "Angstrom"}),
+        channel=("line", [channel]),
     )
 
 
-def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        DEFAULTS_MUSE.gain_SG,
-        "data",
-        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
-    )
+def test_read_responses_concatenates_lines(tmp_path) -> None:
     first = xr.concat(
         [
-            _line_file("Fe XIX 108.355", 108.355),
-            _line_file("Fe XXI 108.117", 108.117),
-            _line_file("contaminants", 108.355),
+            _line_file("Fe XIX 108.355", 108.355, 108),
+            _line_file("Fe XXI 108.117", 108.117, 108),
+            _line_file("contaminants", 108.355, 108),
         ],
         dim="line",
         data_vars="all",
         join="exact",
     ).assign_attrs(
+        gain="8.0 electron / DN",
         history="first_response()",
         shared_attr="kept",
         conflicting_attr="first",
         muse_version="0.4.0",
         date_created="2026-01-01T00:00:00Z",
     )
-    second = _line_file("Fe XV 284.163", 284.163).assign_attrs(
+    second = _line_file("Fe XV 284.163", 284.163, 284).assign_attrs(
+        gain="12.0 electron / DN",
         history="second_response()",
         shared_attr="kept",
         conflicting_attr="second",
@@ -430,13 +419,11 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     _write(second, tmp_path / "b.nc", "nc")
 
     resp = read_responses(
-        response_directory=tmp_path,
-        response_files=["a.nc", "b.nc"],
+        [tmp_path / "a.nc", tmp_path / "b.nc"],
         logT=np.linspace(5.2, 6.6, 4) * u.dex(u.K),
         doppler_velocity=[-100.0, 0.0, 100.0] * u.km / u.s,
         number_of_slits=3,
         logT_method="nearest",
-        channels=[108, 284] * u.AA,
     )
 
     np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
@@ -465,44 +452,14 @@ def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:
     _write(shifted.assign_coords(doppler_velocity=shifted.doppler_velocity + 5.0), tmp_path / "b.nc", "nc")
 
     with pytest.raises(ValueError, match=r"align|exact"):
-        read_responses(
-            response_directory=tmp_path,
-            response_files=["a.nc", "b.nc"],
-            channels=[108, 284] * u.AA,
-        )
+        read_responses([tmp_path / "a.nc", tmp_path / "b.nc"])
 
 
-def test_read_responses_channels_length_mismatch_raises(tmp_path) -> None:
-    _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
-    with pytest.raises(ValueError, match=r"channels .* must match the number of response_files"):
-        read_responses(
-            response_directory=tmp_path,
-            response_files=["a.zarr"],
-            channels=[171, 284] * u.AA,
-        )
+def test_read_responses_refuses_a_file_without_a_channel(tmp_path) -> None:
+    path = _write(fake_response_file_contents().drop_vars("channel"), tmp_path / "a.zarr", "zarr")
 
-
-def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
-    source = fake_response_file_contents()
-    path = _write(source.assign_coords(channel=("line", [195] * source.sizes["line"])), tmp_path / "ci.nc", "nc")
-    np.testing.assert_allclose(read_response(path).gain.values, 7.0)
-
-
-def test_read_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
-    _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
-    # given in nm, the channel is named as the instrument defaults name it
-    response = read_responses(tmp_path, ["a.zarr"], channels=[19.5] * u.nm)
-    np.testing.assert_allclose(response.gain.values, 7.0)
-    assert response.channel.values.tolist() == [195]
-
-
-def test_read_responses_rejects_unsupported_channel(tmp_path) -> None:
-    _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
-
-    with pytest.raises(ValueError, match=r"unsupported MUSE SG/CI channel 999"):
-        read_responses(tmp_path, ["a.zarr"], channels=[999] * u.AA)
+    with pytest.raises(ValueError, match="has no channel coordinate"):
+        read_responses([path])
 
 
 def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:

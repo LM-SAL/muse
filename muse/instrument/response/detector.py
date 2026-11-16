@@ -202,9 +202,12 @@ def map_response_to_sg_detector(
         if not value.isscalar or not np.isfinite(value.value) or value.value <= 0:
             msg = f"{name} must be a finite, positive scalar"
             raise ValueError(msg)
+    slit_separation = None
     if dispersion is None:
         slit_separation = u.Quantity(instrument_defaults.spectral_slit_separation_SG.sel(channel=channel_value).data)
         dispersion = slit_separation / pixels_between_slits
+    elif pixels_between_slits is not None:
+        slit_separation = pixels_between_slits * dispersion
     if not dispersion.isscalar or not np.isfinite(dispersion.value) or dispersion.value <= 0:
         msg = "dispersion must be a finite, positive scalar"
         raise ValueError(msg)
@@ -269,6 +272,9 @@ def map_response_to_sg_detector(
         result = result.assign_coords(
             channel=("line", np.full(response.sizes["line"], channel_value), {"units": str(u.AA)})
         )
+    if slit_separation is not None:
+        # How far apart in wavelength the slits fall on the detector, which no product name states.
+        result = result.assign_attrs(spectral_slit_separation=str(slit_separation.to(u.mAA)))
     add_history(result, locals(), map_response_to_sg_detector)
     return result
 

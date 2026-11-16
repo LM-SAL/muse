@@ -3,6 +3,7 @@ Functions whose scope is not limited to one part of the muse package.
 """
 
 import re
+import hashlib
 import inspect
 import zipfile
 import datetime as dt
@@ -10,6 +11,7 @@ import tempfile
 from pathlib import Path
 from collections.abc import Callable, Sequence
 
+import attrs
 import dask.array as da
 import numpy as np
 import numpy.typing as npt
@@ -195,13 +197,33 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
 def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
     """
     How the history and the attributes name an
-    `~muse.variables_schema.InstrumentDefaults`:
+    `~muse.variables_schema.InstrumentDefaults`.
 
-    the whole object does not fit an attribute, so only whether it is the MUSE one.
+    The whole object does not fit an attribute: ``DEFAULTS_MUSE`` for the MUSE values,
+    otherwise ``custom`` and a digest of every value, which tells products made with
+    different values apart.
     """
-    # shortcut: two different custom objects get the same label; the values they set are in the
-    # other attributes of a product. Store a digest of the values if runs with several must not mix.
-    return "DEFAULTS_MUSE" if instrument_defaults == DEFAULTS_MUSE else "custom"
+    if instrument_defaults == DEFAULTS_MUSE:
+        return "DEFAULTS_MUSE"
+    digest = hashlib.sha256()
+    for name in attrs.fields_dict(type(instrument_defaults)):
+        digest.update(f"{name}={_written_in_full(getattr(instrument_defaults, name))};".encode())
+    return f"custom {digest.hexdigest()[:12]}"
+
+
+def _written_in_full(value: object) -> str:
+    """
+    ``value`` as text, every element of an array included: the repr of numpy leaves out
+    the middle of a large one.
+    """
+    if isinstance(value, xr.DataArray):
+        coords = {name: coord.values.tolist() for name, coord in value.coords.items()}
+        return f"{_written_in_full(value.data)} {coords}"
+    if isinstance(value, u.Quantity):
+        return f"{np.asarray(value.value).tolist()} {value.unit}"
+    if isinstance(value, np.ndarray):
+        return str(value.tolist())
+    return repr(value)
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray, now: str) -> None:
