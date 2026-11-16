@@ -425,7 +425,7 @@ def test_line_list_must_be_dataset():
 
 
 def test_a_line_list_must_lie_along_transition():
-    with pytest.raises(ValueError, match="lies along trans_index, as muse 0.3 wrote line lists"):
+    with pytest.raises(ValueError, match=r"lies along trans_index, as muse 0\.3 wrote line lists"):
         _build_spectral_response(fake_line_list(2).rename({"transition": "trans_index"}))
     with pytest.raises(ValueError, match="must lie along a transition dimension"):
         _build_spectral_response_impl(fake_line_list(1).squeeze("transition"), DEFAULT_WAVELENGTH_GRID, main_lines=[])

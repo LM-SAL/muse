@@ -215,7 +215,7 @@ def test_a_cache_of_muse_0_3_is_refused(tmp_path):
     path.unlink()
     _to_zarr(old, path)
 
-    with pytest.raises(ValueError, match="was written by muse 0.3, with its transitions along trans_index"):
+    with pytest.raises(ValueError, match=r"was written by muse 0\.3, with its transitions along trans_index"):
         load_or_create_line_list(tmp_path, **kwargs)
 
 
