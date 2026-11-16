@@ -171,17 +171,8 @@ LINE_NAMES = np.asarray(
 
 N_LINES = np.size(LINE_NAMES)
 LINE_CHANNELS = np.asarray([108, 108, 108, 171, 171, 284, 284])
-LINE_WAVELENGTHS = np.asarray(
-    [
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XIX 108.355"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XXI 108.117"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XIX 108.355"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe IX 171.073"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe IX 171.073"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"].to_value(u.AA),
-        DEFAULTS_MUSE.main_lines_SG_wavelength["Fe XV 284.163"].to_value(u.AA),
-    ]
-)
+# The wavelengths in the names of the lines above.
+LINE_WAVELENGTHS = np.asarray([108.355, 108.117, 108.355, 171.073, 171.073, 284.163, 284.163])
 SLIT_INDICES = np.arange(0, N_SLITS, 1)
 # The real response functions have 1024 detector pixels. The fixture samples 32
 # of them for speed, so line peaks land on the nearest sampled pixel. At slit=17

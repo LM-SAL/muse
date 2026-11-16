@@ -4,14 +4,12 @@ Validated attrs schemas for package-wide variables.
 
 import numbers
 from contextlib import suppress
-from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
 from attrs import Converter, cmp_using, converters, define, field, fields, validators
 
 import astropy.units as u
-from astropy.units import imperial
 
 __all__ = [
     "FrozenDict",
@@ -123,12 +121,6 @@ def _readonly_quantity(value, unit):
     return quantity
 
 
-def _readonly_array(value):
-    array = np.asanyarray(value).copy()
-    array.setflags(write=False)
-    return array
-
-
 def _readonly_data_array(value, unit=None):
     data_array = value.copy(deep=True)
     if unit is not None:
@@ -145,40 +137,6 @@ def _readonly_data_array(value, unit=None):
     return data_array
 
 
-def _readonly_value(value):
-    if isinstance(value, u.Quantity):
-        quantity = value.copy()
-        _set_readonly(quantity)
-        return quantity
-    if isinstance(value, xr.DataArray):
-        return _readonly_data_array(value)
-    if isinstance(value, np.ndarray):
-        return _readonly_array(value)
-    if isinstance(value, Mapping):
-        return _readonly_mapping(value)
-    if isinstance(value, (list, tuple)):
-        return tuple(_readonly_value(item) for item in value)
-    return value
-
-
-def _readonly_mapping(mapping):
-    return FrozenDict({key: _readonly_value(value) for key, value in mapping.items()})
-
-
-def _quantity_mapping(unit):
-    """
-    Converter factory: coerce every value of a mapping to `astropy.units.Quantity` and
-    normalize it to ``unit``.
-
-    `None` passes through.
-    """
-
-    def to_unit(mapping):
-        return FrozenDict({key: _readonly_quantity(value, unit) for key, value in mapping.items()})
-
-    return converters.optional(to_unit)
-
-
 def _eq_optional(equal):
     """
     Wrap an equality function so `None` only equals `None`.
@@ -190,16 +148,6 @@ def _eq_optional(equal):
         return bool(equal(a, b))
 
     return compare
-
-
-def _mapping_values_equal(a, b):
-    """
-    Compare two mappings whose values may be arrays.
-
-    Values are compared with `numpy.array_equal`, which ignores units; safe here because
-    the converters normalize units before storage.
-    """
-    return a.keys() == b.keys() and all(np.array_equal(a[key], b[key]) for key in a)
 
 
 def _channel_coordinates(data_array, name, dimension="channel"):
@@ -217,25 +165,8 @@ def _channel_coordinates(data_array, name, dimension="channel"):
     return tuple(np.asarray(data_array.coords[dimension].values).tolist())
 
 
-def _quantity_set(quantity, unit):
-    return set(np.asarray(quantity.to_value(unit)).tolist())
-
-
-def _flat_line_names(main_lines):
-    return tuple(line for channel_lines in main_lines for line in channel_lines)
-
-
-def _validate_matching_keys(first, first_name, second, second_name):
-    if first is None or second is None:
-        return
-    if first.keys() != second.keys():
-        msg = f"{first_name} and {second_name} must use matching keys"
-        raise ValueError(msg)
-
-
 _array_eq = cmp_using(eq=_eq_optional(np.array_equal), class_name="_ArrayEq")
 _data_array_eq = cmp_using(eq=_eq_optional(lambda a, b: a.equals(b)), class_name="_DataArrayEq")
-_mapping_eq = cmp_using(eq=_eq_optional(_mapping_values_equal), class_name="_MappingEq")
 
 
 @define(frozen=True, kw_only=True, hash=False)
@@ -244,11 +175,9 @@ class InstrumentDefaults:
     Container of instrument properties used by functions and methods within the muse
     library; not a general-purpose instrument defaults class.
 
-    Every parameter is optional; most default to `None`, while the response-creation
-    fields (`electron_density`, `electron_pressure`, `response_logT_min`,
-    `response_method`, `normalization`) carry physical defaults. Populate the ones a
-    given instrument needs (see `muse.variables` for the MUSE instance). Each field
-    documents its meaning and the unit it is normalized to.
+    Every parameter is optional, and all but `normalization` default to `None`. Populate
+    the ones a given instrument needs (see `muse.variables` for the MUSE instance). Each
+    field documents its meaning and the unit it is normalized to.
 
     Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
     the ``_SG``/``_CI`` field suffix identifies the detector, and the two channel sets
@@ -258,15 +187,8 @@ class InstrumentDefaults:
     attribute reassignment; create modified copies with `attrs.evolve`.
 
     This is not a deeply immutable container. The converters copy input values and make
-    common array buffers read-only, but some nested objects still expose mutable APIs:
-
-    * `xarray.DataArray` fields can still have ``.data``, coordinates, ``.attrs``, and
-      ``.encoding`` reassigned or mutated through xarray APIs.
-    * Object-dtype arrays or custom objects stored inside mappings can still mutate their
-      contained Python objects even when the outer array or mapping is read-only.
-    * `muse.variables_schema.FrozenDict` prevents normal mapping mutation, but it is still a `dict` subclass
-      for pickle compatibility.
-
+    array buffers read-only, but `xarray.DataArray` fields can still have ``.data``,
+    coordinates, ``.attrs`` and ``.encoding`` reassigned or mutated through xarray APIs.
     Because nested state can change, instances are intentionally unhashable.
     """
 
@@ -283,11 +205,6 @@ class InstrumentDefaults:
     Spatial pixel size along y-axis for the CI.
 
     Normalized to arcseconds.
-    """
-
-    full_well_depth_CI: u.Quantity | None = field(default=None, converter=_quantity(u.DN))
-    """
-    Full well depth in DN for the CI.
     """
 
     # Spectrograph (SG) parameters
@@ -369,61 +286,7 @@ class InstrumentDefaults:
     Normalized to square centimeters and keyed by ``channel``.
     """
 
-    # Diffraction parameters
-    mesh_transmission: Mapping | None = field(default=None, converter=converters.optional(_readonly_mapping))
-    """
-    Mesh transmission coefficient, keyed by diffraction channel.
-    """
-
-    oversample_x_SG: int | None = field(default=None, converter=_int_converter)
-    """
-    Oversampling factor along x-axis for the SG.
-    """
-
-    oversample_y_SG: int | None = field(default=None, converter=_int_converter)
-    """
-    Oversampling factor along y-axis for the SG.
-    """
-
-    center_diffraction: bool | None = field(default=None, validator=_instance((bool, np.bool_)))
-    """
-    Centers the peak of the PSF before convolution.
-    """
-
-    lpi: Mapping | None = field(default=None, converter=_quantity_mapping(1 / imperial.inch), eq=_mapping_eq)
-    """
-    Lines per inch of mesh grid, keyed by diffraction channel.
-
-    The set of keys defines which channels have diffraction patterns.
-    """
-
-    psf_fwhm: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
-    """
-    FWHM of the core PSF.
-
-    Normalized to arcseconds.
-    """
-
-    psf_fwhm_x: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
-    """
-    FWHM of the core PSF in x direction.
-
-    Normalized to arcseconds.
-    """
-
-    psf_fwhm_y: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
-    """
-    FWHM of the core PSF in y direction.
-
-    Normalized to arcseconds.
-    """
-
     # Other Properties
-    data_compression: int | None = field(default=None, converter=_int_converter)
-    """
-    Data compression level.
-    """
-
     gain_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.electron / u.DN), eq=_data_array_eq)
     """
     SG CCD gain in electrons per DN, keyed by ``channel``.
@@ -463,21 +326,6 @@ class InstrumentDefaults:
     Main spectral lines for the SG, grouped per channel.
     """
 
-    main_lines_SG_wavelength: Mapping | None = field(default=None, converter=_quantity_mapping(u.AA), eq=_mapping_eq)
-    """
-    Center of the main spectral lines in angstrom, keyed by line name.
-
-    Values normalized to Angstroms.
-    """
-
-    bands_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA), eq=_array_eq)
-    """
-    Channel of each main SG line, with one entry per line of ``main_lines_SG`` in the
-    same order, so a channel with two main lines appears twice.
-
-    Normalized to Angstroms.
-    """
-
     fov_mode: str | None = field(default=None, validator=_instance(str))
     """
     This is the pad method used by `xarray.DataArray.pad`
@@ -499,36 +347,7 @@ class InstrumentDefaults:
     0 interpolates straight onto the pixels.
     """
 
-    # Exposures
-    exposure_times_SG: Mapping | None = field(default=None, converter=_quantity_mapping(u.s), eq=_mapping_eq)
-    """
-    Typical exposure times for the SG, keyed by solar condition.
-
-    Values normalized to seconds.
-    """
-
-    exposure_times_CI: Mapping | None = field(default=None, converter=_quantity_mapping(u.s), eq=_mapping_eq)
-    """
-    Typical exposure times for the CI, keyed by solar condition.
-
-    Values normalized to seconds.
-    """
-
     # Response creation
-    electron_density: u.Quantity = field(default=1e9 / u.cm**3, converter=_required_quantity(1 / u.cm**3))
-    """
-    Electron density for response creation.
-
-    Normalized to inverse cubic centimeters.
-    """
-
-    electron_pressure: u.Quantity = field(default=3e15 * u.K / u.cm**3, converter=_required_quantity(u.K / u.cm**3))
-    """
-    Electron pressure for response creation.
-
-    Normalized to Kelvin per cubic centimeter.
-    """
-
     response_abundances: tuple | None = field(default=None, converter=converters.optional(tuple))
     """
     CHIANTI abundance names the response products are generated for.
@@ -567,48 +386,15 @@ class InstrumentDefaults:
     Normalized to kilometers per second.
     """
 
-    response_logT_min: float = field(default=4.8, converter=float)
-    """
-    Minimum logT for response creation.
-
-    Nothing in this package reads it: the response products take their temperatures
-    from ``response_temperature``.
-    """
-
-    # Target grids
-    target_logT: Mapping | None = field(default=None, converter=converters.optional(_readonly_mapping), eq=_mapping_eq)
-    """
-    Target logT values for different solar conditions.
-    """
-
-    target_doppler_velocity: Mapping | None = field(
-        default=None, converter=_quantity_mapping(u.km / u.s), eq=_mapping_eq
-    )
-    """
-    Target Doppler velocity values for different solar conditions.
-
-    Values normalized to kilometers per second.
-    """
-
     # Response creation, continued
     minimum_abundance: float | None = field(default=None, converter=converters.optional(float))
     """
     Minimum abundance considered for response creation.
     """
 
-    response_method: str = field(default="linear", validator=validators.instance_of(str))
-    """
-    Type of interpolation in the response creation.
-    """
-
     normalization: float = field(default=1e-27, converter=float)
     """
     Normalization in the response function.
-    """
-
-    sum_lines: bool | None = field(default=None, validator=_instance((bool, np.bool_)))
-    """
-    Sum all lines for response creation.
     """
 
     initial_wavelength_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
@@ -643,14 +429,6 @@ class InstrumentDefaults:
 
     def __attrs_post_init__(self):
         self._validate_channel_fields()
-        self._validate_line_fields()
-        _validate_matching_keys(
-            self.target_logT, "target_logT", self.target_doppler_velocity, "target_doppler_velocity"
-        )
-        _validate_matching_keys(
-            self.exposure_times_SG, "exposure_times_SG", self.exposure_times_CI, "exposure_times_CI"
-        )
-        _validate_matching_keys(self.lpi, "lpi", self.mesh_transmission, "mesh_transmission")
 
     def _validate_channel_fields(self):
         # SG and CI calibrations share the "channel" dimension name but carry
@@ -674,31 +452,3 @@ class InstrumentDefaults:
             if field_channels != channels:
                 msg = f"{name} and {reference} must have matching channel coordinates"
                 raise ValueError(msg)
-
-        if channels is None:
-            return
-        channel_set = set(channels)
-        if self.bands_SG is not None and _quantity_set(self.bands_SG, u.AA) != channel_set:
-            msg = "bands_SG unique channels must match the SG channel coordinates"
-            raise ValueError(msg)
-
-        for mapping_name in ("lpi", "mesh_transmission"):
-            mapping = getattr(self, mapping_name)
-            if mapping is not None and not set(mapping).issubset(channel_set):
-                msg = f"{mapping_name} channel keys must be present in the SG channel coordinates"
-                raise ValueError(msg)
-
-    def _validate_line_fields(self):
-        if self.main_lines_SG is None:
-            return
-
-        line_names = _flat_line_names(self.main_lines_SG)
-        if self.bands_SG is not None and len(self.bands_SG) != len(line_names):
-            msg = "bands_SG must contain one entry for each line in main_lines_SG"
-            raise ValueError(msg)
-
-        if self.main_lines_SG_wavelength is None:
-            return
-        if missing := sorted(set(line_names) - set(self.main_lines_SG_wavelength)):
-            msg = f"main_lines_SG_wavelength is missing entries for {missing}"
-            raise ValueError(msg)
