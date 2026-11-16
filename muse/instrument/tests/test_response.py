@@ -208,6 +208,15 @@ def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel(
         )
 
 
+def test_map_response_to_sg_detector_refuses_slits_without_their_spacing():
+    no_spacing = evolve(DEFAULTS_MUSE, pixels_between_slits_SG=None)
+
+    with pytest.raises(ValueError, match="missing: pixels_between_slits"):
+        map_response_to_sg_detector(
+            _spectral_response(), channel=171 * u.AA, dispersion=0.1 * u.AA / u.pix, instrument_defaults=no_spacing
+        )
+
+
 def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector_axis():
     response = _ci_spectral_response().chunk({"wavelength_bin": 2})
     original = response.copy(deep=True)

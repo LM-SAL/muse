@@ -1049,6 +1049,8 @@ def _ci_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
     """
     The channels of the imager, whose gain and pair energy the defaults hold.
     """
+    if instrument_defaults.gain_CI is None:
+        return ()
     return tuple(int(channel) for channel in instrument_defaults.gain_CI.channel.values)
 
 

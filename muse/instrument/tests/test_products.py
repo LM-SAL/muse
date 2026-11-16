@@ -1014,6 +1014,12 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
     assert read_response(custom).attrs["instrument_defaults"] == "custom"
 
 
+def test_imager_files_that_state_their_detector_need_no_imager_in_the_defaults(inputs, tmp_path):
+    products = _ci(inputs, tmp_path, include_continuum=False, instrument_defaults=evolve(DEFAULTS_MUSE, gain_CI=None))
+
+    assert len(products) == 4
+
+
 def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
     """
     A value the custom defaults lack is refused rather than taken from
