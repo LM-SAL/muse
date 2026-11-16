@@ -252,7 +252,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     # An imager cube records its continuum: that it is included, its backend and minimum
     # abundance, and the calls that made it, which enter the history before the unit conversion.
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
-    assert cube.attrs["minimum_abundance"] == DEFAULTS_MUSE.minimum_abundance
+    assert cube.attrs["minimum_abundance"] == 1e-21
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
         "create_effective_area",
@@ -540,7 +540,7 @@ def test_calls_with_one_wavelength_range_share_one_cached_line_list(inputs, tmp_
     xr.testing.assert_allclose(_main_response(given), _main_response(first))
     # made by a backend: that is recorded with its minimum abundance, and no file
     attrs = read_response(first[1]).attrs
-    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", DEFAULTS_MUSE.minimum_abundance)
+    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", 1e-21)
     assert "line_list_file" not in attrs
 
 
@@ -860,12 +860,12 @@ def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
 
     assert [(path.parent.name, path.name.split("detector_")[1]) for path in written] == [
         (abundance, f"testea_pressure_{pressure:g}.zarr.zip")
-        for abundance in DEFAULTS_MUSE.response_abundances
-        for pressure in DEFAULTS_MUSE.response_pressure.data.value
+        for abundance in products_module._ABUNDANCES
+        for pressure in products_module._PRESSURE.data.value
     ]
     response = read_response(written[0])
     assert response.sizes["pressure"] == 1
-    velocities = DEFAULTS_MUSE.continuum_response_doppler_velocity
+    velocities = products_module._CONTINUUM_DOPPLER_VELOCITY
     np.testing.assert_array_equal(response.doppler_velocity.values, velocities.value)
 
 

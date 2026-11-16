@@ -9,9 +9,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.synthesis._backends import _resolve_backend, torch_einsum
-from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
-from muse.variables import DEFAULTS_MUSE
 
 if TYPE_CHECKING:
     import torch
@@ -99,12 +97,11 @@ def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[
     return vdem_unit, response_unit
 
 
-@format_docstring("DEFAULTS_MUSE", sum_over="sum_over_dims_synthesis")
 def vdem_synthesis(
     vdem: xr.Dataset,
     response: xr.Dataset,
     *,
-    sum_over: Sequence[str] = DEFAULTS_MUSE.sum_over_dims_synthesis,
+    sum_over: Sequence[str] = ("logT", "doppler_velocity", "slit"),
     device: "str | torch.device | None" = None,
     backend: str = "numpy",
 ) -> xr.Dataset:
@@ -134,7 +131,7 @@ def vdem_synthesis(
         accepted with a VDEM that has slits: each slit position is imaged
         on its own and ``slit`` stays in the output.
     sum_over : `tuple` of `str`
-        Dimensions to sum over, by default {sum_over}.
+        Dimensions to sum over, by default ``("logT", "doppler_velocity", "slit")``.
         ``"slit"`` is dropped from this when the response has no slit
         dimension, so the MUSE default works for single-slit and imager
         responses.

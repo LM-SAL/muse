@@ -18,7 +18,6 @@ from astropy.stats import gaussian_sigma_to_fwhm
 
 from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
-from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["create_continuum_response", "create_log_wavelength_edges", "create_spectral_response"]
 
@@ -26,6 +25,7 @@ __all__ = ["create_continuum_response", "create_log_wavelength_edges", "create_s
 _GAUSSIAN_WINDOW_SIGMA = 40
 _GAUSSIAN_EXPRESSION = "scaled * exp(-0.5 * (shift / width) ** 2) / gaussian_norm / width"
 _BIN_METHODS = ("center", "average")
+_NORMALIZATION = 1e-27
 
 
 @u.quantity_input(wavelength_range=u.AA)
@@ -323,15 +323,15 @@ def _build_spectral_response(
                     effective_area.interp(wavelength=wavelength_grid).fillna(0).rename(wavelength="wavelength_grid")
                 )
             ds["spectral_response"] = ds.spectral_response * scaling
-        ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**5 / u.s / u.sr / u.AA)
+        ds.spectral_response.attrs["units"] = str(_NORMALIZATION * u.erg * u.cm**5 / u.s / u.sr / u.AA)
         ds.spectral_response.attrs["effective_area_at"] = "bin center" if area_at_center is None else "line center"
     else:
-        ds.spectral_response.attrs["units"] = str(DEFAULTS_MUSE.normalization * u.erg * u.cm**3 / u.s / u.sr / u.AA)
+        ds.spectral_response.attrs["units"] = str(_NORMALIZATION * u.erg * u.cm**3 / u.s / u.sr / u.AA)
     ds.spectral_response.attrs["bin_method"] = bin_method
 
     ds = ds.assign_coords(_wavelength_bin_coords(wavelength_grid, edges))
 
-    ds.attrs["normalization"] = DEFAULTS_MUSE.normalization
+    ds.attrs["normalization"] = _NORMALIZATION
     return ds
 
 
@@ -662,7 +662,7 @@ def _evaluate_gaussian_response(
     )
     shift = (window_points - line_center).broadcast_like(gofnt)
     width, shift = xr.broadcast(line_width, shift)
-    gofnt_scaled = (gofnt / DEFAULTS_MUSE.normalization).broadcast_like(width)
+    gofnt_scaled = (gofnt / _NORMALIZATION).broadcast_like(width)
     gofnt_scaled, width, shift = xr.broadcast(gofnt_scaled, width, shift)
     wavelength_axis = gofnt_scaled.get_axis_num("wavelength_bin")
     if average:

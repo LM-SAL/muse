@@ -27,7 +27,6 @@ from muse.instrument.atomic.continuum import create_chianti_continuum, create_fi
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
 from muse.utils.utils import _to_zarr
-from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_or_create_continuum", "load_or_create_line_list"]
 
@@ -44,7 +43,7 @@ def load_or_create_line_list(
     temperature: xr.DataArray,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     chianti_version: str | None = None,
@@ -81,7 +80,7 @@ def load_or_create_line_list(
         ``pressure`` whatever the array calls it, and densities as their log10 along ``logD``.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        1e-21.
     backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``; ``"chianti"`` needs
         ChiantiPy and ``XUVTOP``. The file name carries the backend, so the line lists of the
@@ -160,7 +159,7 @@ def load_or_create_continuum(
     temperature: xr.DataArray,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     workers: int = 1,

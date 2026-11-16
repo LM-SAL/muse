@@ -69,24 +69,11 @@ _DEFAULTS_MUSE_VALUES = {
         coords={"channel": [195, 304]},
         dims="channel",
     ),
-    # Synthesis/inversions
-    "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
     "main_lines_by_channel_SG": {
         108: ("Fe XIX 108.355", "Fe XXI 108.117"),
         171: ("Fe IX 171.073",),
         284: ("Fe XV 284.163",),
     },
-    "fov_pad_mode": "wrap",
-    "fov_extent": "extend",
-    "fov_oversampling": 2,
-    # Response creation
-    "response_abundances": ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund"),
-    "response_temperature": xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT"),
-    "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
-    "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
-    "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
-    # Response creation, continued
-    "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
     "wavelength_start_SG": xr.DataArray(
         np.array([107.68034, 170.62314, 283.01608]) * u.AA,
         coords={"channel": [108, 171, 284]},

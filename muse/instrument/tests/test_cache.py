@@ -20,7 +20,6 @@ from muse.instrument.atomic.cache import load_or_create_continuum, load_or_creat
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.utils.utils import _to_zarr
-from muse.variables import DEFAULTS_MUSE
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -84,7 +83,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
     xr.testing.assert_identical(first, second)
     assert first.gofnt.dims == ("pressure", "logT", "transition")
     assert first.pressure.attrs["units"] == "K / cm3"
-    assert first.attrs["minimum_abundance"] == DEFAULTS_MUSE.minimum_abundance
+    assert first.attrs["minimum_abundance"] == 1e-21
 
 
 @pytest.mark.usefixtures("line_list_calls", "continuum_calls")
@@ -134,7 +133,7 @@ def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, gr
 
 MINIMUM_ABUNDANCE = (
     {"minimum_abundance": 1e-2},
-    f"minimum abundance {DEFAULTS_MUSE.minimum_abundance}, not the requested 0.01",
+    f"minimum abundance {1e-21}, not the requested 0.01",
 )
 # The checks are shared: of the continuum, only what its own call passes on, the minimum abundance.
 MISMATCHES = {

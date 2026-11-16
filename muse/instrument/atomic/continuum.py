@@ -16,10 +16,9 @@ from muse.instrument.atomic.backends import (
     _plasma_axis_units,
     _validate_plasma_inputs,
 )
-from muse.instrument.response.spectral import _centers_to_edges, _wavelength_bin_coords
+from muse.instrument.response.spectral import _NORMALIZATION, _centers_to_edges, _wavelength_bin_coords
 from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history
-from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["create_chianti_continuum", "create_fiasco_continuum"]
 
@@ -35,7 +34,7 @@ def create_chianti_continuum(
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
 ) -> xr.Dataset:
     """
     Compute the continuum with ChiantiPy, summed over the ions of every element above
@@ -59,12 +58,12 @@ def create_chianti_continuum(
         name of the set that was used is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        1e-21.
 
     Returns
     -------
     `xarray.Dataset`
-        ``spectral_response`` in units of ``DEFAULTS_MUSE.normalization`` erg cm3 /
+        ``spectral_response`` in units of 1e-27 erg cm3 /
         (Angstrom s sr). Its dimensions are ``(line, logT, logD, wavelength_bin)`` for a
         density grid. For a pressure grid the dimension of ``pressure`` takes the place of
         ``logD`` and comes before ``logT``.
@@ -179,7 +178,7 @@ def create_fiasco_continuum(
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     workers: int = 1,
     hdf5_dbase_root=None,
 ) -> xr.Dataset:
@@ -349,7 +348,7 @@ def _continuum_dataset(
     free_free, free_bound, two_photon, *, temperature, temperature_broadcast, plasma_coords, wavelength_grid, attrs
 ) -> xr.Dataset:
     plasma_dim = next(dim for dim in temperature_broadcast.dims if dim != "logT")
-    normalization = DEFAULTS_MUSE.normalization
+    normalization = _NORMALIZATION
     coords = {"logT": ("logT", np.log10(temperature.data), {"units": str(u.dex(u.K))}), **plasma_coords}
     density_independent = [
         xr.DataArray(values / normalization, dims=("logT", "wavelength_bin")).expand_dims(

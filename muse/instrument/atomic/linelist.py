@@ -23,7 +23,6 @@ from muse.instrument.atomic.backends import (
     _validate_plasma_inputs,
 )
 from muse.utils.utils import add_history, coord_as_unit, require_unit
-from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
     "boost_transitions",
@@ -307,7 +306,7 @@ def create_fiasco_line_list(
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
     wavelength_range: u.Quantity,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     ion_list: list[str] | None = None,
     workers: int = 1,
     hdf5_dbase_root: str | Path | None = None,
@@ -329,7 +328,7 @@ def create_fiasco_line_list(
         the two backends. The resolved name is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by
-        default ``DEFAULTS_MUSE.minimum_abundance``. Unlike in `create_chianti_line_list`,
+        default 1e-21, which keeps every element of a CHIANTI abundance file. Unlike in `create_chianti_line_list`,
         it combines with ``ion_list``.
     ion_list : `list` of `str`, optional
         CHIANTI ion names to include, such as ``"fe_9"`` (not fiasco's ``"Fe 9"``); by

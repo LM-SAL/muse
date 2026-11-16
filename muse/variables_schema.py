@@ -7,7 +7,7 @@ from contextlib import suppress
 
 import numpy as np
 import xarray as xr
-from attrs import Converter, cmp_using, converters, define, field, fields, validators
+from attrs import Converter, cmp_using, converters, define, field, fields
 
 import astropy.units as u
 
@@ -78,13 +78,6 @@ def _data_array(unit=None):
         return _readonly_data_array(value, unit)
 
     return converters.optional(to_unit)
-
-
-def _instance(type_):
-    """
-    Validator: value is `None` or an instance of ``type_``.
-    """
-    return validators.optional(validators.instance_of(type_))
 
 
 def _optional_int(value, attribute):
@@ -159,7 +152,6 @@ def _channel_coordinates(data_array, name, dimension="channel"):
     return tuple(np.asarray(data_array.coords[dimension].values).tolist())
 
 
-_array_eq = cmp_using(eq=_eq_optional(np.array_equal), class_name="_ArrayEq")
 _data_array_eq = cmp_using(eq=_eq_optional(lambda a, b: a.equals(b)), class_name="_DataArrayEq")
 
 
@@ -169,7 +161,7 @@ class InstrumentDefaults:
     Container of instrument properties used by functions and methods within the muse
     library; not a general-purpose instrument defaults class.
 
-    Every parameter is optional, and all but `normalization` default to `None`. Populate
+    Every parameter is optional and defaults to `None`. Populate
     the ones a given instrument needs (see `muse.variables` for the MUSE instance). Each
     field documents its meaning and the unit it is normalized to.
 
@@ -309,86 +301,9 @@ class InstrumentDefaults:
     CI calibration fields may cover different channel sets.
     """
 
-    # Synthesis/inversions
-    sum_over_dims_synthesis: tuple | None = field(default=None, converter=converters.optional(tuple))
-    """
-    Dimensions to sum over during synthesis/inversions.
-    """
-
     main_lines_by_channel_SG: FrozenDict | None = field(default=None, converter=converters.optional(_frozen_lines))
     """
     Main spectral lines for the SG, keyed by channel.
-    """
-
-    fov_pad_mode: str | None = field(default=None, validator=_instance(str))
-    """
-    How `~muse.transforms.match_fov` extends an axis, a mode of `xarray.DataArray.pad`.
-    """
-
-    fov_extent: str | None = field(default=None, validator=_instance(str))
-    """
-    How `~muse.transforms.match_fov` treats the x width: ``"extend"`` crops wider inputs
-    and extends narrower ones, ``"crop"`` only crops, ``"keep"`` leaves the width
-    untouched.
-    """
-
-    fov_oversampling: int | None = field(default=None, converter=_int_converter)
-    """
-    Sub-samples per input sample that `~muse.transforms.match_fov` interpolates onto
-    before it averages them into pixels. Used only when the input has at least one and
-    fewer than four samples per pixel.
-
-    0 interpolates straight onto the pixels.
-    """
-
-    # Response creation
-    response_abundances: tuple | None = field(default=None, converter=converters.optional(tuple))
-    """
-    CHIANTI abundance names the response products are generated for.
-    """
-
-    response_temperature: xr.DataArray | None = field(default=None, converter=_data_array(u.K), eq=_data_array_eq)
-    """
-    Temperatures of the response products, along ``logT``.
-
-    Values normalized to Kelvin.
-    """
-
-    response_pressure: xr.DataArray | None = field(
-        default=None, converter=_data_array(u.K / u.cm**3), eq=_data_array_eq
-    )
-    """
-    Electron pressures of the response products, along ``pressure``.
-
-    Values normalized to Kelvin per cubic centimeter.
-    """
-
-    response_doppler_velocity: u.Quantity | None = field(default=None, converter=_quantity(u.km / u.s), eq=_array_eq)
-    """
-    Doppler velocities of the line response products.
-
-    Normalized to kilometers per second.
-    """
-
-    continuum_response_doppler_velocity: u.Quantity | None = field(
-        default=None, converter=_quantity(u.km / u.s), eq=_array_eq
-    )
-    """
-    Doppler velocities of the SG continuum response products; a continuum varies slowly
-    with wavelength, so they are coarser than those of the lines.
-
-    Normalized to kilometers per second.
-    """
-
-    # Response creation, continued
-    minimum_abundance: float | None = field(default=None, converter=converters.optional(float))
-    """
-    Minimum abundance considered for response creation.
-    """
-
-    normalization: float = field(default=1e-27, converter=float)
-    """
-    Normalization in the response function.
     """
 
     wavelength_start_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)

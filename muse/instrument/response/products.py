@@ -50,6 +50,12 @@ __all__ = ["generate_ci_responses", "generate_sg_continuum_responses", "generate
 
 _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
+_ABUNDANCES = ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund")
+_TEMPERATURE = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+_PRESSURE = xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure")
+_DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
+# A continuum varies slowly with wavelength, so its velocities are coarser.
+_CONTINUUM_DOPPLER_VELOCITY = np.arange(-1000, 1001, 200) * u.km / u.s
 _ANGSTROM = {"units": str(u.AA)}
 # The attributes in which a line list or a continuum records the software and the database that made it.
 _VERSION_ATTRS = ("chianti_version", "chiantipy_version", "fiasco_version")
@@ -63,7 +69,7 @@ def generate_sg_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
+    abundances: Sequence[str] = _ABUNDANCES,
     temperature: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
@@ -71,7 +77,7 @@ def generate_sg_responses(
     main_lines_by_channel: Mapping[int | u.Quantity, Sequence[str]] | None = None,
     instrumental_fwhm_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
     maximum_contaminants: int = 10000,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,
@@ -125,21 +131,21 @@ def generate_sg_responses(
         The instrument values the products are made with, by default
         `~muse.variables.DEFAULTS_MUSE`: the detector geometry and calibration, the
         spectral orders, the wavebands, the instrument FWHM and the main lines. The
-        grids, the abundances, ``minimum_abundance`` and the normalization keep their own
-        defaults. The products record whether these were the MUSE values or others, with a
-        digest of them.
+        products record whether these were the MUSE values or others, with a digest of
+        them.
     abundances : `list` of `str`, optional
-        CHIANTI abundance names, by default ``DEFAULTS_MUSE.response_abundances``.
+        CHIANTI abundance names, by default ``sun_coronal_2021_chianti`` and
+        ``sun_photospheric_2021_asplund``.
     temperature : `xarray.DataArray`, optional
         Temperatures along ``logT`` with units convertible to K, by default
-        ``DEFAULTS_MUSE.response_temperature``.
+        10**4.5 to 10**7.9 K in steps of 0.1 dex.
     pressure, density : `xarray.DataArray`, optional
         The plasma points: pressures with units convertible to K / cm3, or densities with
         units convertible to cm-3; at most one of the two, by default
-        ``DEFAULTS_MUSE.response_pressure``.
+        3e14, 3e15 and 3e16 K / cm3.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 10 km / s.
     main_lines_by_channel : `dict`, optional
         The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
         Angstrom or as a wavelength. A channel that is not a key keeps those of
@@ -152,7 +158,7 @@ def generate_sg_responses(
         products, by default 10000; below 1 there are none.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out of the line list, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        1e-21.
     line_list_backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
@@ -247,7 +253,7 @@ def generate_sg_responses(
             transition_boosts=transition_boosts,
             transition_selection=transition_selection,
         )
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             channel = _channel(area)
@@ -292,13 +298,13 @@ def generate_sg_continuum_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
+    abundances: Sequence[str] = _ABUNDANCES,
     temperature: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     doppler_velocity: u.Quantity | None = None,
     wavelength_step: u.Quantity = 0.01 * u.AA,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     continuum_backend: str = "fiasco",
     cache_directory: str | Path | None = None,
     create_if_missing: bool = True,
@@ -327,12 +333,12 @@ def generate_sg_continuum_responses(
         The temperatures and the plasma points, as for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.continuum_response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 200 km / s.
     wavelength_step : `astropy.units.Quantity`, optional
         Sampling of the fine grid, by default 0.01 Angstrom.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out of the continuum, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        1e-21.
     continuum_backend : {"chianti", "fiasco"}, optional
         What creates a missing continuum, by default ``"fiasco"``.
     cache_directory : `str` or `pathlib.Path`, optional
@@ -369,7 +375,7 @@ def generate_sg_continuum_responses(
         run = _Run(generate_sg_continuum_responses, settings, call_inputs)
         _require_sg_files(run.effective_areas, instrument_defaults)
         load_continuum = _continuum_loader(run, continuum_backend)
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.continuum_response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _CONTINUUM_DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             return {"continuum": (f"sg_{_channel(area)}_continuum_{continuum_backend}_detector", "")}
@@ -406,7 +412,7 @@ def generate_ci_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
+    abundances: Sequence[str] = _ABUNDANCES,
     temperature: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
@@ -416,7 +422,7 @@ def generate_ci_responses(
     include_continuum: bool = True,
     continuum_backend: str = "fiasco",
     units: Sequence[str] = ("ph", "DN"),
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = 1e-21,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,
@@ -458,7 +464,7 @@ def generate_ci_responses(
         The temperatures and the plasma points, as for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 10 km / s.
     maximum_lines : `int`, optional
         How many of the brightest lines of a channel go into its products, by default 10000;
         at least 1.
@@ -472,7 +478,7 @@ def generate_ci_responses(
         The units the products are written in: ``"ph"``, ``"DN"`` or both, the default.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out of the line list and the continuum, by
-        default ``DEFAULTS_MUSE.minimum_abundance``.
+        default 1e-21.
     line_list_backend, line_list_file
         The line list, as for `generate_sg_responses`.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
@@ -546,7 +552,7 @@ def generate_ci_responses(
             transition_selection=transition_selection,
         )
         load_continuum = _continuum_loader(run, continuum_backend)
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             tags = (
@@ -612,10 +618,8 @@ class _Run:
         self.skip_existing = call_inputs["skip_existing"]
         pressure, density = call_inputs["pressure"], call_inputs["density"]
         if pressure is None and density is None:
-            pressure = DEFAULTS_MUSE.response_pressure
-        self.request = _PlasmaRequest(
-            _or_default(call_inputs["temperature"], DEFAULTS_MUSE.response_temperature), pressure, density
-        )
+            pressure = _PRESSURE
+        self.request = _PlasmaRequest(_or_default(call_inputs["temperature"], _TEMPERATURE), pressure, density)
         # What every read of a cache in the call shares.
         self._cache_options = {
             "temperature": self.request.temperature,

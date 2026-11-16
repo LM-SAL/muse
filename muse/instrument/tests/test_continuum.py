@@ -21,10 +21,9 @@ from muse.instrument.response.spectral import (
     create_log_wavelength_edges,
 )
 from muse.tests.helpers import fake_effective_area
-from muse.variables import DEFAULTS_MUSE
 from muse.version import version
 
-NORMALIZATION = DEFAULTS_MUSE.normalization
+NORMALIZATION = 1e-27
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 PRESSURE = xr.DataArray([3e14, 3e15] * u.K / u.cm**3, dims="pressure")
 GRID = np.linspace(170.0, 172.0, 21) * u.AA

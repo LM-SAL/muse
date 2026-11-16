@@ -16,15 +16,15 @@ def test_instrument_defaults_reject_top_level_reassignment():
         DEFAULTS_MUSE.gain_SG = 20 * u.electron / u.DN
 
 
-def test_instrument_array_fields_are_read_only_and_copied():
-    velocities = np.array([-100.0, 0.0, 100.0]) * u.km / u.s
-    defaults = InstrumentDefaults(response_doppler_velocity=velocities)
+def test_instrument_quantity_fields_are_read_only_and_copied():
+    width = 0.4 * u.arcsec
+    defaults = InstrumentDefaults(pixel_width_SG=width)
 
-    velocities[0] = 999 * u.km / u.s
+    width[...] = 9 * u.arcsec
 
-    np.testing.assert_array_equal(defaults.response_doppler_velocity.value, [-100.0, 0.0, 100.0])
+    assert defaults.pixel_width_SG == 0.4 * u.arcsec
     with pytest.raises(ValueError, match="read-only"):
-        defaults.response_doppler_velocity[0] = 999 * u.km / u.s
+        defaults.pixel_width_SG[...] = 9 * u.arcsec
 
 
 def test_instrument_main_lines_are_copied_to_tuples():
