@@ -27,11 +27,6 @@ def _write(ds: xr.Dataset, path, fmt: str) -> str:
     return str(path)
 
 
-def _axis(values, name: str, unit: str) -> xr.DataArray:
-    values = np.asarray(values, dtype=float)
-    return xr.DataArray(values, dims=name, coords={name: values}, attrs={"units": unit})
-
-
 def _open(path, fmt: str) -> xr.Dataset:
     if fmt == "zarr":
         return xr.open_zarr(path, consolidated=False)
@@ -161,18 +156,18 @@ def test_read_response_roundtrip_selects_axes(tmp_path) -> None:
     made = {"date_created": "2026-01-01T00:00:00Z", "muse_version": "0.1"}
     source = fake_response_file_contents().assign_attrs(made)
     path = _write(source, tmp_path / "resp.nc", "nc")
-    logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
-    doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
+    logT = np.linspace(5.2, 6.6, 4) * u.dex(u.K)
+    doppler_velocity = [-200.0, -100.0, 0.0, 100.0, 200.0] * u.km / u.s
 
     r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, number_of_slits=3, logT_method="nearest")
 
     assert r.sizes["slit"] == 3  # the first number_of_slits slits
-    np.testing.assert_allclose(r.logT.values, logT.values)
-    np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
+    np.testing.assert_allclose(r.logT.values, logT.value)
+    np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.value)
     # The data are the samples nearest to the requested axes, not the file's samples relabelled.
     expected = (
-        source.detector_response.sel(logT=logT.values, method="nearest")
-        .sel(doppler_velocity=doppler_velocity.values)
+        source.detector_response.sel(logT=logT.value, method="nearest")
+        .sel(doppler_velocity=doppler_velocity.value)
         .isel(slit=slice(3))
     )
     np.testing.assert_allclose(r.detector_response.transpose(*expected.dims).values, expected.values)
@@ -227,11 +222,9 @@ def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped) ->
 
 def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path) -> None:
     path = _write(fake_response_file_contents(), tmp_path / "resp.nc", "nc")
-    logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
-    doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity", "km / s")
     kwargs = {
-        "logT": logT,
-        "doppler_velocity": doppler_velocity,
+        "logT": np.linspace(5.2, 6.6, 4) * u.dex(u.K),
+        "doppler_velocity": [-150.0, -50.0, 0.0, 50.0, 150.0] * u.km / u.s,
         "number_of_slits": 3,
         "logT_method": "nearest",
         "doppler_velocity_method": "linear",
@@ -285,8 +278,7 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
     in_m_s = read_response(path, doppler_velocity=[-100e3, 0.0, 100e3] * u.m / u.s)
     np.testing.assert_array_equal(in_m_s.doppler_velocity.values, [-100e3, 0.0, 100e3])
 
-    in_km_s = xr.DataArray([-100.0, 0.0, 100.0], dims="doppler_velocity", attrs={"units": "km / s", "long_name": "v"})
-    converted = read_response(path, doppler_velocity=in_km_s)
+    converted = read_response(path, doppler_velocity=[-100.0, 0.0, 100.0] * u.km / u.s)
     np.testing.assert_array_equal(converted.doppler_velocity.values, [-100e3, 0.0, 100e3])
     assert converted.doppler_velocity.attrs["units"] == "m / s"  # converted into the response's units
     np.testing.assert_array_equal(converted.detector_response.values, in_m_s.detector_response.values)
@@ -294,8 +286,8 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
     with pytest.raises(ValueError, match="not convertible"):
         read_response(path, doppler_velocity=[0.0] * u.K)
     # The axes of a response always carry units, so a requested axis must too.
-    with pytest.raises(ValueError, match="units attribute"):
-        read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity"))
+    with pytest.raises(TypeError, match="Quantity"):
+        read_response(path, doppler_velocity=[0.0])
 
 
 def test_read_response_without_a_gain_attribute_requires_gain(tmp_path) -> None:

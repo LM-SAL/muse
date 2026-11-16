@@ -181,8 +181,8 @@ def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coo
 def read_response(
     response_file: str | Path,
     *,
-    logT: u.Quantity | xr.DataArray | None = None,
-    doppler_velocity: u.Quantity | xr.DataArray | None = None,
+    logT: u.Quantity | None = None,
+    doppler_velocity: u.Quantity | None = None,
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
@@ -197,11 +197,10 @@ def read_response(
     ----------
     response_file : `str` | `pathlib.Path`
         Response function in Xarray readable format (netCDF file or Zarr store).
-    logT : `astropy.units.Quantity` or `xarray.DataArray`, optional
+    logT : `astropy.units.Quantity`, optional
         Temperature axis to (re)sample onto, in a unit convertible to the response's,
-        e.g. ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)`` or the ``logT`` coordinate of a
-        VDEM. A `xarray.DataArray` must carry a ``units`` attribute.
-    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
+        e.g. ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)``.
+    doppler_velocity : `astropy.units.Quantity`, optional
         Velocity axis to (re)sample onto, in the same way as ``logT``.
     number_of_slits : `int`, optional
         Keep the first ``number_of_slits`` slits of the response, relabelled from 0,
@@ -230,12 +229,13 @@ def read_response(
 
     Raises
     ------
+    TypeError
+        If ``logT`` or ``doppler_velocity`` is not a Quantity.
     ValueError
-        If the requested ``logT`` or ``doppler_velocity`` axis has no units, is empty, not
-        finite, in units that do not convert to the response's or wholly outside its range;
-        if the file is not
-        in the layout `save_response` writes; or if ``gain`` is not given and the file states
-        none, in a ``gain`` coordinate or attribute.
+        If the requested ``logT`` or ``doppler_velocity`` axis is empty, not finite, in
+        units that do not convert to the response's or wholly outside its range; if the
+        file is not in the layout `save_response` writes; or if ``gain`` is not given and
+        the file states none, in a ``gain`` coordinate or attribute.
     """
     response_file = Path(response_file)
 
@@ -303,23 +303,16 @@ def read_response(
     return response
 
 
-def _requested_axis(axis: u.Quantity | xr.DataArray | None, name: str) -> xr.DataArray | None:
+def _requested_axis(axis: u.Quantity | None, name: str) -> xr.DataArray | None:
     """
     ``axis`` as an `xarray.DataArray` along ``name`` with a ``units`` attribute.
-
-    Raises
-    ------
-    ValueError
-        If ``axis`` is neither a Quantity nor a DataArray that carries units.
     """
     if axis is None:
         return None
-    if isinstance(axis, u.Quantity):
-        return xr.DataArray(np.atleast_1d(axis.value), dims=name, attrs={"units": str(axis.unit)})
-    if not isinstance(axis, xr.DataArray) or "units" not in axis.attrs:
-        msg = f"{name} must be an astropy Quantity or an xarray.DataArray with a units attribute"
-        raise ValueError(msg)
-    return axis
+    if not isinstance(axis, u.Quantity):
+        msg = f"{name} must be an astropy Quantity"
+        raise TypeError(msg)
+    return xr.DataArray(np.atleast_1d(axis.value), dims=name, attrs={"units": str(axis.unit)})
 
 
 def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
@@ -453,8 +446,8 @@ def align_response_and_vdem(
 def read_responses(
     response_files: Sequence[str | Path],
     *,
-    logT: u.Quantity | xr.DataArray | None = None,
-    doppler_velocity: u.Quantity | xr.DataArray | None = None,
+    logT: u.Quantity | None = None,
+    doppler_velocity: u.Quantity | None = None,
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
@@ -471,12 +464,8 @@ def read_responses(
     ----------
     response_files : `Sequence` of `str` or `pathlib.Path`
         Response files, in order.
-    logT : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Temperature axis to (re)sample onto, with units. Passed to
-        `muse.instrument.read_response`.
-    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
-        Velocity axis to (re)sample onto, with units. Passed to
-        `muse.instrument.read_response`.
+    logT, doppler_velocity : `astropy.units.Quantity`, optional
+        Axes to (re)sample onto, as for `muse.instrument.read_response`.
     number_of_slits : `int`, optional
         How many slits to keep. Passed to `muse.instrument.read_response`.
     logT_method : `str`, optional
@@ -502,15 +491,13 @@ def read_responses(
     ------
     ValueError
         If no file is given, a file has no ``channel`` coordinate or no gain, the files
-        are of different instrument defaults or units, or ``logT`` or
-        ``doppler_velocity`` has no units.
+        are of different instrument defaults or units.
+    TypeError
+        If ``logT`` or ``doppler_velocity`` is not a Quantity.
     """
     if not response_files:
         msg = "pass at least one response file"
         raise ValueError(msg)
-    # Rebound under their own names, so that the history names the axes instead of listing them.
-    logT = _requested_axis(logT, "logT")
-    doppler_velocity = _requested_axis(doppler_velocity, "doppler_velocity")
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []

@@ -307,7 +307,7 @@ def test_the_line_products_of_a_channel_load_together(sg_products):
 
     response = read_responses(
         [main, contaminants],
-        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+        doppler_velocity=DOPPLER_VELOCITY,
     )
 
     assert response.sizes["line"] == 2
@@ -877,7 +877,7 @@ def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_p
 
     response = read_responses(
         [main, continuum[0]],
-        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+        doppler_velocity=DOPPLER_VELOCITY,
     )
 
     assert list(response.line.values) == [MAIN_LINE, "free-free", "free-bound", "two-photon"]
