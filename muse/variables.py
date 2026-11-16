@@ -22,7 +22,7 @@ _DEFAULTS_MUSE_VALUES = {
     # Spectrograph (SG) parameters
     "dx_pixel_SG": 0.4 * u.arcsec,
     "dy_pixel_SG": 0.167 * u.arcsec,
-    "pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
+    "detector_x_pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
     # One nominal value for every channel until a measured one exists for each.
@@ -58,10 +58,10 @@ _DEFAULTS_MUSE_VALUES = {
     ),
     # Synthesis/inversions
     "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
-    "main_lines_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
-    "fov_mode": "wrap",
-    "fov_x_extent": "tile",
-    "fov_sub_interpolation": 2,
+    "main_lines_by_channel_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
+    "fov_pad_mode": "wrap",
+    "fov_extent": "extend",
+    "fov_oversampling": 2,
     # Response creation
     "response_abundances": ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund"),
     "response_temperature": xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT"),
@@ -69,7 +69,7 @@ _DEFAULTS_MUSE_VALUES = {
     "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
     "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
     "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
-    "initial_wavelength_SG": xr.DataArray(
+    "wavelength_start_SG": xr.DataArray(
         np.array([107.68034, 170.62314, 283.01608]) * u.AA,
         coords={"channel": [108, 171, 284]},
         dims="channel",

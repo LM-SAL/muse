@@ -68,7 +68,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
         number_of_slits=2,
         dispersion=0.1 * u.AA / u.pix,
         pixels_between_slits=2 * u.pix,
-        detector_pixels=4,
+        detector_x_pixels=4,
         wavelength_start=170 * u.AA,
     )
 
@@ -99,8 +99,8 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     mapped = map_response_to_sg_detector(_spectral_response(), channel=17.1 * u.nm)
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.to_value(u.pix)
-    expected_start = u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=171).data).to_value(u.AA)
+    assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG.to_value(u.pix)
+    expected_start = u.Quantity(DEFAULTS_MUSE.wavelength_start_SG.sel(channel=171).data).to_value(u.AA)
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=0).item() == pytest.approx(expected_start)
     assert mapped.channel.item() == 171
     assert mapped.channel.attrs["units"] == "Angstrom"
@@ -111,7 +111,7 @@ def test_map_response_to_sg_detector_preserves_invalid_physical_line_wavelength(
         _spectral_response(contaminants=True),
         channel=171 * u.AA,
         number_of_slits=1,
-        detector_pixels=1,
+        detector_x_pixels=1,
         wavelength_start=171 * u.AA,
     )
 
@@ -126,7 +126,7 @@ def test_map_response_to_sg_detector_preserves_input_nan():
         response,
         number_of_slits=1,
         dispersion=0.01 * u.AA / u.pix,
-        detector_pixels=response.sizes["wavelength_bin"],
+        detector_x_pixels=response.sizes["wavelength_bin"],
         wavelength_start=response.wavelength_grid[0].item() * u.AA,
     )
 
@@ -195,7 +195,7 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
 def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel():
     with pytest.raises(
         ValueError,
-        match="missing: number_of_slits, dispersion, detector_pixels, wavelength_start",
+        match="missing: number_of_slits, dispersion, detector_x_pixels, wavelength_start",
     ):
         map_response_to_sg_detector(_spectral_response())
 
@@ -204,7 +204,7 @@ def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel(
             _spectral_response(),
             number_of_slits=2,
             dispersion=0.1 * u.AA / u.pix,
-            detector_pixels=4,
+            detector_x_pixels=4,
             wavelength_start=170 * u.AA,
         )
 
@@ -348,7 +348,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         number_of_slits=2,
         dispersion=0.01 * u.AA / u.pix,
         pixels_between_slits=2 * u.pix,
-        detector_pixels=5,
+        detector_x_pixels=5,
         wavelength_start=171.05 * u.AA,
     )
     raster = xr.Dataset(
@@ -451,7 +451,7 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
         "number_of_slits": 3,
         "dispersion": 0.02 * u.AA / u.pix,
         "pixels_between_slits": 5 * u.pix,
-        "detector_pixels": 40,
+        "detector_x_pixels": 40,
         "wavelength_start": 170.6 * u.AA,
     }
 

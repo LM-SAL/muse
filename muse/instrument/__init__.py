@@ -17,8 +17,8 @@ from muse.instrument.effective_area import (
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.response.io import (
     align_response_and_vdem,
-    load_and_concat_responses,
     read_response,
+    read_responses,
     read_spectral_response,
     save_response,
     save_spectral_response,
@@ -51,7 +51,6 @@ __all__ = [
     "generate_ci_responses",
     "generate_sg_continuum_responses",
     "generate_sg_responses",
-    "load_and_concat_responses",
     "load_or_create_continuum",
     "load_or_create_line_list",
     "map_response_to_ci_detector",
@@ -59,6 +58,7 @@ __all__ = [
     "rank_line_list",
     "read_effective_area",
     "read_response",
+    "read_responses",
     "read_spectral_response",
     "save_effective_area",
     "save_response",

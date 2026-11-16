@@ -16,7 +16,7 @@ from matplotlib import colors
 import astropy.units as u
 
 from muse.data import fetch_example_data
-from muse.instrument import align_response_and_vdem, load_and_concat_responses
+from muse.instrument import align_response_and_vdem, read_responses
 from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov, reshape_slit_step_to_x, reshape_x_to_slit_step
 
@@ -44,11 +44,11 @@ response_files = [
     )
 ]
 
-response = load_and_concat_responses(
+response = read_responses(
     response_directory=response_files[0].parent,
     response_files=[path.name for path in response_files],
     channels=[108, 171, 284] * u.AA,
-    slit=vdem_raster.slit,
+    number_of_slits=vdem_raster.sizes["slit"],
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.
     chunked=True,

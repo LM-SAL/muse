@@ -10,12 +10,7 @@ import astropy.units as u
 
 from muse.instrument import align_response_and_vdem
 from muse.instrument.response import io as response_io
-from muse.instrument.response.io import (
-    load_and_concat_responses,
-    read_response,
-    save_response,
-    save_spectral_response,
-)
+from muse.instrument.response.io import read_response, read_responses, save_response, save_spectral_response
 from muse.tests.helpers import fake_response, fake_response_file_contents, fake_vdem
 from muse.variables import DEFAULTS_MUSE
 
@@ -42,10 +37,6 @@ def _write(ds: xr.Dataset, path, fmt: str) -> str:
 def _axis(values, name: str, unit: str) -> xr.DataArray:
     values = np.asarray(values, dtype=float)
     return xr.DataArray(values, dims=name, coords={name: values}, attrs={"units": unit})
-
-
-def _slit(n: int) -> xr.DataArray:
-    return xr.DataArray(np.arange(n), dims="slit", coords={"slit": np.arange(n)})
 
 
 def _open(path, fmt: str) -> xr.Dataset:
@@ -186,9 +177,9 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
     doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
 
-    r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, slit=_slit(3), logT_method="nearest")
+    r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, number_of_slits=3, logT_method="nearest")
 
-    assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
+    assert r.sizes["slit"] == 3  # the first number_of_slits slits
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
     # The data are the samples nearest to the requested axes, not the file's samples relabelled.
@@ -209,10 +200,15 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     expected = src.detector_response.isel(slit=slice(3)).values
     path = _write(src, tmp_path / "resp.nc", "nc")
 
-    r = read_response(path, slit=_slit(3))
+    r = read_response(path, number_of_slits=3)
 
     np.testing.assert_array_equal(r.slit.values, np.arange(3))
     np.testing.assert_allclose(r.detector_response.values, expected)
+    for wrong in (0, 5):
+        with pytest.raises(ValueError, match="between 1 and the 4 slits"):
+            read_response(path, number_of_slits=wrong)
+    with pytest.raises(TypeError, match="must be an integer"):
+        read_response(path, number_of_slits=True)
 
 
 @pytest.mark.parametrize("dropped", ["logT", "doppler_velocity"])
@@ -234,7 +230,7 @@ def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> No
     kwargs = {
         "logT": logT,
         "doppler_velocity": doppler_velocity,
-        "slit": _slit(3),
+        "number_of_slits": 3,
         "logT_method": "nearest",
         "doppler_velocity_method": "linear",
     }
@@ -246,11 +242,11 @@ def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> No
     xr.testing.assert_allclose(lazy.compute(), eager)
 
 
-def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
+def test_read_responses_chunked_stays_lazy(tmp_path) -> None:
     for name in ("a.nc", "b.nc"):
         fake_response_file_contents().to_netcdf(tmp_path / name)
 
-    response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171] * u.AA, chunked=True)
+    response = read_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171] * u.AA, chunked=True)
 
     assert isinstance(response.detector_response.data, da.Array)
 
@@ -372,7 +368,7 @@ def test_read_response_names_the_legacy_layout(tmp_path) -> None:
 
 
 def _line_file(line: str, wavelength: float) -> xr.Dataset:
-    # A response file of one line, without the channel: load_and_concat_responses is told it.
+    # A response file of one line, without the channel: read_responses is told it.
     return (
         fake_response_file_contents()
         .assign_coords(line=("line", [line]), line_wavelength=("line", [wavelength], {"units": "Angstrom"}))
@@ -380,7 +376,7 @@ def _line_file(line: str, wavelength: float) -> xr.Dataset:
     )
 
 
-def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
+def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         DEFAULTS_MUSE.gain_SG,
         "data",
@@ -402,12 +398,12 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     _write(first, tmp_path / "a.nc", "nc")
     _write(second, tmp_path / "b.nc", "nc")
 
-    resp = load_and_concat_responses(
+    resp = read_responses(
         response_directory=tmp_path,
         response_files=["a.nc", "b.nc"],
         logT=np.linspace(5.2, 6.6, 4) * u.dex(u.K),
         doppler_velocity=[-100.0, 0.0, 100.0] * u.km / u.s,
-        slit=_slit(3),
+        number_of_slits=3,
         logT_method="nearest",
         channels=[108, 284] * u.AA,
     )
@@ -416,16 +412,17 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
     np.testing.assert_array_equal(resp.gain.values, [8.0, 8.0, 8.0, 12.0])
+    np.testing.assert_array_equal(resp.slit.values, [0, 1, 2])  # number_of_slits reaches every file
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert resp.attrs["shared_attr"] == "kept"
     assert "conflicting_attr" not in resp.attrs
     assert resp.attrs["HISTORY"][0] == "first_response()"
     assert "second_response()" in resp.attrs["HISTORY"]
-    assert resp.attrs["HISTORY"][-1].startswith("load_and_concat_responses(")
+    assert resp.attrs["HISTORY"][-1].startswith("read_responses(")
 
 
-def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
+def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:
     # join="exact" in the line concat must refuse responses on different
     # logT/doppler_velocity grids (when no target grid is given) instead of silently
     # outer-joining them with NaN fill.
@@ -434,17 +431,17 @@ def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
     _write(shifted.assign_coords(doppler_velocity=shifted.doppler_velocity + 5.0), tmp_path / "b.nc", "nc")
 
     with pytest.raises(ValueError, match=r"align|exact"):
-        load_and_concat_responses(
+        read_responses(
             response_directory=tmp_path,
             response_files=["a.nc", "b.nc"],
             channels=[108, 284] * u.AA,
         )
 
 
-def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> None:
+def test_read_responses_channels_length_mismatch_raises(tmp_path) -> None:
     _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
     with pytest.raises(ValueError, match=r"channels .* must match the number of response_files"):
-        load_and_concat_responses(
+        read_responses(
             response_directory=tmp_path,
             response_files=["a.zarr"],
             channels=[171, 284] * u.AA,
@@ -458,20 +455,20 @@ def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatc
     np.testing.assert_allclose(read_response(path).gain.values, 7.0)
 
 
-def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
+def test_read_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
     _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
     # given in nm, the channel is named as the instrument defaults name it
-    response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[19.5] * u.nm)
+    response = read_responses(tmp_path, ["a.zarr"], channels=[19.5] * u.nm)
     np.testing.assert_allclose(response.gain.values, 7.0)
     assert response.channel.values.tolist() == [195]
 
 
-def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None:
+def test_read_responses_rejects_unsupported_channel(tmp_path) -> None:
     _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
 
     with pytest.raises(ValueError, match=r"unsupported MUSE SG/CI channel 999"):
-        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[999] * u.AA)
+        read_responses(tmp_path, ["a.zarr"], channels=[999] * u.AA)
 
 
 def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:

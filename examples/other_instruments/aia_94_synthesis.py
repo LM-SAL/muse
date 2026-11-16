@@ -129,12 +129,12 @@ aia_response = map_response_to_ci_detector(response, 94 * u.AA)
 
 ##############################################################################
 # The VDEM is resampled onto AIA's 0.6 arcsec plate scale. AIA's field of
-# view is not tied to the MUSE raster width, so ``x_extent="keep"`` matches
+# view is not tied to the MUSE raster width, so ``extent="keep"`` matches
 # the resolution while leaving the x extent alone. Afterwards
 # :func:`muse.instrument.align_response_and_vdem` puts the response and the
 # VDEM on shared temperature and velocity grids.
 
-vdem_aia = match_fov(vdem, pixel_width=aia_pixel, pixel_height=aia_pixel, x_extent="keep")
+vdem_aia = match_fov(vdem, pixel_width=aia_pixel, pixel_height=aia_pixel, extent="keep")
 aia_response, vdem_aia = align_response_and_vdem(aia_response, vdem_aia)
 
 ##############################################################################

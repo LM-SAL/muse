@@ -107,7 +107,7 @@ print(vdem)
 velocity_distribution = vdem[["vdem"]].sum(dim="logT", skipna=False)
 vdem_moments = calculate_moments(
     velocity_distribution,
-    integration_name="vdem",
+    variable_name="vdem",
     doppler_name="doppler_velocity",
     moment_dim="doppler_velocity",
 )

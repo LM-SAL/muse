@@ -136,7 +136,7 @@ def generate_sg_responses(
     main_lines_by_channel : `dict`, optional
         The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
         Angstrom or as a wavelength. A channel that is not a key keeps
-        ``DEFAULTS_MUSE.main_lines_SG``.
+        ``DEFAULTS_MUSE.main_lines_by_channel_SG``.
     instrumental_fwhm_by_channel : `dict`, optional
         The instrumental FWHM of a channel, keyed alike. A channel that is not a key keeps
         ``DEFAULTS_MUSE.instrumental_fwhm_SG``.
@@ -1016,7 +1016,9 @@ def _by_sg_channel(overrides: Mapping | None, name: str, defaults: Iterable) -> 
 
 def _main_lines_by_sg_channel(overrides: Mapping | None) -> dict[int, list[str]]:
     main_lines = {}
-    for channel, lines in _by_sg_channel(overrides, "main_lines_by_channel", DEFAULTS_MUSE.main_lines_SG).items():
+    for channel, lines in _by_sg_channel(
+        overrides, "main_lines_by_channel", DEFAULTS_MUSE.main_lines_by_channel_SG
+    ).items():
         # One name alone is one line, not its characters.
         main_lines[channel] = [lines] if isinstance(lines, str) else list(lines)
         tags = [_line_tag(line) for line in main_lines[channel]]
