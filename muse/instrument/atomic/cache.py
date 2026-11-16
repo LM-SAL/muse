@@ -358,7 +358,9 @@ def _load_or_create(
     store = ZipStore(path, mode="r")
     try:
         cached = xr.open_zarr(store, consolidated=False, chunks=None, decode_coords="all")
-        if cached.attrs.get("minimum_abundance") != minimum_abundance:
+        if "trans_index" in cached.dims:
+            problem = "was written by muse 0.3, with its transitions along trans_index"
+        elif cached.attrs.get("minimum_abundance") != minimum_abundance:
             problem = (
                 f"was created with the minimum abundance {cached.attrs.get('minimum_abundance')}, "
                 f"not the requested {minimum_abundance}"

@@ -410,6 +410,9 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
             msg = f"{coord} coordinate is missing"
             raise ValueError(msg)
     step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.dx_pixel_SG))
+    if step_size.unit == u.dimensionless_unscaled:
+        msg = f"step_size {ds.attrs['step_size']!r} has no unit; it is one value with its unit, such as '0.4 arcsec'"
+        raise ValueError(msg)
     reshaped = ds.stack(x=("slit", "step"))
     reshaped = reshaped.drop_vars(["x", "slit", "step"])
     reshaped = reshaped.assign_coords(x=np.arange(reshaped.x.size) * step_size.value)

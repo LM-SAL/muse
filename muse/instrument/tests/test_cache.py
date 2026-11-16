@@ -16,7 +16,9 @@ import astropy.units as u
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
+from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
+from muse.utils.utils import _to_zarr
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -201,6 +203,20 @@ def test_a_pressure_axis_of_another_name_is_stored_as_pressure(tmp_path, line_li
     # and a call with the usual name reads the same file
     load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15]))
     assert len(line_list_calls) == 1
+
+
+@pytest.mark.usefixtures("line_list_calls")
+def test_a_cache_of_muse_0_3_is_refused(tmp_path):
+    kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
+    load_or_create_line_list(tmp_path, **kwargs)
+    (path,) = tmp_path.glob("line_list_*.zarr.zip")
+    with _open_dataset_file(path) as current:
+        old = current.load().rename({"transition": "trans_index"})
+    path.unlink()
+    _to_zarr(old, path)
+
+    with pytest.raises(ValueError, match="was written by muse 0.3, with its transitions along trans_index"):
+        load_or_create_line_list(tmp_path, **kwargs)
 
 
 @pytest.mark.usefixtures("line_list_calls")

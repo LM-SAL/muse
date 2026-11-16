@@ -372,6 +372,14 @@ def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
     np.testing.assert_array_equal(out.vdem.transpose(*vdem.vdem.dims).values, vdem.vdem.values)
 
 
+def test_reshape_slit_step_to_x_refuses_a_step_size_without_its_unit(vdem) -> None:
+    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
+    reshaped.attrs["step_size"] = 0.4  # as muse 0.3 wrote it, beside a separate unit
+
+    with pytest.raises(ValueError, match="has no unit"):
+        reshape_slit_step_to_x(reshaped)
+
+
 def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     del reshaped.attrs["step_size"]

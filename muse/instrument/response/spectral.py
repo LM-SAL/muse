@@ -521,8 +521,12 @@ def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
     if not isinstance(line_list, xr.Dataset):
         msg = "line_list must be an xarray.Dataset"
         raise TypeError(msg)
+    if "trans_index" in line_list.dims:
+        msg = "line_list lies along trans_index, as muse 0.3 wrote line lists: rename that dimension to transition"
+        raise ValueError(msg)
     if "transition" not in line_list.dims:
-        line_list = line_list.expand_dims("transition")
+        msg = "line_list must lie along a transition dimension, as the line-list builders write it"
+        raise ValueError(msg)
     if line_list.sizes["transition"] == 0:
         msg = "line_list must not be empty"
         raise ValueError(msg)
