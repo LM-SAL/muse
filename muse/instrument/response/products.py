@@ -11,6 +11,8 @@ from collections.abc import Mapping, Callable, Iterable, Sequence
 
 import numpy as np
 import xarray as xr
+import zarr
+from zarr.storage import ZipStore
 
 import astropy.units as u
 
@@ -41,7 +43,7 @@ from muse.instrument.response.spectral import (
     create_spectral_response,
 )
 from muse.log import logger
-from muse.utils.utils import _inherit_history, add_history
+from muse.utils.utils import _inherit_history, _instrument_defaults_label, add_history
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults
 
@@ -117,14 +119,15 @@ def generate_sg_responses(
         characters as ``author``, so ``Al-Zr`` and not ``Al_Zr``.
     effective_area_files : `list` of `str` or `pathlib.Path`
         Files of `muse.instrument.save_effective_area`, each of one SG channel of
-        ``DEFAULTS_MUSE``, in cm2. A file that describes its detector in the attributes
+        ``instrument_defaults``, in cm2. A file that describes its detector in the attributes
         ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` is converted with
         those instead of the MUSE values.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
         The instrument values the products are made with, by default
         `~muse.variables.DEFAULTS_MUSE`: the detector geometry and calibration, the
         spectral orders, the wavebands, the instrument FWHM and the main lines. The
-        grids, the abundances and ``minimum_abundance`` keep their own defaults.
+        grids, the abundances, ``minimum_abundance`` and the normalization keep their own
+        defaults. The products record whether these were the MUSE values or others.
     abundances : `list` of `str`, optional
         CHIANTI abundance names, by default ``DEFAULTS_MUSE.response_abundances``.
     temperature : `xarray.DataArray`, optional
@@ -139,11 +142,11 @@ def generate_sg_responses(
         ``DEFAULTS_MUSE.response_doppler_velocity``.
     main_lines_by_channel : `dict`, optional
         The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
-        Angstrom or as a wavelength. A channel that is not a key keeps
-        ``DEFAULTS_MUSE.main_lines_by_channel_SG``.
+        Angstrom or as a wavelength. A channel that is not a key keeps those of
+        ``instrument_defaults``.
     instrumental_fwhm_by_channel : `dict`, optional
         The instrumental FWHM of a channel, keyed alike. A channel that is not a key keeps
-        ``DEFAULTS_MUSE.instrumental_fwhm_SG``.
+        that of ``instrument_defaults``.
     maximum_contaminants : `int`, optional
         How many of the brightest other lines of a waveband are summed into the contaminant
         products, by default 10000; below 1 there are none.
@@ -177,8 +180,9 @@ def generate_sg_responses(
         with `muse.instrument.load_or_create_line_list`.
     skip_existing : `bool`, optional
         If `True`, a product that is already there, under any date, is kept and only the
-        others are made, so that a call that stopped halfway can be finished. By default such
-        a product raises, as its name does not carry every setting.
+        others are made, so that a call that stopped halfway can be finished; one made with
+        MUSE defaults where this call has others, or the other way round, raises. By default
+        such a product raises, as its name does not carry every setting.
     workers : `int`, optional
         Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every CPU
         this process may run on. The ChiantiPy backend does not use it.
@@ -437,7 +441,8 @@ def generate_ci_responses(
         cm2 DN / ph carries the camera gain, so only DN products exist for it. A file of
         an imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
         attributes, and should give ``pixel_width`` and ``pixel_height``, which are otherwise
-        those of the MUSE imager; `muse.instrument.create_aia_effective_area` writes all four.
+        those of ``instrument_defaults``; `muse.instrument.create_aia_effective_area` writes
+        all four.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
         The instrument values the products are made with, as for `generate_sg_responses`.
     temperature, pressure, density
@@ -681,7 +686,16 @@ class _Run:
                 )
                 raise ValueError(msg)
             if found:
-                self._done[name] = self.output_directory / found[-1]
+                kept = self.output_directory / found[-1]
+                made_with = _attribute_of_product(kept, "instrument_defaults")
+                wanted = _instrument_defaults_label(self.settings["instrument_defaults"])
+                if made_with != wanted:
+                    msg = (
+                        f"the product {kept} was made with {made_with or 'unrecorded'} instrument defaults and "
+                        f"this call uses {wanted} ones: use another output directory"
+                    )
+                    raise ValueError(msg)
+                self._done[name] = kept
         return {
             abundance: [task for task in group if not all(name in self._done for name in task[2].values())]
             for abundance, group in tasks.items()
@@ -985,6 +999,17 @@ def _carries_gain(area: xr.Dataset) -> bool:
     return u.Unit(area.effective_area.attrs["units"]).is_equivalent(_CM2_DN_PER_PHOTON)
 
 
+def _attribute_of_product(product: Path, name: str):
+    """
+    An attribute of a written product, read from its metadata alone.
+    """
+    store = ZipStore(product, mode="r")
+    try:
+        return zarr.open_group(store, mode="r").attrs.get(name)
+    finally:
+        store.close()
+
+
 def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: InstrumentDefaults) -> dict[str, u.Quantity]:
     """
     The detector of an effective area, for `transform_response_units`: what its file
@@ -999,9 +1024,17 @@ def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: Instr
     for name in ("gain", "pair_energy"):
         table = getattr(instrument_defaults, f"{name}_{detector}")
         # A channel of another instrument has no entry; its file gives the value.
-        if channel in table.channel.values:
+        if table is not None and channel in table.channel.values:
             kwargs[name] = u.Quantity(table.sel(channel=channel).data)
-    return kwargs | {name: u.Quantity(area.attrs[name]) for name in _DETECTOR_ATTRS if name in area.attrs}
+    kwargs |= {name: u.Quantity(area.attrs[name]) for name in _DETECTOR_ATTRS if name in area.attrs}
+    # Without this check transform_response_units would take what is missing from DEFAULTS_MUSE.
+    if missing := [name for name in _DETECTOR_ATTRS if kwargs.get(name) is None]:
+        msg = (
+            f"{area.attrs['effective_area_file']}: neither the file nor instrument_defaults gives the "
+            f"{', '.join(missing)} of the {detector} channel {channel}"
+        )
+        raise ValueError(msg)
+    return kwargs
 
 
 def _line_tag(line: str) -> str:
