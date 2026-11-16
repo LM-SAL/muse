@@ -518,8 +518,8 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
     brightness = line_list.gofnt.max(dim=[dim for dim in line_list.gofnt.dims if dim != "trans_index"])
     units = u.Unit(line_list.gofnt.attrs["units"])
     if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
-        # The Dataset of create_effective_area or read_effective_area.
-        effective_area = effective_area["effective_area"]
+        # The Dataset of create_effective_area or read_effective_area; its scalar channel stays behind.
+        effective_area = effective_area["effective_area"].reset_coords(drop=True)
     if effective_area is not None:
         if not isinstance(effective_area, xr.DataArray) or effective_area.dims != ("wavelength",):
             msg = "effective_area must be an xarray.DataArray along wavelength"

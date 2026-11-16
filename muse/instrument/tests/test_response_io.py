@@ -179,7 +179,7 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 
     r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, number_of_slits=3, logT_method="nearest")
 
-    assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
+    assert r.sizes["slit"] == 3  # the first number_of_slits slits
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
     # The data are the samples nearest to the requested axes, not the file's samples relabelled.
@@ -204,8 +204,11 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
 
     np.testing.assert_array_equal(r.slit.values, np.arange(3))
     np.testing.assert_allclose(r.detector_response.values, expected)
-    with pytest.raises(ValueError, match="between 1 and the 4 slits"):
-        read_response(path, number_of_slits=5)
+    for wrong in (0, 5):
+        with pytest.raises(ValueError, match="between 1 and the 4 slits"):
+            read_response(path, number_of_slits=wrong)
+    with pytest.raises(TypeError, match="must be an integer"):
+        read_response(path, number_of_slits=True)
 
 
 @pytest.mark.parametrize("dropped", ["logT", "doppler_velocity"])
@@ -409,6 +412,7 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
     np.testing.assert_array_equal(resp.gain.values, [8.0, 8.0, 8.0, 12.0])
+    np.testing.assert_array_equal(resp.slit.values, [0, 1, 2])  # number_of_slits reaches every file
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
     assert resp.attrs["shared_attr"] == "kept"

@@ -277,6 +277,7 @@ def test_match_fov_rotation_skips_resampling_when_resolution_matches(vdem) -> No
 
     assert out.sizes["x"] == source.sizes["y"]
     assert out.sizes["y"] == source.sizes["x"]
+    assert out.vdem.dims == source.vdem.dims  # in the caller's order, so the array is not mirrored
     # A quarter turn counter-clockwise moves the point at (x, y) to (-y, x).
     last_y = source.sizes["y"] - 1
     for x, y in [(0, 0), (5, 3), (384, 31)]:
@@ -294,6 +295,19 @@ def test_match_fov_turns_by_any_multiple_of_a_quarter(vdem) -> None:
     xr.testing.assert_identical(match_fov(vdem, rotation=-90 * u.deg).vdem, match_fov(vdem, rotation=270 * u.deg).vdem)
     with pytest.raises(ValueError, match="multiple of 90 degrees"):
         match_fov(vdem, rotation=45 * u.deg)
+    with pytest.raises(ValueError, match="multiple of 90 degrees"):
+        match_fov(vdem, rotation=9000045 * u.deg)
+
+
+def test_match_fov_turns_an_uneven_grid_to_the_mirrored_positions(vdem) -> None:
+    # The value of each sample is its y; after a quarter turn it sits at x = y[0] + y[-1] - y.
+    y = np.array([0.0, 0.1, 0.3, 0.7, 1.5])
+    uneven = vdem.isel(y=slice(0, 5), x=[0]).assign_coords(y=("y", y, {"units": "arcsec"}))
+    uneven = uneven.assign(vdem=uneven.vdem * 0 + uneven.y)
+
+    turned = match_fov(uneven, rotation=90 * u.deg, extent="keep", pixel_width=0.25 * u.arcsec)
+
+    np.testing.assert_allclose(turned.vdem.isel(logT=0, doppler_velocity=0, y=0).values, [1.5, 1.2, 0.9, 0.6, 0.3, 0.0])
 
 
 def test_reshape_x_to_slit_step(vdem) -> None:

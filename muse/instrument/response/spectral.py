@@ -407,8 +407,8 @@ def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> 
     if effective_area is None:
         return None
     if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
-        # The Dataset of create_effective_area or read_effective_area.
-        effective_area = effective_area["effective_area"]
+        # The Dataset of create_effective_area or read_effective_area; its scalar channel stays behind.
+        effective_area = effective_area["effective_area"].reset_coords(drop=True)
     if not isinstance(effective_area, xr.DataArray):
         msg = (
             "effective_area must be an xarray.DataArray, "
@@ -730,7 +730,7 @@ def create_continuum_response(
     continuum: xr.Dataset,
     wavelength_edges: u.Quantity,
     *,
-    effective_area: xr.DataArray,
+    effective_area: xr.DataArray | xr.Dataset,
     doppler_velocity: u.Quantity | None = None,
 ) -> xr.Dataset:
     """

@@ -367,10 +367,8 @@ def test_an_effective_area_dataset_counts_as_its_curve():
 
     from_dataset = _build_spectral_response(line_list, effective_area=dataset)
 
-    np.testing.assert_array_equal(
-        from_dataset.spectral_response.values,
-        _build_spectral_response(line_list, effective_area=curve).spectral_response.values,
-    )
+    # identical, coordinates included: the Dataset's scalar channel does not come along
+    xr.testing.assert_identical(from_dataset, _build_spectral_response(line_list, effective_area=curve))
 
 
 def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():

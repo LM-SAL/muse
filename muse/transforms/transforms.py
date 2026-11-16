@@ -157,10 +157,14 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
     ``vdem`` turned a quarter counter-clockwise: the point at (x, y) moves to (-y, x).
     """
     turned = vdem.rename({"x": "x_turned"}).rename({"y": "x"}).rename({"x_turned": "y"})
-    # The new x runs against the old y. Its samples keep ascending coordinates, so that the
-    # spacing still reads as the pixel size.
-    ascending = turned.x
-    return turned.isel(x=slice(None, None, -1)).assign_coords(x=("x", ascending.values, ascending.attrs))
+    # The new x runs against the old y: the samples are reversed, and their positions are -y
+    # shifted to the same origin, which keeps them ascending and right on an uneven grid.
+    old_y = turned.x
+    flipped = turned.isel(x=slice(None, None, -1)).assign_coords(
+        x=("x", old_y.values[0] + old_y.values[-1] - old_y.values[::-1], old_y.attrs)
+    )
+    # The caller's dimension order, so that the array and a plot of it are not mirrored.
+    return flipped.assign({name: flipped[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
 
 @format_docstring(
@@ -268,8 +272,8 @@ def match_fov(
         msg = f"Unsupported extent {extent!r}; use 'extend', 'crop', or 'keep'"
         raise ValueError(msg)
     quarter_turns = rotation.to_value(u.deg) / 90
-    if not np.isclose(quarter_turns, round(quarter_turns)):
-        msg = f"rotation must be a multiple of 90 degrees, got {rotation}"
+    if not rotation.isscalar or not np.isclose(quarter_turns, round(quarter_turns), rtol=0):
+        msg = f"rotation must be one multiple of 90 degrees, got {rotation}"
         raise ValueError(msg)
     quarter_turns = round(quarter_turns) % 4
     if y_pixels is not None and y_pixels < 1:

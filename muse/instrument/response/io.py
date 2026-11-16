@@ -265,9 +265,13 @@ def read_response(
         if isinstance(number_of_slits, bool) or not isinstance(number_of_slits, numbers.Integral):
             msg = f"number_of_slits must be an integer, got {number_of_slits!r}"
             raise TypeError(msg)
+        if "slit" not in response.dims:
+            msg = "number_of_slits needs a response with a slit dimension"
+            raise ValueError(msg)
         if not 1 <= number_of_slits <= response.sizes["slit"]:
             msg = f"number_of_slits must be between 1 and the {response.sizes['slit']} slits of the response"
             raise ValueError(msg)
+        number_of_slits = int(number_of_slits)  # a numpy integer is not stored as an attribute
         # Relabelled from 0, so that downstream exact joins see byte-identical axes.
         response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
