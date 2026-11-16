@@ -21,8 +21,8 @@ from muse.instrument import (
     generate_ci_responses,
     generate_sg_continuum_responses,
     generate_sg_responses,
-    load_and_concat_responses,
     read_response,
+    read_responses,
     read_spectral_response,
     save_effective_area,
 )
@@ -205,7 +205,7 @@ def test_main_line_response(sg_products):
         "detector_x_pixel",
     )
     assert response.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.pixels_SG.value
+    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG.value
     assert response.sizes["pressure"] == 1
     assert response.sizes["doppler_velocity"] == 3
     assert list(response.line.values) == [MAIN_LINE]
@@ -296,7 +296,7 @@ def test_the_line_products_of_a_channel_load_together(sg_products):
     main = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
     contaminants = _only(sg_products, f"contaminants_{GEOMETRY}")
 
-    response = load_and_concat_responses(
+    response = read_responses(
         main.parent,
         [main.name, contaminants.name],
         channels=[CHANNEL, CHANNEL] * u.AA,
@@ -882,7 +882,7 @@ def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_p
     main = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
     shutil.copy(main, tmp_path / main.name)
 
-    response = load_and_concat_responses(
+    response = read_responses(
         tmp_path,
         [main.name, continuum[0].name],
         channels=[CHANNEL, CHANNEL] * u.AA,

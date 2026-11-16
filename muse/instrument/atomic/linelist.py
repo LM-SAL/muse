@@ -489,7 +489,7 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     return boosted
 
 
-def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | None = None) -> xr.Dataset:
+def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Dataset | None = None) -> xr.Dataset:
     """
     Sort the transitions by the peak of their contribution function, largest first.
 
@@ -497,10 +497,11 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | None = 
     ----------
     line_list : `xarray.Dataset`
         A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
-    effective_area : `xarray.DataArray`, optional
+    effective_area : `xarray.DataArray` or `xarray.Dataset`, optional
         A curve along ``wavelength``; the curve and its ``wavelength`` coordinate must
         define units. Each transition is weighted by the area at its wavelength, zero
-        outside the curve.
+        outside the curve. The Dataset that `muse.instrument.create_effective_area`
+        returns is taken by its ``effective_area``.
 
     Returns
     -------
@@ -516,6 +517,9 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | None = 
     """
     brightness = line_list.gofnt.max(dim=[dim for dim in line_list.gofnt.dims if dim != "trans_index"])
     units = u.Unit(line_list.gofnt.attrs["units"])
+    if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
+        # The Dataset of create_effective_area or read_effective_area.
+        effective_area = effective_area["effective_area"]
     if effective_area is not None:
         if not isinstance(effective_area, xr.DataArray) or effective_area.dims != ("wavelength",):
             msg = "effective_area must be an xarray.DataArray along wavelength"

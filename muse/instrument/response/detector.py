@@ -93,7 +93,7 @@ def map_response_to_sg_detector(
     number_of_slits: int | None = None,
     dispersion: u.Quantity | None = None,
     pixels_between_slits: u.Quantity | None = None,
-    detector_pixels: int | None = None,
+    detector_x_pixels: int | None = None,
     wavelength_start: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
@@ -129,7 +129,7 @@ def map_response_to_sg_detector(
     pixels_between_slits : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits. Required for an explicit
         multi-slit geometry; unused for a single slit.
-    detector_pixels : `int`, optional
+    detector_x_pixels : `int`, optional
         Number of spectral detector pixels. Required when ``channel`` is
         omitted.
     wavelength_start : `astropy.units.Quantity`, optional
@@ -156,9 +156,11 @@ def map_response_to_sg_detector(
         pixels_between_slits = (
             DEFAULTS_MUSE.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
         )
-        detector_pixels = int(DEFAULTS_MUSE.pixels_SG.to_value(u.pix)) if detector_pixels is None else detector_pixels
+        detector_x_pixels = (
+            int(DEFAULTS_MUSE.detector_x_pixels_SG.to_value(u.pix)) if detector_x_pixels is None else detector_x_pixels
+        )
         wavelength_start = (
-            u.Quantity(DEFAULTS_MUSE.initial_wavelength_SG.sel(channel=channel_value).data)
+            u.Quantity(DEFAULTS_MUSE.wavelength_start_SG.sel(channel=channel_value).data)
             if wavelength_start is None
             else wavelength_start
         )
@@ -168,7 +170,7 @@ def map_response_to_sg_detector(
             for name, value in (
                 ("number_of_slits", number_of_slits),
                 ("dispersion", dispersion),
-                ("detector_pixels", detector_pixels),
+                ("detector_x_pixels", detector_x_pixels),
                 ("wavelength_start", wavelength_start),
             )
             if value is None
@@ -179,7 +181,7 @@ def map_response_to_sg_detector(
             msg = f"channel or explicit detector geometry is required; missing: {', '.join(missing)}"
             raise ValueError(msg)
 
-    for name, value in (("number_of_slits", number_of_slits), ("detector_pixels", detector_pixels)):
+    for name, value in (("number_of_slits", number_of_slits), ("detector_x_pixels", detector_x_pixels)):
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:
             msg = f"{name} must be a positive integer"
             raise ValueError(msg)
@@ -203,11 +205,11 @@ def map_response_to_sg_detector(
     dispersion_value = dispersion.to_value(u.AA / u.pix)
     slit_offset = 0 if pixels_between_slits is None else pixels_between_slits.to_value(u.pix) * dispersion_value
     detector_start = wavelength_start.to_value(u.AA)
-    detector_wavelength_values = detector_start + np.arange(detector_pixels) * dispersion_value
+    detector_wavelength_values = detector_start + np.arange(detector_x_pixels) * dispersion_value
     detector_wavelength = xr.DataArray(
         detector_wavelength_values[:, np.newaxis] - np.arange(number_of_slits)[np.newaxis, :] * slit_offset,
         dims=("detector_x_pixel", "slit"),
-        coords={"slit": np.arange(number_of_slits), "detector_x_pixel": np.arange(detector_pixels)},
+        coords={"slit": np.arange(number_of_slits), "detector_x_pixel": np.arange(detector_x_pixels)},
         attrs={"units": str(u.AA)},
     )
 
@@ -224,7 +226,7 @@ def map_response_to_sg_detector(
     if isinstance(spectral_response.data, np.ndarray):
         # One slit at a time, into an array allocated once, so that the temporaries of the
         # interpolation are those of one slit, not of the whole result.
-        values = np.empty((*(spectral_response.sizes[dim] for dim in leading_dims), number_of_slits, detector_pixels))
+        values = np.empty((*(spectral_response.sizes[dim] for dim in leading_dims), number_of_slits, detector_x_pixels))
         for slit in range(number_of_slits):
             on_slit = spectral_response.interp(
                 wavelength_grid=detector_wavelength.isel(slit=slit, drop=True), kwargs={"fill_value": 0}

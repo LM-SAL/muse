@@ -9,6 +9,7 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.instrument import create_effective_area
 from muse.instrument.atomic import linelist
 from muse.instrument.atomic.linelist import (
     boost_transitions,
@@ -471,6 +472,9 @@ def test_rank_line_list_orders_by_peak_times_area():
     np.testing.assert_allclose(
         rank_line_list(line_list, in_nm).brightness.values, by_area.brightness.values, atol=1e-30
     )
+    # The Dataset of create_effective_area ranks as its curve does.
+    as_dataset = create_effective_area([1.0, 0.0, 10.0] * u.cm**2, [170.5, 171.0, 171.5] * u.AA, channel=171 * u.AA)
+    np.testing.assert_allclose(rank_line_list(line_list, as_dataset).brightness.values, by_area.brightness.values)
     with pytest.raises(ValueError, match="along wavelength"):
         rank_line_list(line_list, xr.DataArray(2.0, attrs={"units": "cm2"}))
 

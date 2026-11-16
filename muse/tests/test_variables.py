@@ -29,11 +29,11 @@ def test_instrument_array_fields_are_read_only_and_copied():
 
 def test_instrument_nested_sequences_are_converted_to_tuples():
     main_lines = [["Fe XIX 108.355", "Fe XXI 108.117"]]
-    defaults = InstrumentDefaults(main_lines_SG=main_lines)
+    defaults = InstrumentDefaults(main_lines_by_channel_SG=main_lines)
 
     main_lines[0][0] = "changed"
 
-    assert defaults.main_lines_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
+    assert defaults.main_lines_by_channel_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
 
 
 def test_instrument_defaults_pickle_round_trip():
@@ -62,7 +62,7 @@ def test_instrument_int_fields_reject_bools():
 
 
 def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
-    assert DEFAULTS_MUSE.pixels_SG.dtype.kind == "i"
+    assert DEFAULTS_MUSE.detector_x_pixels_SG.dtype.kind == "i"
 
 
 def test_instrument_quantity_converter_normalizes_units():
@@ -84,7 +84,7 @@ def test_instrument_quantity_fields_reject_unitless_physical_values():
 
     unitless_wavelength = xr.DataArray([107.68034, 170.62314], coords={"channel": [108, 171]}, dims="channel")
     with pytest.raises(u.UnitsError, match="DataArray values must have units convertible to Angstrom"):
-        InstrumentDefaults(initial_wavelength_SG=unitless_wavelength)
+        InstrumentDefaults(wavelength_start_SG=unitless_wavelength)
 
 
 def test_instrument_defaults_validate_spectral_channels():
@@ -92,12 +92,12 @@ def test_instrument_defaults_validate_spectral_channels():
     mismatched_order = xr.DataArray([2, 1], coords={"channel": [108, 284]}, dims="channel")
 
     with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(initial_wavelength_SG=initial, channel_spectral_order_SG=mismatched_order)
+        InstrumentDefaults(wavelength_start_SG=initial, channel_spectral_order_SG=mismatched_order)
 
     # Every per-channel DataArray field is checked, not just the two spectral ones.
     mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
     with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(initial_wavelength_SG=initial, pair_energy_SG=mismatched_pair_energy)
+        InstrumentDefaults(wavelength_start_SG=initial, pair_energy_SG=mismatched_pair_energy)
 
 
 def test_ci_calibrations_require_channel_dimension():

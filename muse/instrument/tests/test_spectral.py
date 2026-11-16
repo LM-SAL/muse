@@ -12,6 +12,7 @@ import astropy.units as u
 from astropy.stats import gaussian_sigma_to_fwhm
 
 import muse.instrument.response.spectral as spectral_module
+from muse.instrument import create_effective_area
 from muse.instrument.response.spectral import _build_spectral_response as _build_spectral_response_impl
 from muse.instrument.response.spectral import (
     _evaluate_gaussian_response,
@@ -357,6 +358,19 @@ def test_scalar_effective_area_matches_flat_curve():
     xr.testing.assert_allclose(from_selection, from_curve)
     xr.testing.assert_allclose(from_attrs, from_curve)
     xr.testing.assert_allclose(from_attrs_m2, from_curve)
+
+
+def test_an_effective_area_dataset_counts_as_its_curve():
+    line_list = fake_line_list(1)
+    curve = fake_effective_area([1.0, 2.0, 3.0], [169.0, 171.0, 173.0])
+    dataset = create_effective_area(curve.values * u.cm**2, curve.wavelength.values * u.AA, channel=171 * u.AA)
+
+    from_dataset = _build_spectral_response(line_list, effective_area=dataset)
+
+    np.testing.assert_array_equal(
+        from_dataset.spectral_response.values,
+        _build_spectral_response(line_list, effective_area=curve).spectral_response.values,
+    )
 
 
 def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():

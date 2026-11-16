@@ -63,7 +63,7 @@ def test_match_fov_without_tiling_returns_input_for_single_x_column(vdem) -> Non
     # Only one x column, so dx cannot be measured: match_fov checks dy alone and,
     # since it matches the MUSE pixel size and needs no tiling, returns the input.
     single_column = vdem.isel(x=[0])
-    assert match_fov(single_column, x_extent="crop") is single_column
+    assert match_fov(single_column, extent="crop") is single_column
 
 
 @pytest.mark.parametrize(
@@ -85,7 +85,7 @@ def test_match_fov_relabels_single_pixel_input(vdem) -> None:
     # Both axes are size 1 and tiling is disabled, so match_fov falls through to
     # the tail and returns a copy with the coords relabeled onto the MUSE grid.
     single_pixel = vdem.isel(x=[0], y=[0])
-    out = match_fov(single_pixel, x_extent="crop")
+    out = match_fov(single_pixel, extent="crop")
     assert out is not single_pixel
     assert out.sizes["x"] == 1
     assert out.sizes["y"] == 1
@@ -141,9 +141,9 @@ def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     # The padded columns mean "no emission here", so they must be zero: xarray.pad defaults
     # constant_values to NaN, which would propagate through synthesis into every moment.
-    resampled_width = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, x_extent="crop").x.size
+    resampled_width = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, extent="crop").x.size
 
-    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, mode="constant")
+    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, pad_mode="constant")
 
     assert out.x.size == 35 * 11
     assert bool(np.isfinite(out.vdem).all())
@@ -152,26 +152,26 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
     assert float(out.vdem.isel(x=slice(0, resampled_width)).sum()) > 0
 
 
-@pytest.mark.parametrize("x_extent", ["crop", "keep"])
-def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, x_extent) -> None:
+@pytest.mark.parametrize("extent", ["crop", "keep"])
+def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, extent) -> None:
     # Both resample the resolution; neither extends an input that is then narrower than the
-    # MUSE FOV (number_of_slits*steps_per_raster = 385), as "tile" would.
-    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, x_extent=x_extent)
+    # MUSE FOV (number_of_slits*steps_per_raster = 385), as "extend" would.
+    out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, extent=extent)
     assert out.x.size == 308
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_match_fov_without_x_extent_match_returns_input_at_pixel_size(vdem) -> None:
+def test_match_fov_without_extent_match_returns_input_at_pixel_size(vdem) -> None:
     # With the width left alone, an input already at MUSE resolution needs no work
     # at all, even one narrow enough that the tiling path would extend it.
     narrower = vdem.isel(x=slice(0, 100))
 
-    assert match_fov(narrower, x_extent="keep") is narrower
+    assert match_fov(narrower, extent="keep") is narrower
 
 
-def test_match_fov_rejects_invalid_x_extent(vdem) -> None:
-    with pytest.raises(ValueError, match="Unsupported x_extent 'foo'"):
-        match_fov(vdem, x_extent="foo")
+def test_match_fov_rejects_invalid_extent(vdem) -> None:
+    with pytest.raises(ValueError, match="Unsupported extent 'foo'"):
+        match_fov(vdem, extent="foo")
 
 
 def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
@@ -179,7 +179,7 @@ def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
     wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
     wider.x.attrs["units"] = "arcsec"
 
-    out = match_fov(wider, x_extent="crop")
+    out = match_fov(wider, extent="crop")
 
     assert out.x.size == width
     np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, width)).values)
@@ -188,7 +188,7 @@ def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
 def test_match_fov_without_tiling_returns_narrow_input_at_pixel_size(vdem) -> None:
     narrower = vdem.isel(x=slice(0, 100))
 
-    assert match_fov(narrower, x_extent="crop") is narrower
+    assert match_fov(narrower, extent="crop") is narrower
 
 
 def test_match_fov_tiles_single_x_column(vdem) -> None:
@@ -210,7 +210,7 @@ def test_match_fov_crops_y_to_y_pixels(vdem) -> None:
 @pytest.mark.parametrize("mode", ["wrap", "constant"])
 def test_match_fov_extends_y_to_y_pixels_when_tiling(vdem, mode) -> None:
     # Rows are extended as x is: "wrap" repeats the field, "constant" adds rows without emission.
-    out = match_fov(vdem, y_pixels=40, mode=mode)
+    out = match_fov(vdem, y_pixels=40, pad_mode=mode)
 
     assert out.y.size == 40
     np.testing.assert_array_equal(out.vdem.isel(y=slice(0, 32)).values, vdem.vdem.values)
@@ -220,9 +220,9 @@ def test_match_fov_extends_y_to_y_pixels_when_tiling(vdem, mode) -> None:
 
 
 def test_match_fov_without_tiling_keeps_fewer_rows(vdem_offgrid) -> None:
-    resampled_rows = match_fov(vdem_offgrid, x_extent="crop").y.size
+    resampled_rows = match_fov(vdem_offgrid, extent="crop").y.size
 
-    assert match_fov(vdem_offgrid, x_extent="crop", y_pixels=resampled_rows + 5).y.size == resampled_rows
+    assert match_fov(vdem_offgrid, extent="crop", y_pixels=resampled_rows + 5).y.size == resampled_rows
 
 
 def test_match_fov_keeps_a_single_row_whatever_y_pixels(vdem) -> None:
@@ -254,8 +254,8 @@ def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
     assert bool(np.isfinite(out.vdem).all())
 
 
-def test_match_fov_rotate(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, rotate=True)
+def test_match_fov_rotation(vdem_offgrid) -> None:
+    out = match_fov(vdem_offgrid, rotation=90 * u.deg)
     assert_dataset_structure(
         out,
         data_vars=("vdem",),
@@ -265,7 +265,7 @@ def test_match_fov_rotate(vdem_offgrid) -> None:
     assert out.x.size == 35 * 11
 
 
-def test_match_fov_rotate_skips_resampling_when_resolution_matches(vdem) -> None:
+def test_match_fov_rotation_skips_resampling_when_resolution_matches(vdem) -> None:
     source = vdem.assign_coords(
         x=np.arange(vdem.x.size) * 0.167,
         y=np.arange(vdem.y.size) * 0.4,
@@ -273,11 +273,27 @@ def test_match_fov_rotate_skips_resampling_when_resolution_matches(vdem) -> None
     source.x.attrs["units"] = "arcsec"
     source.y.attrs["units"] = "arcsec"
 
-    out = match_fov(source, rotate=True, x_extent="crop")
+    out = match_fov(source, rotation=90 * u.deg, extent="crop")
 
     assert out.sizes["x"] == source.sizes["y"]
     assert out.sizes["y"] == source.sizes["x"]
-    np.testing.assert_array_equal(out.vdem.values, source.vdem.values)
+    # A quarter turn counter-clockwise moves the point at (x, y) to (-y, x).
+    last_y = source.sizes["y"] - 1
+    for x, y in [(0, 0), (5, 3), (384, 31)]:
+        np.testing.assert_array_equal(out.vdem.isel(x=last_y - y, y=x).values, source.vdem.isel(x=x, y=y).values)
+
+
+def test_match_fov_turns_by_any_multiple_of_a_quarter(vdem) -> None:
+    # The fixture sits at the MUSE pixel size, so only the turn changes the field.
+    half = match_fov(vdem, rotation=180 * u.deg)
+    last_x, last_y = vdem.sizes["x"] - 1, vdem.sizes["y"] - 1
+    for x, y in [(0, 0), (5, 3)]:
+        np.testing.assert_array_equal(
+            half.vdem.isel(x=last_x - x, y=last_y - y).values, vdem.vdem.isel(x=x, y=y).values
+        )
+    xr.testing.assert_identical(match_fov(vdem, rotation=-90 * u.deg).vdem, match_fov(vdem, rotation=270 * u.deg).vdem)
+    with pytest.raises(ValueError, match="multiple of 90 degrees"):
+        match_fov(vdem, rotation=45 * u.deg)
 
 
 def test_reshape_x_to_slit_step(vdem) -> None:

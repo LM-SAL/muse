@@ -222,7 +222,7 @@ class InstrumentDefaults:
     Normalized to arcseconds.
     """
 
-    pixels_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pix))
+    detector_x_pixels_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pix))
     """
     Number of pixels along the spectral dimension for the SG.
     """
@@ -321,24 +321,24 @@ class InstrumentDefaults:
     Dimensions to sum over during synthesis/inversions.
     """
 
-    main_lines_SG: tuple | None = field(default=None, converter=converters.optional(_nested_tuple))
+    main_lines_by_channel_SG: tuple | None = field(default=None, converter=converters.optional(_nested_tuple))
     """
     Main spectral lines for the SG, grouped per channel.
     """
 
-    fov_mode: str | None = field(default=None, validator=_instance(str))
+    fov_pad_mode: str | None = field(default=None, validator=_instance(str))
     """
-    This is the pad method used by `xarray.DataArray.pad`
+    How `~muse.transforms.match_fov` extends an axis, a mode of `xarray.DataArray.pad`.
     """
 
-    fov_x_extent: str | None = field(default=None, validator=_instance(str))
+    fov_extent: str | None = field(default=None, validator=_instance(str))
     """
-    How `~muse.transforms.match_fov` treats the x width: ``"tile"`` crops wider inputs
+    How `~muse.transforms.match_fov` treats the x width: ``"extend"`` crops wider inputs
     and extends narrower ones, ``"crop"`` only crops, ``"keep"`` leaves the width
     untouched.
     """
 
-    fov_sub_interpolation: int | None = field(default=None, converter=_int_converter)
+    fov_oversampling: int | None = field(default=None, converter=_int_converter)
     """
     Sub-samples per input sample that `~muse.transforms.match_fov` interpolates onto
     before it averages them into pixels. Used only when the input has at least one and
@@ -397,7 +397,7 @@ class InstrumentDefaults:
     Normalization in the response function.
     """
 
-    initial_wavelength_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
+    wavelength_start_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
     Wavelength at detector pixel zero for slit zero, in Angstroms.
 

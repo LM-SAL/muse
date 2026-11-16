@@ -68,7 +68,7 @@ def create_spectral_response(
     instrumental_fwhm: u.Quantity = 0 * u.AA,
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
-    effective_area: xr.DataArray | None = None,
+    effective_area: xr.DataArray | xr.Dataset | None = None,
     include_contaminants: bool = False,
     wavelength_edges: u.Quantity | None = None,
     bin_method: str | None = None,
@@ -101,12 +101,13 @@ def create_spectral_response(
     nonthermal_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional nonthermal-velocity axis. If `None`, no
         nonthermal broadening or ``nonthermal_velocity`` dimension is added.
-    effective_area : `xarray.DataArray`, optional
+    effective_area : `xarray.DataArray` or `xarray.Dataset`, optional
         Either a one-dimensional effective-area curve with a unit-bearing
         ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
         to cm**2 (e.g. ``DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=171)``)
-        applied uniformly across the wavelength grid. If `None`, the response
-        is not scaled by effective area.
+        applied uniformly across the wavelength grid. The Dataset that
+        `muse.instrument.create_effective_area` returns is taken by its
+        ``effective_area``. If `None`, the response is not scaled by effective area.
     include_contaminants : `bool`, optional
         If `True`, include all lines not in ``main_lines`` in a single
         ``contaminants`` line. If `False`, only the main lines are returned.
@@ -402,9 +403,12 @@ def _instrumental_sigma_in_angstrom(instrumental_fwhm: u.Quantity) -> float:
     return converted / gaussian_sigma_to_fwhm
 
 
-def _effective_area_in_cm2(effective_area: xr.DataArray | None) -> xr.DataArray | None:
+def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> xr.DataArray | None:
     if effective_area is None:
         return None
+    if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
+        # The Dataset of create_effective_area or read_effective_area.
+        effective_area = effective_area["effective_area"]
     if not isinstance(effective_area, xr.DataArray):
         msg = (
             "effective_area must be an xarray.DataArray, "
@@ -752,9 +756,10 @@ def create_continuum_response(
         effective area.
     wavelength_edges : `astropy.units.Quantity`
         Strictly increasing bin edges, one more than the number of bins.
-    effective_area : `xarray.DataArray`
+    effective_area : `xarray.DataArray` or `xarray.Dataset`
         A curve with a ``wavelength`` coordinate, or one value that holds at every
-        wavelength, in units convertible to cm2, as for `create_spectral_response`.
+        wavelength, in units convertible to cm2, or an effective-area Dataset, as for
+        `create_spectral_response`.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional bulk velocities; adds a ``doppler_velocity`` dimension.
 

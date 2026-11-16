@@ -1,3 +1,4 @@
+import numbers
 from pathlib import Path
 from collections.abc import Mapping, Sequence
 
@@ -17,8 +18,8 @@ from muse.variables_schema import FrozenDict
 
 __all__ = [
     "align_response_and_vdem",
-    "load_and_concat_responses",
     "read_response",
+    "read_responses",
     "read_spectral_response",
     "save_response",
     "save_spectral_response",
@@ -183,7 +184,7 @@ def read_response(
     *,
     logT: u.Quantity | xr.DataArray | None = None,
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
-    slit: xr.DataArray | None = None,
+    number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "nearest",
     gain: u.Quantity | None = None,
@@ -203,9 +204,10 @@ def read_response(
         VDEM. A `xarray.DataArray` must carry a ``units`` attribute.
     doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
         Velocity axis to (re)sample onto, in the same way as ``logT``.
-    slit : `xarray.DataArray`, optional
-        Number of slits array of integers. The first ``slit.max() + 1`` entries
-        are selected positionally and relabeled 0-based.
+    number_of_slits : `int`, optional
+        Keep the first ``number_of_slits`` slits of the response, relabelled from 0,
+        e.g. to match a raster from `muse.transforms.reshape_x_to_slit_step`. By
+        default every slit is kept.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
     doppler_velocity_method : `str`, optional
@@ -259,9 +261,14 @@ def read_response(
     response = _resample_axis(response, "logT", logT, logT_method)
     response = _resample_axis(response, "doppler_velocity", doppler_velocity, doppler_velocity_method)
 
-    if slit is not None:
-        # Normalize to 0-based labels so downstream exact joins see byte-identical axes.
-        number_of_slits = int(slit.max()) + 1
+    if number_of_slits is not None:
+        if isinstance(number_of_slits, bool) or not isinstance(number_of_slits, numbers.Integral):
+            msg = f"number_of_slits must be an integer, got {number_of_slits!r}"
+            raise TypeError(msg)
+        if not 1 <= number_of_slits <= response.sizes["slit"]:
+            msg = f"number_of_slits must be between 1 and the {response.sizes['slit']} slits of the response"
+            raise ValueError(msg)
+        # Relabelled from 0, so that downstream exact joins see byte-identical axes.
         response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
     if "channel" not in response.dims and "line" not in response.dims:
@@ -460,14 +467,14 @@ def align_response_and_vdem(
 
 
 @u.quantity_input(channels=u.AA)
-def load_and_concat_responses(
+def read_responses(
     response_directory: str | Path,
     response_files: Sequence[str],
     *,
     channels: u.Quantity,
     logT: u.Quantity | xr.DataArray | None = None,
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
-    slit: xr.DataArray | None = None,
+    number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
     chunked: bool = False,
@@ -491,8 +498,8 @@ def load_and_concat_responses(
     doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
         Velocity axis to (re)sample onto, with units. Passed to
         `muse.instrument.read_response`.
-    slit : `xarray.DataArray`, optional
-        Number of slits array of integers. Passed to `muse.instrument.read_response`.
+    number_of_slits : `int`, optional
+        How many slits to keep. Passed to `muse.instrument.read_response`.
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
         Passed to `muse.instrument.read_response`.
@@ -533,7 +540,7 @@ def load_and_concat_responses(
                 Path(response_directory) / file_name,
                 logT=logT,
                 doppler_velocity=doppler_velocity,
-                slit=slit,
+                number_of_slits=number_of_slits,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
                 gain=gain,
@@ -555,7 +562,7 @@ def load_and_concat_responses(
     ]
     result = response.assign_coords(channel=("line", line_channels)).drop_attrs(deep=False)
     update_attrs(result, response)
-    add_history(result, locals(), load_and_concat_responses, sources=datasets)
+    add_history(result, locals(), read_responses, sources=datasets)
     return result
 
 

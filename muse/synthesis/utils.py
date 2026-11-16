@@ -319,7 +319,7 @@ def calculate_moments(
     spectrum: xr.Dataset,
     *,
     moment_dim: str = "detector_x_pixel",
-    integration_name: str = "flux",
+    variable_name: str = "flux",
     doppler_name: str = "detector_doppler_velocity",
     maximum_doppler_velocity: u.Quantity | None = None,
     peak_half_width: float | None = None,
@@ -337,12 +337,12 @@ def calculate_moments(
         ``"detector_x_pixel"``.
         The Doppler velocities used for the moments come from the ``doppler_name``
         coordinate, which is normalized to km/s on entry.
-    integration_name : `str`, optional
+    variable_name : `str`, optional
         Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
     doppler_name : `str`, optional
         Name of the Doppler-velocity coordinate in ``spectrum``, by default
         ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds. Its
-        dimensions must be a subset of the dimensions of ``integration_name``.
+        dimensions must be a subset of the dimensions of ``variable_name``.
     maximum_doppler_velocity : `astropy.units.Quantity` or None, optional
         Maximum absolute Doppler velocity to include in the integration, convertible
         to km/s, by default None.
@@ -356,7 +356,7 @@ def calculate_moments(
     `xarray.Dataset`
         Dataset containing the moments.
     """
-    require_unit(spectrum, integration_name, f"spectrum.{integration_name}")
+    require_unit(spectrum, variable_name, f"spectrum.{variable_name}")
     if doppler_name not in spectrum.coords:
         msg = f"spectrum is missing the {doppler_name!r} coordinate; run wavelength_to_doppler first to add it."
         raise ValueError(msg)
@@ -366,43 +366,43 @@ def calculate_moments(
     # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
     spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * doppler_unit.to(u.km / u.s)})
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
-    if not set(spectrum[doppler_name].dims).issubset(spectrum[integration_name].dims):
-        msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{integration_name} dimensions"
+    if not set(spectrum[doppler_name].dims).issubset(spectrum[variable_name].dims):
+        msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{variable_name} dimensions"
         raise ValueError(msg)
 
     if maximum_doppler_velocity is not None:
         # NaN Doppler coordinates stay included, matching the old 0/1 mask.
         maximum_speed = maximum_doppler_velocity.to_value(u.km / u.s)  # the coordinate is in km/s by now
-        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > maximum_speed), 0)
-        masked_spectrum = spectrum.assign({integration_name: masked_flux})
+        masked_flux = spectrum[variable_name].where(~(np.abs(spectrum[doppler_name]) > maximum_speed), 0)
+        masked_spectrum = spectrum.assign({variable_name: masked_flux})
         if peak_half_width is not None:
-            peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
+            peak_index = masked_spectrum[variable_name].argmax(dim=moment_dim)
             peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
             distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
             masked_spectrum = masked_spectrum.assign(
-                {integration_name: masked_spectrum[integration_name].where(distance < peak_half_width, 0)}
+                {variable_name: masked_spectrum[variable_name].where(distance < peak_half_width, 0)}
             )
     else:
         masked_spectrum = spectrum
     masked_spectrum = masked_spectrum.assign(
         {
-            integration_name: masked_spectrum[integration_name]
-            .where(masked_spectrum[integration_name] > 0, 0)
-            .assign_attrs(spectrum[integration_name].attrs)
+            variable_name: masked_spectrum[variable_name]
+            .where(masked_spectrum[variable_name] > 0, 0)
+            .assign_attrs(spectrum[variable_name].attrs)
         }
     )
-    zeroth = masked_spectrum[integration_name].sum(dim=moment_dim)
+    zeroth = masked_spectrum[variable_name].sum(dim=moment_dim)
     velocity = masked_spectrum[doppler_name]
     # Pixels with no flux (e.g. fully masked) would divide by zero; leave them NaN, not inf.
     safe_zeroth = zeroth.where(zeroth > 0)
-    first = (masked_spectrum[integration_name] * velocity).sum(dim=moment_dim) / safe_zeroth
+    first = (masked_spectrum[variable_name] * velocity).sum(dim=moment_dim) / safe_zeroth
     # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
-    variance = (masked_spectrum[integration_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
+    variance = (masked_spectrum[variable_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
     second = np.sqrt(variance.clip(min=0))
     # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
     moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second})
     update_attrs(moments, spectrum)
-    moments["0th"].attrs = dict(masked_spectrum[integration_name].attrs)
+    moments["0th"].attrs = dict(masked_spectrum[variable_name].attrs)
     moments["1st"].attrs["units"] = str(u.km / u.s)
     moments["2nd"].attrs["units"] = str(u.km / u.s)
     add_history(moments, locals(), calculate_moments, sources=(spectrum,))
