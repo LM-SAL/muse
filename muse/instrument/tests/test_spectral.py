@@ -43,7 +43,7 @@ def _build_spectral_response(line_list, wavelength_grid=DEFAULT_WAVELENGTH_GRID,
 def test_public_contract_records_history_and_excludes_unselected_lines():
     line_list = fake_line_list(2).assign_attrs(
         HISTORY=["create_chianti_line_list()"],
-        Chianti="10.1",
+        chianti_version="10.1",
         normalization=2e-27,
     )
     main_line = line_list.full_name[0].item()
@@ -57,7 +57,7 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.line.values.tolist() == [main_line]
     assert response.attrs["HISTORY"][0] == "create_chianti_line_list()"
     assert response.attrs["HISTORY"][1].startswith("create_spectral_response(")
-    assert response.attrs["Chianti"] == "10.1"
+    assert response.attrs["chianti_version"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
 
 

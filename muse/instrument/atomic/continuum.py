@@ -159,7 +159,11 @@ def create_chianti_continuum(
         temperature_broadcast=temperature_broadcast,
         plasma_coords=plasma_coords,
         wavelength_grid=wavelength_grid,
-        attrs={"Chiantipy": chiantipy_version, "Chianti": chio.versionRead(), "minimum_abundance": minimum_abundance},
+        attrs={
+            "chiantipy_version": chiantipy_version,
+            "chianti_version": chio.versionRead(),
+            "minimum_abundance": minimum_abundance,
+        },
     )
     # The abundance set that was used, also when none was named.
     abundance = abundance or chdata.Defaults["abundfile"]
@@ -277,9 +281,9 @@ def create_fiasco_continuum(
         plasma_coords=plasma_coords,
         wavelength_grid=wavelength_grid,
         attrs={
-            "fiasco": fiasco.__version__,
+            "fiasco_version": fiasco.__version__,
             # The version of the database, read where fiasco's own line list reads it.
-            **({"Chianti": str(ions[0]._elvlc.version)} if hasattr(ions[0], "_elvlc") else {}),
+            **({"chianti_version": str(ions[0]._elvlc.version)} if hasattr(ions[0], "_elvlc") else {}),
             "minimum_abundance": minimum_abundance,
         },
     )

@@ -74,7 +74,7 @@ def fake_continuum(
         temperature_broadcast=temperature_broadcast,
         plasma_coords=plasma_coords,
         wavelength_grid=grid,
-        attrs={"abundance": abundance, "minimum_abundance": minimum_abundance, "fiasco": "0.0.test"},
+        attrs={"abundance": abundance, "minimum_abundance": minimum_abundance, "fiasco_version": "0.0.test"},
     )
 
 

@@ -209,7 +209,7 @@ def create_aia_effective_area(
         attrs={
             "instrument": "SDO/AIA",
             "telescope": int(aia_channel.telescope_number),
-            "aiapy": aiapy.__version__,
+            "aiapy_version": aiapy.__version__,
             "degradation": degradation_factor,
             "eve_correction": eve_factor,
             **dict(

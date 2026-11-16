@@ -314,6 +314,28 @@ def update_attrs(
     ds.attrs.update(attrs)
 
 
+# shortcut: the names that muse 0.3 and earlier wrote into line lists, continua, effective areas
+# and responses; remove once the caches are migrated and the tutorial data is remade.
+_OLD_ATTRS = {
+    "Chianti": "chianti_version",
+    "Chiantipy": "chiantipy_version",
+    "fiasco": "fiasco_version",
+    "aiapy": "aiapy_version",
+    "continuum_Chianti": "continuum_chianti_version",
+    "continuum_Chiantipy": "continuum_chiantipy_version",
+    "continuum_fiasco": "continuum_fiasco_version",
+}
+
+
+def _with_current_names(dataset: xr.Dataset) -> xr.Dataset:
+    """
+    ``dataset`` as read from a file, with the version attributes of earlier versions
+    under their current names.
+    """
+    dataset.attrs = {_OLD_ATTRS.get(name, name): value for name, value in dataset.attrs.items()}
+    return dataset
+
+
 def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
     """
     Write ``dataset`` as a zarr store of format 3: a directory or, for a destination

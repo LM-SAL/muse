@@ -53,7 +53,7 @@ _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
 _ANGSTROM = {"units": str(u.AA)}
 # The attributes in which a line list or a continuum records the software and the database that made it.
-_VERSION_ATTRS = ("Chianti", "Chiantipy", "fiasco")
+_VERSION_ATTRS = ("chianti_version", "chiantipy_version", "fiasco_version")
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s, line_list_wavelength_range=u.AA)

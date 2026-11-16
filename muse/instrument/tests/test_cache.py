@@ -16,7 +16,9 @@ import astropy.units as u
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
+from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
+from muse.utils.utils import _to_zarr
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -41,7 +43,7 @@ def synthetic_line_list_backend(temperature, *, density=None, pressure=None, **_
     values = np.log10(plasma.data) if density is not None else plasma.data
     line_list["gofnt"] = line_list.gofnt.expand_dims({axis: values})
     line_list[axis].attrs["units"] = "dex(1 / cm3)" if density is not None else "K / cm3"
-    return line_list.assign_attrs(Chianti="11.0.2")
+    return line_list.assign_attrs(chianti_version="11.0.2")
 
 
 @pytest.fixture
@@ -203,12 +205,30 @@ def test_a_pressure_axis_of_another_name_is_stored_as_pressure(tmp_path, line_li
     assert len(line_list_calls) == 1
 
 
+def test_the_chianti_version_of_a_cache_written_by_muse_0_3_is_read(tmp_path, line_list_calls):
+    kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
+    load_or_create_line_list(tmp_path, **kwargs)
+    (path,) = tmp_path.glob("line_list_*.zarr.zip")
+    with _open_dataset_file(path) as current:
+        old = current.load()
+    old.attrs["Chianti"] = old.attrs.pop("chianti_version")
+    path.unlink()
+    _to_zarr(old, path)
+
+    load_or_create_line_list(tmp_path, chianti_version="11.0.2", **kwargs)
+
+    assert len(line_list_calls) == 1
+
+
 @pytest.mark.usefixtures("line_list_calls")
 def test_a_line_list_of_another_chianti_version_is_refused(tmp_path):
     kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
     cache_directory = tmp_path / "run" / "cache"  # not there yet: the first call makes it
 
-    assert load_or_create_line_list(cache_directory, chianti_version="11.0.2", **kwargs).attrs["Chianti"] == "11.0.2"
+    assert (
+        load_or_create_line_list(cache_directory, chianti_version="11.0.2", **kwargs).attrs["chianti_version"]
+        == "11.0.2"
+    )
     # the version is checked on a line list read from a file too, as the file name does not carry it
     with pytest.raises(ValueError, match=r"CHIANTI 11\.0\.2, not 9\.0\.1"):
         load_or_create_line_list(cache_directory, chianti_version="9.0.1", **kwargs)

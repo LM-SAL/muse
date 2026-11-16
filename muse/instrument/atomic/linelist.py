@@ -171,7 +171,7 @@ def _chianti_bunch_to_dataset(
         temperature_broadcast=temperature_broadcast,
         plasma_coords=plasma_coords,
         wavelength_range=wavelength_range,
-        attrs={"Chiantipy": chiantipy_version, "Chianti": chio.versionRead()},
+        attrs={"chiantipy_version": chiantipy_version, "chianti_version": chio.versionRead()},
     )
 
 
@@ -425,7 +425,7 @@ def create_fiasco_line_list(
         temperature_broadcast=temperature_broadcast,
         plasma_coords=plasma_coords,
         wavelength_range=wavelength_range,
-        attrs={"fiasco": table.meta["fiasco_version"], "Chianti": table.meta["chianti_version"]},
+        attrs={"fiasco_version": table.meta["fiasco_version"], "chianti_version": table.meta["chianti_version"]},
     )
     if line_list.sizes["trans_index"] == 0:
         msg = "fiasco found no lines; check wavelength_range and the ion selection"
