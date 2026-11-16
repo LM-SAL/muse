@@ -24,8 +24,7 @@ __all__ = [
 ]
 
 _CM2_DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
-# Attributes with which an effective-area file describes its own detector: the keywords of
-# transform_response_units, as "<value> <unit>" strings.
+# The keywords of create_effective_area that describe its detector, recorded as attributes.
 _DETECTOR_ATTRS = ("pixel_width", "pixel_height", "gain", "pair_energy")
 # SolarSoft's default aia_get_response epoch, the start of the science mission.
 _AIA_MISSION_START = "2010-05-01T00:00:00.000"
@@ -33,7 +32,15 @@ _AIA_MISSION_START = "2010-05-01T00:00:00.000"
 _AIA_PAIR_ENERGY = 3.65 * u.eV / u.electron
 
 
-@u.quantity_input(area=[u.cm**2, _CM2_DN_PER_PHOTON], wavelength=u.AA, channel=u.AA)
+@u.quantity_input(
+    area=[u.cm**2, _CM2_DN_PER_PHOTON],
+    wavelength=u.AA,
+    channel=u.AA,
+    pixel_width=u.arcsec,
+    pixel_height=u.arcsec,
+    gain=u.electron / u.DN,
+    pair_energy=u.eV / u.electron,
+)
 def create_effective_area(
     area: u.Quantity,
     wavelength: u.Quantity,
@@ -41,6 +48,10 @@ def create_effective_area(
     channel: u.Quantity,
     components: Mapping[str, u.Quantity] | None = None,
     attrs: Mapping[str, object] | None = None,
+    pixel_width: u.Quantity | None = None,
+    pixel_height: u.Quantity | None = None,
+    gain: u.Quantity | None = None,
+    pair_energy: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
     Build the effective-area dataset of one channel from arrays.
@@ -59,10 +70,11 @@ def create_effective_area(
         stored alongside under their names. Each has one value per wavelength, or a single
         value that holds at every wavelength.
     attrs : `dict`, optional
-        Attributes to record, e.g. the coating. To describe the detector of an imager other
-        than MUSE, give ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` as
-        strings of a value and a unit, such as ``"0.6 arcsec"`` and ``"18 electron / DN"``;
-        they are the keywords of `muse.instrument.transform_response_units`.
+        Attributes to record, e.g. the coating.
+    pixel_width, pixel_height, gain, pair_energy : `astropy.units.Quantity`, optional
+        The detector of an imager other than MUSE, as `muse.instrument.transform_response_units`
+        takes it. Each is recorded as an attribute, read back with
+        ``u.Quantity(effective_area.attrs["gain"])``.
 
     Returns
     -------
@@ -73,16 +85,17 @@ def create_effective_area(
     Raises
     ------
     ValueError
-        If ``wavelength`` is not increasing, ``channel`` is not a scalar, a component is
-        named ``effective_area``, or ``area`` or a component does not have one value per
-        wavelength.
+        If ``wavelength`` is not increasing, ``channel`` or a detector value is not a
+        scalar, a component is named ``effective_area``, or ``area`` or a component does not
+        have one value per wavelength.
     """
     call_inputs = dict(locals())
     wavelengths = np.asarray(wavelength.to_value(u.AA), dtype=float).reshape(-1)
     _require_increasing_axis(wavelengths, "wavelength", positive=True)
-    if not channel.isscalar:
-        msg = "channel must be a scalar wavelength, such as 171 * u.AA: an effective-area dataset holds one channel"
-        raise ValueError(msg)
+    for name in ("channel", *_DETECTOR_ATTRS):
+        if call_inputs[name] is not None and not call_inputs[name].isscalar:
+            msg = f"{name} must be a scalar: an effective-area dataset holds one channel"
+            raise ValueError(msg)
 
     if "effective_area" in (components or {}):
         msg = "a component cannot be named effective_area: that is the area itself"
@@ -156,16 +169,14 @@ def create_aia_effective_area(
         `muse.instrument.create_spectral_response` and
         `muse.instrument.create_continuum_response` refuse it. Pass `False` for an area in
         cm2, which they take. This factor is not the camera gain in electron / DN, which is
-        always recorded in the ``gain`` attribute.
+        always recorded as ``gain``.
 
     Returns
     -------
     `xarray.Dataset`
         The dataset `create_effective_area` returns, with the curves ``mirror``, ``filter``,
-        ``ccd``, ``contamination``, ``crosstalk`` and ``dn_per_photon`` alongside. The
-        attributes ``pixel_width`` and ``pixel_height`` (arcsec), ``gain`` (electron / DN)
-        and ``pair_energy`` (eV / electron) describe the AIA detector, as strings of a value
-        and a unit.
+        ``ccd``, ``contamination``, ``crosstalk`` and ``dn_per_photon`` alongside, and the AIA
+        detector in the attributes of `create_effective_area`.
 
     Notes
     -----
@@ -212,10 +223,11 @@ def create_aia_effective_area(
             "aiapy_version": aiapy.__version__,
             "degradation": degradation_factor,
             "eve_correction": eve_factor,
-            **dict(
-                zip(_DETECTOR_ATTRS, map(str, (pixel_size, pixel_size, camera_gain, _AIA_PAIR_ENERGY)), strict=True)
-            ),
         },
+        pixel_width=pixel_size,
+        pixel_height=pixel_size,
+        gain=camera_gain,
+        pair_energy=_AIA_PAIR_ENERGY,
     )
     add_history(effective_area, {**call_inputs, "obstime": obstime.utc.isot}, create_aia_effective_area)
     return effective_area
