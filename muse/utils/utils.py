@@ -180,7 +180,7 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
     merging sources with nested histories never duplicates entries, whatever their
     order.
     """
-    source_history = _history_entries(_current_attrs(source.attrs).get("history"))
+    source_history = _history_entries(source.attrs.get("history"))
     if not source_history:
         return
     history = _history_entries(ds.attrs.get("history"))
@@ -347,8 +347,6 @@ def add_history(
         `True` for a call that reads a file: its entry is added, and the dates and
         version stay as the file has them. By default `False`.
     """
-    # A dataset that took the attributes of a file of muse 0.3 by xarray keeps their lineage.
-    ds.attrs = _current_attrs(ds.attrs)
     # A string label has no signature to inspect, so it records no inputs.
     params = inspect.signature(func).parameters if callable(func) else {}
     formatted_args = []
@@ -409,73 +407,8 @@ def update_attrs(
         msg = f"update_attrs cannot set provenance attributes {forbidden}; they are owned by add_history"
         raise ValueError(msg)
     if source is not None:
-        # Under their current names, also for a source that was read without the library.
-        ds.attrs.update(
-            {key: value for key, value in _current_attrs(source.attrs).items() if key not in _PROVENANCE_ATTRS}
-        )
+        ds.attrs.update({key: value for key, value in source.attrs.items() if key not in _PROVENANCE_ATTRS})
     ds.attrs.update(attrs)
-
-
-# shortcut: the names that muse 0.3 and earlier wrote into line lists, continua, effective areas
-# and responses; remove once the caches are migrated and the tutorial data is remade.
-_OLD_ATTRS = {
-    "Chianti": "chianti_version",
-    "Chiantipy": "chiantipy_version",
-    "fiasco": "fiasco_version",
-    "aiapy": "aiapy_version",
-    "continuum_Chianti": "continuum_chianti_version",
-    "continuum_Chiantipy": "continuum_chiantipy_version",
-    "continuum_fiasco": "continuum_fiasco_version",
-    "HISTORY": "history",
-    "date created": "date_created",
-    "date modified": "date_modified",
-    "version": "muse_version",
-}
-
-
-def _current_attrs(attrs: dict) -> dict:
-    """
-    ``attrs`` under their current names; where both an old and a current name are there,
-    the current one wins.
-
-    An old date takes the ISO form, and the options that only said how the code ran are
-    left out.
-    """
-    # muse 0.3 wrote "HISTORY" into every file: a "version", "workers" or "device" without it is
-    # another tool's own.
-    of_muse_0_3 = "HISTORY" in attrs
-    old_names = {old: new for old, new in _OLD_ATTRS.items() if old != "version" or of_muse_0_3}
-    renamed = {
-        old_names[name]: _iso_date(value) if name in ("date created", "date modified") else value
-        for name, value in attrs.items()
-        if name in old_names
-    }
-    kept = {
-        name: value
-        for name, value in attrs.items()
-        if name not in old_names and not (of_muse_0_3 and name in _EXECUTION_OPTIONS)
-    }
-    return renamed | kept
-
-
-def _iso_date(value: object) -> object:
-    """
-    A date as muse 0.3 wrote it, such as ``01-Mar-2026``, in ISO 8601; anything else as
-    it is.
-    """
-    try:
-        return dt.datetime.strptime(value, "%d-%b-%Y").date().isoformat()  # NOQA: DTZ007
-    except (TypeError, ValueError):
-        return value
-
-
-def _with_current_names(dataset: xr.Dataset) -> xr.Dataset:
-    """
-    ``dataset`` as read from a file, with the version and provenance attributes of
-    earlier versions under their current names.
-    """
-    dataset.attrs = _current_attrs(dataset.attrs)
-    return dataset
 
 
 def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:

@@ -106,7 +106,7 @@ print(line_list)
 # include free-free, free-bound, and two-photon continuum emission.
 
 conversion_at_lines = radiometric_conversion.interp(wavelength=line_list.wavelength).fillna(0.0).drop_vars("wavelength")
-temperature_response = (line_list.gofnt * conversion_at_lines).sum(dim="trans_index")
+temperature_response = (line_list.gofnt * conversion_at_lines).sum(dim="transition")
 temperature_response.attrs["units"] = str(u.Unit(line_list.gofnt.attrs["units"]) * radiometric_conversion_quantity.unit)
 plt.figure()
 temperature_response.isel(pressure=0).plot()

@@ -72,18 +72,18 @@ def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
         6, wavelength=[155.0, 165.0, 171.073, 174.5, 180.0, 188.0], logT=np.array([5.5, 6.0, 6.5])
     )
     line_list = line_list.assign(
-        full_name=("trans_index", LINE_NAMES),
-        ion_name=("trans_index", ["fe_10", "fe_8", "fe_9", "fe_10", "fe_11", "fe_12"]),
-        lower_level_index=("trans_index", [1] * 6),
-        upper_level_index=("trans_index", [2, 3, 13, 4, 5, 6]),
+        full_name=("transition", LINE_NAMES),
+        ion_name=("transition", ["fe_10", "fe_8", "fe_9", "fe_10", "fe_11", "fe_12"]),
+        lower_level_index=("transition", [1] * 6),
+        upper_level_index=("transition", [2, 3, 13, 4, 5, 6]),
     ).assign_attrs(fiasco_version="0.0.test", chianti_version="11.0.2")
     if plasma == "pressure":
         factor = xr.DataArray(np.asarray(scale, dtype=float), dims="pressure", coords={"pressure": list(pressure)})
-        gofnt = (factor * line_list.gofnt).transpose("pressure", "logT", "trans_index")
+        gofnt = (factor * line_list.gofnt).transpose("pressure", "logT", "transition")
         line_list["gofnt"] = gofnt.assign_attrs(line_list.gofnt.attrs)
         line_list.pressure.attrs["units"] = "K / cm3"  # as the line-list builders label it
     else:
-        line_list["gofnt"] = line_list.gofnt.expand_dims(logD=[9.0, 10.0]).transpose("logT", "logD", "trans_index")
+        line_list["gofnt"] = line_list.gofnt.expand_dims(logD=[9.0, 10.0]).transpose("logT", "logD", "transition")
     return line_list
 
 
@@ -609,19 +609,6 @@ def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inpu
     # The product that is there is kept as it is; the missing one is made.
     assert again == first
     assert written == [first[-1]]
-
-
-def test_the_versions_and_history_of_a_line_list_written_by_muse_0_3_reach_the_products(inputs, tmp_path):
-    old = _line_list().assign_attrs(HISTORY=["create_fiasco_line_list(abundance=sun_coronal_2021_chianti)"])
-    old.attrs["Chianti"] = old.attrs.pop("chianti_version")
-    old.to_netcdf(tmp_path / "old.nc")
-
-    products = _sg(inputs, tmp_path / "out", line_list_file=tmp_path / "old.nc")
-
-    # as the product stores them, not as a reader of old files would rename them
-    assert products_module._attribute_of_product(products[1], "chianti_version") == "11.0.2"
-    stored_history = products_module._attribute_of_product(products[1], "history")
-    assert stored_history[0] == "create_fiasco_line_list(abundance=sun_coronal_2021_chianti)"
 
 
 def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):

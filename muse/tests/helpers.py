@@ -36,10 +36,10 @@ def fake_line_list(n_lines=2, wavelength=None, logT=None):
     gofnt = peaks[np.newaxis, :] * np.exp(-((logT[:, np.newaxis] - 6.0) ** 2) / 0.02) * 1e-25
     return xr.Dataset(
         {
-            "wavelength": ("trans_index", wavelength, {"units": "Angstrom"}),
-            "atomic_number": ("trans_index", np.full(n_lines, 26)),
-            "gofnt": (("logT", "trans_index"), gofnt, {"units": "erg cm3 / (s sr)"}),
-            "full_name": ("trans_index", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
+            "wavelength": ("transition", wavelength, {"units": "Angstrom"}),
+            "atomic_number": ("transition", np.full(n_lines, 26)),
+            "gofnt": (("logT", "transition"), gofnt, {"units": "erg cm3 / (s sr)"}),
+            "full_name": ("transition", [f"Fake Fe {i} {value:.3f}" for i, value in enumerate(wavelength)]),
         },
         coords={"logT": ("logT", logT, {"units": "dex(K)"})},
     )

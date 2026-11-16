@@ -63,7 +63,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 ## Units & data model
 
 - Quantities use `astropy.units`; converters normalize to canonical unit on construction (e.g. arcsec, Angstrom, km/s). Don't strip units mid-pipeline.
-- Primary containers = `xarray.Dataset`/`DataArray`. Spatial/spectral axes have conventional names: `x`, `y`, `slit`, `step`, `logT`, `doppler_velocity`, `channel`, `line`, `SG_xpixel`, `SG_wvl`, `trans_index`, `logD`.
+- Primary containers = `xarray.Dataset`/`DataArray`. Spatial/spectral axes have conventional names: `x`, `y`, `slit`, `step`, `logT`, `doppler_velocity`, `channel`, `line`, `detector_x_pixel`, `detector_wavelength`, `transition`, `logD`.
 - Functions returning dataset record provenance via `add_history(ds, locals(), func)`; preserve when editing pipeline functions — recorded call string asserted in some tests. `add_history` alone owns `history`/`date_created`/`date_modified`/`muse_version`; multi-input results inherit lineage via `add_history(..., sources=(a, b))`. `update_attrs` copies only non-provenance attrs.
 - **Finalize every newly constructed dataset:** preserve its intrinsic attrs, explicitly copy or merge non-provenance source attrs with `update_attrs`, then call `add_history(..., sources=(...))` so every source lineage and the producing call are recorded. For concatenation, choose `combine_attrs` explicitly; never accept xarray's implicit first-input attrs.
 - **Finalizer exception to immutability:** `add_history` and `update_attrs` mutate in place and return `None`; call them only on newly constructed outputs the function owns (name the result first), never on caller-owned inputs.

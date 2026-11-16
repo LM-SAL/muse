@@ -75,7 +75,7 @@ def test_spectral_response_uses_default_normalization(monkeypatch):
     assert response.attrs["normalization"] == defaults.normalization
     dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
     integral = (response.spectral_response.isel(line=0) * dlam).sum("wavelength_bin")
-    expected = line_list.gofnt.isel(trans_index=0) / defaults.normalization
+    expected = line_list.gofnt.isel(transition=0) / defaults.normalization
     np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
     assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
 
@@ -97,7 +97,7 @@ def test_off_grid_contaminants_are_skipped(monkeypatch):
     assert response.line.values.tolist() == [main, "contaminants"]
 
     calls.clear()
-    response = _build_spectral_response(ll.isel(trans_index=[0, 2, 3]), main_lines=[main], include_contaminants=True)
+    response = _build_spectral_response(ll.isel(transition=[0, 2, 3]), main_lines=[main], include_contaminants=True)
 
     assert len(calls) == 2  # one off-grid line is kept so the zero component still exists
     assert response.line.values.tolist() == [main, "contaminants"]
@@ -196,9 +196,9 @@ def test_multiline_nonthermal_uses_each_line_wavelength():
     }
     combined = _build_spectral_response(line_list, **kwargs)
 
-    assert "trans_index" not in combined.spectral_response.dims
-    for index in range(line_list.sizes["trans_index"]):
-        single = _build_spectral_response(line_list.isel(trans_index=[index]), **kwargs)
+    assert "transition" not in combined.spectral_response.dims
+    for index in range(line_list.sizes["transition"]):
+        single = _build_spectral_response(line_list.isel(transition=[index]), **kwargs)
         xr.testing.assert_allclose(
             combined.spectral_response.isel(line=index, drop=True),
             single.spectral_response.isel(line=0, drop=True),
@@ -424,6 +424,13 @@ def test_line_list_must_be_dataset():
         _build_spectral_response("not-a-dataset")
 
 
+def test_a_line_list_must_lie_along_transition():
+    with pytest.raises(ValueError, match=r"lies along trans_index, as muse 0\.3 wrote line lists"):
+        _build_spectral_response(fake_line_list(2).rename({"transition": "trans_index"}))
+    with pytest.raises(ValueError, match="must lie along a transition dimension"):
+        _build_spectral_response_impl(fake_line_list(1).squeeze("transition"), DEFAULT_WAVELENGTH_GRID, main_lines=[])
+
+
 def test_line_list_must_not_be_empty():
     with pytest.raises(ValueError, match="must not be empty"):
         _build_spectral_response(fake_line_list(0))
@@ -437,7 +444,7 @@ def test_line_list_variables_require_transition_dimension():
         attrs={"units": "Angstrom"},
     )
 
-    with pytest.raises(ValueError, match="trans_index"):
+    with pytest.raises(ValueError, match="transition"):
         _build_spectral_response(line_list)
 
 
@@ -474,7 +481,7 @@ def test_line_list_values_must_be_physical(name, value):
 
 
 def test_atomic_number_must_be_supported():
-    line_list = fake_line_list(1).assign(atomic_number=("trans_index", [999]))
+    line_list = fake_line_list(1).assign(atomic_number=("transition", [999]))
 
     with pytest.raises(ValueError, match=r"line_list\.atomic_number must be between"):
         _build_spectral_response(line_list)
@@ -546,7 +553,7 @@ def test_effective_area_is_zero_outside_coverage():
 
 def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_default():
     line_list = fake_line_list(3)
-    line_list = xr.concat([line_list, line_list.isel(trans_index=[1])], dim="trans_index")
+    line_list = xr.concat([line_list, line_list.isel(transition=[1])], dim="transition")
     main_lines = [line_list.full_name[1].item(), line_list.full_name[0].item()]
     kwargs = {
         "instrumental_fwhm": 0.02 * u.AA,
@@ -554,7 +561,7 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
 
     response = _build_spectral_response(line_list, main_lines=main_lines, **kwargs)
     reordered = _build_spectral_response(
-        line_list.isel(trans_index=[3, 2, 0, 1]),
+        line_list.isel(transition=[3, 2, 0, 1]),
         main_lines=main_lines,
         **kwargs,
     )
@@ -570,7 +577,7 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
         include_contaminants=True,
         **kwargs,
     )
-    single = _build_spectral_response(line_list.isel(trans_index=[1]), **kwargs)
+    single = _build_spectral_response(line_list.isel(transition=[1]), **kwargs)
 
     assert list(response.line.values) == main_lines
     xr.testing.assert_allclose(response.spectral_response, reordered.spectral_response)
@@ -645,7 +652,7 @@ def _bin_width(response):
 
 def _integral_ratio(response, line_list, index=0):
     integral = (response.spectral_response * _bin_width(response)).sum("wavelength_bin")
-    return (integral / (line_list.gofnt.isel(trans_index=index) / RESPONSE_NORMALIZATION)).values
+    return (integral / (line_list.gofnt.isel(transition=index) / RESPONSE_NORMALIZATION)).values
 
 
 def test_average_conserves_the_area_of_an_unresolved_line():
@@ -707,7 +714,7 @@ def test_contaminants_integrate_to_the_sum_of_their_areas():
         bin_method="average",
     )
     assert list(response.line.values) == ["contaminants"]
-    total = (line_list.gofnt / RESPONSE_NORMALIZATION).sum("trans_index")
+    total = (line_list.gofnt / RESPONSE_NORMALIZATION).sum("transition")
     integral = (response.spectral_response * _bin_width(response)).sum("wavelength_bin").isel(line=0)
     np.testing.assert_allclose(integral.values, total.broadcast_like(integral).values, rtol=1e-12)
 
