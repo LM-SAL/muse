@@ -121,8 +121,10 @@ def imager_response(lines):
         effective_area=effective_area,
         doppler_velocity=[0.0] * u.km / u.s,
     )
-    waveband = transform_response_units(waveband, "1e-27 cm5 DN / (Angstrom s)", channel, detector="CI", **detector)
-    band = map_response_to_ci_detector(waveband, channel)
+    waveband = transform_response_units(
+        waveband, "1e-27 cm5 DN / (Angstrom s)", channel=channel, detector="CI", **detector
+    )
+    band = map_response_to_ci_detector(waveband, channel=channel)
     return waveband, band.detector_response.isel(line=0, doppler_velocity=0, pressure=0)
 
 

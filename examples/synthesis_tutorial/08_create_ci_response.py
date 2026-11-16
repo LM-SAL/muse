@@ -61,10 +61,10 @@ waveband_response = create_spectral_response(
 waveband_response = transform_response_units(
     waveband_response,
     "1e-27 cm5 DN / (Angstrom s)",
-    channel,
+    channel=channel,
     detector="ci",
 )
-response = map_response_to_ci_detector(waveband_response, channel)
+response = map_response_to_ci_detector(waveband_response, channel=channel)
 print(response)
 
 plt.figure()

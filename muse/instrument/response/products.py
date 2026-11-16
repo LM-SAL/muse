@@ -390,7 +390,11 @@ def generate_sg_continuum_responses(
                     doppler_velocity=doppler_velocity,
                 )
                 photons = transform_response_units(
-                    folded, _PHOTON_UNITS, channel, detector="SG", **_detector_kwargs(area, "SG", instrument_defaults)
+                    folded,
+                    _PHOTON_UNITS,
+                    channel=channel,
+                    detector="SG",
+                    **_detector_kwargs(area, "SG", instrument_defaults),
                 )
                 mapped = map_response_to_sg_detector(photons, channel=channel, instrument_defaults=instrument_defaults)
                 run.write(
@@ -841,7 +845,7 @@ def _write_sg_products(
             **kwargs,
         )
         detector_kwargs = _detector_kwargs(area, "SG", instrument_defaults)
-        return transform_response_units(response, _PHOTON_UNITS, channel, detector="SG", **detector_kwargs)
+        return transform_response_units(response, _PHOTON_UNITS, channel=channel, detector="SG", **detector_kwargs)
 
     def write(cube: xr.Dataset, on_detector: xr.Dataset, tag: str) -> None:
         attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
@@ -948,17 +952,17 @@ def _write_ci_products(
         line_label += " + continuum"
 
     detector_kwargs = _detector_kwargs(area, "CI", instrument_defaults)
-    photons = transform_response_units(cube, _PHOTON_UNITS, channel, detector="CI", **detector_kwargs)
+    photons = transform_response_units(cube, _PHOTON_UNITS, channel=channel, detector="CI", **detector_kwargs)
     if _in_dn_per_ph(area):
         in_dn = photons.assign(spectral_response=photons.spectral_response.assign_attrs(units=_DN_UNITS))
     else:
-        in_dn = transform_response_units(cube, _DN_UNITS, channel, detector="CI", **detector_kwargs)
+        in_dn = transform_response_units(cube, _DN_UNITS, channel=channel, detector="CI", **detector_kwargs)
     attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
     for tag, converted in (("", photons), ("_DN", in_dn)):
         if (tag, "waveband") not in names:
             continue
         run.write(converted.assign(effective_area=curve), names[tag, "waveband"], save_spectral_response, **attrs)
-        summed = _sum_lines(map_response_to_ci_detector(converted, channel), line_label)
+        summed = _sum_lines(map_response_to_ci_detector(converted, channel=channel), line_label)
         run.write(summed.assign(effective_area=curve), names[tag, "summed"], save_response, **attrs)
 
 

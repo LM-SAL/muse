@@ -209,7 +209,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     original = response.copy(deep=True)
 
     with xr.set_options(keep_attrs=False):
-        mapped = map_response_to_ci_detector(response, 195 * u.AA)
+        mapped = map_response_to_ci_detector(response, channel=195 * u.AA)
 
     assert isinstance(mapped.detector_response.data, da.Array)
     assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity")
@@ -232,13 +232,13 @@ def test_map_response_to_ci_detector_accepts_any_channel():
     # imagers (e.g. AIA 171) pass their own band center.
     response = _ci_spectral_response()
 
-    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+    mapped = map_response_to_ci_detector(response, channel=171 * u.AA)
 
     assert mapped.channel.item() == 171
     assert mapped.detector_wavelength.item() == 171
     # Basic channel validation still applies.
     with pytest.raises(ValueError, match="finite, positive"):
-        map_response_to_ci_detector(response, -171 * u.AA)
+        map_response_to_ci_detector(response, channel=-171 * u.AA)
 
 
 def test_map_response_to_ci_detector_rejects_invalid_units():
@@ -248,15 +248,15 @@ def test_map_response_to_ci_detector_rejects_invalid_units():
     )
 
     with pytest.raises(ValueError, match="convertible"):
-        map_response_to_ci_detector(response, 171 * u.AA)
+        map_response_to_ci_detector(response, channel=171 * u.AA)
 
 
 def test_ci_response_maps_directly_into_synthesis():
     spectral = _ci_spectral_response().assign_coords(
         line_wavelength=("line", [304.0], {"units": "Angstrom"}),
     )
-    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 304 * u.AA, detector="ci")
-    response = map_response_to_ci_detector(spectral, 304 * u.AA)
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", channel=304 * u.AA, detector="ci")
+    response = map_response_to_ci_detector(spectral, channel=304 * u.AA)
     raster = xr.Dataset(
         {
             "vdem": (
@@ -284,7 +284,7 @@ def test_ci_response_maps_directly_into_synthesis():
 
 def test_map_response_to_ci_detector_needs_two_wavelengths_to_integrate():
     with pytest.raises(ValueError, match="at least two points"):
-        map_response_to_ci_detector(_ci_spectral_response().isel(wavelength_bin=slice(0, 1)), 195 * u.AA)
+        map_response_to_ci_detector(_ci_spectral_response().isel(wavelength_bin=slice(0, 1)), channel=195 * u.AA)
 
 
 @pytest.mark.filterwarnings(
@@ -317,7 +317,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
         effective_area=effective_area,
     )
     assert "slit" not in spectral.dims
-    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
+    spectral = transform_response_units(spectral, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
     response = map_response_to_sg_detector(
         spectral,
         channel=171 * u.AA,
@@ -384,7 +384,7 @@ def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
         wavelength_edges=create_log_wavelength_edges([100, 300] * u.AA, 0.01),
         bin_method="average",
     )
-    mapped = map_response_to_ci_detector(response, 171 * u.AA)
+    mapped = map_response_to_ci_detector(response, channel=171 * u.AA)
     expected = line_list.gofnt.isel(transition=0) / response.attrs["normalization"]
     np.testing.assert_allclose((mapped.detector_response.isel(line=0) / expected).values, 1.0, rtol=1e-12)
     assert "bound" not in mapped.dims
@@ -411,8 +411,8 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
     xr.testing.assert_allclose(back.spectral_response, response.spectral_response)
     np.testing.assert_array_equal(back.wavelength_bounds.values, response.wavelength_bounds.values)
     xr.testing.assert_allclose(
-        map_response_to_ci_detector(back, 171 * u.AA).detector_response,
-        map_response_to_ci_detector(response, 171 * u.AA).detector_response,
+        map_response_to_ci_detector(back, channel=171 * u.AA).detector_response,
+        map_response_to_ci_detector(response, channel=171 * u.AA).detector_response,
     )
 
 

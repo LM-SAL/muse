@@ -95,14 +95,14 @@ response = create_spectral_response(
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
     effective_area=effective_area,
 )
-response = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel, detector="CI", **detector)
+response = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel=channel, detector="CI", **detector)
 
 ##############################################################################
 # AIA is an imager, so we do not need Doppler-resolved spectra: the
 # wavelength-space response is integrated over the band, leaving a
 # response per (line, logT, doppler_velocity) grid point.
 
-aia_response = map_response_to_ci_detector(response, channel)
+aia_response = map_response_to_ci_detector(response, channel=channel)
 
 ##############################################################################
 # The VDEM is resampled onto AIA's 0.6 arcsec plate scale. AIA's field of

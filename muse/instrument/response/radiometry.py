@@ -89,8 +89,8 @@ def _detector_chain_factor(
 def transform_response_units(
     response: xr.Dataset,
     new_units: str,
-    channel: u.Quantity | None = None,
     *,
+    channel: u.Quantity | None = None,
     detector: str = "SG",
     pixel_width: u.Quantity | None = None,
     pixel_height: u.Quantity | None = None,

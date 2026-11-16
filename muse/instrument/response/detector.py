@@ -282,7 +282,7 @@ def map_response_to_sg_detector(
 
 
 @u.quantity_input(channel=u.AA)
-def map_response_to_ci_detector(response: xr.Dataset, channel: u.Quantity) -> xr.Dataset:
+def map_response_to_ci_detector(response: xr.Dataset, *, channel: u.Quantity) -> xr.Dataset:
     """
     Integrate one wavelength-space response over an imaging band.
 

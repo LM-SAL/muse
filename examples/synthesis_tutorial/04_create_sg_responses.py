@@ -114,7 +114,7 @@ for band, config in bands.items():
     )
     # Chunk over Doppler velocity so the detector mapping stays lazy
     waveband_response = waveband_response.chunk({"doppler_velocity": 10})
-    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", channel=band * u.AA)
     waveband_response = waveband_response.assign(
         spectral_response=waveband_response.spectral_response.astype(np.float32)
     )
