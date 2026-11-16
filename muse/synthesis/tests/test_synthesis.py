@@ -39,7 +39,7 @@ def test_vdem_synthesis(response, raster) -> None:
     )
     assert detector_response.flux.attrs["units"] == "ph / s"
     # The history of the raster, then this call; the format of an entry is tested with add_history.
-    assert [entry.split("(")[0] for entry in detector_response.attrs["HISTORY"]] == [
+    assert [entry.split("(")[0] for entry in detector_response.attrs["history"]] == [
         "reshape_x_to_slit_step",
         "vdem_synthesis",
     ]

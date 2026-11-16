@@ -232,14 +232,14 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert "minimum_abundance" not in response.attrs
     # the database and the software of the line list, and the whole chain of calls up to this read
     assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
-    assert [entry.split("(")[0] for entry in response.attrs["HISTORY"]] == [
+    assert [entry.split("(")[0] for entry in response.attrs["history"]] == [
         "create_spectral_response",
         "transform_response_units",
         "map_response_to_sg_detector",
         "generate_sg_responses",
         "read_response",
     ]
-    assert "maximum_contaminants=3" in response.attrs["HISTORY"][-2]
+    assert "maximum_contaminants=3" in response.attrs["history"][-2]
 
     cube = read_spectral_response(_only(ci_products, f"ci_171_waveband_{TAIL}_TEST"))
     # An imager cube records its continuum: that it is included, its backend and minimum
@@ -247,7 +247,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
     assert cube.attrs["minimum_abundance"] == 1e-21
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
-    assert [entry.split("(")[0] for entry in cube.attrs["HISTORY"]] == [
+    assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
         "create_spectral_response",
         "create_continuum_response",
         "transform_response_units",
@@ -614,15 +614,17 @@ def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inpu
     assert not first[0].exists()
 
 
-def test_the_versions_of_a_line_list_written_by_muse_0_3_reach_the_products(inputs, tmp_path):
-    old = _line_list()
+def test_the_versions_and_history_of_a_line_list_written_by_muse_0_3_reach_the_products(inputs, tmp_path):
+    old = _line_list().assign_attrs(HISTORY=["create_fiasco_line_list(abundance=sun_coronal_2021_chianti)"])
     old.attrs["Chianti"] = old.attrs.pop("chianti_version")
     old.to_netcdf(tmp_path / "old.nc")
 
     products = _sg(inputs, tmp_path / "out", line_list_file=tmp_path / "old.nc")
 
-    # as the product stores it, not as a reader of old files would rename it
+    # as the product stores them, not as a reader of old files would rename them
     assert products_module._attribute_of_product(products[1], "chianti_version") == "11.0.2"
+    stored_history = products_module._attribute_of_product(products[1], "history")
+    assert stored_history[0] == "create_fiasco_line_list(abundance=sun_coronal_2021_chianti)"
 
 
 def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
@@ -846,7 +848,7 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     assert response.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
     assert response.attrs["continuum_backend"] == "fiasco"
     # the last entry is this read
-    assert response.attrs["HISTORY"][-2].startswith("generate_sg_continuum_responses(")
+    assert response.attrs["history"][-2].startswith("generate_sg_continuum_responses(")
     assert float(response.detector_response.sel(line="free-free").max()) > 0
     assert (tmp_path / "cache" / f"continuum_fiasco_153.5-188.5A_n351_{ABUNDANCE}.zarr.zip").is_file()
 

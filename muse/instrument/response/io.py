@@ -297,7 +297,7 @@ def read_response(
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
     response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
-    add_history(response, locals(), read_response)
+    add_history(response, locals(), read_response, reading=True)
     return response
 
 
@@ -574,7 +574,7 @@ def read_responses(
     ]
     result = response.assign_coords(channel=("line", line_channels)).drop_attrs(deep=False)
     update_attrs(result, response)
-    add_history(result, locals(), read_responses, sources=datasets)
+    add_history(result, locals(), read_responses, sources=datasets, reading=True)
     return result
 
 

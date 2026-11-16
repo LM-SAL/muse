@@ -48,7 +48,7 @@ def test_transform_response_units_energy_to_photons():
     photon_energy = (const.h * const.c / wavelength).to_value(u.erg)
     np.testing.assert_allclose(converted.spectral_response.isel(line=0), solid_angle / photon_energy)
     assert u.Unit(converted.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 ph / (Angstrom s)")
-    assert converted.attrs["HISTORY"][-1].startswith("transform_response_units(")
+    assert converted.attrs["history"][-1].startswith("transform_response_units(")
     xr.testing.assert_identical(response, original)
 
 
@@ -265,7 +265,7 @@ def test_transform_flux_units_photons_to_data_numbers_line_by_line():
     np.testing.assert_allclose(out.flux.values, np.repeat(expected[:, None], 3, axis=1), rtol=1e-12)
     assert u.Unit(out.flux.attrs["units"]) == u.DN / u.s
     assert spectrum.flux.attrs["units"] == "ph / s"  # the input is untouched
-    assert out.attrs["HISTORY"][-1].startswith("transform_flux_units(")
+    assert out.attrs["history"][-1].startswith("transform_flux_units(")
 
 
 def test_transform_flux_units_prefers_the_gain_coordinate_of_the_spectrum():

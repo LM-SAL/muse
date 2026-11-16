@@ -1,3 +1,5 @@
+import re
+
 import dask
 import dask.array as da
 import numpy as np
@@ -7,6 +9,16 @@ import xarray as xr
 import astropy.units as u
 
 from muse.utils.utils import add_history, coord_as_unit, update_attrs
+from muse.version import version
+
+STAMP = re.compile(r" \[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ) muse (\S+)\]$")
+
+
+def _calls(ds):
+    """
+    The history entries of ``ds`` without their stamps.
+    """
+    return [STAMP.sub("", entry) for entry in ds.attrs["history"]]
 
 
 @pytest.mark.parametrize(
@@ -33,7 +45,7 @@ def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):
     return ds
 
 
-def test_add_history_records_call_and_version() -> None:
+def test_add_history_records_the_call_with_its_time_and_version() -> None:
     ds = xr.Dataset({"a": ("x", [1, 2, 3])})
 
     def demo(ds, n=2):
@@ -41,8 +53,44 @@ def test_add_history_records_call_and_version() -> None:
         return ds
 
     demo(ds, n=5)
-    assert ds.attrs["HISTORY"] == ["demo(ds=ds, n=5)"]
-    assert "version" in ds.attrs
+    (entry,) = ds.attrs["history"]
+    assert STAMP.search(entry).groups() == (ds.attrs["date_created"], version)
+    assert _calls(ds) == ["demo(ds=<Dataset of a>, n=5)"]
+    assert ds.attrs["muse_version"] == version
+
+
+def test_a_history_entry_keeps_units_and_summarises_arrays() -> None:
+    grid = xr.DataArray(np.arange(5.0), dims="x", attrs={"units": "K"})
+
+    ds = _record(xr.Dataset(), shift=3 * u.km / u.s, weights=grid)
+
+    assert "shift=3.0 km / s, flag=True, weights=<5 values, 0.0 to 4.0 K>" in ds.attrs["history"][0]
+
+
+def test_options_of_how_the_code_ran_stay_out_of_the_attributes() -> None:
+    def demo(ds, gain=1.0, workers=1):
+        add_history(ds, locals(), demo)
+
+    ds = xr.Dataset()
+    demo(ds, gain=2.0, workers=4)
+
+    assert ds.attrs["gain"] == 2.0
+    assert "workers" not in ds.attrs
+    assert _calls(ds) == ["demo(ds=<Dataset>, gain=2.0, workers=4)"]
+
+
+def test_a_reader_adds_its_entry_but_keeps_the_provenance_of_the_file() -> None:
+    made = {"history": ["made()"], "date_created": "2026-01-01T00:00:00Z", "muse_version": "0.1"}
+    ds = xr.Dataset(attrs=made)
+
+    add_history(ds, {}, "read", reading=True)
+
+    assert _calls(ds) == ["made()", "read()"]
+    assert {key: ds.attrs[key] for key in ("date_created", "muse_version")} == {
+        "date_created": "2026-01-01T00:00:00Z",
+        "muse_version": "0.1",
+    }
+    assert "date_modified" not in ds.attrs
 
 
 def test_add_history_stores_serializable_keyword_inputs() -> None:
@@ -105,7 +153,7 @@ def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
 
     demo(ds, lazy_array=lazy_array, lazy_dataarray=lazy_dataarray)
 
-    assert ds.attrs["HISTORY"] == ["demo(ds=ds, lazy_array=lazy_array, lazy_dataarray=lazy_dataarray)"]
+    assert _calls(ds) == ["demo(ds=<Dataset>, lazy_array=<array of shape ()>, lazy_dataarray=<array of shape ()>)"]
     assert "lazy_array" not in ds.attrs
     assert "lazy_dataarray" not in ds.attrs
     assert "serializable" not in caplog.text
@@ -117,7 +165,7 @@ def test_add_history_records_bare_name_without_inputs() -> None:
     ds = xr.Dataset()
     add_history(ds, {}, demo)
     add_history(ds, {}, "calibrate")
-    assert ds.attrs["HISTORY"] == ["demo()", "calibrate()"]
+    assert _calls(ds) == ["demo()", "calibrate()"]
     # An empty local_vars records no inputs, so the defaulted parameter never reaches attrs.
     assert "n" not in ds.attrs
 
@@ -128,26 +176,34 @@ def test_add_history_ignores_inputs_for_a_string_label() -> None:
 
     add_history(ds, {"x": 1, "gain": 10.0}, "calibrate")
 
-    assert ds.attrs["HISTORY"] == ["calibrate()"]
+    assert _calls(ds) == ["calibrate()"]
     assert not {"x", "gain"} & set(ds.attrs)
 
 
 def test_add_history_appends_to_existing() -> None:
-    ds = xr.Dataset({"a": ("x", [1])}, attrs={"HISTORY": ["first()"], "date created": "01-Jan-2026"})
+    made = {"history": ["first()"], "date_created": "2026-01-01T00:00:00Z", "muse_version": "0.1"}
+    ds = xr.Dataset({"a": ("x", [1])}, attrs=made)
 
     def demo(ds):
         add_history(ds, locals(), demo)
 
     demo(ds)
-    assert ds.attrs["HISTORY"] == ["first()", "demo(ds=ds)"]
-    # A dataset that has its date of creation gets a date of modification.
-    assert "date modified" in ds.attrs
+    assert _calls(ds) == ["first()", "demo(ds=<Dataset of a>)"]
+    # A dataset that has its date of creation gets a date of modification; the date of
+    # creation and the version that made it stay.
+    assert STAMP.search(ds.attrs["history"][-1]).group(1) == ds.attrs["date_modified"]
+    assert (ds.attrs["date_created"], ds.attrs["muse_version"]) == ("2026-01-01T00:00:00Z", "0.1")
 
 
 def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
     source = xr.Dataset(
         {"a": ("x", [1])},
-        attrs={"HISTORY": ["load"], "instrument": "MUSE", "date created": "01-Jan-2026", "version": "0.1"},
+        attrs={
+            "history": ["load"],
+            "instrument": "MUSE",
+            "date_created": "2026-01-01T00:00:00Z",
+            "muse_version": "0.1",
+        },
     )
     ds = xr.Dataset({"b": ("x", [2])})
 
@@ -155,50 +211,58 @@ def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
     assert ds.attrs == {"instrument": "MUSE", "level": 2}
 
 
-def test_update_attrs_copies_old_names_under_their_current_ones() -> None:
-    source = xr.Dataset(attrs={"Chianti": "10.0", "chianti_version": "11.0.2", "fiasco": "0.4"})
+def test_a_source_read_without_the_library_passes_on_its_old_names_as_current_ones() -> None:
+    old = {"Chianti": "10.0", "chianti_version": "11.0.2", "fiasco": "0.4", "HISTORY": ["load"], "version": "0.3"}
+    source = xr.Dataset(attrs=old)
     ds = xr.Dataset()
 
     update_attrs(ds, source)
+    add_history(ds, {}, "demo", sources=(source,))
 
-    assert ds.attrs == {"chianti_version": "11.0.2", "fiasco_version": "0.4"}
+    # the current name wins; the old provenance is inherited as history, not copied as attributes
+    assert {key: ds.attrs[key] for key in ("chianti_version", "fiasco_version")} == {
+        "chianti_version": "11.0.2",
+        "fiasco_version": "0.4",
+    }
+    assert _calls(ds) == ["load", "demo()"]
+    assert not {"HISTORY", "version", "Chianti", "fiasco"} & set(ds.attrs)
 
 
 def test_update_attrs_does_not_mutate_source_attrs() -> None:
-    source = xr.Dataset(attrs={"HISTORY": ["load"], "instrument": "MUSE"})
+    source = xr.Dataset(attrs={"history": ["load"], "instrument": "MUSE"})
     ds = xr.Dataset()
     update_attrs(ds, source, instrument="other")
-    assert source.attrs == {"HISTORY": ["load"], "instrument": "MUSE"}
+    assert source.attrs == {"history": ["load"], "instrument": "MUSE"}
 
 
 def test_add_history_inherits_history_from_sources() -> None:
-    ds = xr.Dataset(attrs={"HISTORY": ["start"]})
-    raster = xr.Dataset(attrs={"HISTORY": ["make_raster()"]})
-    response = xr.Dataset(attrs={"HISTORY": ["make_response()"]})
+    ds = xr.Dataset(attrs={"history": ["start"]})
+    raster = xr.Dataset(attrs={"history": ["make_raster()"]})
+    response = xr.Dataset(attrs={"history": ["make_response()"]})
     add_history(ds, {}, "demo", sources=(raster, response))
-    assert ds.attrs["HISTORY"] == ["start", "make_raster()", "make_response()", "demo()"]
+    assert _calls(ds) == ["start", "make_raster()", "make_response()", "demo()"]
 
 
 def test_add_history_does_not_duplicate_inherited_history() -> None:
-    source = xr.Dataset(attrs={"HISTORY": ["load"]})
+    source = xr.Dataset(attrs={"history": ["load"]})
     # A result derived through xarray operations may already carry its source history.
-    ds = xr.Dataset(attrs={"HISTORY": ["load"]})
+    ds = xr.Dataset(attrs={"history": ["load"]})
     add_history(ds, {}, "demo", sources=(source,))
-    assert ds.attrs["HISTORY"] == ["load", "demo()"]
+    assert _calls(ds) == ["load", "demo()"]
 
 
 def test_add_history_nested_source_histories_merge_in_any_order() -> None:
-    loaded = xr.Dataset(attrs={"HISTORY": ["load"]})
-    transformed = xr.Dataset(attrs={"HISTORY": ["load", "transform"]})
+    loaded = xr.Dataset(attrs={"history": ["load"]})
+    transformed = xr.Dataset(attrs={"history": ["load", "transform"]})
     for sources in [(loaded, transformed), (transformed, loaded)]:
         ds = xr.Dataset()
         add_history(ds, {}, "demo", sources=sources)
-        assert ds.attrs["HISTORY"] == ["load", "transform", "demo()"]
+        assert _calls(ds) == ["load", "transform", "demo()"]
 
 
-@pytest.mark.parametrize("key", ["HISTORY", "date created", "date modified", "version"])
+@pytest.mark.parametrize("key", ["history", "date_created", "date_modified", "muse_version"])
 def test_update_attrs_rejects_provenance_updates(key: str) -> None:
     ds = xr.Dataset()
-    value = ["fake"] if key == "HISTORY" else "fake"
+    value = ["fake"] if key == "history" else "fake"
     with pytest.raises(ValueError, match="owned by add_history"):
         update_attrs(ds, **{key: value})

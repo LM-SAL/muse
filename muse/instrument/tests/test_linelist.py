@@ -195,7 +195,7 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
     assert "fe_9" in line_list.ion_name.values
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
     assert line_list.attrs["minimum_abundance"] == 3e-5
-    assert "create_chianti_line_list(" in line_list.attrs["HISTORY"][0]
+    assert "create_chianti_line_list(" in line_list.attrs["history"][0]
 
 
 @pytest.mark.chianti
@@ -313,7 +313,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     np.testing.assert_allclose(line_list.gofnt.isel(trans_index=0).transpose("pressure", "logT"), expected, rtol=1e-12)
     assert line_list.attrs["chianti_version"] == "controlled CHIANTI"
     assert line_list.attrs["abundance"] == "controlled_abundance"
-    assert "create_fiasco_line_list(" in line_list.attrs["HISTORY"][-1]
+    assert "create_fiasco_line_list(" in line_list.attrs["history"][-1]
     assert float(line_list.logT_peak.isel(pressure=0, trans_index=0)) == pytest.approx(6.0, abs=0.26)
 
 

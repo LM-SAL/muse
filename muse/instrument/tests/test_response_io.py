@@ -53,7 +53,7 @@ def response_path(tmp_path):
 
 def _small_response() -> xr.Dataset:
     response = fake_response().isel(line=slice(0, 2), logT=slice(0, 3), slit=slice(0, 4))
-    return response.assign_attrs(normalization=1e-27, HISTORY=["create response", "map response"])
+    return response.assign_attrs(normalization=1e-27, history=["create response", "map response"])
 
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
@@ -172,7 +172,8 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
-    source = fake_response_file_contents()
+    made = {"date_created": "2026-01-01T00:00:00Z", "muse_version": "0.1"}
+    source = fake_response_file_contents().assign_attrs(made)
     path = _write(source, tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
     doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
@@ -189,7 +190,10 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
         .isel(slit=slice(3))
     )
     np.testing.assert_allclose(r.detector_response.transpose(*expected.dims).values, expected.values)
-    assert r.attrs["HISTORY"][-1].startswith("read_response(")
+    assert r.attrs["history"][-1].startswith("read_response(")
+    # reading dates nothing: the product keeps when and by which muse it was made
+    assert {key: r.attrs[key] for key in made} == made
+    assert "date_modified" not in r.attrs
 
 
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
@@ -391,9 +395,9 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
         dim="line",
         data_vars="all",
         join="exact",
-    ).assign_attrs(HISTORY="first_response()", shared_attr="kept", conflicting_attr="first")
+    ).assign_attrs(history="first_response()", shared_attr="kept", conflicting_attr="first")
     second = _line_file("Fe XV 284.163", 284.163).assign_attrs(
-        HISTORY="second_response()", shared_attr="kept", conflicting_attr="second"
+        history="second_response()", shared_attr="kept", conflicting_attr="second"
     )
     _write(first, tmp_path / "a.nc", "nc")
     _write(second, tmp_path / "b.nc", "nc")
@@ -417,9 +421,10 @@ def test_read_responses_concatenates_lines(tmp_path, monkeypatch) -> None:
     assert "wavelength" not in resp.dims
     assert resp.attrs["shared_attr"] == "kept"
     assert "conflicting_attr" not in resp.attrs
-    assert resp.attrs["HISTORY"][0] == "first_response()"
-    assert "second_response()" in resp.attrs["HISTORY"]
-    assert resp.attrs["HISTORY"][-1].startswith("read_responses(")
+    assert resp.attrs["history"][0] == "first_response()"
+    assert "second_response()" in resp.attrs["history"]
+    assert resp.attrs["history"][-1].startswith("read_responses(")
+    assert "date_created" not in resp.attrs  # a reader dates nothing, nor a set of files of several dates
 
 
 def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:
@@ -526,8 +531,8 @@ def test_align_response_and_vdem_normalizes_equivalent_velocity_units() -> None:
 
 
 def test_align_response_and_vdem_preserves_inputs_lineage_and_laziness() -> None:
-    response = fake_response().assign_attrs(HISTORY=["response()"]).chunk({"logT": 2})
-    vdem = fake_vdem().assign_attrs(HISTORY=["vdem()"]).chunk({"logT": 2})
+    response = fake_response().assign_attrs(history=["response()"]).chunk({"logT": 2})
+    vdem = fake_vdem().assign_attrs(history=["vdem()"]).chunk({"logT": 2})
     response_before = response.copy()
     vdem_before = vdem.copy()
 
@@ -537,10 +542,10 @@ def test_align_response_and_vdem_preserves_inputs_lineage_and_laziness() -> None
     assert isinstance(matched_vdem.vdem.data, da.Array)
     xr.testing.assert_identical(response, response_before)
     xr.testing.assert_identical(vdem, vdem_before)
-    assert matched_response.attrs["HISTORY"][:2] == ["response()", "vdem()"]
-    assert matched_vdem.attrs["HISTORY"][:2] == ["response()", "vdem()"]
-    assert matched_response.attrs["HISTORY"][-1].startswith("align_response_and_vdem(")
-    assert matched_vdem.attrs["HISTORY"][-1].startswith("align_response_and_vdem(")
+    assert matched_response.attrs["history"][:2] == ["response()", "vdem()"]
+    assert matched_vdem.attrs["history"][:2] == ["response()", "vdem()"]
+    assert matched_response.attrs["history"][-1].startswith("align_response_and_vdem(")
+    assert matched_vdem.attrs["history"][-1].startswith("align_response_and_vdem(")
 
 
 @pytest.mark.parametrize(("dataset", "name"), [("response", "logT"), ("vdem", "doppler_velocity")])

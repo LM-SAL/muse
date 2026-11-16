@@ -19,7 +19,7 @@ def _history_functions(ds) -> list[str]:
     The names of the functions in the history, in order; the format of an entry is
     tested with add_history.
     """
-    return [entry.split("(")[0] for entry in ds.attrs["HISTORY"]]
+    return [entry.split("(")[0] for entry in ds.attrs["history"]]
 
 
 @pytest.mark.parametrize(
@@ -93,7 +93,7 @@ def test_match_fov_relabels_single_pixel_input(vdem) -> None:
     np.testing.assert_array_equal(out.y.values, [0.0])
     assert out.x.attrs["units"] == "arcsec"
     assert out.y.attrs["units"] == "arcsec"
-    assert "HISTORY" in out.attrs
+    assert "history" in out.attrs
 
 
 def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
@@ -329,11 +329,11 @@ def test_reshape_x_to_slit_step(vdem) -> None:
 
 def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
     source = vdem.copy(deep=True)
-    source.attrs["HISTORY"] = ["match_fov(ds=ds)"]
+    source.attrs["history"] = ["match_fov(ds=ds)"]
 
     out = reshape_x_to_slit_step(source, number_of_slits=35, steps_per_raster=11)
 
-    assert source.attrs["HISTORY"] == ["match_fov(ds=ds)"]
+    assert source.attrs["history"] == ["match_fov(ds=ds)"]
     assert _history_functions(out) == ["match_fov", "reshape_x_to_slit_step"]
 
 
