@@ -379,7 +379,7 @@ def reshape_x_to_slit_step(
         step, slit = (array.flatten() for array in np.meshgrid(range(steps_per_raster), range(number_of_slits)))
         reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
         reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
-        attrs = {"step_size": step_size.values, "step_size units": str(x_unit)}
+        attrs = {"step_size": str(u.Quantity(step_size.values, x_unit))}
     update_attrs(reshaped, ds, **attrs)
     add_history(reshaped, locals(), reshape_x_to_slit_step, sources=(ds,))
     return reshaped
@@ -391,8 +391,9 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
     onto a single x spatial axis.
 
     The x coordinate is rebuilt from the per-step spacing recorded in
-    ``ds.attrs["step_size"]`` (set by `reshape_x_to_slit_step`); when that
-    attribute is missing the default MUSE pixel size is used.
+    ``ds.attrs["step_size"]``, such as ``"0.4 arcsec"`` (set by
+    `reshape_x_to_slit_step`); when that attribute is missing the default MUSE
+    pixel size is used.
 
     Parameters
     ----------
@@ -408,12 +409,16 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
         if coord not in ds.coords:
             msg = f"{coord} coordinate is missing"
             raise ValueError(msg)
-    step_units = ds.attrs.get("step_size units", "arcsec")
-    step_size = ds.attrs["step_size"] if "step_size" in ds.attrs else DEFAULTS_MUSE.dx_pixel_SG.to_value(step_units)
+    if "step_size units" in ds.attrs:
+        # shortcut: the two attributes that muse 0.3 and earlier wrote; remove once the
+        # tutorial data is remade with the new product names.
+        step_size = u.Quantity(ds.attrs["step_size"], ds.attrs["step_size units"])
+    else:
+        step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.dx_pixel_SG))
     reshaped = ds.stack(x=("slit", "step"))
     reshaped = reshaped.drop_vars(["x", "slit", "step"])
-    reshaped = reshaped.assign_coords(x=np.arange(reshaped.x.size) * step_size)
-    reshaped.x.attrs["units"] = step_units
+    reshaped = reshaped.assign_coords(x=np.arange(reshaped.x.size) * step_size.value)
+    reshaped.x.attrs["units"] = str(step_size.unit)
     update_attrs(reshaped, ds)
     add_history(reshaped, locals(), reshape_slit_step_to_x, sources=(ds,))
     return reshaped

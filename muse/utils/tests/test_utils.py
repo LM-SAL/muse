@@ -155,6 +155,15 @@ def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
     assert ds.attrs == {"instrument": "MUSE", "level": 2}
 
 
+def test_update_attrs_copies_old_names_under_their_current_ones() -> None:
+    source = xr.Dataset(attrs={"Chianti": "10.0", "chianti_version": "11.0.2", "fiasco": "0.4"})
+    ds = xr.Dataset()
+
+    update_attrs(ds, source)
+
+    assert ds.attrs == {"chianti_version": "11.0.2", "fiasco_version": "0.4"}
+
+
 def test_update_attrs_does_not_mutate_source_attrs() -> None:
     source = xr.Dataset(attrs={"HISTORY": ["load"], "instrument": "MUSE"})
     ds = xr.Dataset()

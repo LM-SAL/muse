@@ -322,7 +322,7 @@ def test_reshape_x_to_slit_step(vdem) -> None:
         sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
         finite_vars=("vdem",),
     )
-    assert out.attrs["step_size units"] == "arcsec"
+    assert u.Quantity(out.attrs["step_size"]).unit == u.arcsec
     np.testing.assert_array_equal(out.vdem.sel(slit=0, step=0), vdem.vdem.isel(x=0))
     np.testing.assert_array_equal(out.vdem.sel(slit=34, step=10), vdem.vdem.isel(x=384))
 
@@ -378,6 +378,16 @@ def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
     out = reshape_slit_step_to_x(reshaped)
     # Falls back to the MUSE pixel size (0.4 arcsec) for the x spacing.
     np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
+
+
+def test_reshape_slit_step_to_x_reads_the_two_attributes_of_older_files(vdem) -> None:
+    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
+    reshaped.attrs["step_size"], reshaped.attrs["step_size units"] = np.float64(0.25), "Mm"
+
+    out = reshape_slit_step_to_x(reshaped)
+
+    np.testing.assert_allclose(out.x[1] - out.x[0], 0.25)
+    assert out.x.attrs["units"] == "Mm"
 
 
 def test_reshape_slit_step_to_x_records_history(vdem) -> None:

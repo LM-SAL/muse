@@ -53,7 +53,7 @@ _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
 _ANGSTROM = {"units": str(u.AA)}
 # The attributes in which a line list or a continuum records the software and the database that made it.
-_VERSION_ATTRS = ("Chianti", "Chiantipy", "fiasco")
+_VERSION_ATTRS = ("chianti_version", "chiantipy_version", "fiasco_version")
 
 
 @u.quantity_input(doppler_velocity=u.km / u.s, line_list_wavelength_range=u.AA)
@@ -1047,9 +1047,10 @@ def _sg_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
 
 def _ci_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
     """
-    The channels of the imager, whose gain and pair energy the defaults hold.
+    The channels of the imager, whose gain or pair energy the defaults hold.
     """
-    return tuple(int(channel) for channel in instrument_defaults.gain_CI.channel.values)
+    tables = (instrument_defaults.gain_CI, instrument_defaults.pair_energy_CI)
+    return tuple(sorted({int(channel) for table in tables if table is not None for channel in table.channel.values}))
 
 
 def _require_sg_files(effective_areas: list[xr.Dataset], instrument_defaults: InstrumentDefaults) -> None:

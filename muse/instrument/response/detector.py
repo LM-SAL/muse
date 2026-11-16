@@ -180,8 +180,6 @@ def map_response_to_sg_detector(
             )
             if value is None
         ]
-        if isinstance(number_of_slits, numbers.Integral) and number_of_slits > 1 and pixels_between_slits is None:
-            missing.append("pixels_between_slits")
         if missing:
             msg = f"channel or explicit detector geometry is required; missing: {', '.join(missing)}"
             raise ValueError(msg)
@@ -190,6 +188,10 @@ def map_response_to_sg_detector(
         if not isinstance(value, numbers.Integral) or isinstance(value, (bool, np.bool_)) or value <= 0:
             msg = f"{name} must be a positive integer"
             raise ValueError(msg)
+    # Also with a channel: instrument_defaults may lack the spacing, and every slit would then fall on one place.
+    if number_of_slits > 1 and pixels_between_slits is None:
+        msg = f"missing: pixels_between_slits, which {number_of_slits} slits need"
+        raise ValueError(msg)
 
     for name, value in (
         ("pixels_between_slits", pixels_between_slits),

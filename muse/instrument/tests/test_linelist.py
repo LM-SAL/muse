@@ -311,7 +311,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
     expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
     np.testing.assert_allclose(line_list.gofnt.isel(trans_index=0).transpose("pressure", "logT"), expected, rtol=1e-12)
-    assert line_list.attrs["Chianti"] == "controlled CHIANTI"
+    assert line_list.attrs["chianti_version"] == "controlled CHIANTI"
     assert line_list.attrs["abundance"] == "controlled_abundance"
     assert "create_fiasco_line_list(" in line_list.attrs["HISTORY"][-1]
     assert float(line_list.logT_peak.isel(pressure=0, trans_index=0)) == pytest.approx(6.0, abs=0.26)

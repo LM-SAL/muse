@@ -299,7 +299,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     assert continuum.pressure.attrs["units"] == "K / cm3"
     assert continuum.wavelength_grid.attrs["bounds"] == "wavelength_bounds"
     assert np.isnan(continuum.line_wavelength.values).all()
-    assert continuum.attrs["Chianti"] == "fake 11"
+    assert continuum.attrs["chianti_version"] == "fake 11"
     assert continuum.attrs["abundance"] == "sun_coronal_2021_chianti"
     assert "create_chianti_continuum(" in continuum.attrs["HISTORY"][-1]
     temperatures, wavelengths = TEMPERATURE.values, GRID.value
@@ -438,7 +438,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
     continuum = create_fiasco_continuum(TEMPERATURE, GRID, pressure=PRESSURE, minimum_abundance=0.01)
     response = continuum.spectral_response
     assert response.dims == ("line", "pressure", "logT", "wavelength_bin")
-    assert continuum.attrs["fiasco"] == "0.9.0+fake"
+    assert continuum.attrs["fiasco_version"] == "0.9.0+fake"
     temperatures, wavelengths = TEMPERATURE.values, GRID.value
     # five ions of H and He, divided by 4 pi; two-photon from the three hydrogen- and helium-like ones
     np.testing.assert_allclose(
@@ -505,7 +505,7 @@ def test_chianti_continuum_live_hydrogen_and_helium():
     assert (free_free > 0).all()
     # hotter plasma radiates more free-free emission at these wavelengths
     assert (free_free.isel(logT=2) > free_free.isel(logT=0)).all()
-    assert continuum.attrs["Chianti"]
+    assert continuum.attrs["chianti_version"]
 
 
 def test_fiasco_continuum_live_hydrogen_and_helium():

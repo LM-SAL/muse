@@ -79,7 +79,7 @@ def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
         ion_name=("trans_index", ["fe_10", "fe_8", "fe_9", "fe_10", "fe_11", "fe_12"]),
         lower_level_index=("trans_index", [1] * 6),
         upper_level_index=("trans_index", [2, 3, 13, 4, 5, 6]),
-    ).assign_attrs(fiasco="0.0.test", Chianti="11.0.2")
+    ).assign_attrs(fiasco_version="0.0.test", chianti_version="11.0.2")
     if plasma == "pressure":
         factor = xr.DataArray(np.asarray(scale, dtype=float), dims="pressure", coords={"pressure": list(pressure)})
         gofnt = (factor * line_list.gofnt).transpose("pressure", "logT", "trans_index")
@@ -231,7 +231,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert "line_list_backend" not in response.attrs
     assert "minimum_abundance" not in response.attrs
     # the database and the software of the line list, and the whole chain of calls up to this read
-    assert (response.attrs["Chianti"], response.attrs["fiasco"]) == ("11.0.2", "0.0.test")
+    assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
     assert [entry.split("(")[0] for entry in response.attrs["HISTORY"]] == [
         "create_spectral_response",
         "transform_response_units",
@@ -246,7 +246,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     # abundance, and the calls that made it, which enter the history before the unit conversion.
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
     assert cube.attrs["minimum_abundance"] == 1e-21
-    assert cube.attrs["continuum_fiasco"] == "0.0.test"
+    assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["HISTORY"]] == [
         "create_spectral_response",
         "create_continuum_response",
@@ -612,6 +612,17 @@ def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inpu
     assert again == [earlier, first[-1]]
     assert first[-1].exists()
     assert not first[0].exists()
+
+
+def test_the_versions_of_a_line_list_written_by_muse_0_3_reach_the_products(inputs, tmp_path):
+    old = _line_list()
+    old.attrs["Chianti"] = old.attrs.pop("chianti_version")
+    old.to_netcdf(tmp_path / "old.nc")
+
+    products = _sg(inputs, tmp_path / "out", line_list_file=tmp_path / "old.nc")
+
+    # as the product stores it, not as a reader of old files would rename it
+    assert products_module._attribute_of_product(products[1], "chianti_version") == "11.0.2"
 
 
 def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
@@ -1012,6 +1023,24 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
         read_response(custom).detector_response, 1.5 * read_response(default).detector_response, rtol=1e-12
     )
     assert read_response(custom).attrs["instrument_defaults"] == "custom"
+
+
+def test_imager_files_that_state_their_detector_need_no_imager_in_the_defaults(inputs, tmp_path):
+    no_gains = evolve(DEFAULTS_MUSE, gain_CI=None)
+    products = _ci(inputs, tmp_path / "both", include_continuum=False, instrument_defaults=no_gains)
+    # a file that states its gain alone takes the pair energy of its channel from the defaults
+    gain_alone = _area_file(tmp_path, channel=195, wavelength=(180.0, 192.0), attrs={"gain": DETECTOR["gain"]})
+    dn = _ci(
+        inputs,
+        tmp_path / "gain",
+        effective_area_files=[gain_alone],
+        include_continuum=False,
+        units="DN",
+        instrument_defaults=no_gains,
+    )
+
+    assert len(products) == 4
+    assert read_response(_only(dn, f"ci_195_{TAIL}_DN")).attrs["pair_energy"] == "3.65 eV / electron"
 
 
 def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):

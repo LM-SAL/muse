@@ -25,7 +25,7 @@ from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
-from muse.utils.utils import _to_zarr
+from muse.utils.utils import _to_zarr, _with_current_names
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_or_create_continuum", "load_or_create_line_list"]
@@ -140,7 +140,7 @@ def load_or_create_line_list(
         line_list = _load_or_create(
             path, create, request, minimum_abundance, create_if_missing=create_if_missing, what="line list"
         )
-    found = str(line_list.attrs.get("Chianti"))
+    found = str(line_list.attrs.get("chianti_version"))
     if chianti_version is not None and found != chianti_version:
         msg = (
             f"the line list cache {path} is of CHIANTI {found}, not {chianti_version}; point the backend at the "
@@ -350,7 +350,7 @@ def _load_or_create(
     # one will. Opened without loading, so that only the requested part is read.
     store = ZipStore(path, mode="r")
     try:
-        cached = xr.open_zarr(store, consolidated=False, chunks=None, decode_coords="all")
+        cached = _with_current_names(xr.open_zarr(store, consolidated=False, chunks=None, decode_coords="all"))
         if cached.attrs.get("minimum_abundance") != minimum_abundance:
             problem = (
                 f"was created with the minimum abundance {cached.attrs.get('minimum_abundance')}, "

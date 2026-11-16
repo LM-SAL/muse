@@ -12,7 +12,14 @@ import astropy.units as u
 
 from muse.instrument.response.detector import _channel_as_angstrom
 from muse.log import logger
-from muse.utils.utils import _to_zarr, add_history, coord_as_unit, require_unit, update_attrs
+from muse.utils.utils import (
+    _to_zarr,
+    _with_current_names,
+    add_history,
+    coord_as_unit,
+    require_unit,
+    update_attrs,
+)
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import FrozenDict
 
@@ -170,12 +177,13 @@ def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coo
         store = ZipStore(response_file, mode="r")
         response = xr.open_zarr(store, consolidated=False, **kwargs)
         response.set_close(store.close)
-        return response
     # One call covers both zarr layouts, v3 (zarr.json) and v2 (.zgroup); consolidated=False
     # also stops the missing-consolidated-metadata fallback warning from firing.
-    if response_file.is_dir():
-        return xr.open_zarr(response_file, consolidated=False, **kwargs)
-    return xr.open_dataset(response_file, **kwargs)
+    elif response_file.is_dir():
+        response = xr.open_zarr(response_file, consolidated=False, **kwargs)
+    else:
+        response = xr.open_dataset(response_file, **kwargs)
+    return _with_current_names(response)
 
 
 @u.quantity_input(gain=u.electron / u.DN)
