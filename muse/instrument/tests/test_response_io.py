@@ -197,7 +197,13 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
 
 
 def test_read_response_reads_the_provenance_of_a_file_of_muse_0_3(tmp_path) -> None:
-    old = {"HISTORY": ["create response"], "date created": "01-Mar-2026", "version": "0.3.0", "chunked": 0}
+    old = {
+        "HISTORY": ["create response"],
+        "date created": "01-Mar-2026",
+        "version": "0.3.0",
+        "chunked": 0,
+        "logT_method": "nearest",
+    }
     path = _write(fake_response_file_contents().assign_attrs(old), tmp_path / "old.nc", "nc")
 
     r = read_response(path)

@@ -223,7 +223,8 @@ def _entry_value(value: object) -> str:
 
     Nothing lazy is computed.
     """
-    if isinstance(value, xr.DataArray) and isinstance(value.data, u.Quantity):
+    # .data reads a file-backed array, which is never a Quantity
+    if isinstance(value, xr.DataArray) and _loaded(value) and isinstance(value.data, u.Quantity):
         value = value.data  # a Quantity in a DataArray, as the line-list builders take a temperature
     if isinstance(value, xr.Dataset):
         return f"<Dataset of {', '.join(map(str, value.data_vars))}>" if value.data_vars else "<Dataset>"
@@ -231,18 +232,28 @@ def _entry_value(value: object) -> str:
         return str(value) if value.isscalar else _array_summary(value.value, f" {value.unit}")
     if isinstance(value, xr.DataArray):
         unit = f" {value.attrs['units']}" if "units" in value.attrs else ""
-        if value.size == 1 and value.chunks is None:
+        if value.ndim == 0 and value.chunks is None:
             return f"{value.values.item()}{unit}"
         return _array_summary(value, unit)
     if isinstance(value, np.ndarray | da.Array):
-        return str(value.item()) if isinstance(value, np.ndarray) and value.size == 1 else _array_summary(value, "")
+        return str(value.item()) if isinstance(value, np.ndarray) and value.ndim == 0 else _array_summary(value, "")
     return str(value)
 
 
+def _loaded(array: object) -> bool:
+    """
+    Whether the values of ``array`` are at hand: neither computed with dask nor read
+    from a file, which an entry must never do.
+    """
+    in_memory = getattr(getattr(array, "variable", None), "_in_memory", True)  # xarray's own test
+    return not isinstance(array, da.Array) and getattr(array, "chunks", None) is None and in_memory
+
+
 def _array_summary(array: np.ndarray | da.Array | xr.DataArray, unit: str) -> str:
-    lazy = isinstance(array, da.Array) or getattr(array, "chunks", None) is not None
-    if array.ndim == 1 and not lazy and np.issubdtype(array.dtype, np.number) and array.size:
+    if array.ndim == 1 and _loaded(array) and np.issubdtype(array.dtype, np.number) and array.size:
         values = np.asarray(array)
+        if array.size == 1:
+            return f"[{values[0]}{unit}]"
         return f"<{array.size} values, {values.min()} to {values.max()}{unit}>"
     return f"<array of shape {tuple(array.shape)}{unit}>"
 
@@ -404,14 +415,20 @@ def _current_attrs(attrs: dict) -> dict:
     An old date takes the ISO form, and the options that only said how the code ran are
     left out.
     """
-    # muse wrote "version" beside "HISTORY"; a "version" without it is another tool's own.
-    old_names = {old: new for old, new in _OLD_ATTRS.items() if old != "version" or "HISTORY" in attrs}
+    # muse 0.3 wrote "HISTORY" into every file: a "version", "workers" or "device" without it is
+    # another tool's own.
+    of_muse_0_3 = "HISTORY" in attrs
+    old_names = {old: new for old, new in _OLD_ATTRS.items() if old != "version" or of_muse_0_3}
     renamed = {
         old_names[name]: _iso_date(value) if name in ("date created", "date modified") else value
         for name, value in attrs.items()
         if name in old_names
     }
-    kept = {name: value for name, value in attrs.items() if name not in old_names and name not in _EXECUTION_OPTIONS}
+    kept = {
+        name: value
+        for name, value in attrs.items()
+        if name not in old_names and not (of_muse_0_3 and name in _EXECUTION_OPTIONS)
+    }
     return renamed | kept
 
 

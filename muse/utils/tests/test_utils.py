@@ -63,12 +63,12 @@ def test_a_history_entry_keeps_units_and_summarises_arrays() -> None:
     grid = xr.DataArray(np.arange(5.0), dims="x", attrs={"units": "K"})
     quantity_grid = xr.DataArray([3e14, 1e15] * u.K / u.cm**3, dims="pressure")
 
-    ds = _record(xr.Dataset(), gain=quantity_grid, shift=[1.0, 2.0] * u.km / u.s, weights=grid)
+    ds = _record(xr.Dataset(), gain=quantity_grid, shift=[1.0, 2.0] * u.km / u.s, weights=grid, label=np.array([3.0]))
 
     assert _calls(ds) == [
         (
             "_record(ds=<Dataset>, gain=<2 values, 300000000000000.0 to 1000000000000000.0 K / cm3>, "
-            "shift=<2 values, 1.0 to 2.0 km / s>, flag=True, weights=<5 values, 0.0 to 4.0 K>, label=muse)"
+            "shift=<2 values, 1.0 to 2.0 km / s>, flag=True, weights=<5 values, 0.0 to 4.0 K>, label=[3.0])"
         )
     ]
 
@@ -228,12 +228,21 @@ def test_a_dataset_with_the_attributes_of_an_old_file_keeps_their_lineage() -> N
     assert not {"HISTORY", "date created", "version", "workers"} & set(ds.attrs)
 
 
-def test_a_version_attribute_of_another_tool_is_kept() -> None:
+def test_the_version_and_the_options_of_another_tool_are_kept() -> None:
     ds = xr.Dataset()
 
-    update_attrs(ds, xr.Dataset(attrs={"version": "table v3"}))
+    update_attrs(ds, xr.Dataset(attrs={"version": "table v3", "device": "CCD A"}))
 
-    assert ds.attrs == {"version": "table v3"}
+    assert ds.attrs == {"version": "table v3", "device": "CCD A"}
+
+
+def test_a_history_entry_reads_no_array_from_its_file(tmp_path) -> None:
+    xr.Dataset({"grid": ("x", np.arange(5.0), {"units": "K"})}).to_netcdf(tmp_path / "grid.nc")
+
+    with xr.open_dataset(tmp_path / "grid.nc") as opened:
+        ds = _record(xr.Dataset(), weights=opened.grid)
+
+    assert "weights=<array of shape (5,) K>" in ds.attrs["history"][0]
 
 
 def test_the_two_outputs_of_one_call_are_one_step_even_stamped_apart() -> None:
