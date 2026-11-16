@@ -310,7 +310,10 @@ def update_attrs(
         msg = f"update_attrs cannot set provenance attributes {forbidden}; they are owned by add_history"
         raise ValueError(msg)
     if source is not None:
-        ds.attrs.update({key: value for key, value in source.attrs.items() if key not in _PROVENANCE_ATTRS})
+        # Under their current names, also for a source that was read without the library.
+        ds.attrs.update(
+            {key: value for key, value in _current_attrs(source.attrs).items() if key not in _PROVENANCE_ATTRS}
+        )
     ds.attrs.update(attrs)
 
 
@@ -327,12 +330,21 @@ _OLD_ATTRS = {
 }
 
 
+def _current_attrs(attrs: dict) -> dict:
+    """
+    ``attrs`` under their current names; where both an old and a current name are there,
+    the current one wins.
+    """
+    renamed = {_OLD_ATTRS[name]: value for name, value in attrs.items() if name in _OLD_ATTRS}
+    return renamed | {name: value for name, value in attrs.items() if name not in _OLD_ATTRS}
+
+
 def _with_current_names(dataset: xr.Dataset) -> xr.Dataset:
     """
     ``dataset`` as read from a file, with the version attributes of earlier versions
     under their current names.
     """
-    dataset.attrs = {_OLD_ATTRS.get(name, name): value for name, value in dataset.attrs.items()}
+    dataset.attrs = _current_attrs(dataset.attrs)
     return dataset
 
 

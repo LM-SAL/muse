@@ -1047,11 +1047,10 @@ def _sg_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
 
 def _ci_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
     """
-    The channels of the imager, whose gain and pair energy the defaults hold.
+    The channels of the imager, whose gain or pair energy the defaults hold.
     """
-    if instrument_defaults.gain_CI is None:
-        return ()
-    return tuple(int(channel) for channel in instrument_defaults.gain_CI.channel.values)
+    tables = (instrument_defaults.gain_CI, instrument_defaults.pair_energy_CI)
+    return tuple(sorted({int(channel) for table in tables if table is not None for channel in table.channel.values}))
 
 
 def _require_sg_files(effective_areas: list[xr.Dataset], instrument_defaults: InstrumentDefaults) -> None:

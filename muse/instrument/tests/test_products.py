@@ -621,7 +621,8 @@ def test_the_versions_of_a_line_list_written_by_muse_0_3_reach_the_products(inpu
 
     products = _sg(inputs, tmp_path / "out", line_list_file=tmp_path / "old.nc")
 
-    assert read_response(products[1]).attrs["chianti_version"] == "11.0.2"
+    # as the product stores it, not as a reader of old files would rename it
+    assert products_module._attribute_of_product(products[1], "chianti_version") == "11.0.2"
 
 
 def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
@@ -1025,9 +1026,21 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
 
 
 def test_imager_files_that_state_their_detector_need_no_imager_in_the_defaults(inputs, tmp_path):
-    products = _ci(inputs, tmp_path, include_continuum=False, instrument_defaults=evolve(DEFAULTS_MUSE, gain_CI=None))
+    no_gains = evolve(DEFAULTS_MUSE, gain_CI=None)
+    products = _ci(inputs, tmp_path / "both", include_continuum=False, instrument_defaults=no_gains)
+    # a file that states its gain alone takes the pair energy of its channel from the defaults
+    gain_alone = _area_file(tmp_path, channel=195, wavelength=(180.0, 192.0), attrs={"gain": DETECTOR["gain"]})
+    dn = _ci(
+        inputs,
+        tmp_path / "gain",
+        effective_area_files=[gain_alone],
+        include_continuum=False,
+        units="DN",
+        instrument_defaults=no_gains,
+    )
 
     assert len(products) == 4
+    assert read_response(_only(dn, f"ci_195_{TAIL}_DN")).attrs["pair_energy"] == "3.65 eV / electron"
 
 
 def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
