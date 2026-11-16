@@ -1,0 +1,1 @@
+``fetch_example_data`` downloads the example data of the latest release, or of main for a development version, and holds every file of the tutorials.

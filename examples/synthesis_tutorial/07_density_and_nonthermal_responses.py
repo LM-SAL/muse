@@ -9,15 +9,13 @@ at a fixed pressure, and when nonthermal broadening
 (e.g., from unresolved Alfvén-wave turbulence) is added to the spectral response.
 """
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
-import pooch
 import xarray as xr
 
 import astropy.units as u
 
+from muse.data import fetch_example_data
 from muse.instrument import create_spectral_response, map_response_to_sg_detector, transform_response_units
 from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
@@ -51,29 +49,13 @@ change_logging_level("INFO")
 # The line list, and everything derived from it, then carries a ``logD``
 # dimension whose coordinate is ``log10(density)``.
 
-abundance = "sun_coronal_2021_chianti"
-cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
 line_lists = {
-    "pressure": {
-        "url": (
-            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
-            "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
-        ),
-        "hash": "sha256:e7a459021f4ab1ec6c63264bd8b9a9ac8a015c4bb2029f707664aba09f164f5b",
-        "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
-    },
-    "density": {
-        "url": (
-            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
-            "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti_density.nc"
-        ),
-        "hash": "sha256:7ae1380f64d5f57d1fd9bd5061930caa5ddbde54f0052f91b39e48618124b67f",
-        "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}_density.nc",
-    },
+    variant: xr.load_dataset(
+        fetch_example_data(f"muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti{suffix}.nc"),
+        engine="h5netcdf",
+    )
+    for variant, suffix in (("pressure", ""), ("density", "_density"))
 }
-for config in line_lists.values():
-    file = Path(pooch.retrieve(url=config["url"], known_hash=config["hash"], fname=config["fname"], path=cache_dir))
-    config["line_list"] = xr.load_dataset(file, engine="h5netcdf")
 
 ##############################################################################
 # Since both variants share the 171 Angstrom band configuration we can use the
@@ -98,7 +80,7 @@ doppler_velocity = [0] * u.km / u.s
 # flows through the spectral response and the detector mapping unchanged.
 
 waveband_response = create_spectral_response(
-    line_lists["density"]["line_list"],
+    line_lists["density"],
     wavelength_grid,
     main_lines=main_lines,
     instrumental_fwhm=instrumental_fwhm,
@@ -123,7 +105,7 @@ plt.title("171 Angstrom response with electron density")
 # `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__.
 
 waveband_response = create_spectral_response(
-    line_lists["pressure"]["line_list"],
+    line_lists["pressure"],
     wavelength_grid,
     main_lines=main_lines,
     instrumental_fwhm=instrumental_fwhm,

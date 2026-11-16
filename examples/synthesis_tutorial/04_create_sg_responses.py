@@ -31,11 +31,11 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pooch
 import xarray as xr
 
 import astropy.units as u
 
+from muse.data import fetch_example_data
 from muse.instrument import (
     create_spectral_response,
     map_response_to_sg_detector,
@@ -54,37 +54,18 @@ change_logging_level("INFO")
 # If you generate them locally, you can update the code to point to those instead.
 
 abundance = "sun_coronal_2021_chianti"
-cache_dir = Path(pooch.os_cache("muse")) / "chianti_line_lists"
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
 bands = {
     108: {
-        "url": (
-            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
-            "muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti.nc"
-        ),
-        "hash": "sha256:7a4588bcb2a0f29c2f0fae3085ed59a24791256a475be41d61f481d4b0bafcaf",
-        "fname": f"muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_{abundance}.nc",
         "main_lines": ["Fe XIX 108.355", "Fe XXI 108.117"],
         "output_label": "FeXIX108.355_FeXXI108.117",
     },
     171: {
-        "url": (
-            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
-            "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
-        ),
-        "hash": "sha256:e7a459021f4ab1ec6c63264bd8b9a9ac8a015c4bb2029f707664aba09f164f5b",
-        "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
         "main_lines": ["Fe IX 171.073"],
         "output_label": "FeIX171.073",
     },
     284: {
-        "url": (
-            "https://github.com/LM-SAL/muse-data/releases/download/v1/"
-            "muse_chianti_line_list_284_FeXV284.163_sun_coronal_2021_chianti.nc"
-        ),
-        "hash": "sha256:0b98a37d66b1553691bb6b3219e6ee084a2d1a25d835e6fce8addecb826ac3a2",
-        "fname": f"muse_chianti_line_list_284_FeXV284.163_{abundance}.nc",
         "main_lines": ["Fe XV 284.163"],
         "output_label": "FeXV284.163",
     },
@@ -115,14 +96,7 @@ bands = {
 # Angstrom.
 
 for band, config in bands.items():
-    line_list_file = Path(
-        pooch.retrieve(
-            url=config["url"],
-            known_hash=config["hash"],
-            fname=config["fname"],
-            path=cache_dir,
-        )
-    )
+    line_list_file = fetch_example_data(f"muse_chianti_line_list_{band}_{config['output_label']}_{abundance}.nc")
     line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
     # The waveband and step of the channel, sampled by the number of steps: np.arange with
     # a float step can gain or lose the last sample to round-off.
