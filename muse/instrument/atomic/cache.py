@@ -22,7 +22,7 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
-from muse.instrument.atomic.backends import _validate_plasma_inputs
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma_inputs
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
@@ -43,7 +43,7 @@ def load_or_create_line_list(
     temperature: u.Quantity,
     pressure: u.Quantity | None = None,
     density: u.Quantity | None = None,
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     chianti_version: str | None = None,
@@ -158,7 +158,7 @@ def load_or_create_continuum(
     temperature: u.Quantity,
     pressure: u.Quantity | None = None,
     density: u.Quantity | None = None,
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     workers: int = 1,

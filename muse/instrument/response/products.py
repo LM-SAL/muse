@@ -15,6 +15,7 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE
 from muse.instrument.atomic.cache import (
     _CONTINUUM_BACKENDS,
     _LINE_LIST_BACKENDS,
@@ -77,7 +78,7 @@ def generate_sg_responses(
     main_lines_by_channel: Mapping[int | u.Quantity, Sequence[str]] | None = None,
     instrumental_fwhm_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
     maximum_contaminants: int = 10000,
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,
@@ -303,7 +304,7 @@ def generate_sg_continuum_responses(
     density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     wavelength_step: u.Quantity = 0.01 * u.AA,
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     continuum_backend: str = "fiasco",
     cache_directory: str | Path | None = None,
     create_if_missing: bool = True,
@@ -425,7 +426,7 @@ def generate_ci_responses(
     include_continuum: bool = True,
     continuum_backend: str = "fiasco",
     units: Sequence[str] = ("ph", "DN"),
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,

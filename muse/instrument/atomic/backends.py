@@ -17,6 +17,9 @@ from astropy.utils import minversion
 
 __all__ = []
 
+# Low enough to keep every element of a CHIANTI abundance file.
+_MINIMUM_ABUNDANCE = 1e-21
+
 
 def _validate_plasma_inputs(
     temperature: u.Quantity, density: u.Quantity | None, pressure: u.Quantity | None
@@ -72,8 +75,8 @@ def _broadcast_plasma_grid(
     """
     Temperature and density on the full grid, and the coordinate of the plasma axis.
 
-    A density grid becomes a ``logD`` axis holding ``log10(density)``; on a pressure grid
-    the density at each temperature is ``pressure / temperature``.
+    A density grid becomes a ``logD`` axis holding ``log10(density)``; on a pressure
+    grid the density at each temperature is ``pressure / temperature``.
     """
     if by_density:
         plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})

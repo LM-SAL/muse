@@ -14,6 +14,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.atomic.backends import (
+    _MINIMUM_ABUNDANCE,
     _broadcast_plasma_grid,
     _fiasco_ion_kwargs,
     _import_fiasco,
@@ -305,7 +306,7 @@ def create_fiasco_line_list(
     pressure: u.Quantity | None = None,
     abundance: str | None = None,
     wavelength_range: u.Quantity,
-    minimum_abundance: float = 1e-21,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     ion_list: list[str] | None = None,
     workers: int = 1,
     hdf5_dbase_root: str | Path | None = None,

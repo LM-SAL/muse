@@ -25,6 +25,7 @@ from muse.instrument import (
     save_effective_area,
 )
 from muse.instrument.atomic import cache
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
@@ -252,7 +253,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     # An imager cube records its continuum: that it is included, its backend and minimum
     # abundance, and the calls that made it, which enter the history before the unit conversion.
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
-    assert cube.attrs["minimum_abundance"] == 1e-21
+    assert cube.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
         "create_effective_area",
@@ -540,7 +541,7 @@ def test_calls_with_one_wavelength_range_share_one_cached_line_list(inputs, tmp_
     xr.testing.assert_allclose(_main_response(given), _main_response(first))
     # made by a backend: that is recorded with its minimum abundance, and no file
     attrs = read_response(first[1]).attrs
-    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", 1e-21)
+    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", _MINIMUM_ABUNDANCE)
     assert "line_list_file" not in attrs
 
 

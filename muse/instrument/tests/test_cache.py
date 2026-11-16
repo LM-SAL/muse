@@ -15,7 +15,7 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.atomic import cache
-from muse.instrument.atomic.backends import _validate_plasma_inputs
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
@@ -83,7 +83,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
     xr.testing.assert_identical(first, second)
     assert first.gofnt.dims == ("pressure", "logT", "transition")
     assert first.pressure.attrs["units"] == "K / cm3"
-    assert first.attrs["minimum_abundance"] == 1e-21
+    assert first.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
 
 
 @pytest.mark.usefixtures("line_list_calls", "continuum_calls")
@@ -133,7 +133,7 @@ def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, gr
 
 MINIMUM_ABUNDANCE = (
     {"minimum_abundance": 1e-2},
-    f"minimum abundance {1e-21}, not the requested 0.01",
+    f"minimum abundance {_MINIMUM_ABUNDANCE}, not the requested 0.01",
 )
 # The checks are shared: of the continuum, only what its own call passes on, the minimum abundance.
 MISMATCHES = {

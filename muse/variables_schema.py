@@ -161,9 +161,9 @@ class InstrumentDefaults:
     Container of instrument properties used by functions and methods within the muse
     library; not a general-purpose instrument defaults class.
 
-    Every parameter is optional and defaults to `None`. Populate
-    the ones a given instrument needs (see `muse.variables` for the MUSE instance). Each
-    field documents its meaning and the unit it is normalized to.
+    Every parameter is optional and defaults to `None`. Populate the ones a given
+    instrument needs (see `muse.variables` for the MUSE instance). Each field documents
+    its meaning and the unit it is normalized to.
 
     Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
     the ``_SG``/``_CI`` field suffix identifies the detector, and the two channel sets
