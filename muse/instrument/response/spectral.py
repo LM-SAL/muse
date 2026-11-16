@@ -211,7 +211,7 @@ def _build_spectral_response(
         # thousands of transitions (dominating peak memory), so drop the rest first.
         selected = set(main_lines)
         keep = [i for i, name in enumerate(line_names) if name in selected]
-        line_list = line_list.isel(trans_index=keep)
+        line_list = line_list.isel(transition=keep)
         line_names = tuple(str(name) for name in line_list.full_name.values)
 
     try:
@@ -256,18 +256,18 @@ def _build_spectral_response(
             continue
         line_response, template = _evaluate_gaussian_response(
             wavelength_grid,
-            line_centers.isel(trans_index=i),
-            line_widths.isel(trans_index=i),
-            line_list.gofnt.isel(trans_index=i),
+            line_centers.isel(transition=i),
+            line_widths.isel(transition=i),
+            line_list.gofnt.isel(transition=i),
             gaussian_norm,
             edges=edges,
             bin_method=bin_method,
-            area_at_center=None if area_at_center is None else area_at_center.isel(trans_index=i),
+            area_at_center=None if area_at_center is None else area_at_center.isel(transition=i),
         )
         line_response = xr.DataArray(line_response, dims=template.dims, coords=template.coords)
         line_response = line_response.expand_dims(line=[line_name])
         line_response = line_response.assign_coords(
-            line_wavelength=("line", [line_list.wavelength.isel(trans_index=i).item()], {"units": str(u.AA)}),
+            line_wavelength=("line", [line_list.wavelength.isel(transition=i).item()], {"units": str(u.AA)}),
         )
         main_response_parts[line_name].append(line_response)
 
@@ -284,8 +284,8 @@ def _build_spectral_response(
         if contaminant_indices:
             # A transition whose +-window (see _evaluate_gaussian_response) misses the grid
             # contributes exactly zero, and a broad-band list is mostly such lines.
-            width_dims = [dim for dim in line_widths.dims if dim != "trans_index"]
-            center_dims = [dim for dim in line_centers.dims if dim != "trans_index"]
+            width_dims = [dim for dim in line_widths.dims if dim != "transition"]
+            center_dims = [dim for dim in line_centers.dims if dim != "transition"]
             half_window = _GAUSSIAN_WINDOW_SIGMA * line_widths.max(dim=width_dims)
             lower = line_centers.min(dim=center_dims) - half_window
             upper = line_centers.max(dim=center_dims) + half_window
@@ -505,14 +505,14 @@ def _create_contaminant_response(
     for i in iterator:
         accumulator, template = _evaluate_gaussian_response(
             wavelength_grid,
-            line_centers.isel(trans_index=i),
-            line_widths.isel(trans_index=i),
-            line_list.gofnt.isel(trans_index=i),
+            line_centers.isel(transition=i),
+            line_widths.isel(transition=i),
+            line_list.gofnt.isel(transition=i),
             gaussian_norm,
             accumulator=accumulator,
             edges=edges,
             bin_method=bin_method,
-            area_at_center=None if area_at_center is None else area_at_center.isel(trans_index=i),
+            area_at_center=None if area_at_center is None else area_at_center.isel(transition=i),
         )
     return xr.DataArray(accumulator, dims=template.dims, coords=template.coords)
 
@@ -521,9 +521,9 @@ def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
     if not isinstance(line_list, xr.Dataset):
         msg = "line_list must be an xarray.Dataset"
         raise TypeError(msg)
-    if "trans_index" not in line_list.dims:
-        line_list = line_list.expand_dims("trans_index")
-    if line_list.sizes["trans_index"] == 0:
+    if "transition" not in line_list.dims:
+        line_list = line_list.expand_dims("transition")
+    if line_list.sizes["transition"] == 0:
         msg = "line_list must not be empty"
         raise ValueError(msg)
     missing = [name for name in ("wavelength", "atomic_number", "gofnt", "full_name") if name not in line_list]
@@ -536,13 +536,13 @@ def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
     if "logT" not in line_list.gofnt.dims:
         msg = "line_list.gofnt must include a logT dimension"
         raise ValueError(msg)
-    missing_trans_index = [
+    missing_transition = [
         name
         for name in ("wavelength", "atomic_number", "gofnt", "full_name")
-        if "trans_index" not in line_list[name].dims
+        if "transition" not in line_list[name].dims
     ]
-    if missing_trans_index:
-        msg = f"line_list variables must include a trans_index dimension: {', '.join(missing_trans_index)}"
+    if missing_transition:
+        msg = f"line_list variables must include a transition dimension: {', '.join(missing_transition)}"
         raise ValueError(msg)
     for name in ("wavelength", "atomic_number", "gofnt", "logT"):
         try:

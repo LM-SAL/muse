@@ -59,7 +59,7 @@ line_lists = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
         ),
-        "hash": "sha256:975330698fe7e0c1d74df3e7a46a34d3acecdf1d5a5de7072f63c0dba9407e4c",
+        "hash": "sha256:e7a459021f4ab1ec6c63264bd8b9a9ac8a015c4bb2029f707664aba09f164f5b",
         "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
     },
     "density": {
@@ -67,7 +67,7 @@ line_lists = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti_density.nc"
         ),
-        "hash": "sha256:47205ccd3cf3c7f315bd9f7c38e78410a92611f2ce4779c39d70f34572232d0d",
+        "hash": "sha256:7ae1380f64d5f57d1fd9bd5061930caa5ddbde54f0052f91b39e48618124b67f",
         "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}_density.nc",
     },
 }

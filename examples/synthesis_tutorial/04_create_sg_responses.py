@@ -61,7 +61,7 @@ bands = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti.nc"
         ),
-        "hash": "sha256:cc836a0e479605fa171e17b3ca97b409bbe72dc225f0abce72f069fd4dc94bab",
+        "hash": "sha256:7a4588bcb2a0f29c2f0fae3085ed59a24791256a475be41d61f481d4b0bafcaf",
         "fname": f"muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_{abundance}.nc",
         "main_lines": ["Fe XIX 108.355", "Fe XXI 108.117"],
         "output_label": "FeXIX108.355_FeXXI108.117",
@@ -71,7 +71,7 @@ bands = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.nc"
         ),
-        "hash": "sha256:975330698fe7e0c1d74df3e7a46a34d3acecdf1d5a5de7072f63c0dba9407e4c",
+        "hash": "sha256:e7a459021f4ab1ec6c63264bd8b9a9ac8a015c4bb2029f707664aba09f164f5b",
         "fname": f"muse_chianti_line_list_171_FeIX171.073_{abundance}.nc",
         "main_lines": ["Fe IX 171.073"],
         "output_label": "FeIX171.073",
@@ -81,7 +81,7 @@ bands = {
             "https://github.com/LM-SAL/muse-data/releases/download/v1/"
             "muse_chianti_line_list_284_FeXV284.163_sun_coronal_2021_chianti.nc"
         ),
-        "hash": "sha256:6e7e46e8e9d9dd89022e08d1ba43660a7e9b2e9d15e06ee4a700b6f6f69272c3",
+        "hash": "sha256:0b98a37d66b1553691bb6b3219e6ee084a2d1a25d835e6fce8addecb826ac3a2",
         "fname": f"muse_chianti_line_list_284_FeXV284.163_{abundance}.nc",
         "main_lines": ["Fe XV 284.163"],
         "output_label": "FeXV284.163",

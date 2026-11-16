@@ -380,16 +380,6 @@ def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
     np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
 
 
-def test_reshape_slit_step_to_x_reads_the_two_attributes_of_older_files(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    reshaped.attrs["step_size"], reshaped.attrs["step_size units"] = np.float64(0.25), "Mm"
-
-    out = reshape_slit_step_to_x(reshaped)
-
-    np.testing.assert_allclose(out.x[1] - out.x[0], 0.25)
-    assert out.x.attrs["units"] == "Mm"
-
-
 def test_reshape_slit_step_to_x_records_history(vdem) -> None:
     reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
     out = reshape_slit_step_to_x(reshaped)

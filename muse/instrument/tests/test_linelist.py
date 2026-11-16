@@ -126,7 +126,7 @@ def test_converts_units_for_chianti(monkeypatch):
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
-        lambda *_args, **_kwargs: xr.Dataset(coords={"trans_index": [0]}),
+        lambda *_args, **_kwargs: xr.Dataset(coords={"transition": [0]}),
     )
 
     line_list = create_chianti_line_list(
@@ -155,7 +155,7 @@ def test_no_lines_raises(monkeypatch):
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
-        lambda *_args, **_kwargs: xr.Dataset(coords={"trans_index": []}),
+        lambda *_args, **_kwargs: xr.Dataset(coords={"transition": []}),
     )
     with pytest.raises(ValueError, match="no lines"):
         create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
@@ -186,8 +186,8 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
         density=density,
         minimum_abundance=3e-5,
     )
-    assert line_list.gofnt.sizes == {"logT": 1, "logD": 1, "trans_index": line_list.sizes["trans_index"]}
-    assert line_list.sizes["trans_index"] > 0
+    assert line_list.gofnt.sizes == {"logT": 1, "logD": 1, "transition": line_list.sizes["transition"]}
+    assert line_list.sizes["transition"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values
     assert (line_list.wavelength >= 170).all()
     assert (line_list.wavelength <= 172).all()
@@ -210,11 +210,11 @@ def test_create_chianti_line_list_live_density():
         wavelength_range=[170, 172] * u.AA,
         ion_list=["fe_9"],
     )
-    assert line_list.gofnt.dims == ("logT", "logD", "trans_index")
+    assert line_list.gofnt.dims == ("logT", "logD", "transition")
     np.testing.assert_allclose(line_list.logD.values, [8.0, 9.0])
     assert line_list.logT.attrs["units"] == "dex(K)"
     assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
-    assert line_list.sizes["trans_index"] > 0
+    assert line_list.sizes["transition"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values
 
 
@@ -296,7 +296,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
         "logT_peak",
         "full_name",
     } <= set(line_list.data_vars)
-    assert line_list.gofnt.dims == ("pressure", "logT", "trans_index")
+    assert line_list.gofnt.dims == ("pressure", "logT", "transition")
     assert line_list.full_name.values.tolist() == ["Fe IX 171.073", "Fe IX 174.0"]
     assert line_list.ion_name.values.tolist() == ["fe_9", "fe_9"]
     assert line_list.observed.values.tolist() == [True, False]
@@ -310,11 +310,11 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     density = pressure.values[:, None] / temperature.values[None, :]
     peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
     expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
-    np.testing.assert_allclose(line_list.gofnt.isel(trans_index=0).transpose("pressure", "logT"), expected, rtol=1e-12)
+    np.testing.assert_allclose(line_list.gofnt.isel(transition=0).transpose("pressure", "logT"), expected, rtol=1e-12)
     assert line_list.attrs["chianti_version"] == "controlled CHIANTI"
     assert line_list.attrs["abundance"] == "controlled_abundance"
     assert "create_fiasco_line_list(" in line_list.attrs["history"][-1]
-    assert float(line_list.logT_peak.isel(pressure=0, trans_index=0)) == pytest.approx(6.0, abs=0.26)
+    assert float(line_list.logT_peak.isel(pressure=0, transition=0)) == pytest.approx(6.0, abs=0.26)
 
 
 @needs_fiasco_line_lists
@@ -324,7 +324,7 @@ def test_fiasco_line_list_density_grid_and_range_units(temperature):
     line_list = create_fiasco_line_list(
         temperature, density=density, wavelength_range=[17, 17.2] * u.nm, abundance="sun_coronal_2021_chianti"
     )
-    assert line_list.gofnt.dims == ("logT", "logD", "trans_index")
+    assert line_list.gofnt.dims == ("logT", "logD", "transition")
     np.testing.assert_allclose(line_list.logD.values, [9.0])
     assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
     assert line_list.wavelength.values.tolist() == [171.073]
@@ -423,11 +423,11 @@ def _he_fe_line_list():
     """
     return xr.Dataset(
         {
-            "ion_name": ("trans_index", np.array(["he_2", "he_2", "fe_9"])),
-            "lower_level_index": ("trans_index", np.array([1, 1, 1])),
-            "upper_level_index": ("trans_index", np.array([3, 4, 13])),
-            "wavelength": ("trans_index", np.array([303.786, 303.785, 171.073])),
-            "gofnt": (("logT", "trans_index"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
+            "ion_name": ("transition", np.array(["he_2", "he_2", "fe_9"])),
+            "lower_level_index": ("transition", np.array([1, 1, 1])),
+            "upper_level_index": ("transition", np.array([3, 4, 13])),
+            "wavelength": ("transition", np.array([303.786, 303.785, 171.073])),
+            "gofnt": (("logT", "transition"), np.ones((2, 3)), {"units": "erg cm3 / (s sr)"}),
         }
     )
 

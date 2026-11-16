@@ -434,7 +434,7 @@ def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
         bin_method="average",
     )
     mapped = map_response_to_ci_detector(response, 171 * u.AA)
-    expected = line_list.gofnt.isel(trans_index=0) / response.attrs["normalization"]
+    expected = line_list.gofnt.isel(transition=0) / response.attrs["normalization"]
     np.testing.assert_allclose((mapped.detector_response.isel(line=0) / expected).values, 1.0, rtol=1e-12)
     assert "bound" not in mapped.dims
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA

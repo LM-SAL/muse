@@ -39,7 +39,7 @@ def _validate_plasma_inputs(
     else:
         name = "pressure"
         plasma_grid = _validate_positive_data_array(pressure, name, u.K / u.cm**3)
-    if plasma_grid.dims[0] in ("logT", "trans_index"):
+    if plasma_grid.dims[0] in ("logT", "transition"):
         msg = f"{name} dimension must not be named {plasma_grid.dims[0]!r}"
         raise ValueError(msg)
     return temperature, plasma_grid

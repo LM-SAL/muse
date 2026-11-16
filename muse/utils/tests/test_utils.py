@@ -220,25 +220,6 @@ def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
     assert ds.attrs == {"instrument": "MUSE", "level": 2}
 
 
-def test_a_dataset_with_the_attributes_of_an_old_file_keeps_their_lineage() -> None:
-    # as a result made by an xarray operation on a file of muse 0.3 has them
-    ds = xr.Dataset(attrs={"HISTORY": ["load"], "date created": "01-Mar-2026", "version": "0.3.0", "workers": 4})
-
-    add_history(ds, {}, "demo")
-
-    assert _calls(ds) == ["load", "demo()"]
-    assert (ds.attrs["date_created"], ds.attrs["muse_version"]) == ("2026-03-01", "0.3.0")
-    assert not {"HISTORY", "date created", "version", "workers"} & set(ds.attrs)
-
-
-def test_the_version_and_the_options_of_another_tool_are_kept() -> None:
-    ds = xr.Dataset()
-
-    update_attrs(ds, xr.Dataset(attrs={"version": "table v3", "device": "CCD A"}))
-
-    assert ds.attrs == {"version": "table v3", "device": "CCD A"}
-
-
 def test_a_history_entry_reads_no_array_from_its_file(tmp_path) -> None:
     xr.Dataset({"grid": ("x", np.arange(5.0), {"units": "K"})}).to_netcdf(tmp_path / "grid.nc")
 
@@ -256,23 +237,6 @@ def test_the_two_outputs_of_one_call_are_one_step_even_stamped_apart() -> None:
     add_history(ds, {}, "synthesis", sources=(first, second))
 
     assert _calls(ds) == ["load", "align()", "synthesis()"]
-
-
-def test_a_source_read_without_the_library_passes_on_its_old_names_as_current_ones() -> None:
-    old = {"Chianti": "10.0", "chianti_version": "11.0.2", "fiasco": "0.4", "HISTORY": ["load"], "version": "0.3"}
-    source = xr.Dataset(attrs=old)
-    ds = xr.Dataset()
-
-    update_attrs(ds, source)
-    add_history(ds, {}, "demo", sources=(source,))
-
-    # the current name wins; the old provenance is inherited as history, not copied as attributes
-    assert {key: ds.attrs[key] for key in ("chianti_version", "fiasco_version")} == {
-        "chianti_version": "11.0.2",
-        "fiasco_version": "0.4",
-    }
-    assert _calls(ds) == ["load", "demo()"]
-    assert not {"HISTORY", "version", "Chianti", "fiasco"} & set(ds.attrs)
 
 
 def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alone(monkeypatch) -> None:

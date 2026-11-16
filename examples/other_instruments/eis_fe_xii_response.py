@@ -134,7 +134,7 @@ line_total = (density_response.spectral_response.sum(dim="wavelength_bin") * dis
     units=str(u.Unit(density_response.spectral_response.attrs["units"]) * u.AA)
 )
 is_fe_x_174 = (density_line_list.full_name == "Fe X 174.531").values
-peak_logT = density_line_list.logT_peak.isel(trans_index=is_fe_x_174).median().item()
+peak_logT = density_line_list.logT_peak.isel(transition=is_fe_x_174).median().item()
 ratio = line_total.sel(line="Fe X 175.263") / line_total.sel(line="Fe X 174.531")
 ratio = ratio.sel(logT=peak_logT, method="nearest").drop_attrs(deep=False)
 plt.figure()

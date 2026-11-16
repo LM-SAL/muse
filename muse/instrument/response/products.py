@@ -777,10 +777,10 @@ def _write_sg_products(
     in_waveband = (
         (line_list.wavelength >= lower) & (line_list.wavelength <= upper) & ~line_list.full_name.isin(main_lines)
     )
-    ranked = rank_line_list(line_list.isel(trans_index=in_waveband.values), curve).isel(
-        trans_index=slice(maximum_contaminants)
+    ranked = rank_line_list(line_list.isel(transition=in_waveband.values), curve).isel(
+        transition=slice(maximum_contaminants)
     )
-    if ranked.sizes["trans_index"] == 0:
+    if ranked.sizes["transition"] == 0:
         logger.warning(f"SG channel {_channel(area)}: no line but the main lines in the waveband, so no contaminants")
         return
     contaminants = (
@@ -789,7 +789,7 @@ def _write_sg_products(
             line=[f"{_channel(area)} contaminants"],
             line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM),
         )
-        .assign_attrs(number_of_lines=ranked.sizes["trans_index"])
+        .assign_attrs(number_of_lines=ranked.sizes["transition"])
     )
     # On the detector the contaminants are referenced to the channel's first main line, not to the
     # brightest contaminant as in the cube, so that a reader derives one geometry per channel.
@@ -823,7 +823,7 @@ def _write_ci_products(
         # and what comes out per photon is DN. The products keep the area as it was given.
         response_area = curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
     edges = create_log_wavelength_edges(curve.wavelength.values[[0, -1]] * u.AA, bin_fractional_width)
-    ranked = rank_line_list(line_list, response_area).isel(trans_index=slice(maximum_lines))
+    ranked = rank_line_list(line_list, response_area).isel(transition=slice(maximum_lines))
     line_label = f"{_channel(area)} lines"
     cube = create_spectral_response(
         ranked,
@@ -833,7 +833,7 @@ def _write_ci_products(
         effective_area=response_area,
         wavelength_edges=edges,
     ).assign_coords(line=[line_label], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
-    cube.attrs["number_of_lines"] = ranked.sizes["trans_index"]
+    cube.attrs["number_of_lines"] = ranked.sizes["transition"]
     if continuum is not None:
         folded = create_continuum_response(
             continuum, edges, effective_area=response_area, doppler_velocity=doppler_velocity

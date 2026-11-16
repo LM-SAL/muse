@@ -191,23 +191,6 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert "date_modified" not in r.attrs
 
 
-def test_read_response_reads_the_provenance_of_a_file_of_muse_0_3(tmp_path) -> None:
-    old = {
-        "HISTORY": ["create response"],
-        "date created": "01-Mar-2026",
-        "version": "0.3.0",
-        "chunked": 0,
-        "logT_method": "nearest",
-    }
-    path = _write(fake_response_file_contents().assign_attrs(old), tmp_path / "old.nc", "nc")
-
-    r = read_response(path)
-
-    assert r.attrs["history"][0] == "create response"
-    assert (r.attrs["date_created"], r.attrs["muse_version"]) == ("2026-03-01", "0.3.0")
-    assert not {"HISTORY", "date created", "version", "chunked", "logT_method"} & set(r.attrs)
-
-
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # Files with non-0-based slit numbering must come back 0-based so downstream
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.

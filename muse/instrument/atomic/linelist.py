@@ -125,7 +125,7 @@ def create_chianti_line_list(
         wavelength_range=wavelength_range,
         chiantipy_version=chiantipy_version,
     )
-    if line_list.sizes["trans_index"] == 0:
+    if line_list.sizes["transition"] == 0:
         msg = "CHIANTI returned no lines; check wavelength_range and the species selection"
         raise ValueError(msg)
     add_history(line_list, locals(), create_chianti_line_list)
@@ -188,10 +188,10 @@ def _line_list_dataset(
     """
     The line-list layout both backends return, restricted to ``wavelength_range``.
     """
-    line_list = xr.Dataset({name: ("trans_index", values) for name, values in per_transition.items()})
+    line_list = xr.Dataset({name: ("transition", values) for name, values in per_transition.items()})
     line_list["gofnt"] = xr.DataArray(
         gofnt_values,
-        dims=(*temperature_broadcast.dims, "trans_index"),
+        dims=(*temperature_broadcast.dims, "transition"),
         coords={"logT": np.log10(temperature), **plasma_coords},
     )
     line_list["logT_peak"] = np.log10(temperature[{"logT": line_list.gofnt.argmax(dim="logT")}])
@@ -208,7 +208,7 @@ def _line_list_dataset(
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
     # isel copies every array, the contribution functions among them: skipped when nothing is cut.
-    return line_list if bool(in_range.all()) else line_list.isel(trans_index=in_range)
+    return line_list if bool(in_range.all()) else line_list.isel(transition=in_range)
 
 
 def _validate_line_list_inputs(
@@ -415,7 +415,7 @@ def create_fiasco_line_list(
         "atomic_number": np.asarray(table["atomic number"]),
         "observed": np.asarray(table["is observed"], dtype=bool),
     }
-    # (trans_index, grid point, 1) -> (*grid dims, trans_index), per steradian
+    # (transition, grid point, 1) -> (*grid dims, transition), per steradian
     gofnt = (table["contribution function"][:, :, 0] / (4 * np.pi * u.sr)).to_value(u.erg * u.cm**3 / (u.s * u.sr))
     gofnt_values = np.moveaxis(gofnt, 0, -1).reshape((*temperature_broadcast.data.shape, -1))
     line_list = _line_list_dataset(
@@ -427,7 +427,7 @@ def create_fiasco_line_list(
         wavelength_range=wavelength_range,
         attrs={"fiasco_version": table.meta["fiasco_version"], "chianti_version": table.meta["chianti_version"]},
     )
-    if line_list.sizes["trans_index"] == 0:
+    if line_list.sizes["transition"] == 0:
         msg = "fiasco found no lines; check wavelength_range and the ion selection"
         raise ValueError(msg)
     abundance = getattr(ions[0], "_dset_names", {}).get("abundance", abundance)
@@ -506,7 +506,7 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
     Returns
     -------
     `xarray.Dataset`
-        The line list reordered along ``trans_index``, with a ``brightness`` variable:
+        The line list reordered along ``transition``, with a ``brightness`` variable:
         the largest value of ``gofnt`` over the temperatures and over the densities or
         pressures, times the area when one is given, with its units.
 
@@ -515,7 +515,7 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
     ValueError
         If ``effective_area`` is not a curve along ``wavelength`` or lacks a unit.
     """
-    brightness = line_list.gofnt.max(dim=[dim for dim in line_list.gofnt.dims if dim != "trans_index"])
+    brightness = line_list.gofnt.max(dim=[dim for dim in line_list.gofnt.dims if dim != "transition"])
     units = u.Unit(line_list.gofnt.attrs["units"])
     if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
         # The Dataset of create_effective_area or read_effective_area; its scalar channel stays behind.
@@ -536,8 +536,8 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
         )
         brightness = brightness * area_at_lines
     order = np.argsort(-np.asarray(brightness), kind="stable")
-    ranked = line_list.isel(trans_index=order)
-    ranked["brightness"] = ("trans_index", np.asarray(brightness)[order], {"units": str(units)})
+    ranked = line_list.isel(transition=order)
+    ranked["brightness"] = ("transition", np.asarray(brightness)[order], {"units": str(units)})
     return ranked
 
 
@@ -571,7 +571,7 @@ def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, i
     for transition in transitions:
         keep = keep | _match_transition(line_list, transition)
     # assign_attrs, as isel shares the attributes of the input, which must stay as it is
-    return line_list.isel(trans_index=keep.values).assign_attrs(
+    return line_list.isel(transition=keep.values).assign_attrs(
         transition_selection=json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in transitions])
     )
 

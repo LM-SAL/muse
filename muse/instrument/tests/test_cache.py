@@ -16,9 +16,7 @@ import astropy.units as u
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
-from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
-from muse.utils.utils import _to_zarr
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -80,7 +78,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
     # the file alone: no lock and no staging file are left
     assert [path.name for path in tmp_path.iterdir()] == ["line_list_fiasco_150-192A_a.zarr.zip"]
     xr.testing.assert_identical(first, second)
-    assert first.gofnt.dims == ("pressure", "logT", "trans_index")
+    assert first.gofnt.dims == ("pressure", "logT", "transition")
     assert first.pressure.attrs["units"] == "K / cm3"
     assert first.attrs["minimum_abundance"] == 1e-21
 
@@ -199,24 +197,9 @@ def test_a_pressure_axis_of_another_name_is_stored_as_pressure(tmp_path, line_li
     line_list = load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15], dim="p"))
 
     assert line_list_calls[0]["pressure"].dims == ("pressure",)
-    assert line_list.gofnt.dims == ("pressure", "logT", "trans_index")
+    assert line_list.gofnt.dims == ("pressure", "logT", "transition")
     # and a call with the usual name reads the same file
     load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15]))
-    assert len(line_list_calls) == 1
-
-
-def test_the_chianti_version_of_a_cache_written_by_muse_0_3_is_read(tmp_path, line_list_calls):
-    kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
-    load_or_create_line_list(tmp_path, **kwargs)
-    (path,) = tmp_path.glob("line_list_*.zarr.zip")
-    with _open_dataset_file(path) as current:
-        old = current.load()
-    old.attrs["Chianti"] = old.attrs.pop("chianti_version")
-    path.unlink()
-    _to_zarr(old, path)
-
-    load_or_create_line_list(tmp_path, chianti_version="11.0.2", **kwargs)
-
     assert len(line_list_calls) == 1
 
 

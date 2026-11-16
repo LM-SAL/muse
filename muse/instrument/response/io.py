@@ -11,14 +11,7 @@ from zarr.storage import ZipStore
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import (
-    _to_zarr,
-    _with_current_names,
-    add_history,
-    coord_as_unit,
-    require_unit,
-    update_attrs,
-)
+from muse.utils.utils import _to_zarr, add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables_schema import FrozenDict
 
 __all__ = [
@@ -181,7 +174,7 @@ def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coo
         response = xr.open_zarr(response_file, consolidated=False, **kwargs)
     else:
         response = xr.open_dataset(response_file, **kwargs)
-    return _with_current_names(response)
+    return response
 
 
 @u.quantity_input(gain=u.electron / u.DN)
