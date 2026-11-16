@@ -297,7 +297,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
     pytest.importorskip("numexpr")
     pytest.importorskip("periodictable")
     line_list = create_chianti_line_list(
-        xr.DataArray([1e6] * u.K, dims="logT"),
+        [1e6] * u.K,
         pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[170.0, 172.0] * u.AA,

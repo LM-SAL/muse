@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover
     joblib = None
 
-TEMPERATURE = xr.DataArray([1e6] * u.K, dims="logT")
+TEMPERATURE = [1e6] * u.K
 PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 
 
@@ -51,13 +51,12 @@ def test_rejects_both_density_and_pressure():
 @pytest.mark.parametrize(
     ("temperature", "error", "error_type"),
     [
-        (np.array([1e6]) * u.K, "xarray.DataArray", TypeError),
-        (xr.DataArray([1e6] * u.K, dims="temperature"), "one-dimensional logT", ValueError),
-        (xr.DataArray([] * u.K, dims="logT"), "not be empty", ValueError),
-        (xr.DataArray([1e6], dims="logT"), "astropy.units.Quantity", TypeError),
-        (xr.DataArray([np.nan] * u.K, dims="logT"), "finite", ValueError),
-        (xr.DataArray([0.0] * u.K, dims="logT"), "positive", ValueError),
-        (xr.DataArray([1e6] * u.m, dims="logT"), "convertible", ValueError),
+        ([[1e6]] * u.K, "one-dimensional", TypeError),
+        ([] * u.K, "not be empty", ValueError),
+        ([1e6], "astropy.units.Quantity", TypeError),
+        ([np.nan] * u.K, "finite", ValueError),
+        ([0.0] * u.K, "positive", ValueError),
+        ([1e6] * u.m, "convertible", ValueError),
     ],
 )
 def test_rejects_invalid_temperature(temperature, error, error_type):
@@ -142,7 +141,7 @@ def test_converts_units_for_chianti(monkeypatch):
     )
 
     line_list = create_chianti_line_list(
-        xr.DataArray([1] * u.MK, dims="logT"),
+        [1] * u.MK,
         pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[17, 17.2] * u.nm,
@@ -214,7 +213,7 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
 def test_create_chianti_line_list_live_density():
     pytest.importorskip("ChiantiPy")
     assert os.environ.get("XUVTOP")
-    temperature = xr.DataArray(10 ** np.arange(5.6, 6.2, 0.2) * u.K, dims="logT")
+    temperature = 10 ** np.arange(5.6, 6.2, 0.2) * u.K
     density = xr.DataArray([1e8, 1e9] / u.cm**3, dims="density")
     line_list = create_chianti_line_list(
         temperature=temperature,
@@ -243,7 +242,7 @@ needs_fiasco_line_lists = pytest.mark.skipif(
 
 @pytest.fixture
 def temperature():
-    return xr.DataArray(10 ** np.linspace(5.5, 6.5, 5) * u.K, dims="logT")
+    return 10 ** np.linspace(5.5, 6.5, 5) * u.K
 
 
 @pytest.fixture
@@ -319,7 +318,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     np.testing.assert_allclose(line_list.logT.values, np.linspace(5.5, 6.5, 5))
     # The contribution function per steradian, at the density pressure / temperature. The whole
     # grid is compared, so that a swap of the pressure and temperature axes cannot pass.
-    density = pressure.values[:, None] / temperature.values[None, :]
+    density = pressure.values[:, None] / temperature.value[None, :]
     peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
     expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
     np.testing.assert_allclose(line_list.gofnt.isel(transition=0).transpose("pressure", "logT"), expected, rtol=1e-12)
@@ -406,7 +405,7 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
         "wavelength_range": [170, 175] * u.AA,
         "ion_list": ["o_5", "fe_9", "o_6", "fe_10"],
     }
-    temperature = xr.DataArray(10 ** np.array([5.8, 6.0]) * u.K, dims="logT")
+    temperature = 10 ** np.array([5.8, 6.0]) * u.K
 
     serial = create_fiasco_line_list(temperature, workers=1, **kwargs)
     parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)

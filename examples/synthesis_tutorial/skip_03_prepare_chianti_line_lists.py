@@ -46,7 +46,7 @@ if not os.environ.get("XUVTOP"):
 #   - For fe_19: [108.3, 108.4]
 #   - For fe_21: [108.1, 108.2]
 #
-# - The temperature axis in K (min, max and step),
+# - The temperature axis in dex(K) (min, max and step),
 # - LOS velocity in km/s (min, max and step)
 # - Abundances, e.g., "sun_coronal_2021_chianti"
 # - Pressure or density (see below).
@@ -55,8 +55,7 @@ if not os.environ.get("XUVTOP"):
 # see :ref:`sphx_glr_generated_gallery_synthesis_tutorial_07_density_and_nonthermal_responses.py`.
 
 abundance = "sun_coronal_2021_chianti"
-logT = np.arange(4.5, 8.0, 0.1)
-temperature = xr.DataArray(10**logT * u.K, dims="logT")
+temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
 pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 # You can use density too and pass this instead into create_chianti_line_list
 # eDensity = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5), dims="logD")

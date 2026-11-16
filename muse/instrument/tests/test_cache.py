@@ -21,7 +21,7 @@ from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.utils.utils import _to_zarr
 
-TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
+TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
 CONTINUUM = {"abundance": "a", "wavelength_grid": [170.0, 171.0, 172.0] * u.AA, "temperature": TEMPERATURE}
 
@@ -140,7 +140,7 @@ MISMATCHES = {
     "line-list-nearby-pressure": ("line list", {"pressure": _pressure([3.0001e15])}, "holds the pressure values"),
     "line-list-temperatures": (
         "line list",
-        {"temperature": TEMPERATURE.isel(logT=[0, 1])},
+        {"temperature": TEMPERATURE[:2]},
         "is on other temperatures than requested",
     ),
     "line-list-minimum-abundance": ("line list", *MINIMUM_ABUNDANCE),
@@ -200,7 +200,7 @@ def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
 
     assert continuum.pressure.values.tolist() == requested
     assert line_list.pressure.values.tolist() == requested
-    np.testing.assert_array_equal(continuum.logT.values, np.log10(TEMPERATURE.data.value))
+    np.testing.assert_array_equal(continuum.logT.values, np.log10(TEMPERATURE.value))
     np.testing.assert_array_equal(line_list.logT.values, continuum.logT.values)
     assert len(continuum_calls) == 1
 

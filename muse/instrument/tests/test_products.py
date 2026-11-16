@@ -35,7 +35,7 @@ MAIN_LINE = "Fe IX 171.073"
 LINE_NAMES = ["Fe X 155.000", "Fe VIII 165.000", MAIN_LINE, "Fe X 174.500", "Fe XI 180.000", "Fe XII 188.000"]
 ABUNDANCE = "sun_coronal_2021_chianti"
 OTHER_ABUNDANCE = "sun_photospheric_2021_asplund"
-TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
+TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
 PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 DOPPLER_VELOCITY = np.array([-500.0, 0.0, 500.0]) * u.km / u.s
 # 171 is no channel of the MUSE imager: the test area describes its detector, as an AIA file does.
@@ -611,7 +611,7 @@ def test_a_resumed_call_keeps_only_products_made_with_its_settings(inputs, tmp_p
     assert _sg(inputs, tmp_path / "run", pressure=pressures.isel(pressure=[0]), author="OTHER", **options) == first[:4]
     other = "made with other settings than this call's"
     for overrides in (
-        {"temperature": TEMPERATURE.isel(logT=[0, 1])},
+        {"temperature": TEMPERATURE[:2]},
         {"instrumental_fwhm_by_channel": {CHANNEL: 0.1 * u.AA}},
         # another main line renames the main products, not the contaminants
         {"main_lines_by_channel": {CHANNEL: ["Fe X 174.500"]}},

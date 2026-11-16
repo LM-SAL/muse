@@ -51,7 +51,7 @@ __all__ = ["generate_ci_responses", "generate_sg_continuum_responses", "generate
 _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
 _ABUNDANCES = ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund")
-_TEMPERATURE = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+_TEMPERATURE = 10 ** np.arange(4.5, 8.0, 0.1) * u.K
 _PRESSURE = xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure")
 _DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
 # A continuum varies slowly with wavelength, so its velocities are coarser.
@@ -70,7 +70,7 @@ def generate_sg_responses(
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
-    temperature: xr.DataArray | None = None,
+    temperature: u.Quantity | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     doppler_velocity: u.Quantity | None = None,
@@ -136,8 +136,8 @@ def generate_sg_responses(
     abundances : `list` of `str`, optional
         CHIANTI abundance names, by default ``sun_coronal_2021_chianti`` and
         ``sun_photospheric_2021_asplund``.
-    temperature : `xarray.DataArray`, optional
-        Temperatures along ``logT`` with units convertible to K, by default
+    temperature : `astropy.units.Quantity`, optional
+        Temperatures convertible to K, by default
         10**4.5 to 10**7.9 K in steps of 0.1 dex.
     pressure, density : `xarray.DataArray`, optional
         The plasma points: pressures with units convertible to K / cm3, or densities with
@@ -299,7 +299,7 @@ def generate_sg_continuum_responses(
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
-    temperature: xr.DataArray | None = None,
+    temperature: u.Quantity | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     doppler_velocity: u.Quantity | None = None,
@@ -413,7 +413,7 @@ def generate_ci_responses(
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
-    temperature: xr.DataArray | None = None,
+    temperature: u.Quantity | None = None,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     doppler_velocity: u.Quantity | None = None,

@@ -34,7 +34,7 @@ __all__ = [
 
 
 def create_chianti_line_list(
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,
     abundance: str | None = None,
@@ -48,9 +48,9 @@ def create_chianti_line_list(
 
     Parameters
     ----------
-    temperature : `xarray.DataArray`
-        Temperature array with an `astropy.units.Quantity` payload convertible
-        to K and a ``logT`` dimension.
+    temperature : `astropy.units.Quantity`
+        One-dimensional temperatures convertible to K, such as
+        ``np.arange(5.5, 7.0, 0.1) * u.dex(u.K)``. The output holds them along ``logT``.
     density : `xarray.DataArray`, optional
         Electron density array with an `astropy.units.Quantity` payload
         convertible to cm^-3. Mutually exclusive with ``pressure``. The output
@@ -211,7 +211,7 @@ def _line_list_dataset(
 
 
 def _validate_line_list_inputs(
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     density: xr.DataArray | None,
     pressure: xr.DataArray | None,
     wavelength_range: u.Quantity | None,
@@ -300,7 +300,7 @@ def _validate_species_selection(
 
 
 def create_fiasco_line_list(
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     *,
     density: xr.DataArray | None = None,
     pressure: xr.DataArray | None = None,

@@ -40,7 +40,7 @@ def load_or_create_line_list(
     *,
     abundance: str,
     wavelength_range: u.Quantity,
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     minimum_abundance: float = 1e-21,
@@ -72,8 +72,8 @@ def load_or_create_line_list(
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``.
     wavelength_range : `astropy.units.Quantity`
         The lowest and the highest wavelength of the line list.
-    temperature : `xarray.DataArray`
-        Temperatures along ``logT``, with units convertible to K.
+    temperature : `astropy.units.Quantity`
+        As for `muse.instrument.create_chianti_line_list`.
     pressure, density : `xarray.DataArray`, optional
         The plasma points: pressures with units convertible to K / cm3, or densities with
         units convertible to cm-3. Give exactly one of the two. A pressure axis is stored as
@@ -156,7 +156,7 @@ def load_or_create_continuum(
     *,
     abundance: str,
     wavelength_grid: u.Quantity,
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     pressure: xr.DataArray | None = None,
     density: xr.DataArray | None = None,
     minimum_abundance: float = 1e-21,
@@ -235,7 +235,7 @@ class _PlasmaRequest:
     holds them.
     """
 
-    def __init__(self, temperature: xr.DataArray, pressure: xr.DataArray | None, density: xr.DataArray | None) -> None:
+    def __init__(self, temperature: u.Quantity, pressure: xr.DataArray | None, density: xr.DataArray | None) -> None:
         validated_temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
         self.temperature = temperature
         self.density = density

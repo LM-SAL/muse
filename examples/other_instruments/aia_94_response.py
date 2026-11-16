@@ -79,7 +79,7 @@ print(line_list)
 #
 # .. code-block:: python
 #
-#     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+#     temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
 #     pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 #     abundance = "sun_coronal_2021_chianti"
 #     line_list = create_chianti_line_list(

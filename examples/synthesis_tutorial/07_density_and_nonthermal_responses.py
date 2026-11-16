@@ -36,7 +36,7 @@ change_logging_level("INFO")
 #
 # .. code-block:: python
 #
-#     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+#     temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
 #     density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
 #     line_list = create_chianti_line_list(
 #         temperature=temperature,

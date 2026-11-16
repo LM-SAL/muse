@@ -28,7 +28,7 @@ _CONTINUUM_UNIT = u.erg * u.cm**3 / (u.s * u.AA)
 
 @u.quantity_input(wavelength_grid=u.AA)
 def create_chianti_continuum(
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     wavelength_grid: u.Quantity,
     *,
     density: xr.DataArray | None = None,
@@ -172,7 +172,7 @@ def create_chianti_continuum(
 
 @u.quantity_input(wavelength_grid=u.AA)
 def create_fiasco_continuum(
-    temperature: xr.DataArray,
+    temperature: u.Quantity,
     wavelength_grid: u.Quantity,
     *,
     density: xr.DataArray | None = None,

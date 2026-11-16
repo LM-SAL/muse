@@ -19,11 +19,11 @@ __all__ = []
 
 
 def _validate_plasma_inputs(
-    temperature: xr.DataArray, density: xr.DataArray | None, pressure: xr.DataArray | None
+    temperature: u.Quantity, density: xr.DataArray | None, pressure: xr.DataArray | None
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
-    The temperature in K and the plasma grid, a density in cm^-3 or a pressure in K
-    cm^-3, both without units.
+    The temperature in K along ``logT`` and the plasma grid, a density in cm^-3 or a
+    pressure in K cm^-3, both without units.
     """
     if density is None and pressure is None:
         msg = "Specify density or pressure"
@@ -32,7 +32,10 @@ def _validate_plasma_inputs(
         msg = "density and pressure are mutually exclusive"
         raise ValueError(msg)
 
-    temperature = _validate_positive_data_array(temperature, "temperature", u.K, dimension="logT")
+    if not isinstance(temperature, u.Quantity) or temperature.ndim != 1:
+        msg = "temperature must be a one-dimensional astropy.units.Quantity convertible to K"
+        raise TypeError(msg)
+    temperature = _validate_positive_data_array(xr.DataArray(temperature, dims="logT"), "temperature", u.K)
     if density is not None:
         name = "density"
         plasma_grid = _validate_positive_data_array(density, name, u.cm**-3)
@@ -45,16 +48,12 @@ def _validate_plasma_inputs(
     return temperature, plasma_grid
 
 
-def _validate_positive_data_array(
-    values: xr.DataArray, name: str, unit: u.UnitBase, *, dimension: str | None = None
-) -> xr.DataArray:
+def _validate_positive_data_array(values: xr.DataArray, name: str, unit: u.UnitBase) -> xr.DataArray:
     if not isinstance(values, xr.DataArray):
         msg = f"{name} must be an xarray.DataArray"
         raise TypeError(msg)
-    expected_dims = (dimension,) if dimension is not None else None
-    if (expected_dims is not None and values.dims != expected_dims) or (expected_dims is None and values.ndim != 1):
-        qualifier = f"one-dimensional {dimension}" if dimension is not None else "one-dimensional"
-        msg = f"{name} must be a {qualifier} array"
+    if values.ndim != 1:
+        msg = f"{name} must be a one-dimensional array"
         raise ValueError(msg)
     if values.size == 0:
         msg = f"{name} must not be empty"

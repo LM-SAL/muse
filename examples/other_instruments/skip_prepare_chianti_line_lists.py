@@ -34,7 +34,7 @@ if not os.environ.get("XUVTOP"):
 # Now we need to configure the line-list calculations.
 
 abundance = "sun_coronal_2021_chianti"
-temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
+temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
 pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
