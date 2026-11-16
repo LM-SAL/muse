@@ -299,7 +299,7 @@ def test_the_line_products_of_a_channel_load_together(sg_products):
     response = load_and_concat_responses(
         main.parent,
         [main.name, contaminants.name],
-        channels=[CHANNEL, CHANNEL],
+        channels=[CHANNEL, CHANNEL] * u.AA,
         doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
     )
 
@@ -885,7 +885,7 @@ def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_p
     response = load_and_concat_responses(
         tmp_path,
         [main.name, continuum[0].name],
-        channels=[CHANNEL, CHANNEL],
+        channels=[CHANNEL, CHANNEL] * u.AA,
         doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
     )
 

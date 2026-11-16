@@ -149,7 +149,7 @@ def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
 def test_calculate_moments_preserves_flux_units_with_vmax() -> None:
     spectrum = _tiny_moment_spectrum()
 
-    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=50)
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=50 * u.km / u.s)
 
     assert moments["0th"].attrs["units"] == "ph / s"
 
@@ -163,7 +163,8 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
         },
     )
 
-    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=50)
+    # 50 km/s given in m/s: the 100 km/s pixel is cut, the one without a velocity is kept.
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=5e4 * u.m / u.s)
 
     assert moments["0th"].item() == 5.0
 
@@ -184,7 +185,7 @@ def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
 def test_calculate_moments_vmask_keeps_peak_window() -> None:
     spectrum = _tiny_moment_spectrum()
 
-    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=300, peak_half_width=1)
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=300 * u.km / u.s, peak_half_width=1)
 
     assert moments["0th"].item() == 10.0
     assert moments["1st"].item() == 0.0
@@ -210,14 +211,14 @@ def test_calculate_moments_requires_doppler_velocity(response, raster) -> None:
 def _tiny_vdem_inputs():
     # x (axis 0) and y (axis 1) lengths differ so the test also pins the x-then-y axis order.
     return {
-        "temperature": np.full((2, 3, 2), 1e5),
-        "velocity": np.zeros((2, 3, 2)),
-        "ne_nh": np.ones((2, 3, 2)),
-        "cell_length": np.array([2.0, 3.0]),
-        "x": np.array([10.0, 11.0]),
-        "y": np.array([20.0, 21.0, 22.0]),
-        "velocity_axis": np.array([-1.0, 0.0, 1.0]),
-        "log_temperature_axis": np.array([4.5, 5.0, 5.5]),
+        "temperature": np.full((2, 3, 2), 1e5) * u.K,
+        "velocity": np.zeros((2, 3, 2)) * u.km / u.s,
+        "ne_nh": np.ones((2, 3, 2)) * u.cm**-6,
+        "cell_length": np.array([2.0, 3.0]) * u.cm,
+        "x": np.array([10.0, 11.0]) * u.cm,
+        "y": np.array([20.0, 21.0, 22.0]) * u.cm,
+        "velocity_grid": np.array([-1.0, 0.0, 1.0]) * u.km / u.s,
+        "logT_grid": np.array([4.5, 5.0, 5.5]) * u.dex(u.K),
     }
 
 
@@ -252,14 +253,36 @@ def test_create_simple_vdem_tiny_cube() -> None:
     assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
 
 
+def test_create_simple_vdem_converts_its_inputs() -> None:
+    # The same cube in other units gives the same VDEM, so no input is read as a bare number.
+    inputs = _tiny_vdem_inputs()
+    inputs["velocity"] = np.full((2, 3, 2), 1.0) * u.km / u.s
+    expected = synthesis_utils.create_simple_vdem(**inputs)
+    other_units = {
+        "temperature": u.MK,
+        "velocity": u.m / u.s,
+        "ne_nh": u.m**-6,
+        "cell_length": u.m,
+        "x": u.m,
+        "y": u.m,
+        "velocity_grid": u.m / u.s,
+        "logT_grid": u.K,  # a linear temperature grid is taken as its logarithm
+    }
+
+    result = synthesis_utils.create_simple_vdem(**{name: inputs[name].to(unit) for name, unit in other_units.items()})
+
+    # atol=0: VDEM values are of order 1e-27, far below the default absolute tolerance.
+    xr.testing.assert_allclose(result.vdem, expected.vdem, rtol=1e-12, atol=0)
+
+
 def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     # Velocity exactly on a bin edge must land in the upper bin ([edge_lo, edge_hi) convention).
     inputs = _tiny_vdem_inputs()
     # Bin centers [-1, 0, 1] with dv=1 give edges [-1.5, -0.5, 0.5, 1.5]; -0.5 is the -1|0 edge.
-    inputs["velocity"] = np.full((2, 3, 2), -0.5)
+    inputs["velocity"] = np.full((2, 3, 2), -0.5) * u.km / u.s
 
     result = synthesis_utils.create_simple_vdem(**inputs)
-    # doppler_velocity axis is -velocity_axis[::-1] = [-1, 0, 1]; emission must sit in doppler_velocity=0, not doppler_velocity=-1.
+    # doppler_velocity axis is -velocity_grid[::-1] = [-1, 0, 1]; emission must sit in doppler_velocity=0, not doppler_velocity=-1.
     emission_per_vdop = result.vdem.sum(dim=("logT", "x", "y")).values
     assert emission_per_vdop[1] > 0  # doppler_velocity == 0 bin
     assert emission_per_vdop[0] == 0  # doppler_velocity == -1 bin stays empty
@@ -270,11 +293,11 @@ def test_create_simple_vdem_internal_x_slices_are_exact() -> None:
     inputs = _tiny_vdem_inputs()
     n_x = 3
     shape = (n_x, 3, 2)
-    inputs["temperature"] = np.broadcast_to(inputs["temperature"][:1], shape).copy()
-    inputs["velocity"] = np.broadcast_to(inputs["velocity"][:1], shape).copy()
+    inputs["temperature"] = np.full(shape, 1e5) * u.K
+    inputs["velocity"] = np.zeros(shape) * u.km / u.s
     x_scale = np.arange(1.0, n_x + 1)
-    inputs["ne_nh"] = np.broadcast_to(x_scale[:, np.newaxis, np.newaxis], shape).copy()
-    inputs["x"] = np.arange(n_x)
+    inputs["ne_nh"] = np.broadcast_to(x_scale[:, np.newaxis, np.newaxis], shape) * u.cm**-6
+    inputs["x"] = np.arange(n_x) * u.cm
 
     result = synthesis_utils.create_simple_vdem(**inputs)
 
@@ -287,7 +310,7 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input(integratio
     # Feeding cubes with the LOS axis moved elsewhere plus the matching integration_axis must
     # reproduce the default-axis result; ne_nh varies along every axis so a mix-up cannot cancel.
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2)
+    inputs["ne_nh"] = np.linspace(1.0, 2.0, 12).reshape(2, 3, 2) * u.cm**-6
     default = synthesis_utils.create_simple_vdem(**inputs)
 
     moved = dict(inputs)
@@ -302,10 +325,10 @@ def test_create_simple_vdem_temperature_outside_axis_range() -> None:
     # above spans every bin through the boundary-cell gradient (prev = 100 K), so
     # each bin integrates the full log-T overlap of its column.
     inputs = _tiny_vdem_inputs()
-    inputs["temperature"] = np.full((2, 3, 2), 10.0)  # logT = 1, below the lowest bin edge
+    inputs["temperature"] = np.full((2, 3, 2), 10.0) * u.K  # logT = 1, below the lowest bin edge
     assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
 
-    inputs["temperature"] = np.full((2, 3, 2), 1e9)  # logT = 9, above the highest bin edge
+    inputs["temperature"] = np.full((2, 3, 2), 1e9) * u.K  # logT = 9, above the highest bin edge
     result = synthesis_utils.create_simple_vdem(**inputs)
     # Six (x, y) columns whose boundary cell (cell_length 2, ne_nh 1) fully overlaps each bin.
     np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), np.full(3, 1.2e-26), rtol=1e-12)
@@ -316,7 +339,7 @@ def test_create_simple_vdem_temperature_on_bin_edge_lands_in_lower_bin() -> None
     # the 4.5|5.0 edge is reached from below (boundary prev = 100 K), so the whole
     # log-T overlap sits in the lower bin and the upper bins stay empty.
     inputs = _tiny_vdem_inputs()
-    inputs["temperature"] = np.full((2, 3, 2), 10**4.75)
+    inputs["temperature"] = np.full((2, 3, 2), 10**4.75) * u.K
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), [1.2e-26, 0.0, 0.0], rtol=1e-12)
@@ -326,8 +349,8 @@ def test_create_simple_vdem_dense_ne_nh_no_overflow() -> None:
     # Dense voxels: ne_nh = 1e39 exceeds float32 max (~3.4e38); the float64 pipeline must
     # carry it through the 1e27 units normalization and the per-voxel LOS product intact.
     inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = np.full((2, 3, 2), 1e39)
-    inputs["cell_length"] = np.full(2, 1e7)
+    inputs["ne_nh"] = np.full((2, 3, 2), 1e39) * u.cm**-6
+    inputs["cell_length"] = np.full(2, 1e7) * u.cm
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     # Same geometry as the tiny cube, rescaled: ne_nh 1 -> 1e39, contributing cell_length 2 -> 1e7.
@@ -349,10 +372,10 @@ def test_create_simple_vdem_warns_on_non_finite_input(field: str, caplog: pytest
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [
-        ("temperature", np.ones((1, 2)), "3D array"),
-        ("velocity", np.zeros((1, 1, 3)), "must match temperature"),
-        ("cell_length", np.array([1.0, 2.0, 3.0]), "line-of-sight"),
-        ("x", np.array([1.0]), "non-LOS"),
+        ("temperature", np.ones((1, 2)) * u.K, "3D array"),
+        ("velocity", np.zeros((1, 1, 3)) * u.km / u.s, "must match temperature"),
+        ("cell_length", np.array([1.0, 2.0, 3.0]) * u.cm, "line-of-sight"),
+        ("x", np.array([1.0]) * u.cm, "non-LOS"),
     ],
 )
 def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
