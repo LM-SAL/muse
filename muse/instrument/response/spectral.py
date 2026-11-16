@@ -93,7 +93,7 @@ def create_spectral_response(
         Scalar instrumental FWHM, by default 0 Angstrom. It is turned into the sigma of
         the Gaussian profile, which adds in quadrature to the thermal and nonthermal
         widths. For an SG channel of MUSE, take
-        ``DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=171)``.
+        ``u.Quantity(DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=171).data)``.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional Doppler-velocity axis. If `None`, line
         centers remain at their rest wavelengths and no ``doppler_velocity``
