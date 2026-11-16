@@ -31,8 +31,8 @@ def create_chianti_continuum(
     temperature: u.Quantity,
     wavelength_grid: u.Quantity,
     *,
-    density: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
+    density: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
     abundance: str | None = None,
     minimum_abundance: float = 1e-21,
 ) -> xr.Dataset:
@@ -65,8 +65,8 @@ def create_chianti_continuum(
     `xarray.Dataset`
         ``spectral_response`` in units of 1e-27 erg cm3 /
         (Angstrom s sr). Its dimensions are ``(line, logT, logD, wavelength_bin)`` for a
-        density grid. For a pressure grid the dimension of ``pressure`` takes the place of
-        ``logD`` and comes before ``logT``.
+        density grid. For a pressure grid ``pressure`` takes the place of ``logD`` and comes
+        before ``logT``.
         ``line`` holds the three components ``free-free``, ``free-bound`` and
         ``two-photon``. The coordinates are ``wavelength_grid`` (the input wavelengths)
         with its ``wavelength_bounds``, and ``line_wavelength``, which is NaN for every
@@ -175,8 +175,8 @@ def create_fiasco_continuum(
     temperature: u.Quantity,
     wavelength_grid: u.Quantity,
     *,
-    density: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
+    density: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
     abundance: str | None = None,
     minimum_abundance: float = 1e-21,
     workers: int = 1,

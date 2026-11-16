@@ -35,8 +35,8 @@ __all__ = [
 
 def create_chianti_line_list(
     temperature: u.Quantity,
-    density: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
+    density: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
     abundance: str | None = None,
     wavelength_range: u.Quantity | None = None,
     minimum_abundance: float | None = None,
@@ -51,14 +51,12 @@ def create_chianti_line_list(
     temperature : `astropy.units.Quantity`
         One-dimensional temperatures convertible to K, such as
         ``np.arange(5.5, 7.0, 0.1) * u.dex(u.K)``. The output holds them along ``logT``.
-    density : `xarray.DataArray`, optional
-        Electron density array with an `astropy.units.Quantity` payload
-        convertible to cm^-3. Mutually exclusive with ``pressure``. The output
-        carries this grid on a ``logD`` dimension whose coordinate is
-        ``log10(density)``.
-    pressure : `xarray.DataArray`, optional
-        Electron pressure array with an `astropy.units.Quantity` payload
-        convertible to K cm^-3. Mutually exclusive with ``density``.
+    density : `astropy.units.Quantity`, optional
+        One-dimensional electron densities convertible to cm^-3. Mutually exclusive
+        with ``pressure``. The output holds them along ``logD`` as ``log10(density)``.
+    pressure : `astropy.units.Quantity`, optional
+        One-dimensional electron pressures convertible to K cm^-3, held along
+        ``pressure``. Mutually exclusive with ``density``.
     abundance : `str`, optional
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``. If not
         given, ChiantiPy's configured default applies
@@ -212,8 +210,8 @@ def _line_list_dataset(
 
 def _validate_line_list_inputs(
     temperature: u.Quantity,
-    density: xr.DataArray | None,
-    pressure: xr.DataArray | None,
+    density: u.Quantity | None,
+    pressure: u.Quantity | None,
     wavelength_range: u.Quantity | None,
 ) -> tuple[xr.DataArray, xr.DataArray, tuple[float, float]]:
     temperature, plasma_grid = _validate_plasma_inputs(temperature, density, pressure)
@@ -302,8 +300,8 @@ def _validate_species_selection(
 def create_fiasco_line_list(
     temperature: u.Quantity,
     *,
-    density: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
+    density: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
     abundance: str | None = None,
     wavelength_range: u.Quantity,
     minimum_abundance: float = 1e-21,

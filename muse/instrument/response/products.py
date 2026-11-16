@@ -52,7 +52,7 @@ _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
 _ABUNDANCES = ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund")
 _TEMPERATURE = 10 ** np.arange(4.5, 8.0, 0.1) * u.K
-_PRESSURE = xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure")
+_PRESSURE = [3e14, 3e15, 3e16] * u.K / u.cm**3
 _DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
 # A continuum varies slowly with wavelength, so its velocities are coarser.
 _CONTINUUM_DOPPLER_VELOCITY = np.arange(-1000, 1001, 200) * u.km / u.s
@@ -71,8 +71,8 @@ def generate_sg_responses(
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
     temperature: u.Quantity | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     main_lines_by_channel: Mapping[int | u.Quantity, Sequence[str]] | None = None,
     instrumental_fwhm_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
@@ -139,10 +139,9 @@ def generate_sg_responses(
     temperature : `astropy.units.Quantity`, optional
         Temperatures convertible to K, by default
         10**4.5 to 10**7.9 K in steps of 0.1 dex.
-    pressure, density : `xarray.DataArray`, optional
-        The plasma points: pressures with units convertible to K / cm3, or densities with
-        units convertible to cm-3; at most one of the two, by default
-        3e14, 3e15 and 3e16 K / cm3.
+    pressure, density : `astropy.units.Quantity`, optional
+        The plasma points, as for `muse.instrument.create_chianti_line_list`; at most one
+        of the two, by default 3e14, 3e15 and 3e16 K / cm3.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
         -1000 to 1000 km / s in steps of 10 km / s.
@@ -300,8 +299,8 @@ def generate_sg_continuum_responses(
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
     temperature: u.Quantity | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     wavelength_step: u.Quantity = 0.01 * u.AA,
     minimum_abundance: float = 1e-21,
@@ -414,8 +413,8 @@ def generate_ci_responses(
     instrument_defaults: InstrumentDefaults | None = None,
     abundances: Sequence[str] = _ABUNDANCES,
     temperature: u.Quantity | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     maximum_lines: int = 10000,
     bin_fractional_width: float = 0.01,

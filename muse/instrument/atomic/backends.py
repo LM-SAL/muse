@@ -19,11 +19,11 @@ __all__ = []
 
 
 def _validate_plasma_inputs(
-    temperature: u.Quantity, density: xr.DataArray | None, pressure: xr.DataArray | None
+    temperature: u.Quantity, density: u.Quantity | None, pressure: u.Quantity | None
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
-    The temperature in K along ``logT`` and the plasma grid, a density in cm^-3 or a
-    pressure in K cm^-3, both without units.
+    The temperature in K along ``logT`` and the plasma grid, a density in cm^-3 along
+    ``density`` or a pressure in K cm^-3 along ``pressure``, without units.
     """
     if density is None and pressure is None:
         msg = "Specify density or pressure"
@@ -32,37 +32,21 @@ def _validate_plasma_inputs(
         msg = "density and pressure are mutually exclusive"
         raise ValueError(msg)
 
-    if not isinstance(temperature, u.Quantity) or temperature.ndim != 1:
-        msg = "temperature must be a one-dimensional astropy.units.Quantity convertible to K"
-        raise TypeError(msg)
-    temperature = _validate_positive_data_array(xr.DataArray(temperature, dims="logT"), "temperature", u.K)
+    temperature = _validate_grid(temperature, "temperature", u.K, "logT")
     if density is not None:
-        name = "density"
-        plasma_grid = _validate_positive_data_array(density, name, u.cm**-3)
-    else:
-        name = "pressure"
-        plasma_grid = _validate_positive_data_array(pressure, name, u.K / u.cm**3)
-    if plasma_grid.dims[0] in ("logT", "transition"):
-        msg = f"{name} dimension must not be named {plasma_grid.dims[0]!r}"
-        raise ValueError(msg)
-    return temperature, plasma_grid
+        return temperature, _validate_grid(density, "density", u.cm**-3, "density")
+    return temperature, _validate_grid(pressure, "pressure", u.K / u.cm**3, "pressure")
 
 
-def _validate_positive_data_array(values: xr.DataArray, name: str, unit: u.UnitBase) -> xr.DataArray:
-    if not isinstance(values, xr.DataArray):
-        msg = f"{name} must be an xarray.DataArray"
+def _validate_grid(values: u.Quantity, name: str, unit: u.UnitBase, dimension: str) -> xr.DataArray:
+    if not isinstance(values, u.Quantity) or values.ndim != 1:
+        msg = f"{name} must be a one-dimensional astropy.units.Quantity convertible to {unit}"
         raise TypeError(msg)
-    if values.ndim != 1:
-        msg = f"{name} must be a one-dimensional array"
-        raise ValueError(msg)
     if values.size == 0:
         msg = f"{name} must not be empty"
         raise ValueError(msg)
-    if not isinstance(values.data, u.Quantity):
-        msg = f"{name} data must be an astropy.units.Quantity convertible to {unit}"
-        raise TypeError(msg)
     try:
-        data = values.data.to_value(unit)
+        data = values.to_value(unit)
     except u.UnitConversionError as exc:
         msg = f"{name} units must be convertible to {unit}"
         raise ValueError(msg) from exc
@@ -72,7 +56,7 @@ def _validate_positive_data_array(values: xr.DataArray, name: str, unit: u.UnitB
     if np.any(data <= 0):
         msg = f"{name} must contain only positive values"
         raise ValueError(msg)
-    return values.copy(data=data)
+    return xr.DataArray(data, dims=dimension)
 
 
 def _plasma_axis_units(plasma_dim: str) -> str:
@@ -88,9 +72,8 @@ def _broadcast_plasma_grid(
     """
     Temperature and density on the full grid, and the coordinate of the plasma axis.
 
-    A density grid becomes a ``logD`` axis holding ``log10(density)``; a pressure grid
-    keeps its dimension and the density at each temperature is ``pressure /
-    temperature``.
+    A density grid becomes a ``logD`` axis holding ``log10(density)``; on a pressure grid
+    the density at each temperature is ``pressure / temperature``.
     """
     if by_density:
         plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})

@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
 
 import astropy.units as u
 
@@ -35,7 +34,7 @@ if not os.environ.get("XUVTOP"):
 
 abundance = "sun_coronal_2021_chianti"
 temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
-pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+pressure = [3e15] * u.K / u.cm**3
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +71,7 @@ print(f"EIS line list ready: {output.resolve()}")
 ##############################################################################
 # Hinode/EIS: the density-sensitive Fe X 174.531/175.263 Å pair.
 
-density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
+density = 10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3
 line_list = create_chianti_line_list(
     temperature=temperature,
     density=density,

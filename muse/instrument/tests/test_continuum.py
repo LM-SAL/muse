@@ -25,7 +25,7 @@ from muse.version import version
 
 NORMALIZATION = 1e-27
 TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
-PRESSURE = xr.DataArray([3e14, 3e15] * u.K / u.cm**3, dims="pressure")
+PRESSURE = [3e14, 3e15] * u.K / u.cm**3
 GRID = np.linspace(170.0, 172.0, 21) * u.AA
 
 
@@ -316,7 +316,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
             response.sel(line="free-bound").isel(pressure=i_pressure).values, expected_fb, rtol=1e-12
         )
     # two-photon from He II only, at the density pressure / temperature of each pressure
-    for i_pressure, pressure in enumerate(PRESSURE.values):
+    for i_pressure, pressure in enumerate(PRESSURE.value):
         density = pressure / temperatures
         expected_tp = _fake_intensity(temperatures, wavelengths, 1.0) * (density / 1e9)[:, None] / NORMALIZATION
         np.testing.assert_allclose(
@@ -329,7 +329,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
 
 @pytest.mark.usefixtures("fake_chianti")
 def test_chianti_continuum_density_grid_and_single_temperature():
-    density = xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")
+    density = [1e9, 1e10] * u.cm**-3
     one = create_chianti_continuum(TEMPERATURE[[1]], GRID, density=density, minimum_abundance=0.01)
     assert one.spectral_response.dims == ("line", "logT", "logD", "wavelength_bin")
     np.testing.assert_allclose(one.logD.values, [9.0, 10.0])
@@ -448,7 +448,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
         5 * _fake_intensity(temperatures, wavelengths, 0.5) / NORMALIZATION,
         rtol=1e-12,
     )
-    for i_pressure, pressure in enumerate(PRESSURE.values):
+    for i_pressure, pressure in enumerate(PRESSURE.value):
         density = pressure / temperatures
         expected = 3 * _fake_intensity(temperatures, wavelengths, 1.0) * (density / 1e9)[:, None] / NORMALIZATION
         np.testing.assert_allclose(
@@ -458,7 +458,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
 
 @pytest.mark.usefixtures("fake_fiasco")
 def test_fiasco_continuum_density_grid():
-    density = xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")
+    density = [1e9, 1e10] * u.cm**-3
     continuum = create_fiasco_continuum(TEMPERATURE, GRID, density=density, minimum_abundance=0.01)
     assert continuum.spectral_response.dims == ("line", "logT", "logD", "wavelength_bin")
     two_photon = continuum.spectral_response.sel(line="two-photon")

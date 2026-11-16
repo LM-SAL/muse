@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover
     joblib = None
 
 TEMPERATURE = [1e6] * u.K
-PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+PRESSURE = [3e15] * u.K / u.cm**3
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def test_rejects_missing_density_and_pressure():
 
 
 def test_rejects_both_density_and_pressure():
-    grid = xr.DataArray([1e9] / u.cm**3, dims="density")
+    grid = [1e9] / u.cm**3
     with pytest.raises(ValueError, match="mutually exclusive"):
         create_chianti_line_list(TEMPERATURE, density=grid, pressure=grid)
 
@@ -62,19 +62,6 @@ def test_rejects_both_density_and_pressure():
 def test_rejects_invalid_temperature(temperature, error, error_type):
     with pytest.raises(error_type, match=error):
         create_chianti_line_list(temperature, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
-
-
-# The pressure goes through the validator of the temperature, whose other cases are tested above.
-@pytest.mark.parametrize(
-    ("pressure", "error", "error_type"),
-    [
-        (xr.DataArray([[3e15]] * u.K / u.cm**3, dims=("pressure", "sample")), "one-dimensional", ValueError),
-        (xr.DataArray([3e15] * u.K / u.cm**3, dims="logT"), "must not be named", ValueError),
-    ],
-)
-def test_rejects_invalid_plasma_grid(pressure, error, error_type):
-    with pytest.raises(error_type, match=error):
-        create_chianti_line_list(TEMPERATURE, pressure=pressure, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
 
 @pytest.mark.parametrize(
@@ -142,7 +129,7 @@ def test_converts_units_for_chianti(monkeypatch):
 
     line_list = create_chianti_line_list(
         [1] * u.MK,
-        pressure=xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+        pressure=[3e15] * u.K / u.cm**3,
         abundance="sun_coronal_2021_chianti",
         wavelength_range=[17, 17.2] * u.nm,
         minimum_abundance=np.float64(1e-6),
@@ -188,7 +175,7 @@ def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch
         chdata = pytest.importorskip("ChiantiPy.tools.data")
 
     monkeypatch.delattr(chdata, "Defaults")
-    density = xr.DataArray([1e9] / u.cm**3, dims="density")
+    density = [1e9] / u.cm**3
     # 3e-5 keeps iron and six lighter elements; a lower cut only adds run time.
     line_list = create_chianti_line_list(
         abundance="sun_coronal_2021_chianti",
@@ -214,7 +201,7 @@ def test_create_chianti_line_list_live_density():
     pytest.importorskip("ChiantiPy")
     assert os.environ.get("XUVTOP")
     temperature = 10 ** np.arange(5.6, 6.2, 0.2) * u.K
-    density = xr.DataArray([1e8, 1e9] / u.cm**3, dims="density")
+    density = [1e8, 1e9] / u.cm**3
     line_list = create_chianti_line_list(
         temperature=temperature,
         density=density,
@@ -291,7 +278,7 @@ def controlled_ions(monkeypatch):
 @needs_fiasco_line_lists
 @pytest.mark.usefixtures("controlled_ions")
 def test_fiasco_line_list_has_the_chianti_layout(temperature):
-    pressure = xr.DataArray([3e14, 1e15] * u.K / u.cm**3, dims="pressure")
+    pressure = [3e14, 1e15] * u.K / u.cm**3
     line_list = create_fiasco_line_list(temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA)
     assert {
         "ion_name",
@@ -318,7 +305,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
     np.testing.assert_allclose(line_list.logT.values, np.linspace(5.5, 6.5, 5))
     # The contribution function per steradian, at the density pressure / temperature. The whole
     # grid is compared, so that a swap of the pressure and temperature axes cannot pass.
-    density = pressure.values[:, None] / temperature.value[None, :]
+    density = pressure.value[:, None] / temperature.value[None, :]
     peak = np.exp(-(((np.linspace(5.5, 6.5, 5) - 5.9) / 0.2) ** 2))
     expected = peak[None, :] * density / 1e9 * 1e-25 / (4 * np.pi)
     np.testing.assert_allclose(line_list.gofnt.isel(transition=0).transpose("pressure", "logT"), expected, rtol=1e-12)
@@ -331,7 +318,7 @@ def test_fiasco_line_list_has_the_chianti_layout(temperature):
 @needs_fiasco_line_lists
 @pytest.mark.usefixtures("controlled_ions")
 def test_fiasco_line_list_density_grid_and_range_units(temperature):
-    density = xr.DataArray([1e9] * u.cm**-3, dims="density")
+    density = [1e9] * u.cm**-3
     line_list = create_fiasco_line_list(
         temperature, density=density, wavelength_range=[17, 17.2] * u.nm, abundance="sun_coronal_2021_chianti"
     )
@@ -345,7 +332,7 @@ def test_fiasco_line_list_density_grid_and_range_units(temperature):
 @needs_fiasco_line_lists
 @pytest.mark.usefixtures("controlled_ions")
 def test_fiasco_line_list_rejects_bad_inputs(temperature, monkeypatch):
-    pressure = xr.DataArray([3e14] * u.K / u.cm**3, dims="pressure")
+    pressure = [3e14] * u.K / u.cm**3
     with pytest.raises(ValueError, match="minimum_abundance"):
         create_fiasco_line_list(
             temperature, pressure=pressure, wavelength_range=[170, 175] * u.AA, minimum_abundance=-1
@@ -363,7 +350,7 @@ def test_fiasco_line_list_refuses_a_fiasco_below_the_minimum_version(temperature
     with pytest.raises(ImportError, match=r"0\.9\.0 or later is required, found 0\.8\.3"):
         create_fiasco_line_list(
             temperature,
-            pressure=xr.DataArray([3e14] * u.K / u.cm**3, dims="pressure"),
+            pressure=[3e14] * u.K / u.cm**3,
             wavelength_range=[170, 175] * u.AA,
         )
 
@@ -401,7 +388,7 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     if not Path(fiasco.defaults["hdf5_dbase_root"]).is_file():
         pytest.skip("fiasco's HDF5 database is not available")
     kwargs = {
-        "pressure": xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure"),
+        "pressure": [3e15] * u.K / u.cm**3,
         "wavelength_range": [170, 175] * u.AA,
         "ion_list": ["o_5", "fe_9", "o_6", "fe_10"],
     }

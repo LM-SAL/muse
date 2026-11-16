@@ -41,8 +41,8 @@ def load_or_create_line_list(
     abundance: str,
     wavelength_range: u.Quantity,
     temperature: u.Quantity,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     minimum_abundance: float = 1e-21,
     backend: str = "fiasco",
     create_if_missing: bool = True,
@@ -74,10 +74,9 @@ def load_or_create_line_list(
         The lowest and the highest wavelength of the line list.
     temperature : `astropy.units.Quantity`
         As for `muse.instrument.create_chianti_line_list`.
-    pressure, density : `xarray.DataArray`, optional
-        The plasma points: pressures with units convertible to K / cm3, or densities with
-        units convertible to cm-3. Give exactly one of the two. A pressure axis is stored as
-        ``pressure`` whatever the array calls it, and densities as their log10 along ``logD``.
+    pressure, density : `astropy.units.Quantity`, optional
+        The plasma points: pressures convertible to K / cm3, or densities convertible to
+        cm-3. Give exactly one of the two. Densities are stored as their log10 along ``logD``.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out, by default
         1e-21.
@@ -157,8 +156,8 @@ def load_or_create_continuum(
     abundance: str,
     wavelength_grid: u.Quantity,
     temperature: u.Quantity,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     minimum_abundance: float = 1e-21,
     backend: str = "fiasco",
     create_if_missing: bool = True,
@@ -235,14 +234,11 @@ class _PlasmaRequest:
     holds them.
     """
 
-    def __init__(self, temperature: u.Quantity, pressure: xr.DataArray | None, density: xr.DataArray | None) -> None:
+    def __init__(self, temperature: u.Quantity, pressure: u.Quantity | None, density: u.Quantity | None) -> None:
         validated_temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
         self.temperature = temperature
         self.density = density
-        # Whatever the caller's array calls its axis, a file and a product hold it as "pressure".
         self.pressure = pressure
-        if pressure is not None and pressure.dims != ("pressure",):
-            self.pressure = pressure.rename({pressure.dims[0]: "pressure"})
         self.logT = np.log10(validated_temperature.data)
         self.plasma_dim = "pressure" if density is None else "logD"
         self.plasma_values = plasma.data if density is None else np.log10(plasma.data)

@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
 
 import astropy.units as u
 
@@ -56,9 +55,9 @@ if not os.environ.get("XUVTOP"):
 
 abundance = "sun_coronal_2021_chianti"
 temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
-pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+pressure = [3e15] * u.K / u.cm**3
 # You can use density too and pass this instead into create_chianti_line_list
-# eDensity = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5), dims="logD")
+# density = 10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3
 line_list_directory = Path(
     os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts")
 )

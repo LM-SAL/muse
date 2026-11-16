@@ -36,7 +36,7 @@ LINE_NAMES = ["Fe X 155.000", "Fe VIII 165.000", MAIN_LINE, "Fe X 174.500", "Fe 
 ABUNDANCE = "sun_coronal_2021_chianti"
 OTHER_ABUNDANCE = "sun_photospheric_2021_asplund"
 TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
-PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+PRESSURE = [3e15] * u.K / u.cm**3
 DOPPLER_VELOCITY = np.array([-500.0, 0.0, 500.0]) * u.km / u.s
 # 171 is no channel of the MUSE imager: the test area describes its detector, as an AIA file does.
 DETECTOR = {"gain": "10.0 electron / DN", "pair_energy": "3.65 eV / electron"}
@@ -447,7 +447,7 @@ def test_a_pressure_is_taken_by_value_from_a_longer_line_list(inputs, sg_product
     written = _sg(inputs, tmp_path / "run", **options)
 
     xr.testing.assert_allclose(_main_response(written), _main_response(sg_products))
-    missing = xr.DataArray([3e16] * u.K / u.cm**3, dims="pressure")
+    missing = [3e16] * u.K / u.cm**3
     with pytest.raises(ValueError, match=r"two_pressures\.nc holds the pressure values .* not all of the requested"):
         _sg(inputs, tmp_path / "missing", pressure=missing, **options)
     assert not (tmp_path / "missing").exists()
@@ -463,7 +463,7 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
         _sg(inputs, tmp_path / "run", line_list_file=photospheric)
 
     # on pressures, where densities are requested
-    density = xr.DataArray([1e9] * u.cm**-3, dims="density")
+    density = [1e9] * u.cm**-3
     with pytest.raises(ValueError, match=r"line_list_pressure\.nc has no logD axis"):
         _sg(inputs, tmp_path / "run", pressure=None, density=density)
 
@@ -472,7 +472,7 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
 
 @pytest.mark.usefixtures("_fake_continuum_backend")
 def test_a_density_grid_goes_into_one_product_whole(inputs, tmp_path):
-    options = {"pressure": None, "density": xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")}
+    options = {"pressure": None, "density": [1e9, 1e10] * u.cm**-3}
 
     written = [
         *_sg(inputs, tmp_path / "sg", line_list_file=inputs["density_line_list"], **options),
@@ -603,12 +603,12 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
 def test_a_resumed_call_keeps_only_products_made_with_its_settings(inputs, tmp_path):
     path = tmp_path / "two_pressures.nc"
     _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
-    pressures = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+    pressures = [3e15, 3.4e15] * u.K / u.cm**3
     options = {"line_list_file": path, "skip_existing": True}
     first = _sg(inputs, tmp_path / "run", pressure=pressures, **options)
 
     # The pressure is in the name of a product and the author shapes none: both may differ.
-    assert _sg(inputs, tmp_path / "run", pressure=pressures.isel(pressure=[0]), author="OTHER", **options) == first[:4]
+    assert _sg(inputs, tmp_path / "run", pressure=pressures[:1], author="OTHER", **options) == first[:4]
     other = "made with other settings than this call's"
     for overrides in (
         {"temperature": TEMPERATURE[:2]},
@@ -656,7 +656,7 @@ def test_close_pressures_get_their_own_products(inputs, tmp_path):
     """
     path = tmp_path / "close_pressures.nc"
     _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
-    pressure = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+    pressure = [3e15, 3.4e15] * u.K / u.cm**3
 
     written = _sg(inputs, tmp_path / "run", pressure=pressure, line_list_file=path, maximum_contaminants=0)
 
@@ -680,7 +680,7 @@ def _backends_that_scale(monkeypatch):
     """
 
     def line_list_backend(_temperature, *, pressure, abundance, **_kwargs):
-        values = pressure.data.to_value(u.K / u.cm**3)
+        values = pressure.to_value(u.K / u.cm**3)
         return _line_list(pressure=values, scale=SCALE_OF_ABUNDANCE[abundance] * values / 3e15)
 
     def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
@@ -702,7 +702,7 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
     """
     options = {
         "abundances": list(SCALE_OF_ABUNDANCE),
-        "pressure": xr.DataArray([3e15, 6e15] * u.K / u.cm**3, dims="pressure"),
+        "pressure": [3e15, 6e15] * u.K / u.cm**3,
         "cache_directory": tmp_path / "cache",
     }
     pairs = [(abundance, tag) for abundance in SCALE_OF_ABUNDANCE for tag in ("3e+15", "6e+15")]
@@ -741,7 +741,7 @@ def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_pa
     # what the generators read a line list with
     monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     second = _area_file(tmp_path, name="another_171.zarr")
-    twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
+    twice = [3e15, 3.0000001e15] * u.K / u.cm**3
 
     for overrides in ({"effective_area_files": [inputs["area"], second]}, {"pressure": twice}):
         with pytest.raises(ValueError, match=r"product name\(s\) would be used twice"):
@@ -861,7 +861,7 @@ def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
     assert [(path.parent.name, path.name.split("detector_")[1]) for path in written] == [
         (abundance, f"testea_pressure_{pressure:g}.zarr.zip")
         for abundance in products_module._ABUNDANCES
-        for pressure in products_module._PRESSURE.data.value
+        for pressure in products_module._PRESSURE.value
     ]
     response = read_response(written[0])
     assert response.sizes["pressure"] == 1
