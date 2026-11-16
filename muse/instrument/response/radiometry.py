@@ -14,6 +14,7 @@ from muse.instrument.response.detector import _channel_as_angstrom
 from muse.utils.documentation import format_docstring
 from muse.utils.utils import add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import InstrumentDefaults, _required
 
 __all__ = ["transform_flux_units", "transform_response_units"]
 
@@ -95,6 +96,7 @@ def transform_response_units(
     pixel_height: u.Quantity | None = None,
     gain: u.Quantity | None = None,
     pair_energy: u.Quantity | None = None,
+    instrument_defaults: InstrumentDefaults | None = None,
 ) -> xr.Dataset:
     """
     Convert the radiometric units of a wavelength-space response.
@@ -131,10 +133,12 @@ def transform_response_units(
         {pixel_width_ci} by {pixel_height_ci} for CI.
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. If `None`, use the channel's
-        detector-specific value from `~muse.variables.DEFAULTS_MUSE`.
+        detector-specific value from ``instrument_defaults``.
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon. If `None`,
-        use the channel's detector-specific value from
+        use the channel's detector-specific value from ``instrument_defaults``.
+    instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
+        The pixel sizes and calibrations to fall back on, by default
         `~muse.variables.DEFAULTS_MUSE`.
 
     Returns
@@ -153,20 +157,13 @@ def transform_response_units(
     old_unit = require_unit(response, "spectral_response", "response.spectral_response")
     new_unit = u.Unit(new_units)
 
-    if detector == "sg":
-        default_pixel_width = DEFAULTS_MUSE.dx_pixel_SG
-        default_pixel_height = DEFAULTS_MUSE.dy_pixel_SG
-        gains = DEFAULTS_MUSE.gain_SG
-        pair_energies = DEFAULTS_MUSE.pair_energy_SG
-    else:
-        default_pixel_width = DEFAULTS_MUSE.dx_pixel_CI
-        default_pixel_height = DEFAULTS_MUSE.dy_pixel_CI
-        gains = DEFAULTS_MUSE.gain_CI
-        pair_energies = DEFAULTS_MUSE.pair_energy_CI
-    pixel_width = default_pixel_width if pixel_width is None else pixel_width
-    pixel_height = default_pixel_height if pixel_height is None else pixel_height
+    defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
+    suffix = detector.upper()
+    pixel_width = _required(defaults, f"dx_pixel_{suffix}") if pixel_width is None else pixel_width
+    pixel_height = _required(defaults, f"dy_pixel_{suffix}") if pixel_height is None else pixel_height
 
     if gain is None or pair_energy is None:
+        gains, pair_energies = _required(defaults, f"gain_{suffix}"), _required(defaults, f"pair_energy_{suffix}")
         if channel is None:
             msg = "channel is required unless both gain and pair_energy are given"
             raise ValueError(msg)
@@ -211,6 +208,7 @@ def transform_flux_units(
     detector: str = "SG",
     gain: u.Quantity | None = None,
     pair_energy: u.Quantity | None = None,
+    instrument_defaults: InstrumentDefaults | None = None,
 ) -> xr.Dataset:
     """
     Convert the flux of a spectrum between photons, electrons and data numbers (DN).
@@ -239,16 +237,17 @@ def transform_flux_units(
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN: one value, or one per line.
         If `None`, use the ``gain`` coordinate of ``spectrum`` when it has one,
-        otherwise the value of each line's channel from
-        `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion to or from
-        DN.
+        otherwise the value of each line's channel from ``instrument_defaults``.
+        Read only for a conversion to or from DN.
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon: one value, or
         one per line. If `None`, use the ``pair_energy`` coordinate of
         ``spectrum`` when it has one, as a spectrum made from a response of
         `muse.instrument.read_response` does, otherwise the value of each line's
-        channel from `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion
-        between photons and electrons or DN.
+        channel from ``instrument_defaults``. Read only for a conversion between
+        photons and electrons or DN.
+    instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
+        The calibrations to fall back on, by default `~muse.variables.DEFAULTS_MUSE`.
 
     Returns
     -------
@@ -301,12 +300,13 @@ def transform_flux_units(
         if "channel" not in spectrum.coords:
             msg = "spectrum has no channel coordinate to select the default calibration; pass gain and pair_energy"
             raise ValueError(msg)
+        defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
         try:
             if needs_gain:
-                gain = u.Quantity(getattr(DEFAULTS_MUSE, f"gain_{detector.upper()}").sel(channel=spectrum.channel).data)
+                gain = u.Quantity(_required(defaults, f"gain_{detector.upper()}").sel(channel=spectrum.channel).data)
             if needs_pair_energy:
                 pair_energy = u.Quantity(
-                    getattr(DEFAULTS_MUSE, f"pair_energy_{detector.upper()}").sel(channel=spectrum.channel).data
+                    _required(defaults, f"pair_energy_{detector.upper()}").sel(channel=spectrum.channel).data
                 )
         except KeyError:
             channels = np.unique(spectrum.channel.values).tolist()

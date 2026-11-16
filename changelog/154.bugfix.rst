@@ -1,0 +1,1 @@
+numexpr and periodictable, which every spectral response needs, are core dependencies; before, only the ``chianti`` extra installed them, so ``pip install "muse[fiasco]"`` could not build a response.

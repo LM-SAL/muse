@@ -185,7 +185,7 @@ def read_response(
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
-    doppler_velocity_method: str = "nearest",
+    doppler_velocity_method: str = "linear",
     gain: u.Quantity | None = None,
     chunked: bool = False,
 ) -> xr.Dataset:
@@ -210,7 +210,8 @@ def read_response(
     logT_method : `str`, optional
         Interpolation method for logT, by default "nearest".
     doppler_velocity_method : `str`, optional
-        Interpolation method for doppler_velocity, by default "nearest".
+        Interpolation method for doppler_velocity, by default "linear", as
+        `muse.instrument.align_response_and_vdem` resamples.
     gain : `astropy.units.Quantity`, optional
         Camera gain, convertible to electron/DN. By default the ``gain`` attribute of
         the file, which the generators write.
@@ -461,6 +462,7 @@ def read_responses(
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
+    gain: u.Quantity | None = None,
     chunked: bool = False,
 ) -> xr.Dataset:
     """
@@ -487,6 +489,9 @@ def read_responses(
     doppler_velocity_method : `str`, optional
         Interpolation method for doppler_velocity, by default "linear".
         Passed to `muse.instrument.read_response`.
+    gain : `astropy.units.Quantity`, optional
+        Camera gain of every file, convertible to electron/DN, for files that state
+        none. Passed to `muse.instrument.read_response`.
     chunked : `bool`, optional
         When `True`, load each response dask-backed so the concatenated
         response stays lazy and synthesis peak memory stays bounded by the
@@ -522,6 +527,7 @@ def read_responses(
                 number_of_slits=number_of_slits,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
+                gain=gain,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             if "channel" not in dataset.coords:

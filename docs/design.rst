@@ -12,7 +12,7 @@ Observation-handling roadmap
 The longer-term goal is to support MUSE imaging (context imager) and spectral (spectrograph) observations.
 Planned data containers will connect observations with uncertainties, masks, world coordinate systems, and metadata.
 Calibration tools will cover exposure-time correction, conversion between data numbers and photons, and radiometric calibration, with support for custom calibration routines that produce level 3 data from level 2 inputs.
-These observation-handling features are not yet implemented.
+The conversions already exist for synthetic spectra (:func:`muse.instrument.transform_flux_units`, :func:`muse.synthesis.apply_exposure_time` and :func:`muse.synthesis.remove_exposure_time`); the observation containers and calibration routines are not yet implemented.
 Once available, `MUSE observations will be publicly accessible together with co-aligned SDO/AIA data <https://muse.lmsal.com/search/>`__.
 
 Units are attrs

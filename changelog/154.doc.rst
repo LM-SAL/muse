@@ -1,0 +1,1 @@
+The installation page describes the ``fiasco``, ``chianti``, ``aia`` and ``all`` extras, and the front page lists the line lists, continua, generators and flux conversions. The CI and AIA synthesis examples let ``align_response_and_vdem`` match the temperature grids instead of relabelling the line list's.

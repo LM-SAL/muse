@@ -452,3 +452,15 @@ class InstrumentDefaults:
             if field_channels != channels:
                 msg = f"{name} and {reference} must have matching channel coordinates"
                 raise ValueError(msg)
+
+
+def _required(defaults: InstrumentDefaults, name: str):
+    """
+    The field ``name`` of ``defaults``, which the caller cannot do without: a custom
+    object that leaves it unset is refused with the name of the field.
+    """
+    value = getattr(defaults, name)
+    if value is None:
+        msg = f"instrument_defaults has no {name}; give it one, e.g. attrs.evolve(DEFAULTS_MUSE, {name}=...)"
+        raise ValueError(msg)
+    return value

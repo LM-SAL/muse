@@ -19,7 +19,12 @@ from matplotlib import colors
 import astropy.units as u
 
 from muse.data import fetch_example_data
-from muse.instrument import create_spectral_response, map_response_to_ci_detector, transform_response_units
+from muse.instrument import (
+    align_response_and_vdem,
+    create_spectral_response,
+    map_response_to_ci_detector,
+    transform_response_units,
+)
 from muse.synthesis import vdem_synthesis
 from muse.variables import DEFAULTS_MUSE
 
@@ -35,8 +40,7 @@ vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 # instrument-specific calibration enters below.
 
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
-line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.logT, method="nearest", tolerance=0.05)
-line_list = line_list.assign_coords(logT=vdem.logT)
+line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
 
 ##############################################################################
 # Build the wavelength-space response using a scalar CI effective area.
@@ -68,9 +72,12 @@ response.detector_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="lin
 plt.title("MUSE CI 195 main-line temperature response")
 
 ##############################################################################
-# The band-integrated response feeds directly into the same synthesis
-# function as the SG and other-instrument responses.
+# The band-integrated response feeds into the same synthesis function as the
+# SG and other-instrument responses, once
+# :func:`muse.instrument.align_response_and_vdem` has put it on the
+# temperature and velocity grids of the VDEM.
 
+response, vdem = align_response_and_vdem(response, vdem)
 spectrum = vdem_synthesis(vdem, response)
 image = spectrum.flux.isel(pressure=0).sum(dim="line", keep_attrs=True).compute()
 print(spectrum)

@@ -6,7 +6,6 @@ import xarray as xr
 import astropy.constants as const
 import astropy.units as u
 
-from muse.instrument.response import radiometry as radiometry_module
 from muse.instrument.response.radiometry import transform_flux_units, transform_response_units
 from muse.variables import DEFAULTS_MUSE
 
@@ -211,7 +210,7 @@ def test_transform_response_units_uses_the_channel_pair_energy():
     np.testing.assert_allclose(doubled.spectral_response, default.spectral_response / 2)
 
 
-def test_transform_response_units_selects_detector_calibration(monkeypatch):
+def test_transform_response_units_selects_detector_calibration():
     ci_gain = xr.DataArray(
         np.array([20.0, 20.0]) * u.electron / u.DN,
         coords={"channel": [195, 304]},
@@ -223,11 +222,12 @@ def test_transform_response_units_selects_detector_calibration(monkeypatch):
         dims="channel",
     )
     defaults = attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain, pair_energy_CI=ci_pair_energy)
-    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", defaults)
 
     target_unit = "1e-27 cm5 DN / (Angstrom s)"
-    sg = transform_response_units(_spectral_response(), target_unit, 171 * u.AA)
-    ci = transform_response_units(_spectral_response(), target_unit, 195 * u.AA, detector="ci")
+    sg = transform_response_units(_spectral_response(), target_unit, 171 * u.AA, instrument_defaults=defaults)
+    ci = transform_response_units(
+        _spectral_response(), target_unit, 195 * u.AA, detector="ci", instrument_defaults=defaults
+    )
 
     sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
     ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)
@@ -312,12 +312,13 @@ def test_transform_flux_units_works_along_channel():
     )
 
 
-def test_transform_flux_units_selects_the_detector_calibration(monkeypatch):
+def test_transform_flux_units_selects_the_detector_calibration():
     ci_gain = xr.DataArray(np.array([2.0, 4.0]) * u.electron / u.DN, coords={"channel": [195, 304]}, dims="channel")
-    monkeypatch.setattr(radiometry_module, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain))
     spectrum = _spectrum(channel=(195, 304))
 
-    out = transform_flux_units(spectrum, "DN / s", detector="ci")
+    out = transform_flux_units(
+        spectrum, "DN / s", detector="ci", instrument_defaults=attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain)
+    )
 
     np.testing.assert_allclose(
         out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]) / [2, 4], rtol=1e-12

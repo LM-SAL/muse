@@ -11,7 +11,7 @@ import astropy.units as u
 
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
-from muse.variables_schema import InstrumentDefaults
+from muse.variables_schema import InstrumentDefaults, _required
 
 __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
@@ -156,16 +156,18 @@ def map_response_to_sg_detector(
     channel_value = None
     if channel is not None:
         defaults = instrument_defaults
-        channel_value = _channel_as_angstrom(channel, defaults.channel_spectral_order_SG.channel, "sg")
+        channel_value = _channel_as_angstrom(channel, _required(defaults, "channel_spectral_order_SG").channel, "sg")
         number_of_slits = defaults.number_of_slits_SG if number_of_slits is None else number_of_slits
         pixels_between_slits = (
             defaults.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
         )
         detector_x_pixels = (
-            int(defaults.detector_x_pixels_SG.to_value(u.pix)) if detector_x_pixels is None else detector_x_pixels
+            int(_required(defaults, "detector_x_pixels_SG").to_value(u.pix))
+            if detector_x_pixels is None
+            else detector_x_pixels
         )
         wavelength_start = (
-            u.Quantity(defaults.wavelength_start_SG.sel(channel=channel_value).data)
+            u.Quantity(_required(defaults, "wavelength_start_SG").sel(channel=channel_value).data)
             if wavelength_start is None
             else wavelength_start
         )
@@ -204,7 +206,8 @@ def map_response_to_sg_detector(
             raise ValueError(msg)
     slit_separation = None
     if dispersion is None:
-        slit_separation = u.Quantity(instrument_defaults.spectral_slit_separation_SG.sel(channel=channel_value).data)
+        separations = _required(instrument_defaults, "spectral_slit_separation_SG")
+        slit_separation = u.Quantity(separations.sel(channel=channel_value).data)
         dispersion = slit_separation / pixels_between_slits
     elif pixels_between_slits is not None:
         slit_separation = pixels_between_slits * dispersion

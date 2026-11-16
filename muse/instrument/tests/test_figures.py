@@ -25,7 +25,13 @@ def test_spectral_response_broadening_profiles():
     Thermal, instrumental, and nonthermal broadening produce distinct line widths.
     """
     line_list, main_lines = _line_list_and_name()
-    kwargs = {"line_list": line_list, "wavelength_grid": WAVELENGTH_GRID, "main_lines": main_lines}
+    # sampled at the bin centers, as the profiles were when the figure was made
+    kwargs = {
+        "line_list": line_list,
+        "wavelength_grid": WAVELENGTH_GRID,
+        "main_lines": main_lines,
+        "bin_method": "center",
+    }
     responses = {
         "thermal only": create_spectral_response(**kwargs),
         "instrumental sigma=0.05 A": create_spectral_response(

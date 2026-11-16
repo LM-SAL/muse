@@ -51,8 +51,11 @@ The package is pre-alpha and currently focuses on synthesizing MUSE observations
 
 * Build a Velocity-Differential Emission Measure (VDEM) from a simulation cube with :func:`muse.synthesis.create_simple_vdem`.
 * Match a VDEM to the MUSE field of view and raster geometry with :func:`muse.transforms.match_fov`, :func:`muse.transforms.reshape_x_to_slit_step`, and :func:`muse.transforms.reshape_slit_step_to_x`.
-* Create CHIANTI line lists (:func:`muse.instrument.create_chianti_line_list`) and build, save, and load spectrograph response functions (:func:`muse.instrument.create_spectral_response`, :func:`muse.instrument.save_response`, :func:`muse.instrument.read_response`, :func:`muse.instrument.read_responses`).
-* Synthesize detector spectra with :func:`muse.synthesis.vdem_synthesis` and analyze them with :func:`muse.synthesis.calculate_moments`.
+* Create line lists and continua from CHIANTI with fiasco or ChiantiPy (:func:`muse.instrument.create_fiasco_line_list`, :func:`muse.instrument.create_fiasco_continuum`, :func:`muse.instrument.create_chianti_line_list`, :func:`muse.instrument.create_chianti_continuum`), cached on disk by :func:`muse.instrument.load_or_create_line_list` and :func:`muse.instrument.load_or_create_continuum`.
+* Build spectrograph and context-imager responses (:func:`muse.instrument.create_spectral_response`, :func:`muse.instrument.create_continuum_response`, :func:`muse.instrument.map_response_to_sg_detector`, :func:`muse.instrument.map_response_to_ci_detector`) through an effective area (:func:`muse.instrument.create_effective_area`), and save and load them (:func:`muse.instrument.save_response`, :func:`muse.instrument.read_response`, :func:`muse.instrument.read_responses`).
+* Generate the response files of every channel and abundance in one call with :func:`muse.instrument.generate_sg_responses`, :func:`muse.instrument.generate_sg_continuum_responses` and :func:`muse.instrument.generate_ci_responses`.
+* Synthesize detector spectra with :func:`muse.synthesis.vdem_synthesis`, convert them between photons, electrons and data numbers (:func:`muse.instrument.transform_flux_units`) and to the counts of one exposure (:func:`muse.synthesis.apply_exposure_time`), and analyze them with :func:`muse.synthesis.calculate_moments`.
+* Build responses of other instruments the same way, such as SDO/AIA (:func:`muse.instrument.create_aia_effective_area`).
 
 The :doc:`example gallery <generated/gallery/index>` walks through this pipeline end to end.
 

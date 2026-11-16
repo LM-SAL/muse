@@ -68,10 +68,7 @@ def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[
     # contract the other input's doppler_velocity on its own: no error, wrong flux.
     for name, dataset in (("vdem", vdem), ("response", response)):
         if "vdop" in dataset.dims:
-            msg = (
-                f"{name} uses the legacy 'vdop' dimension; rename it to 'doppler_velocity' "
-                "(muse.instrument.read_response does this on load)"
-            )
+            msg = f"{name} uses the legacy 'vdop' dimension; rename it with {name}.rename(vdop='doppler_velocity')"
             raise ValueError(msg)
     for dim in sum_over:
         if dim not in response.dims:

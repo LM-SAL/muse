@@ -349,7 +349,7 @@ def calculate_moments(
     peak_half_width : `float` or None, optional
         Half-width of the window kept around the line peak, in the units of the
         ``moment_dim`` coordinate (detector pixels by default), by default None.
-        Only used together with ``maximum_doppler_velocity``.
+        With ``maximum_doppler_velocity`` the peak is found within that velocity.
 
     Returns
     -------
@@ -370,20 +370,19 @@ def calculate_moments(
         msg = f"spectrum.{doppler_name} dimensions must be a subset of spectrum.{variable_name} dimensions"
         raise ValueError(msg)
 
+    masked_spectrum = spectrum
     if maximum_doppler_velocity is not None:
         # NaN Doppler coordinates stay included, matching the old 0/1 mask.
         maximum_speed = maximum_doppler_velocity.to_value(u.km / u.s)  # the coordinate is in km/s by now
         masked_flux = spectrum[variable_name].where(~(np.abs(spectrum[doppler_name]) > maximum_speed), 0)
         masked_spectrum = spectrum.assign({variable_name: masked_flux})
-        if peak_half_width is not None:
-            peak_index = masked_spectrum[variable_name].argmax(dim=moment_dim)
-            peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
-            distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
-            masked_spectrum = masked_spectrum.assign(
-                {variable_name: masked_spectrum[variable_name].where(distance < peak_half_width, 0)}
-            )
-    else:
-        masked_spectrum = spectrum
+    if peak_half_width is not None:
+        peak_index = masked_spectrum[variable_name].argmax(dim=moment_dim)
+        peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
+        distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
+        masked_spectrum = masked_spectrum.assign(
+            {variable_name: masked_spectrum[variable_name].where(distance < peak_half_width, 0)}
+        )
     masked_spectrum = masked_spectrum.assign(
         {
             variable_name: masked_spectrum[variable_name]
@@ -456,7 +455,16 @@ def doppler_to_wavelength(data: xr.Dataset, *, doppler_name: str = "detector_dop
     `xarray.Dataset`
         A new dataset with an added ``detector_wavelength`` coordinate in
         Angstrom.
+
+    Raises
+    ------
+    ValueError
+        If ``data`` already has a ``detector_wavelength`` coordinate, such as the
+        detector geometry of a mapped response; drop it first to replace it.
     """
+    if "detector_wavelength" in data.coords:
+        msg = "data already has a detector_wavelength coordinate; drop it first to replace it"
+        raise ValueError(msg)
     speed_of_light_kms = speed_of_light.to_value(u.km / u.s)
     line_wavelength = coord_as_unit(data, "line_wavelength", u.AA, "data.line_wavelength")
     doppler_velocity = coord_as_unit(data, doppler_name, u.km / u.s, f"data.{doppler_name}")

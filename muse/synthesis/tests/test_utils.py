@@ -56,7 +56,7 @@ def test_wavelength_doppler_round_trip() -> None:
     assert u.Unit(with_vel.detector_doppler_velocity.attrs["units"]) == u.km / u.s
     assert "detector_doppler_velocity" not in resp.coords  # input must not be mutated
 
-    back = synthesis_utils.doppler_to_wavelength(with_vel)
+    back = synthesis_utils.doppler_to_wavelength(with_vel.drop_vars("detector_wavelength"))
     np.testing.assert_allclose(back.detector_wavelength.values, resp.detector_wavelength.values, rtol=1e-10)
     assert u.Unit(back.detector_wavelength.attrs["units"]) == u.AA
 
@@ -74,7 +74,10 @@ def test_wavelength_to_doppler_leaves_the_velocity_axis_of_a_response_alone() ->
 
 def test_doppler_to_wavelength_converts_the_coordinate_it_is_given() -> None:
     axis = ("doppler_velocity", [-300.0, 0.0, 300.0], {"units": "km / s"})
-    resp = _tiny_response().drop_vars("detector_wavelength").assign_coords(doppler_velocity=axis)
+    mapped = _tiny_response().assign_coords(doppler_velocity=axis)
+    with pytest.raises(ValueError, match="already has a detector_wavelength"):
+        synthesis_utils.doppler_to_wavelength(mapped, doppler_name="doppler_velocity")
+    resp = mapped.drop_vars("detector_wavelength")
 
     out = synthesis_utils.doppler_to_wavelength(resp, doppler_name="doppler_velocity")
 
@@ -182,11 +185,11 @@ def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
         synthesis_utils.calculate_moments(spectrum)
 
 
-def test_calculate_moments_vmask_keeps_peak_window() -> None:
+def test_calculate_moments_masks_by_velocity_and_by_peak_window() -> None:
     spectrum = _tiny_moment_spectrum()
 
-    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=300 * u.km / u.s, peak_half_width=1)
-
+    assert synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=150 * u.km / u.s)["0th"].item() == 14.0
+    moments = synthesis_utils.calculate_moments(spectrum, peak_half_width=1)
     assert moments["0th"].item() == 10.0
     assert moments["1st"].item() == 0.0
     assert moments["2nd"].item() == 0.0

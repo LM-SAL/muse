@@ -5,7 +5,9 @@ wavelength bins.
 
 from collections.abc import Sequence
 
+import numexpr
 import numpy as np
+import periodictable as pt
 import xarray as xr
 from scipy.special import erf
 from tqdm import tqdm
@@ -71,7 +73,7 @@ def create_spectral_response(
     effective_area: xr.DataArray | xr.Dataset | None = None,
     include_contaminants: bool = False,
     wavelength_edges: u.Quantity | None = None,
-    bin_method: str | None = None,
+    bin_method: str = "average",
 ) -> xr.Dataset:
     """
     Create an instrument-neutral wavelength-space spectral response.
@@ -122,7 +124,7 @@ def create_spectral_response(
         which conserves the area of a line on any grid that covers it. With ``"average"``
         an ``effective_area`` curve is applied to each line at its own Doppler-shifted
         center; with ``"center"`` it is applied at each bin center. By default
-        ``"center"`` with ``wavelength_grid`` and ``"average"`` with ``wavelength_edges``.
+        ``"average"``.
 
     Returns
     -------
@@ -173,15 +175,12 @@ def _build_spectral_response(
     main_lines: Sequence[str],
     include_contaminants: bool = False,
     wavelength_edges: u.Quantity | None = None,
-    bin_method: str | None = None,
+    bin_method: str = "average",
     progress: bool = True,
 ) -> xr.Dataset:
     """
     Build the wavelength-space response, optionally including contaminants.
     """
-    if bin_method is None:
-        # Sampling at the centers of coarse bins misses the lines between them altogether.
-        bin_method = "center" if wavelength_edges is None else "average"
     if bin_method not in _BIN_METHODS:
         msg = f"bin_method must be one of {_BIN_METHODS}, got {bin_method!r}"
         raise ValueError(msg)
@@ -217,12 +216,6 @@ def _build_spectral_response(
         keep = [i for i, name in enumerate(line_names) if name in selected]
         line_list = line_list.isel(transition=keep)
         line_names = tuple(str(name) for name in line_list.full_name.values)
-
-    try:
-        import periodictable as pt  # noqa: PLC0415
-    except ImportError:
-        msg = "periodictable is required for this function, install it with `pip install muse[chianti]`"
-        raise ImportError(msg) from None
 
     speed_of_light_kms = const.c.to_value(u.km / u.s)
     speed_of_light_ms = const.c.to_value(u.m / u.s)
@@ -646,12 +639,6 @@ def _evaluate_gaussian_response(
     ``area_at_center`` (the effective area at the line center, which may vary with the
     Doppler velocity) scales the line.
     """
-    try:
-        import numexpr  # noqa: PLC0415
-    except ImportError:
-        msg = "numexpr is required for this function, install it with `pip install muse[chianti]`"
-        raise ImportError(msg) from None
-
     average = bin_method == "average"
     if average and edges is None:
         msg = "bin averages need the bin edges"
@@ -715,8 +702,6 @@ def _bin_averaged_gaussian(
     Each bin's average of the Gaussian: erf differences at the bin edges over the bin
     width.
     """
-    import numexpr  # noqa: PLC0415
-
     erf_at_edges = erf(shift_at_edges / (width * np.sqrt(2)))
     lower_index = [slice(None)] * erf_at_edges.ndim
     upper_index = [slice(None)] * erf_at_edges.ndim

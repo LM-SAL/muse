@@ -98,8 +98,8 @@ print(line_list)
 ##############################################################################
 # The response of the channel to a set of lines takes the three steps.
 # ``main_lines=None`` with ``include_contaminants=True`` folds every line into
-# one component, which is how an imager sees them. ``bin_method="average"``
-# integrates each line over its wavelength bin: a cool iron line is about
+# one component, which is how an imager sees them. Each line is integrated over
+# its wavelength bin (``bin_method="average"``, the default): a cool iron line is about
 # 0.004 Å wide, five times narrower than the bins, and sampled at the bin centers
 # instead it would be counted too high or too low as it falls in its bin; on
 # this grid the cool lines would lose about half their signal. One Doppler
@@ -118,7 +118,6 @@ def imager_response(lines):
         wavelengths,
         main_lines=None,
         include_contaminants=True,
-        bin_method="average",
         effective_area=effective_area,
         doppler_velocity=[0.0] * u.km / u.s,
     )
