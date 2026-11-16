@@ -28,7 +28,6 @@ from muse.instrument.atomic.cache import (
 )
 from muse.instrument.atomic.linelist import boost_transitions, rank_line_list, select_transitions
 from muse.instrument.effective_area import (
-    _CM2_DN_PER_PHOTON,
     _DETECTOR_ATTRS,
     effective_area_wavelength_range,
     read_effective_area,
@@ -211,8 +210,8 @@ def generate_sg_responses(
         If ``maximum_contaminants`` is not an integer.
     ValueError
         If an option is not valid, two products would get one name, a product exists and
-        ``skip_existing`` is `False`, a file is of no SG channel or is in cm2 DN / ph,
-        or a line list does not hold the requested temperatures and plasma points.
+        ``skip_existing`` is `False`, a file is of no SG channel, or a line list does not
+        hold the requested temperatures and plasma points.
     FileNotFoundError
         If a line list is missing and ``create_if_missing`` is `False`.
     FileExistsError
@@ -422,7 +421,6 @@ def generate_ci_responses(
     bin_fractional_width: float = 0.01,
     include_continuum: bool = True,
     continuum_backend: str = "fiasco",
-    units: Sequence[str] = ("ph", "DN"),
     minimum_abundance: float = _MINIMUM_ABUNDANCE,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
@@ -439,23 +437,23 @@ def generate_ci_responses(
     Generate the imager responses of a set of effective-area files.
 
     The files are of the MUSE context imager (CI) or of another imager. Per file, abundance
-    and plasma point there are two products in every unit: a waveband cube, which holds the
-    brightest lines summed and the continuum components on bins of constant velocity width,
-    and the imager response, which is that cube summed over wavelength and over its parts.
+    and plasma point there are three products: a waveband cube in photons and one in DN,
+    which hold the brightest lines summed and the continuum components on bins of constant
+    velocity width, and the imager response in DN, which is the DN cube summed over
+    wavelength and over its parts.
 
     Each product is one file, a zarr store packed into a zip, named
     ``<abundance>/response_ci_<channel>[_waveband]_<label>_<plasma>[_DN].zarr.zip``:
-    ``_waveband`` marks the cube and ``_DN`` the products in DN instead of photons; the other
-    parts of the names and the rules for them are as in `generate_sg_responses`.
+    ``_waveband`` marks a cube and ``_DN`` a product in DN; the other parts of the names and
+    the rules for them are as in `generate_sg_responses`.
 
     Parameters
     ----------
     output_directory, author, effective_area_label, abundances
         As for `generate_sg_responses`.
     effective_area_files : `list` of `str` or `pathlib.Path`
-        Files of `muse.instrument.save_effective_area`, one channel each. An area in
-        cm2 DN / ph gives DN already, so only DN products exist for it. A file of
-        an imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
+        Files of `muse.instrument.save_effective_area`, one channel each. A file of an
+        imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
         attributes, and should give ``pixel_width`` and ``pixel_height``, which are otherwise
         those of ``instrument_defaults``; `muse.instrument.create_aia_effective_area` writes
         all four.
@@ -475,8 +473,6 @@ def generate_ci_responses(
         Whether the continuum goes into the products, by default `True`.
     continuum_backend : {"chianti", "fiasco"}, optional
         What creates a missing continuum, by default ``"fiasco"``.
-    units : `list` of `str`, optional
-        The units the products are written in: ``"ph"``, ``"DN"`` or both, the default.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out of the line list and the continuum, by
         default 1e-21.
@@ -499,8 +495,8 @@ def generate_ci_responses(
     `list` of `pathlib.Path`
         The products, made or kept. A cube holds ``spectral_response(line, doppler_velocity,
         logT, pressure or logD, wavelength_bin)`` in 1e-27 cm5 ph / (Angstrom s), or DN in
-        place of ph, and an imager response ``detector_response(line, doppler_velocity, logT,
-        pressure or logD)`` in 1e-27 cm5 ph / s or DN / s, each with the
+        place of ph, and the imager response ``detector_response(line, doppler_velocity, logT,
+        pressure or logD)`` in 1e-27 cm5 DN / s, each with the
         ``effective_area(wavelength)`` it was made with. Along ``line`` a cube holds
         ``"<channel> lines"`` and ``"<channel> continuum <component>"``; an imager response
         holds one entry, ``"<channel> lines"`` or ``"<channel> lines + continuum"``.
@@ -528,10 +524,6 @@ def generate_ci_responses(
         **({"minimum_abundance": minimum_abundance} if include_continuum else {}),
     }
     with _limited_threads(threads):
-        units = (units,) if isinstance(units, str) else tuple(units)
-        if not units or set(units) - {"ph", "DN"}:
-            msg = f"units must be 'ph', 'DN' or both, got {units!r}"
-            raise ValueError(msg)
         if not isinstance(maximum_lines, Integral):
             msg = f"maximum_lines must be an integer, got {maximum_lines!r}"
             raise TypeError(msg)
@@ -542,7 +534,7 @@ def generate_ci_responses(
             msg = f"bin_fractional_width must be positive, got {bin_fractional_width!r}"
             raise ValueError(msg)
         run = _Run(generate_ci_responses, settings, call_inputs)
-        _require_ci_files(run.effective_areas, units, instrument_defaults)
+        _require_ci_files(run.effective_areas, instrument_defaults)
         load_line_list = _line_list_loader(
             run,
             effective_area_wavelength_range(run.effective_areas),
@@ -556,13 +548,10 @@ def generate_ci_responses(
         doppler_velocity = _or_default(doppler_velocity, _DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
-            tags = (
-                ["_DN"] if _in_dn_per_ph(area) else [tag for unit, tag in (("ph", ""), ("DN", "_DN")) if unit in units]
-            )
             return {
-                (tag, kind): (f"ci_{_channel(area)}{suffix}", tag)
-                for tag in tags
-                for kind, suffix in (("waveband", "_waveband"), ("summed", ""))
+                "waveband": (f"ci_{_channel(area)}_waveband", ""),
+                "waveband_DN": (f"ci_{_channel(area)}_waveband", "_DN"),
+                "summed_DN": (f"ci_{_channel(area)}", "_DN"),
             }
 
         for abundance, tasks in run.plan(names_of).items():
@@ -903,34 +892,26 @@ def _write_ci_products(
     instrument_defaults: InstrumentDefaults,
 ) -> None:
     """
-    The waveband cube and the imager response of one channel at one plasma point, in
-    every unit ``names`` holds.
+    The waveband cubes and the imager response of one channel at one plasma point.
     """
     channel = _channel(area) * u.AA
     curve = _curve(area)
-    response_area = area  # the Dataset, so that the products inherit its history
-    if _in_dn_per_ph(area):
-        # The area is in DN / ph already: the response is built from it as a plain cm2 area,
-        # and what comes out per photon is DN. The products keep the area as it was given.
-        response_area = area.assign(
-            effective_area=curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
-        )
     edges = create_log_wavelength_edges(curve.wavelength.values[[0, -1]] * u.AA, bin_fractional_width)
-    ranked = rank_line_list(line_list, response_area).isel(transition=slice(maximum_lines))
+    ranked = rank_line_list(line_list, area).isel(transition=slice(maximum_lines))
     line_label = f"{_channel(area)} lines"
     cube = create_spectral_response(
         ranked,
         main_lines=None,
         include_contaminants=True,
         doppler_velocity=doppler_velocity,
-        effective_area=response_area,
+        effective_area=area,  # the Dataset, so that the products inherit its history
         wavelength_edges=edges,
     ).assign_coords(line=[line_label], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
     cube.attrs["number_of_lines"] = ranked.sizes["transition"]
     if continuum is not None:
         # The area without its history: the lines bring it into the cube already.
         folded = create_continuum_response(
-            continuum, edges, effective_area=response_area.drop_attrs(deep=False), doppler_velocity=doppler_velocity
+            continuum, edges, effective_area=area.drop_attrs(deep=False), doppler_velocity=doppler_velocity
         )
         folded = folded.assign_coords(
             line=[f"{_channel(area)} continuum {component}" for component in folded.line.values]
@@ -951,17 +932,13 @@ def _write_ci_products(
 
     detector_kwargs = _detector_kwargs(area, "CI", instrument_defaults)
     photons = transform_response_units(cube, _PHOTON_UNITS, channel=channel, detector="CI", **detector_kwargs)
-    if _in_dn_per_ph(area):
-        in_dn = photons.assign(spectral_response=photons.spectral_response.assign_attrs(units=_DN_UNITS))
-    else:
-        in_dn = transform_response_units(cube, _DN_UNITS, channel=channel, detector="CI", **detector_kwargs)
+    in_dn = transform_response_units(cube, _DN_UNITS, channel=channel, detector="CI", **detector_kwargs)
     attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
-    for tag, converted in (("", photons), ("_DN", in_dn)):
-        if (tag, "waveband") not in names:
-            continue
-        run.write(converted.assign(effective_area=curve), names[tag, "waveband"], save_spectral_response, **attrs)
-        summed = _sum_lines(map_response_to_ci_detector(converted, channel=channel), line_label)
-        run.write(summed.assign(effective_area=curve), names[tag, "summed"], save_response, **attrs)
+    for name, converted in (("waveband", photons), ("waveband_DN", in_dn)):
+        run.write(converted.assign(effective_area=curve), names[name], save_spectral_response, **attrs)
+    # In DN alone: a sum in photons has lost the wavelengths its DN depend on.
+    summed = _sum_lines(map_response_to_ci_detector(in_dn, channel=channel), line_label)
+    run.write(summed.assign(effective_area=curve), names["summed_DN"], save_response, **attrs)
 
 
 def _line_list_loader(
@@ -1083,10 +1060,6 @@ def _curve(area: xr.Dataset) -> xr.DataArray:
     return area.effective_area.reset_coords("channel", drop=True)
 
 
-def _in_dn_per_ph(area: xr.Dataset) -> bool:
-    return u.Unit(area.effective_area.attrs["units"]).is_equivalent(_CM2_DN_PER_PHOTON)
-
-
 def _attribute_of_product(product: Path, name: str):
     """
     An attribute of a written product, read from its metadata alone.
@@ -1148,20 +1121,12 @@ def _require_sg_files(effective_areas: list[xr.Dataset], instrument_defaults: In
                 f"{', '.join(map(str, sg_channels))}"
             )
             raise ValueError(msg)
-        if _in_dn_per_ph(area):
-            msg = f"{file_name} is in cm2 DN / ph; an SG product needs the area in cm2, without the conversion to DN"
-            raise ValueError(msg)
 
 
-def _require_ci_files(
-    effective_areas: list[xr.Dataset], units: tuple[str, ...], instrument_defaults: InstrumentDefaults
-) -> None:
+def _require_ci_files(effective_areas: list[xr.Dataset], instrument_defaults: InstrumentDefaults) -> None:
     ci_channels = _ci_channels(instrument_defaults)
     for area in effective_areas:
         file_name = area.attrs["effective_area_file"]
-        if _in_dn_per_ph(area) and "DN" not in units:
-            msg = f"{file_name} is in cm2 DN / ph, so only DN products exist for it; add 'DN' to units"
-            raise ValueError(msg)
         missing = [name for name in ("gain", "pair_energy") if name not in area.attrs]
         if missing and _channel(area) not in ci_channels:
             msg = (

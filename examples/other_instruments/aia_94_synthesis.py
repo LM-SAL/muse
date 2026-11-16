@@ -68,7 +68,7 @@ print(vdem)
 # ``obstime``, this is the baseline calibration without a time-dependent
 # degradation correction.
 channel = 94 * u.AA
-effective_area = create_aia_effective_area(channel, include_eve_correction=False, include_dn_per_photon=False)
+effective_area = create_aia_effective_area(channel, include_eve_correction=False)
 detector = {
     name: u.Quantity(effective_area.attrs[name]) for name in ("pixel_width", "pixel_height", "gain", "pair_energy")
 }

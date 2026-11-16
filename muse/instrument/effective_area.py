@@ -23,7 +23,6 @@ __all__ = [
     "save_effective_area",
 ]
 
-_CM2_DN_PER_PHOTON = u.cm**2 * u.DN / u.ph
 # The keywords of create_effective_area that describe its detector, recorded as attributes.
 _DETECTOR_ATTRS = ("pixel_width", "pixel_height", "gain", "pair_energy")
 # SolarSoft's default aia_get_response epoch, the start of the science mission.
@@ -33,7 +32,7 @@ _AIA_PAIR_ENERGY = 3.65 * u.eV / u.electron
 
 
 @u.quantity_input(
-    area=[u.cm**2, _CM2_DN_PER_PHOTON],
+    area=u.cm**2,
     wavelength=u.AA,
     channel=u.AA,
     pixel_width=u.arcsec,
@@ -59,8 +58,7 @@ def create_effective_area(
     Parameters
     ----------
     area : `astropy.units.Quantity`
-        The area at each wavelength, in cm2, or in cm2 DN / ph for an area that includes
-        the camera's conversion from photons to DN.
+        The area at each wavelength, in cm2.
     wavelength : `astropy.units.Quantity`
         Increasing wavelengths of the samples.
     channel : `astropy.units.Quantity`
@@ -136,14 +134,14 @@ def create_aia_effective_area(
     include_crosstalk: bool = True,
     include_degradation: bool = False,
     include_eve_correction: bool = True,
-    include_dn_per_photon: bool = True,
 ) -> xr.Dataset:
     """
     Build the effective-area dataset of one SDO/AIA channel from aiapy.
 
-    The area is ``(A_eff + A_cross) * C_T(obstime) * C_E(obstime) [* G(wavelength)]``, the
-    terms of ``aiapy.response.Channel.wavelength_response``. The defaults are those of
-    SolarSoft's ``aia_get_response(/dn, /evenorm)``, which DEM codes use.
+    The area, in cm2, is ``(A_eff + A_cross) * C_T(obstime) * C_E(obstime)``, the terms of
+    ``aiapy.response.Channel.wavelength_response`` but its DN per photon. SolarSoft's
+    ``aia_get_response(/dn, /evenorm)``, whose defaults these are, is this area times
+    ``dn_per_photon``.
 
     Parameters
     ----------
@@ -163,13 +161,6 @@ def create_aia_effective_area(
     include_eve_correction : `bool`, optional
         Apply the EVE cross-calibration factor of ``obstime``, SolarSoft's ``/evenorm``, by
         default `True`.
-    include_dn_per_photon : `bool`, optional
-        Multiply the area by the DN that one photon gives, aiapy's ``Channel.gain``, which
-        varies with wavelength, by default `True`. The area is then in cm2 DN / ph, and
-        `muse.instrument.create_spectral_response` and
-        `muse.instrument.create_continuum_response` refuse it. Pass `False` for an area in
-        cm2, which they take. This factor is not the camera gain in electron / DN, which is
-        always recorded as ``gain``.
 
     Returns
     -------
@@ -198,8 +189,6 @@ def create_aia_effective_area(
     degradation_factor = degradation(channel, obstime).to_value(u.one).item() if include_degradation else 1.0
     eve_factor = aia_channel.eve_correction(obstime).to_value(u.one).item() if include_eve_correction else 1.0
     area = (aia_channel.effective_area + crosstalk) * degradation_factor * eve_factor
-    if include_dn_per_photon:
-        area = area * aia_channel.gain
     # aiapy's Channel.gain is DN per photon: the photon energy over the pair energy and the
     # camera gain (electron / DN). So the camera gain follows from any one wavelength.
     photon_energy = (const.h * const.c / aia_channel.wavelength[0]).to(u.eV) / u.ph
@@ -248,8 +237,11 @@ def _validate_effective_area(effective_area: xr.Dataset, label: str) -> xr.Datas
         )
         raise ValueError(msg)
     unit = require_unit(effective_area, "effective_area", f"{label}: effective_area")
-    if not (unit.is_equivalent(u.cm**2) or unit.is_equivalent(_CM2_DN_PER_PHOTON)):
-        msg = f"{label}: effective_area units {unit} must be convertible to cm2 or cm2 DN / ph"
+    if not unit.is_equivalent(u.cm**2):
+        # The products convert to DN bin by bin, which an area with the DN per photon folded in defeats.
+        in_dn = unit.is_equivalent(u.cm**2 * u.DN / u.ph)
+        hint = "; give it in cm2, with the camera gain as its gain attribute" * in_dn
+        msg = f"{label}: effective_area units {unit} must be convertible to cm2{hint}"
         raise ValueError(msg)
     # Converted here, once: every later step may take the numbers as Angstrom.
     wavelength = coord_as_unit(effective_area, "wavelength", u.AA, f"{label}: wavelength")
@@ -264,8 +256,8 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
     Parameters
     ----------
     effective_area : `xarray.Dataset`
-        ``effective_area(wavelength)`` with units convertible to cm2 or cm2 DN / ph, and the
-        scalar coordinate ``channel``.
+        ``effective_area(wavelength)`` with units convertible to cm2, and the scalar
+        coordinate ``channel``.
     effective_area_file : `str` or `pathlib.Path`
         Destination ending in ``.zarr``, ``.zarr.zip``, ``.nc``, ``.ncdf``, or ``.netcdf``.
         A ``.zarr.zip`` destination is one file: the zarr store packed into a zip. Existing
@@ -297,8 +289,8 @@ def read_effective_area(effective_area_file: str | Path) -> xr.Dataset:
     Returns
     -------
     `xarray.Dataset`
-        The dataset in memory: ``effective_area(wavelength)``, its units convertible to cm2 or
-        cm2 DN / ph, with ``wavelength`` and the scalar ``channel`` converted to Angstrom.
+        The dataset in memory: ``effective_area(wavelength)``, its units convertible to cm2,
+        with ``wavelength`` and the scalar ``channel`` converted to Angstrom.
 
     Raises
     ------
