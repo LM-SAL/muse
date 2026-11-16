@@ -1100,10 +1100,7 @@ def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: Instr
     """
     detector = detector.upper()
     channel = _channel(area)
-    kwargs = {
-        "pixel_width": getattr(instrument_defaults, f"dx_pixel_{detector}"),
-        "pixel_height": getattr(instrument_defaults, f"dy_pixel_{detector}"),
-    }
+    kwargs = {name: getattr(instrument_defaults, f"{name}_{detector}") for name in ("pixel_width", "pixel_height")}
     for name in ("gain", "pair_energy"):
         table = getattr(instrument_defaults, f"{name}_{detector}")
         # A channel of another instrument has no entry; its file gives the value.

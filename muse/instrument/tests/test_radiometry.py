@@ -214,8 +214,8 @@ def test_transform_response_units_selects_detector_calibration():
         instrument_defaults=lacking,
     )
 
-    sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
-    ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)
+    sg_solid_angle = (defaults.pixel_width_SG * defaults.pixel_height_SG).to_value(u.sr)
+    ci_solid_angle = (defaults.pixel_width_CI * defaults.pixel_height_CI).to_value(u.sr)
     sg_pair_energy = u.Quantity(defaults.pair_energy_SG.sel(channel=171).data)
     sg_gain = u.Quantity(defaults.gain_SG.sel(channel=171).data)
     expected_ratio = (

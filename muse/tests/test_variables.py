@@ -64,18 +64,18 @@ def test_instrument_quantity_converter_normalizes_units():
     # one field of each converter: a DataArray and a Quantity
     defaults = InstrumentDefaults(
         main_line_effective_area_CI=xr.DataArray([4.55e-4] * u.m**2, coords={"channel": [195]}, dims="channel"),
-        dx_pixel_SG=1 * u.arcmin,
+        pixel_width_SG=1 * u.arcmin,
     )
 
     assert defaults.main_line_effective_area_CI.data.unit == u.cm**2
     np.testing.assert_allclose(defaults.main_line_effective_area_CI.data.value, [4.55])
-    assert defaults.dx_pixel_SG.unit == u.arcsec
-    np.testing.assert_allclose(defaults.dx_pixel_SG.value, 60.0)
+    assert defaults.pixel_width_SG.unit == u.arcsec
+    np.testing.assert_allclose(defaults.pixel_width_SG.value, 60.0)
 
 
 def test_instrument_quantity_fields_reject_unitless_physical_values():
     with pytest.raises(u.UnitsError, match="arcsec"):
-        InstrumentDefaults(dx_pixel_SG=0.5)
+        InstrumentDefaults(pixel_width_SG=0.5)
 
     unitless_wavelength = xr.DataArray([107.68034, 170.62314], coords={"channel": [108, 171]}, dims="channel")
     with pytest.raises(u.UnitsError, match="DataArray values must have units convertible to Angstrom"):

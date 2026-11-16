@@ -74,10 +74,10 @@ def _detector_chain_factor(
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    pixel_width_sg="dx_pixel_SG",
-    pixel_height_sg="dy_pixel_SG",
-    pixel_width_ci="dx_pixel_CI",
-    pixel_height_ci="dy_pixel_CI",
+    pixel_width_sg="pixel_width_SG",
+    pixel_height_sg="pixel_height_SG",
+    pixel_width_ci="pixel_width_CI",
+    pixel_height_ci="pixel_height_CI",
 )
 @u.quantity_input(
     channel=u.AA,
@@ -159,8 +159,8 @@ def transform_response_units(
 
     defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     suffix = detector.upper()
-    pixel_width = _required(defaults, f"dx_pixel_{suffix}") if pixel_width is None else pixel_width
-    pixel_height = _required(defaults, f"dy_pixel_{suffix}") if pixel_height is None else pixel_height
+    pixel_width = _required(defaults, f"pixel_width_{suffix}") if pixel_width is None else pixel_width
+    pixel_height = _required(defaults, f"pixel_height_{suffix}") if pixel_height is None else pixel_height
 
     if gain is None or pair_energy is None:
         if channel is None:

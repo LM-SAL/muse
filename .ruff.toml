@@ -76,7 +76,7 @@ lint.ignore = [
   "S101",  # Use of `assert` detected
 ]
 "muse/variables_schema.py" = [
-  "N815",  # science/default field names such as dx_pixel_SG are public attrs
+  "N815",  # science/default field names such as pixel_width_SG are public attrs
 ]
 
 [lint.pydocstyle]

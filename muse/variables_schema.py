@@ -193,14 +193,14 @@ class InstrumentDefaults:
     """
 
     # Context Imager (CI) parameters
-    dx_pixel_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_width_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along x-axis for the CI.
 
     Normalized to arcseconds.
     """
 
-    dy_pixel_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_height_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along y-axis for the CI.
 
@@ -208,14 +208,14 @@ class InstrumentDefaults:
     """
 
     # Spectrograph (SG) parameters
-    dx_pixel_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along x-axis for the SG.
 
     Normalized to arcseconds.
     """
 
-    dy_pixel_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_height_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along y-axis for the SG.
 

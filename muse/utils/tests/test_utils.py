@@ -210,7 +210,7 @@ def test_the_two_outputs_of_one_call_are_one_step_even_stamped_apart() -> None:
 
 
 def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alone(monkeypatch) -> None:
-    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    custom = evolve(DEFAULTS_MUSE, pixel_width_SG=0.8 * u.arcsec)
     late = ("gain_CI", "pair_energy_SG", "wavelength_start_SG", "channel_spectral_order_SG")
     changed = [evolve(custom, **{name: 2 * getattr(custom, name)}) for name in late]
 

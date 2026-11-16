@@ -407,7 +407,7 @@ def test_an_sg_file_is_converted_with_its_own_detector(inputs, sg_products, tmp_
     The detector attributes of an SG file count as those of an imager file do: here
     pixels twice as wide, which see twice the solid angle.
     """
-    width = 2 * DEFAULTS_MUSE.dx_pixel_SG
+    width = 2 * DEFAULTS_MUSE.pixel_width_SG
     area = _area_file(tmp_path, attrs={"pixel_width": str(width)})
 
     written = _sg(inputs, tmp_path / "run", effective_area_files=[area], maximum_contaminants=0)
@@ -838,7 +838,7 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     assert (tmp_path / "cache" / cached).is_file()
 
     # the detector a file describes counts here too: pixels twice as wide see twice the solid angle
-    wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_SG)})
+    wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.pixel_width_SG)})
     twice = _sg_continuum(inputs, tmp_path / "wide", effective_area_files=[wide])
     xr.testing.assert_allclose(read_response(twice[0]).detector_response, 2 * response.detector_response)
 
@@ -940,8 +940,8 @@ def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, s
         wavelength_step_SG=10 * u.mAA,
         instrumental_fwhm_SG=xr.DataArray([0.08, 0.08, 0.08] * u.AA, **by_channel),
         main_lines_by_channel_SG=(("Fe XIX 108.355",), ("Fe X 174.500",), ("Fe XV 284.163",)),
-        dx_pixel_SG=0.8 * u.arcsec,
-        dy_pixel_SG=0.3 * u.arcsec,
+        pixel_width_SG=0.8 * u.arcsec,
+        pixel_height_SG=0.3 * u.arcsec,
     )
 
     lines = _sg(
@@ -994,7 +994,7 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
     defaults = evolve(
         DEFAULTS_MUSE,
         gain_CI=xr.DataArray([20.0, 10.0] * u.electron / u.DN, **imager),
-        dx_pixel_CI=3 * DEFAULTS_MUSE.dx_pixel_CI,
+        pixel_width_CI=3 * DEFAULTS_MUSE.pixel_width_CI,
     )
     options = {"effective_area_files": [area], "units": "DN", "include_continuum": False}
 
@@ -1033,10 +1033,10 @@ def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
     ``DEFAULTS_MUSE``, and products made with the MUSE defaults are not kept for a call
     with others.
     """
-    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    custom = evolve(DEFAULTS_MUSE, pixel_width_SG=0.8 * u.arcsec)
     mixed = r"made with DEFAULTS_MUSE [0-9a-f]{12} instrument defaults and this call uses custom [0-9a-f]{12} ones"
     with pytest.raises(ValueError, match="gives the pixel_width"):
-        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, dx_pixel_SG=None))
+        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, pixel_width_SG=None))
     with pytest.raises(ValueError, match="instrument_defaults has no spectral_slit_separation_SG"):
         _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=None))
 

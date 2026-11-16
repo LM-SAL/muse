@@ -168,8 +168,8 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    pixel_width="dx_pixel_SG",
-    pixel_height="dy_pixel_SG",
+    pixel_width="pixel_width_SG",
+    pixel_height="pixel_height_SG",
     number_of_slits="number_of_slits_SG",
     steps_per_raster="steps_per_raster_SG",
     extent="fov_extent",
@@ -180,8 +180,8 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
 def match_fov(
     vdem: xr.Dataset,
     *,
-    pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
-    pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
+    pixel_width: u.Quantity = DEFAULTS_MUSE.pixel_width_SG,
+    pixel_height: u.Quantity = DEFAULTS_MUSE.pixel_height_SG,
     number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
     extent: str = DEFAULTS_MUSE.fov_extent,
@@ -401,7 +401,7 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
         if coord not in ds.coords:
             msg = f"{coord} coordinate is missing"
             raise ValueError(msg)
-    step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.dx_pixel_SG))
+    step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.pixel_width_SG))
     if step_size.unit == u.dimensionless_unscaled:
         msg = f"step_size {ds.attrs['step_size']!r} has no unit; it is one value with its unit, such as '0.4 arcsec'"
         raise ValueError(msg)

@@ -17,11 +17,11 @@ __all__ = [
 # The headings are those of `InstrumentDefaults`. The order of the entries has no effect.
 _DEFAULTS_MUSE_VALUES = {
     # Context Imager (CI) parameters
-    "dx_pixel_CI": 0.143 * u.arcsec,
-    "dy_pixel_CI": 0.143 * u.arcsec,
+    "pixel_width_CI": 0.143 * u.arcsec,
+    "pixel_height_CI": 0.143 * u.arcsec,
     # Spectrograph (SG) parameters
-    "dx_pixel_SG": 0.4 * u.arcsec,
-    "dy_pixel_SG": 0.167 * u.arcsec,
+    "pixel_width_SG": 0.4 * u.arcsec,
+    "pixel_height_SG": 0.167 * u.arcsec,
     "detector_x_pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
