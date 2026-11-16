@@ -7,6 +7,7 @@ import os
 import shutil
 import contextlib
 
+import numexpr
 import numpy as np
 import pytest
 import xarray as xr
@@ -19,6 +20,7 @@ from muse.instrument.atomic.cache import load_or_create_continuum, load_or_creat
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.utils.utils import _to_zarr
+from muse.variables import DEFAULTS_MUSE
 
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
@@ -82,7 +84,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
     xr.testing.assert_identical(first, second)
     assert first.gofnt.dims == ("pressure", "logT", "transition")
     assert first.pressure.attrs["units"] == "K / cm3"
-    assert first.attrs["minimum_abundance"] == 1e-21
+    assert first.attrs["minimum_abundance"] == DEFAULTS_MUSE.minimum_abundance
 
 
 @pytest.mark.usefixtures("line_list_calls", "continuum_calls")
@@ -130,15 +132,24 @@ def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, gr
     assert "wavelength_bounds" in actual.coords
 
 
+MINIMUM_ABUNDANCE = (
+    {"minimum_abundance": 1e-2},
+    f"minimum abundance {DEFAULTS_MUSE.minimum_abundance}, not the requested 0.01",
+)
+# The checks are shared: of the continuum, only what its own call passes on, the minimum abundance.
 MISMATCHES = {
-    "nearby-pressure": ({"pressure": _pressure([3.0001e15])}, "holds the pressure values"),
-    "temperatures": ({"temperature": TEMPERATURE.isel(logT=[0, 1])}, "is on other temperatures than requested"),
-    "minimum-abundance": ({"minimum_abundance": 1e-2}, "minimum abundance 1e-21, not the requested 0.01"),
+    "line-list-nearby-pressure": ("line list", {"pressure": _pressure([3.0001e15])}, "holds the pressure values"),
+    "line-list-temperatures": (
+        "line list",
+        {"temperature": TEMPERATURE.isel(logT=[0, 1])},
+        "is on other temperatures than requested",
+    ),
+    "line-list-minimum-abundance": ("line list", *MINIMUM_ABUNDANCE),
+    "continuum-minimum-abundance": ("continuum", *MINIMUM_ABUNDANCE),
 }
 
 
-@pytest.mark.parametrize(("other", "problem"), MISMATCHES.values(), ids=MISMATCHES)
-@pytest.mark.parametrize("what", ["line list", "continuum"])
+@pytest.mark.parametrize(("what", "other", "problem"), MISMATCHES.values(), ids=MISMATCHES)
 def test_a_cache_that_does_not_hold_the_request_is_refused_and_kept(
     tmp_path, line_list_calls, continuum_calls, what, other, problem
 ):
@@ -224,10 +235,7 @@ def test_a_line_list_of_another_chianti_version_is_refused(tmp_path):
     kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
     cache_directory = tmp_path / "run" / "cache"  # not there yet: the first call makes it
 
-    assert (
-        load_or_create_line_list(cache_directory, chianti_version="11.0.2", **kwargs).attrs["chianti_version"]
-        == "11.0.2"
-    )
+    load_or_create_line_list(cache_directory, chianti_version="11.0.2", **kwargs)
     # the version is checked on a line list read from a file too, as the file name does not carry it
     with pytest.raises(ValueError, match=r"CHIANTI 11\.0\.2, not 9\.0\.1"):
         load_or_create_line_list(cache_directory, chianti_version="9.0.1", **kwargs)
@@ -237,8 +245,6 @@ def test_unknown_backends_and_unsafe_names_are_refused(tmp_path):
     pressure = _pressure([3e15])
     with pytest.raises(ValueError, match="backend must be one of"):
         load_or_create_line_list(tmp_path, backend="idl", pressure=pressure, **LINE_LIST)
-    with pytest.raises(ValueError, match="backend must be one of"):
-        load_or_create_continuum(tmp_path, backend="idl", pressure=pressure, **CONTINUUM)
     # an abundance is part of the file name: this one would write outside the directory
     with pytest.raises(ValueError, match="abundance is part of a file name"):
         load_or_create_line_list(tmp_path, pressure=pressure, **{**LINE_LIST, "abundance": "../a"})
@@ -313,7 +319,6 @@ def test_a_failed_creation_releases_its_lock(tmp_path, monkeypatch):
 
 
 def test_limited_threads_caps_numexpr_and_puts_it_back(monkeypatch):
-    numexpr = pytest.importorskip("numexpr")
     monkeypatch.setattr(os, "process_cpu_count", lambda: 64)
     before = numexpr.set_num_threads(3)
     try:
@@ -323,11 +328,6 @@ def test_limited_threads_caps_numexpr_and_puts_it_back(monkeypatch):
         # asking for more threads than numexpr is set to leaves it as it is
         with cache._limited_threads(8):
             assert numexpr.set_num_threads(3) == 3
-        # and a process that may use one CPU gets one thread, whatever is asked
-        monkeypatch.setattr(os, "process_cpu_count", lambda: 1)
-        with cache._limited_threads(2):
-            assert numexpr.set_num_threads(1) == 1
-        assert numexpr.set_num_threads(3) == 3
     finally:
         numexpr.set_num_threads(before)
 

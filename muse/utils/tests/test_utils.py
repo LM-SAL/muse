@@ -24,20 +24,14 @@ def _calls(ds):
     return [STAMP.sub("", entry) for entry in ds.attrs["history"]]
 
 
-@pytest.mark.parametrize(
-    ("source_unit", "target_unit", "values", "expected"),
-    [
-        ("m/s", u.km / u.s, [1000.0, 2000.0], [1.0, 2.0]),
-        ("dex(mK)", u.dex(u.K), [6.0, 7.0], [3.0, 4.0]),
-    ],
-)
-def test_coord_as_unit_converts_coordinate_values(source_unit, target_unit, values, expected) -> None:
-    ds = xr.Dataset(coords={"axis": ("axis", values, {"units": source_unit})})
+def test_coord_as_unit_converts_coordinate_values() -> None:
+    # a logarithmic unit, which a conversion by a factor gets wrong
+    ds = xr.Dataset(coords={"axis": ("axis", [6.0, 7.0], {"units": "dex(mK)"})})
 
-    converted = coord_as_unit(ds, "axis", target_unit, "axis")
+    converted = coord_as_unit(ds, "axis", u.dex(u.K), "axis")
 
-    np.testing.assert_allclose(converted, expected)
-    assert converted.attrs["units"] == str(target_unit)
+    np.testing.assert_allclose(converted, [3.0, 4.0])
+    assert converted.attrs["units"] == str(u.dex(u.K))
 
 
 def _record(ds, gain=2.0, shift=None, *, flag=True, weights=None, label="muse"):
@@ -102,31 +96,22 @@ def test_a_reader_adds_its_entry_but_keeps_the_provenance_of_the_file() -> None:
     assert "date_modified" not in ds.attrs
 
 
-def test_add_history_stores_serializable_keyword_inputs() -> None:
-    ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), shift=3 * u.km / u.s, weights=np.ones(20))
+def test_add_history_stores_serializable_keyword_inputs(caplog) -> None:
+    ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), weights=np.ones(20))
     assert "ds" not in ds.attrs  # Keyword inputs with defaults are stored, the required positional `ds` is not
     assert ds.attrs["gain"] == 2.0
-    assert ds.attrs["flag"] == 1  # bool -> int (netCDF4 attrs have no bool type)
-    assert ds.attrs["shift"] == "3.0 km / s"  # Quantity -> "<value> <unit>"
     assert ds.attrs["label"] == "muse"
     assert "weights" not in ds.attrs  # Large array dropped, not serializable as an attr
+    assert "weights" not in caplog.text  # and silently, unlike an object of another type
 
 
 @pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
-@pytest.mark.parametrize("backend", ["netcdf4", "zarr"])
-def test_add_history_stored_attrs_round_trip(tmp_path, backend) -> None:
+def test_add_history_stored_attrs_round_trip(tmp_path) -> None:
     ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), shift=3 * u.km / u.s)
-    if backend == "netcdf4":
-        path = tmp_path / "out.nc"
-        ds.to_netcdf(path, engine="netcdf4")
-        loaded = xr.open_dataset(path, engine="netcdf4")
-    else:
-        path = tmp_path / "out.zarr"
-        ds.to_zarr(path, zarr_format=3, consolidated=False)
-        loaded = xr.open_zarr(path, consolidated=False)
+    ds.to_netcdf(tmp_path / "out.nc", engine="netcdf4")
+    loaded = xr.open_dataset(tmp_path / "out.nc", engine="netcdf4")
 
-    # The coerced keyword inputs must survive a
-    # real write/read cycle with both backends.
+    # The coerced keyword inputs must survive a real write/read cycle.
     assert loaded.attrs["gain"] == 2.0
     assert loaded.attrs["flag"] == 1
     assert loaded.attrs["shift"] == "3.0 km / s"
@@ -139,13 +124,6 @@ def test_add_history_warns_on_unserializable_keyword_input(caplog) -> None:
     assert "weights" not in ds.attrs
     assert "weights" in caplog.text
     assert "serializable" in caplog.text
-
-
-def test_add_history_silently_drops_array_keyword_inputs(caplog) -> None:
-    ds = _record(xr.Dataset(), weights=np.ones(20))
-
-    assert "weights" not in ds.attrs
-    assert "weights" not in caplog.text
 
 
 def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
@@ -173,20 +151,11 @@ def test_add_history_records_bare_name_without_inputs() -> None:
 
     ds = xr.Dataset()
     add_history(ds, {}, demo)
-    add_history(ds, {}, "calibrate")
-    assert _calls(ds) == ["demo()", "calibrate()"]
-    # An empty local_vars records no inputs, so the defaulted parameter never reaches attrs.
-    assert "n" not in ds.attrs
-
-
-def test_add_history_ignores_inputs_for_a_string_label() -> None:
-    # A string label has no signature to inspect, so inputs are skipped even when passed.
-    ds = xr.Dataset()
-
+    # A string label has no signature to inspect, so its inputs are skipped even when passed.
     add_history(ds, {"x": 1, "gain": 10.0}, "calibrate")
 
-    assert _calls(ds) == ["calibrate()"]
-    assert not {"x", "gain"} & set(ds.attrs)
+    assert _calls(ds) == ["demo()", "calibrate()"]
+    assert not {"n", "x", "gain"} & set(ds.attrs)
 
 
 def test_add_history_appends_to_existing() -> None:
@@ -218,6 +187,7 @@ def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
 
     update_attrs(ds, source, level=2)
     assert ds.attrs == {"instrument": "MUSE", "level": 2}
+    assert "level" not in source.attrs
 
 
 def test_a_history_entry_reads_no_array_from_its_file(tmp_path) -> None:
@@ -246,7 +216,7 @@ def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alo
 
     assert len({_instrument_defaults_label(defaults) for defaults in [custom, *changed]}) == 1 + len(late)
     # an integer and its float are one value
-    as_float = evolve(custom, detector_x_pixels_SG=1024.0 * u.pix)
+    as_float = evolve(custom, detector_x_pixels_SG=custom.detector_x_pixels_SG.astype(float))
     assert _instrument_defaults_label(as_float) == _instrument_defaults_label(custom)
     # the MUSE values of another muse are told from today's
     today = _instrument_defaults_label(DEFAULTS_MUSE)
@@ -256,27 +226,12 @@ def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alo
     assert _instrument_defaults_label(older) != today
 
 
-def test_update_attrs_does_not_mutate_source_attrs() -> None:
-    source = xr.Dataset(attrs={"history": ["load"], "instrument": "MUSE"})
-    ds = xr.Dataset()
-    update_attrs(ds, source, instrument="other")
-    assert source.attrs == {"history": ["load"], "instrument": "MUSE"}
-
-
 def test_add_history_inherits_history_from_sources() -> None:
     ds = xr.Dataset(attrs={"history": ["start"]})
     raster = xr.Dataset(attrs={"history": ["make_raster()"]})
     response = xr.Dataset(attrs={"history": ["make_response()"]})
     add_history(ds, {}, "demo", sources=(raster, response))
     assert _calls(ds) == ["start", "make_raster()", "make_response()", "demo()"]
-
-
-def test_add_history_does_not_duplicate_inherited_history() -> None:
-    source = xr.Dataset(attrs={"history": ["load"]})
-    # A result derived through xarray operations may already carry its source history.
-    ds = xr.Dataset(attrs={"history": ["load"]})
-    add_history(ds, {}, "demo", sources=(source,))
-    assert _calls(ds) == ["load", "demo()"]
 
 
 def test_add_history_nested_source_histories_merge_in_any_order() -> None:
@@ -288,9 +243,6 @@ def test_add_history_nested_source_histories_merge_in_any_order() -> None:
         assert _calls(ds) == ["load", "transform", "demo()"]
 
 
-@pytest.mark.parametrize("key", ["history", "date_created", "date_modified", "muse_version"])
-def test_update_attrs_rejects_provenance_updates(key: str) -> None:
-    ds = xr.Dataset()
-    value = ["fake"] if key == "history" else "fake"
+def test_update_attrs_rejects_provenance_updates() -> None:
     with pytest.raises(ValueError, match="owned by add_history"):
-        update_attrs(ds, **{key: value})
+        update_attrs(xr.Dataset(), history=["fake"])

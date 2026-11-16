@@ -13,7 +13,6 @@ import astropy.units as u
 from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
-    "assert_dataset_structure",
     "fake_continuum",
     "fake_effective_area",
     "fake_line_list",
@@ -21,7 +20,6 @@ __all__ = [
     "fake_response_file_contents",
     "fake_vdem",
     "fake_vdem_offgrid",
-    "fake_vdem_single_doppler_velocity",
 ]
 
 
@@ -88,13 +86,11 @@ def fake_effective_area(
     """
     Return a minimal deterministic effective area.
     """
-    area_attrs = {} if area_units is None else {"units": area_units}
-    wavelength_attrs = {} if wavelength_units is None else {"units": wavelength_units}
     return xr.DataArray(
         np.asarray(values),
         dims="wavelength",
-        coords={"wavelength": ("wavelength", np.asarray(wavelength), wavelength_attrs)},
-        attrs=area_attrs,
+        coords={"wavelength": ("wavelength", np.asarray(wavelength), {"units": wavelength_units})},
+        attrs={"units": area_units},
     )
 
 
@@ -188,39 +184,6 @@ RESPONSE_AMPLITUDE = np.asarray([1.0, 0.85, 0.08, 0.65, 0.06, 0.75, 0.07])
 RESPONSE_SPECTRAL_WIDTH = np.asarray([0.35, 0.35, 0.8, 0.35, 0.8, 0.55, 1.1])
 
 
-def assert_dataset_structure(
-    ds: xr.Dataset,
-    *,
-    data_vars: tuple[str, ...],
-    coords: tuple[str, ...],
-    sizes: dict[str, int] | None = None,
-    finite_vars: tuple[str, ...] = (),
-) -> None:
-    actual_data_vars = set(ds.data_vars)
-    expected_data_vars = set(data_vars)
-    if actual_data_vars != expected_data_vars:
-        msg = f"data vars differ: expected {expected_data_vars}, got {actual_data_vars}"
-        raise AssertionError(msg)
-
-    expected_coords = set(coords)
-    actual_coords = set(ds.coords)
-    if not expected_coords <= actual_coords:
-        msg = f"coords missing: expected at least {expected_coords}, got {actual_coords}"
-        raise AssertionError(msg)
-
-    if sizes is not None and dict(ds.sizes) != sizes:
-        msg = f"sizes differ: expected {sizes}, got {dict(ds.sizes)}"
-        raise AssertionError(msg)
-
-    for name in finite_vars:
-        if name not in ds.data_vars:
-            msg = f"{name!r} is not a data variable"
-            raise AssertionError(msg)
-        if not bool(np.isfinite(ds[name]).all()):
-            msg = f"{name!r} contains non-finite values"
-            raise AssertionError(msg)
-
-
 def detector_wavelength_of_line(line_index):
     line_channel = int(LINE_CHANNELS[line_index])
     return (
@@ -261,12 +224,7 @@ def fake_vdem():
     ds = xr.Dataset(
         data_vars={"vdem": (["logT", "doppler_velocity", "y", "x"], vdem)},
         coords={"logT": LOGT_AXIS, "doppler_velocity": DOPPLER_VELOCITY_AXIS, "y": Y_AXIS, "x": X_AXIS},
-        attrs={
-            "description": "DEM(T,vel,x,y)",
-        },
     )
-    ds.vdem.attrs["description"] = "DEM(T,vel,x,y)"
-    ds.vdem.attrs["time"] = 555291
     ds.vdem.attrs["units"] = "1e27 / cm5"
     ds.logT.attrs["long_name"] = "log$_{10}$(T)"
     ds.logT.attrs["units"] = "dex(K)"
@@ -289,22 +247,6 @@ def fake_vdem_offgrid():
     ds = ds.assign_coords(x=ds.x.values * 2.0, y=ds.y.values * 2.0)
     ds.x.attrs["units"] = "arcsec"
     ds.y.attrs["units"] = "arcsec"
-    return ds
-
-
-def fake_vdem_single_doppler_velocity(doppler_velocity_kms=0.0):
-    """
-    Return `fake_vdem` with all emission collapsed into the doppler_velocity bin nearest
-    ``doppler_velocity_kms``.
-
-    This isolates one Doppler velocity so synthesized line centroids shift by the
-    classical ``lambda * v / c``.
-    """
-    ds = fake_vdem()
-    doppler_velocity_index = int(np.argmin(np.abs(ds.doppler_velocity.values - doppler_velocity_kms)))
-    collapsed = np.zeros_like(ds.vdem.values)
-    collapsed[:, doppler_velocity_index] = ds.vdem.values.sum(axis=1)  # all doppler_velocity emission -> one bin
-    ds["vdem"] = (ds.vdem.dims, collapsed, dict(ds.vdem.attrs))
     return ds
 
 
@@ -348,7 +290,6 @@ def fake_response():
             "slit": SLIT_INDICES,
             "detector_x_pixel": DETECTOR_X_PIXEL,
         },
-        attrs={"description": "No attributes"},
     )
     response = response.assign_coords(
         line_wavelength=("line", LINE_WAVELENGTHS),

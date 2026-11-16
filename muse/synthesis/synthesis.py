@@ -200,12 +200,6 @@ def vdem_synthesis(
     )
 
     def contract(vdem_values, detector_response):
-        # Unwrap duck arrays (e.g. astropy Quantity) so einsum's sublist mode works;
-        # dask stays raw so the contraction dispatches to da.einsum and stays lazy.
-        vdem_values = vdem_values if isinstance(vdem_values, da.Array) else np.asarray(vdem_values)
-        detector_response = (
-            detector_response if isinstance(detector_response, da.Array) else np.asarray(detector_response)
-        )
         if backend == "torch":
             return torch_einsum(vdem_values, detector_response, vdem_indices, response_indices, output_indices, device)
         return np.einsum(vdem_values, vdem_indices, detector_response, response_indices, output_indices, optimize=True)

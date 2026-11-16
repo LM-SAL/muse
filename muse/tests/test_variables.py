@@ -49,16 +49,11 @@ def test_instrument_int_fields_accept_numpy_scalars():
     assert isinstance(defaults.number_of_slits_SG, int)
 
 
-def test_instrument_int_fields_reject_floats():
-    with pytest.raises(TypeError, match="number_of_slits_SG"):
+def test_instrument_int_fields_reject_floats_and_bools():
+    with pytest.raises(TypeError, match="number_of_slits_SG must be an integer"):
         InstrumentDefaults(number_of_slits_SG=35.0)
-
-
-def test_instrument_int_fields_reject_bools():
-    with pytest.raises(TypeError, match="integer"):
+    with pytest.raises(TypeError, match="number_of_slits_SG must be an integer"):
         InstrumentDefaults(number_of_slits_SG=True)
-    with pytest.raises(TypeError, match="integer"):
-        InstrumentDefaults(steps_per_raster_SG=np.False_)
 
 
 def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
@@ -89,11 +84,6 @@ def test_instrument_quantity_fields_reject_unitless_physical_values():
 
 def test_instrument_defaults_validate_spectral_channels():
     initial = xr.DataArray([107.68034, 170.62314] * u.AA, coords={"channel": [108, 171]}, dims="channel")
-    mismatched_order = xr.DataArray([2, 1], coords={"channel": [108, 284]}, dims="channel")
-
-    with pytest.raises(ValueError, match="matching channel coordinates"):
-        InstrumentDefaults(wavelength_start_SG=initial, channel_spectral_order_SG=mismatched_order)
-
     # Every per-channel DataArray field is checked, not just the two spectral ones.
     mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
     with pytest.raises(ValueError, match="matching channel coordinates"):

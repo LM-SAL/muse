@@ -79,8 +79,6 @@ def _resolve_device(device: "str | torch.device | None" = None) -> "torch.device
     """
     import torch  # NOQA: PLC0415
 
-    if isinstance(device, torch.device):
-        return device
     if device is None:
         return torch.device("cpu")
     if device != "auto":
@@ -155,11 +153,7 @@ def torch_to_numpy(torch_tensor: "torch.Tensor") -> np.ndarray:
     `numpy.ndarray`
         The converted NumPy array.
     """
-    tensor = torch_tensor.detach().cpu()
-    try:
-        return tensor.numpy()
-    except TypeError:  # dtypes numpy lacks, e.g. bfloat16 / float8
-        return np.array(tensor.tolist())
+    return torch_tensor.detach().cpu().numpy()
 
 
 def torch_einsum(
