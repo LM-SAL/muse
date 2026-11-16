@@ -481,6 +481,14 @@ def test_read_responses_reads_files_of_one_run_and_one_unit(tmp_path) -> None:
         read_responses([paths[0], paths[2]])
 
 
+def test_read_responses_takes_a_gain_coordinate_in_electron_per_dn_and_wants_a_file(tmp_path) -> None:
+    in_kilo = fake_response_file_contents().assign_coords(gain=("line", [0.012], {"units": "1000 electron / DN"}))
+
+    assert read_responses([_write(in_kilo, tmp_path / "a.zarr", "zarr")]).gain.values.tolist() == [12.0]
+    with pytest.raises(ValueError, match="pass at least one response file"):
+        read_responses([])
+
+
 def test_read_responses_refuses_a_file_without_a_channel(tmp_path) -> None:
     path = _write(fake_response_file_contents().drop_vars("channel"), tmp_path / "a.zarr", "zarr")
 

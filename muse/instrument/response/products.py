@@ -1111,6 +1111,9 @@ def _main_lines_by_sg_channel(
         # One name alone is one line, not its characters.
         main_lines[channel] = [lines] if isinstance(lines, str) else list(lines)
         tags = [_line_tag(line) for line in main_lines[channel]]
+        if directory := next((line for line, tag in zip(main_lines[channel], tags, strict=True) if "/" in tag), None):
+            msg = f"main_lines_by_channel: the main line {directory!r} of channel {channel} would make a directory"
+            raise ValueError(msg)
         if len(set(tags)) != len(tags):
             msg = (
                 f"main_lines_by_channel: two of the main lines {main_lines[channel]} of channel {channel} differ "

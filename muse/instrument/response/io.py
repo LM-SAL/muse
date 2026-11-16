@@ -283,8 +283,10 @@ def read_response(
         response = response.expand_dims("line")
 
     gain_unit = u.electron / u.DN
-    # A file that holds a gain per line, such as a saved set of responses, keeps it.
-    if gain is not None or "gain" not in response.coords:
+    if gain is None and "gain" in response.coords:
+        # A file that holds a gain per line, such as a saved set of responses, keeps it.
+        response = response.assign_coords(gain=coord_as_unit(response, "gain", gain_unit, "gain coordinate"))
+    else:
         if gain is None:
             if "gain" not in response.attrs:
                 msg = f"{response_file} states no gain, in a gain coordinate or attribute; pass gain"
@@ -463,7 +465,7 @@ def read_responses(
     Load several response functions and concatenate them along ``line``.
 
     Each file gives its channel in its ``channel`` coordinate and its camera gain in
-    its ``gain`` attribute, as the products of the generators do.
+    its ``gain`` coordinate or attribute, as the products of the generators do.
 
     Parameters
     ----------
@@ -497,9 +499,13 @@ def read_responses(
     Raises
     ------
     ValueError
-        If a file has no ``channel`` coordinate or no ``gain`` attribute, or ``logT``
-        or ``doppler_velocity`` has no units.
+        If no file is given, a file has no ``channel`` coordinate or no gain, the files
+        are of different instrument defaults or units, or ``logT`` or
+        ``doppler_velocity`` has no units.
     """
+    if not response_files:
+        msg = "pass at least one response file"
+        raise ValueError(msg)
     # Rebound under their own names, so that the history names the axes instead of listing them.
     logT = _requested_axis(logT, "logT")
     doppler_velocity = _requested_axis(doppler_velocity, "doppler_velocity")

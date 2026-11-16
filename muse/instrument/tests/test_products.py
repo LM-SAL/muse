@@ -592,20 +592,23 @@ def test_a_missing_cache_can_be_an_error(inputs, tmp_path, line_list_calls):
     assert not line_list_calls
 
 
-def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inputs, tmp_path):
+def test_a_product_that_is_already_there_stops_the_call_unless_told_to_skip(inputs, tmp_path, monkeypatch):
     first = _sg(inputs, tmp_path, maximum_contaminants=0)
     with pytest.raises(ValueError, match="is already there; pass skip_existing=True"):
         _sg(inputs, tmp_path, maximum_contaminants=0)
     # As a call that stopped halfway leaves it: one product is missing.
     first[-1].unlink()
-    written = first[0].stat().st_mtime_ns
+    written = []
+    replace = products_module._replace_atomically
+    monkeypatch.setattr(
+        products_module, "_replace_atomically", lambda path, write: (written.append(path), replace(path, write))
+    )
 
     again = _sg(inputs, tmp_path, maximum_contaminants=0, skip_existing=True)
 
     # The product that is there is kept as it is; the missing one is made.
     assert again == first
-    assert first[0].stat().st_mtime_ns == written
-    assert first[-1].exists()
+    assert written == [first[-1]]
 
 
 def test_the_versions_and_history_of_a_line_list_written_by_muse_0_3_reach_the_products(inputs, tmp_path):
@@ -801,6 +804,8 @@ def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
         # what goes into a file name: not empty, no slash, which makes a directory, and no underscore in the label
         (_sg, {"effective_area_label": "Al_Zr"}, "effective_area_label is part of a file name"),
         (_sg, {"abundances": ["../coronal"]}, "abundance is part of a file name"),
+        (_sg, {"abundances": [".."]}, "abundance is part of a file name"),
+        (_sg, {"main_lines_by_channel": {171: ["Fe IX/../171.073"]}}, "would make a directory"),
         # a line-list range that does not cover the products, and one that is no pair of wavelengths
         (_sg, {"line_list_wavelength_range": [160, 170] * u.AA}, "does not cover what the products need"),
         (_sg, {"line_list_wavelength_range": [100, 200, 300] * u.AA}, "must hold a lower and an upper wavelength"),
