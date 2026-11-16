@@ -19,9 +19,6 @@ pytestmark = [
 ]
 
 
-# The shipped SG and CI gains are equal, so only a CI table that differs proves the CI table was read.
-
-
 def _write(ds: xr.Dataset, path, fmt: str) -> str:
     if fmt == "nc":
         ds.to_netcdf(path)
@@ -319,7 +316,7 @@ def test_read_response_without_a_gain_attribute_requires_gain(tmp_path) -> None:
     del source.attrs["gain"]
     path = _write(source, tmp_path / "resp.zarr", "zarr")
 
-    with pytest.raises(ValueError, match="states no gain in its attributes; pass gain"):
+    with pytest.raises(ValueError, match="states no gain, in a gain coordinate or attribute; pass gain"):
         read_response(path)
 
 
@@ -453,6 +450,35 @@ def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:
 
     with pytest.raises(ValueError, match=r"align|exact"):
         read_responses([tmp_path / "a.nc", tmp_path / "b.nc"])
+
+
+def test_read_response_keeps_a_gain_per_line_and_replaces_the_one_of_the_file_with_a_given_one(tmp_path) -> None:
+    per_line = fake_response_file_contents().assign_coords(gain=("line", [12.0], {"units": "electron / DN"}))
+    del per_line.attrs["gain"]
+    given = read_response(
+        _write(fake_response_file_contents(), tmp_path / "b.zarr", "zarr"), gain=[11.0] * u.electron / u.DN
+    )
+
+    assert read_response(_write(per_line, tmp_path / "a.zarr", "zarr")).gain.values.tolist() == [12.0]
+    assert given.gain.values.tolist() == [11.0]
+    assert "gain" not in given.attrs  # not the 10 of the file
+
+
+def test_read_responses_reads_files_of_one_run_and_one_unit(tmp_path) -> None:
+    one_channel = fake_response_file_contents().assign_coords(channel=171)  # one channel for every line
+    paths = [_write(one_channel, tmp_path / "a.nc", "nc")]
+    paths.append(
+        _write(fake_response_file_contents().assign_attrs(instrument_defaults="custom 1"), tmp_path / "b.nc", "nc")
+    )
+    in_dn = fake_response_file_contents()
+    in_dn.detector_response.attrs["units"] = "1e-27 cm5 DN / s"
+    paths.append(_write(in_dn, tmp_path / "c.nc", "nc"))
+
+    assert read_responses([paths[0]]).channel.dims == ("line",)
+    with pytest.raises(ValueError, match="different instrument defaults"):
+        read_responses(paths[:2])
+    with pytest.raises(ValueError, match="different units"):
+        read_responses([paths[0], paths[2]])
 
 
 def test_read_responses_refuses_a_file_without_a_channel(tmp_path) -> None:

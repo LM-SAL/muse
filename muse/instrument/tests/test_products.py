@@ -228,7 +228,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert "line_list_backend" not in response.attrs
     assert "minimum_abundance" not in response.attrs
     stored = products_module._attribute_of_product
-    product = _only(sg_products, f"FeIX171.073_{GEOMETRY}")
+    product = _only(sg_products, "FeIX171.073_detector")
     assert all(stored(product, name) is None for name in ("workers", "threads", "skip_existing", "create_if_missing"))
     # the database and the software of the line list, and the whole chain of calls up to this read
     assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
@@ -639,6 +639,13 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
     assert _sg(inputs, tmp_path, skip_existing=True) == first
 
 
+def test_products_of_an_earlier_muse_stop_the_call(inputs, tmp_path):
+    (tmp_path / f"respfunc_171_FeIX171.073_waveband_{ABUNDANCE}_testea_pressure_3e+15_TEST_2026-01-01.zarr.zip").touch()
+
+    with pytest.raises(ValueError, match="holds products of an earlier muse"):
+        _sg(inputs, tmp_path, skip_existing=True)
+
+
 def test_a_failed_write_leaves_no_product_behind(inputs, tmp_path, monkeypatch):
     def half_written(dataset, path):
         dataset.to_zarr(path, consolidated=False)
@@ -989,9 +996,9 @@ def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, s
         np.testing.assert_allclose(wavelength.isel(slit=0).diff("detector_x_pixel"), 0.385 / 20)
         np.testing.assert_allclose(-wavelength.isel(detector_x_pixel=0).diff("slit"), 0.385)
         assert (mapped.attrs["pixel_width"], mapped.attrs["pixel_height"]) == ("0.8 arcsec", "0.3 arcsec")
-        assert mapped.attrs["spectral_slit_separation"] == "385.0 mAngstrom"
+        assert mapped.attrs["spectral_slit_separation"] == "385 mAngstrom"
         assert mapped.attrs["instrument_defaults"].startswith("custom ")
-    assert read_response(sg_products[1]).attrs["instrument_defaults"] == "DEFAULTS_MUSE"
+    assert read_response(sg_products[1]).attrs["instrument_defaults"].startswith("DEFAULTS_MUSE ")
 
 
 def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, tmp_path):
@@ -1043,7 +1050,7 @@ def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
     with others.
     """
     custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
-    mixed = r"made with DEFAULTS_MUSE instrument defaults and this call uses custom [0-9a-f]{12} ones"
+    mixed = r"made with DEFAULTS_MUSE [0-9a-f]{12} instrument defaults and this call uses custom [0-9a-f]{12} ones"
     with pytest.raises(ValueError, match="gives the pixel_width"):
         _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, dx_pixel_SG=None))
 

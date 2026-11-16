@@ -5,10 +5,13 @@ import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
+from attrs import evolve
 
 import astropy.units as u
 
-from muse.utils.utils import add_history, coord_as_unit, update_attrs
+from muse.utils import utils as utils_module
+from muse.utils.utils import _instrument_defaults_label, add_history, coord_as_unit, update_attrs
+from muse.variables import DEFAULTS_MUSE
 from muse.version import version
 
 STAMP = re.compile(r" \[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ) muse (\S+)\]$")
@@ -270,6 +273,23 @@ def test_a_source_read_without_the_library_passes_on_its_old_names_as_current_on
     }
     assert _calls(ds) == ["load", "demo()"]
     assert not {"HISTORY", "version", "Chianti", "fiasco"} & set(ds.attrs)
+
+
+def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alone(monkeypatch) -> None:
+    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    late = ("gain_CI", "pair_energy_SG", "wavelength_start_SG", "channel_spectral_order_SG")
+    changed = [evolve(custom, **{name: 2 * getattr(custom, name)}) for name in late]
+
+    assert len({_instrument_defaults_label(defaults) for defaults in [custom, *changed]}) == 1 + len(late)
+    # an integer and its float are one value
+    as_float = evolve(custom, detector_x_pixels_SG=1024.0 * u.pix)
+    assert _instrument_defaults_label(as_float) == _instrument_defaults_label(custom)
+    # the MUSE values of another muse are told from today's
+    today = _instrument_defaults_label(DEFAULTS_MUSE)
+    older = evolve(DEFAULTS_MUSE, number_of_slits_SG=5)
+    monkeypatch.setattr(utils_module, "DEFAULTS_MUSE", older)
+    assert _instrument_defaults_label(older).split()[0] == "DEFAULTS_MUSE"
+    assert _instrument_defaults_label(older) != today
 
 
 def test_update_attrs_does_not_mutate_source_attrs() -> None:

@@ -125,7 +125,8 @@ def generate_sg_responses(
         `~muse.variables.DEFAULTS_MUSE`: the detector geometry and calibration, the
         spectral orders, the wavebands, the instrument FWHM and the main lines. The
         grids, the abundances, ``minimum_abundance`` and the normalization keep their own
-        defaults. The products record whether these were the MUSE values or others.
+        defaults. The products record whether these were the MUSE values or others, with a
+        digest of them.
     abundances : `list` of `str`, optional
         CHIANTI abundance names, by default ``DEFAULTS_MUSE.response_abundances``.
     temperature : `xarray.DataArray`, optional
@@ -177,10 +178,10 @@ def generate_sg_responses(
         that pressure alone and is refused by the others. Create it first, on every pressure,
         with `muse.instrument.load_or_create_line_list`.
     skip_existing : `bool`, optional
-        If `True`, a product that is already there, under any date, is kept and only the
-        others are made, so that a call that stopped halfway can be finished; one made with
-        MUSE defaults where this call has others, or the other way round, raises. By default
-        such a product raises, as its name does not carry every setting.
+        If `True`, a product that is already there is kept and only the others are made, so
+        that a call that stopped halfway can be finished; one made with other instrument
+        values than this call's raises. By default such a product raises, as its name does
+        not carry every setting.
     workers : `int`, optional
         Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every CPU
         this process may run on. The ChiantiPy backend does not use it.
@@ -657,6 +658,12 @@ class _Run:
             ]
             for abundance in self.abundances
         }
+        if earlier := sorted(self.output_directory.glob("respfunc_*.zarr.zip")):
+            msg = (
+                f"{self.output_directory} holds products of an earlier muse, such as {earlier[0].name}, which this "
+                "one names otherwise and would make again beside them: use another output directory"
+            )
+            raise ValueError(msg)
         every_name = [name for group in tasks.values() for *_, names in group for name in names.values()]
         if duplicates := sorted(name for name, count in Counter(every_name).items() if count > 1):
             msg = (

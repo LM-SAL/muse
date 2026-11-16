@@ -199,28 +199,32 @@ def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
     How the history and the attributes name an
     `~muse.variables_schema.InstrumentDefaults`.
 
-    The whole object does not fit an attribute: ``DEFAULTS_MUSE`` for the MUSE values,
-    otherwise ``custom`` and a digest of every value, which tells products made with
-    different values apart.
+    The whole object does not fit an attribute: ``DEFAULTS_MUSE`` for the MUSE values or
+    ``custom`` for others, and a digest of every value, which tells products made with
+    different values apart, the MUSE values of another muse included.
     """
-    if instrument_defaults == DEFAULTS_MUSE:
-        return "DEFAULTS_MUSE"
     digest = hashlib.sha256()
     for name in attrs.fields_dict(type(instrument_defaults)):
         digest.update(f"{name}={_written_in_full(getattr(instrument_defaults, name))};".encode())
-    return f"custom {digest.hexdigest()[:12]}"
+    kind = "DEFAULTS_MUSE" if instrument_defaults == DEFAULTS_MUSE else "custom"
+    return f"{kind} {digest.hexdigest()[:12]}"
 
 
 def _written_in_full(value: object) -> str:
     """
     ``value`` as text, every element of an array included: the repr of numpy leaves out
     the middle of a large one.
+
+    Equal values give equal text: numbers as floats, so an
+    integer equals its float, and coordinates in the order of their names.
     """
     if isinstance(value, xr.DataArray):
-        coords = {name: coord.values.tolist() for name, coord in value.coords.items()}
+        coords = {name: _written_in_full(value.coords[name].values) for name in sorted(value.coords)}
         return f"{_written_in_full(value.data)} {coords}"
     if isinstance(value, u.Quantity):
-        return f"{np.asarray(value.value).tolist()} {value.unit}"
+        return f"{_written_in_full(value.value)} {value.unit}"
+    if isinstance(value, np.ndarray | np.number | int | float) and np.issubdtype(np.asarray(value).dtype, np.number):
+        return str(np.asarray(value, dtype=float).tolist())
     if isinstance(value, np.ndarray):
         return str(value.tolist())
     return repr(value)

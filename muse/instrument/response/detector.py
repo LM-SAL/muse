@@ -274,7 +274,8 @@ def map_response_to_sg_detector(
         )
     if slit_separation is not None:
         # How far apart in wavelength the slits fall on the detector, which no product name states.
-        result = result.assign_attrs(spectral_slit_separation=str(slit_separation.to(u.mAA)))
+        # twelve digits: a value kept in Angstrom comes back with noise, 410 as 410.00000000000006
+        result = result.assign_attrs(spectral_slit_separation=f"{slit_separation.to_value(u.mAA):.12g} mAngstrom")
     add_history(result, locals(), map_response_to_sg_detector)
     return result
 

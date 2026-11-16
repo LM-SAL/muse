@@ -240,8 +240,8 @@ def read_response(
         If the requested ``logT`` or ``doppler_velocity`` axis has no units, is empty, not
         finite, in units that do not convert to the response's or wholly outside its range;
         if the file is not
-        in the layout `save_response` writes; or if ``gain`` is not given and the response has
-        no MUSE ``channel`` to take it from.
+        in the layout `save_response` writes; or if ``gain`` is not given and the file states
+        none, in a ``gain`` coordinate or attribute.
     """
     response_file = Path(response_file)
 
@@ -283,15 +283,20 @@ def read_response(
         response = response.expand_dims("line")
 
     gain_unit = u.electron / u.DN
-    if gain is None:
-        if "gain" not in response.attrs:
-            msg = f"{response_file} states no gain in its attributes; pass gain"
-            raise ValueError(msg)
-        gain = u.Quantity(response.attrs["gain"])
-    gain = gain.to(gain_unit)  # a statement so add_history records the converted value
-    gain_dim = "channel" if "channel" in response.dims else "line"
-    gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
-    response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
+    # A file that holds a gain per line, such as a saved set of responses, keeps it.
+    if gain is not None or "gain" not in response.coords:
+        if gain is None:
+            if "gain" not in response.attrs:
+                msg = f"{response_file} states no gain, in a gain coordinate or attribute; pass gain"
+                raise ValueError(msg)
+            gain = u.Quantity(response.attrs["gain"])
+        else:
+            # The given gain replaces that of the file; add_history records a scalar one.
+            response.attrs.pop("gain", None)
+        gain = gain.to(gain_unit)  # a statement so add_history records the converted value
+        gain_dim = "channel" if "channel" in response.dims else "line"
+        gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
+        response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
     add_history(response, locals(), read_response, reading=True)
     return response
@@ -444,7 +449,6 @@ def align_response_and_vdem(
     return matched_response, matched_vdem
 
 
-@u.quantity_input(channels=u.AA)
 def read_responses(
     response_files: Sequence[str | Path],
     *,
@@ -519,6 +523,13 @@ def read_responses(
             dataset = dataset.assign_coords(channel=dataset.channel.broadcast_like(dataset.line))
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
+    for what, value_of in (
+        ("instrument defaults", lambda dataset: dataset.attrs.get("instrument_defaults")),
+        ("units", lambda dataset: dataset.detector_response.attrs.get("units")),
+    ):
+        if len(values := {str(value_of(dataset)) for dataset in datasets}) > 1:
+            msg = f"the files are of different {what} ({', '.join(sorted(values))}); read those of one kind together"
+            raise ValueError(msg)
         response = xr.concat(
             datasets,
             dim="line",
