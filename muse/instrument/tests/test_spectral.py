@@ -304,8 +304,8 @@ def test_an_effective_area_dataset_counts_as_its_curve():
     xr.testing.assert_identical(from_dataset, _build_spectral_response(line_list, effective_area=curve))
 
 
-def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():
-    # An area that carries the gain is in cm2 DN / ph; the response builders take cm2.
+def test_an_effective_area_in_dn_per_photon_is_refused_with_a_way_out():
+    # An area that includes the conversion to DN is in cm2 DN / ph; the response builders take cm2.
     with_gain = fake_effective_area(area_units="cm2 DN / ph")
 
     with pytest.raises(ValueError, match="convertible to cm2; this area includes the conversion from photons to DN"):

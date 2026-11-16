@@ -212,7 +212,7 @@ def generate_sg_responses(
         If ``maximum_contaminants`` is not an integer.
     ValueError
         If an option is not valid, two products would get one name, a product exists and
-        ``skip_existing`` is `False`, a file is of no SG channel or carries the camera gain,
+        ``skip_existing`` is `False`, a file is of no SG channel or is in cm2 DN / ph,
         or a line list does not hold the requested temperatures and plasma points.
     FileNotFoundError
         If a line list is missing and ``create_if_missing`` is `False`.
@@ -452,7 +452,7 @@ def generate_ci_responses(
         As for `generate_sg_responses`.
     effective_area_files : `list` of `str` or `pathlib.Path`
         Files of `muse.instrument.save_effective_area`, one channel each. An area in
-        cm2 DN / ph carries the camera gain, so only DN products exist for it. A file of
+        cm2 DN / ph gives DN already, so only DN products exist for it. A file of
         an imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
         attributes, and should give ``pixel_width`` and ``pixel_height``, which are otherwise
         those of ``instrument_defaults``; `muse.instrument.create_aia_effective_area` writes
@@ -555,7 +555,7 @@ def generate_ci_responses(
 
         def names_of(area: xr.Dataset) -> dict:
             tags = (
-                ["_DN"] if _carries_gain(area) else [tag for unit, tag in (("ph", ""), ("DN", "_DN")) if unit in units]
+                ["_DN"] if _in_dn_per_ph(area) else [tag for unit, tag in (("ph", ""), ("DN", "_DN")) if unit in units]
             )
             return {
                 (tag, kind): (f"ci_{_channel(area)}{suffix}", tag)
@@ -907,8 +907,8 @@ def _write_ci_products(
     channel = _channel(area) * u.AA
     curve = _curve(area)
     response_area = area  # the Dataset, so that the products inherit its history
-    if _carries_gain(area):
-        # The gain is in the area already: the response is built from it as a plain cm2 area,
+    if _in_dn_per_ph(area):
+        # The area is in DN / ph already: the response is built from it as a plain cm2 area,
         # and what comes out per photon is DN. The products keep the area as it was given.
         response_area = area.assign(
             effective_area=curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
@@ -949,7 +949,7 @@ def _write_ci_products(
 
     detector_kwargs = _detector_kwargs(area, "CI", instrument_defaults)
     photons = transform_response_units(cube, _PHOTON_UNITS, channel, detector="CI", **detector_kwargs)
-    if _carries_gain(area):
+    if _in_dn_per_ph(area):
         in_dn = photons.assign(spectral_response=photons.spectral_response.assign_attrs(units=_DN_UNITS))
     else:
         in_dn = transform_response_units(cube, _DN_UNITS, channel, detector="CI", **detector_kwargs)
@@ -1081,7 +1081,7 @@ def _curve(area: xr.Dataset) -> xr.DataArray:
     return area.effective_area.reset_coords("channel", drop=True)
 
 
-def _carries_gain(area: xr.Dataset) -> bool:
+def _in_dn_per_ph(area: xr.Dataset) -> bool:
     return u.Unit(area.effective_area.attrs["units"]).is_equivalent(_CM2_DN_PER_PHOTON)
 
 
@@ -1146,8 +1146,8 @@ def _require_sg_files(effective_areas: list[xr.Dataset], instrument_defaults: In
                 f"{', '.join(map(str, sg_channels))}"
             )
             raise ValueError(msg)
-        if _carries_gain(area):
-            msg = f"{file_name} is in cm2 DN / ph; an SG product needs the area in cm2, without the camera gain"
+        if _in_dn_per_ph(area):
+            msg = f"{file_name} is in cm2 DN / ph; an SG product needs the area in cm2, without the conversion to DN"
             raise ValueError(msg)
 
 
@@ -1157,7 +1157,7 @@ def _require_ci_files(
     ci_channels = _ci_channels(instrument_defaults)
     for area in effective_areas:
         file_name = area.attrs["effective_area_file"]
-        if _carries_gain(area) and "DN" not in units:
+        if _in_dn_per_ph(area) and "DN" not in units:
             msg = f"{file_name} is in cm2 DN / ph, so only DN products exist for it; add 'DN' to units"
             raise ValueError(msg)
         missing = [name for name in ("gain", "pair_energy") if name not in area.attrs]

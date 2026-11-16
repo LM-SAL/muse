@@ -803,7 +803,7 @@ def test_files_a_generator_cannot_use_stop_the_call_before_any_work(inputs, tmp_
     for generate, options in ((_sg, {"line_list_file": None}), (_sg_continuum, {})):
         with pytest.raises(ValueError, match="is of channel 94 Angstrom; SG products exist for the MUSE channels 108"):
             generate(inputs, tmp_path / "run", effective_area_files=[other_channel], **options)
-        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the camera gain"):
+        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the conversion to DN"):
             generate(inputs, tmp_path / "run", effective_area_files=[with_the_gain], **options)
     # an imager: any channel, but one that is not of MUSE must describe its detector
     with pytest.raises(
