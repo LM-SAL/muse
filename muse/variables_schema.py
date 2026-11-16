@@ -241,8 +241,8 @@ class InstrumentDefaults:
         default=None, converter=_data_array(u.AA), eq=_data_array_eq
     )
     """
-    Spectral separation of adjacent SG slits for each channel, as seen at second order;
-    at spectral order n the separation is 2 / n times this value.
+    Nominal spectral separation of adjacent SG slits on the detector, for each channel
+    at its own spectral order.
 
     Values normalized to Angstroms.
     """

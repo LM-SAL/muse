@@ -17,6 +17,8 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
+from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import InstrumentDefaults
 from muse.version import version as _version
 
 __all__ = [
@@ -166,6 +168,18 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
     ds.attrs["HISTORY"] = [*history, *source_history[shared:]]
 
 
+def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
+    """
+    How the history and the attributes name an
+    `~muse.variables_schema.InstrumentDefaults`:
+
+    the whole object does not fit an attribute, so only whether it is the MUSE one.
+    """
+    # shortcut: two different custom objects get the same label; the values they set are in the
+    # other attributes of a product. Store a digest of the values if runs with several must not mix.
+    return "DEFAULTS_MUSE" if instrument_defaults == DEFAULTS_MUSE else "custom"
+
+
 def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
     today = dt.datetime.now(tz=dt.UTC).strftime("%d-%b-%Y")
     ds.attrs["date modified" if "date created" in ds.attrs else "date created"] = today
@@ -235,6 +249,8 @@ def add_history(
     for arg, value in local_vars.items():
         if arg not in params:
             continue
+        if isinstance(value, InstrumentDefaults):
+            value = _instrument_defaults_label(value)  # NOQA: PLW2901
         if isinstance(value, u.Quantity):
             formatted_args.append(f"{arg}={value.value}")
         elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):

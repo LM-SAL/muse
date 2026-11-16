@@ -27,7 +27,6 @@ from muse.instrument import (
     save_effective_area,
 )
 from muse.instrument.atomic import cache
-from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
@@ -285,11 +284,11 @@ def test_the_sg_grid_has_one_length_whatever_the_round_off():
     sample, though both wavebands are 35 Angstrom wide.
     """
     step = 0.01 * u.AA
-    grids = [products_module._sg_waveband_grid(channel, step) for channel in (108, 171)]
+    grids = [products_module._sg_waveband_grid(channel, DEFAULTS_MUSE, step) for channel in (108, 171)]
     assert [grid.size for grid in grids] == [3501, 3501]
     np.testing.assert_allclose(grids[0][[0, -1]].value, [90.5, 125.5])
     # the last sample is the one nearest the upper end of the waveband
-    assert abs(products_module._sg_waveband_grid(171)[-1].value - 188.5) < 0.0049 / 2
+    assert abs(products_module._sg_waveband_grid(171, DEFAULTS_MUSE)[-1].value - 188.5) < 0.0049 / 2
 
 
 def test_the_line_products_of_a_channel_load_together(sg_products):
@@ -927,31 +926,110 @@ def test_the_generators_on_live_chianti(tmp_path):
     ]
 
 
-def test_the_detector_products_follow_the_slit_separation_of_their_channel(inputs, sg_products, tmp_path, monkeypatch):
+def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, sg_products, tmp_path):
     """
-    The separation is a setting per channel: the name of a detector product states that
-    of its channel, and its wavelengths are laid out with it.
-    """
-    separation = xr.DataArray([380.0, 385.0, 400.0] * u.mAA, coords={"channel": [108, 171, 284]}, dims="channel")
-    defaults = evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=separation)
-    monkeypatch.setattr(products_module, "DEFAULTS_MUSE", defaults)
-    monkeypatch.setattr(detector_module, "DEFAULTS_MUSE", defaults)
+    Every instrument value the SG generators look up comes from ``instrument_defaults``:
 
-    lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0)
+    the detector geometry, the spectral order, the waveband, the FWHM, the main lines
+    and the pixel size. Nothing falls back to ``DEFAULTS_MUSE``, and the products say
+    the defaults were others.
+    """
+    by_channel = {"coords": {"channel": [108, 171, 284]}, "dims": "channel"}
+    defaults = evolve(
+        DEFAULTS_MUSE,
+        spectral_slit_separation_SG=xr.DataArray([380.0, 385.0, 400.0] * u.mAA, **by_channel),
+        number_of_slits_SG=5,
+        pixels_between_slits_SG=20 * u.pix,
+        detector_x_pixels_SG=256 * u.pix,
+        wavelength_start_SG=xr.DataArray([107.0, 165.0, 280.0] * u.AA, **by_channel),
+        channel_spectral_order_SG=xr.DataArray([2, 1, 1], **by_channel),
+        waveband_half_width_SG=10 * u.AA,
+        wavelength_step_SG=10 * u.mAA,
+        instrumental_fwhm_SG=xr.DataArray([0.08, 0.08, 0.08] * u.AA, **by_channel),
+        main_lines_by_channel_SG=(("Fe XIX 108.355",), ("Fe X 174.500",), ("Fe XV 284.163",)),
+        dx_pixel_SG=0.8 * u.arcsec,
+        dy_pixel_SG=0.3 * u.arcsec,
+    )
+
+    lines = _sg(
+        inputs, tmp_path / "lines", main_lines_by_channel=None, maximum_contaminants=1, instrument_defaults=defaults
+    )
     with pytest.MonkeyPatch.context() as continuum:
         continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
-        continua = _sg_continuum(inputs, tmp_path / "continuum")
+        continua = _sg_continuum(inputs, tmp_path / "continuum", instrument_defaults=defaults)
 
-    assert _prefixes(lines) == [
-        f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST",
-        f"respfunc_171_FeIX171.073_nslits35_sep385_{TAIL}_TEST",
+    assert sorted(_prefixes(lines)) == [
+        f"respfunc_171_FeX174.500_nslits5_sep385_{TAIL}_TEST",
+        f"respfunc_171_FeX174.500_waveband_{TAIL}_TEST",
+        f"respfunc_171_contaminants_nslits5_sep385_{TAIL}_TEST",
+        f"respfunc_171_contaminants_waveband_{TAIL}_TEST",
     ]
-    assert _prefixes(continua) == [f"respfunc_171_continuum_fiasco_nslits35_sep385_{TAIL}_TEST"]
-    for product in (lines[1], continua[0]):
-        slit_to_slit = read_response(product).detector_wavelength.isel(detector_x_pixel=0).diff("slit")
-        np.testing.assert_allclose(-slit_to_slit, 0.385)
-    # the cube does not depend on the detector: it is that of the default separation
-    xr.testing.assert_identical(
-        read_spectral_response(lines[0]).spectral_response,
-        read_spectral_response(_only(sg_products, "FeIX171.073_waveband")).spectral_response,
+    assert _prefixes(continua) == [f"respfunc_171_continuum_fiasco_nslits5_sep385_{TAIL}_TEST"]
+    cube = read_spectral_response(_only(lines, "FeX174.500_waveband"))
+    # 10 Angstrom on either side of 171 at its first order, in steps of 10 mAngstrom
+    np.testing.assert_allclose(cube.wavelength_grid.values[[0, -1]], [161.0, 181.0])
+    assert cube.wavelength_grid.size == 2001
+    assert cube.attrs["instrumental_fwhm"] == "0.08 Angstrom"
+    # the brightest other line of this waveband; that of the MUSE one is at 155 Angstrom
+    contaminants = read_spectral_response(_only(lines, "contaminants_waveband"))
+    profile = contaminants.spectral_response.sum(["line", "doppler_velocity", "logT", "pressure"])
+    np.testing.assert_allclose(
+        float(contaminants.wavelength_grid[int(profile.argmax("wavelength_bin"))]), 165.0, atol=0.1
     )
+    # the continuum is computed over this waveband, as the name of its cache states
+    assert len(list((tmp_path / "continuum" / "cache").glob("continuum_fiasco_161-181A_*"))) == 1
+    for product in (_only(lines, "FeX174.500_nslits5"), _only(lines, "contaminants_nslits5"), continua[0]):
+        mapped = read_response(product)
+        assert (mapped.sizes["slit"], mapped.sizes["detector_x_pixel"]) == (5, 256)
+        wavelength = mapped.detector_wavelength
+        np.testing.assert_allclose(float(wavelength.isel(slit=0, detector_x_pixel=0)), 165.0)
+        np.testing.assert_allclose(wavelength.isel(slit=0).diff("detector_x_pixel"), 0.385 / 20)
+        np.testing.assert_allclose(-wavelength.isel(detector_x_pixel=0).diff("slit"), 0.385)
+        assert (mapped.attrs["pixel_width"], mapped.attrs["pixel_height"]) == ("0.8 arcsec", "0.3 arcsec")
+        assert mapped.attrs["instrument_defaults"] == "custom"
+    assert read_response(sg_products[1]).attrs["instrument_defaults"] == "DEFAULTS_MUSE"
+
+
+def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, tmp_path):
+    """
+    A channel of the MUSE imager takes its gain and its pixel size from
+    ``instrument_defaults`` when its file states neither.
+    """
+    area = _area_file(tmp_path, channel=195, wavelength=(180.0, 192.0), attrs=None)
+    imager = {"coords": {"channel": [195, 304]}, "dims": "channel"}
+    defaults = evolve(
+        DEFAULTS_MUSE,
+        gain_CI=xr.DataArray([20.0, 10.0] * u.electron / u.DN, **imager),
+        dx_pixel_CI=3 * DEFAULTS_MUSE.dx_pixel_CI,
+    )
+    options = {"effective_area_files": [area], "units": "DN", "include_continuum": False}
+
+    default = _only(_ci(inputs, tmp_path / "default", **options), f"ci_195_{TAIL}_DN")
+    custom = _only(_ci(inputs, tmp_path / "custom", instrument_defaults=defaults, **options), f"ci_195_{TAIL}_DN")
+
+    # three times the pixel area over twice the gain
+    np.testing.assert_allclose(
+        read_response(custom).detector_response, 1.5 * read_response(default).detector_response, rtol=1e-12
+    )
+    assert read_response(custom).attrs["instrument_defaults"] == "custom"
+
+
+def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
+    """
+    A value the custom defaults lack is refused rather than taken from
+    ``DEFAULTS_MUSE``, and products made with the MUSE defaults are not kept for a call
+    with others.
+    """
+    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    mixed = "made with DEFAULTS_MUSE instrument defaults and this call uses custom"
+    with pytest.raises(ValueError, match="gives the pixel_width"):
+        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, dx_pixel_SG=None))
+
+    _sg(inputs, tmp_path / "mixed", maximum_contaminants=0)
+    with pytest.raises(ValueError, match=mixed):
+        _sg(inputs, tmp_path / "mixed", maximum_contaminants=0, skip_existing=True, instrument_defaults=custom)
+    with pytest.MonkeyPatch.context() as continuum:
+        continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
+        _sg_continuum(inputs, tmp_path / "mixed")
+        with pytest.raises(ValueError, match=mixed):
+            _sg_continuum(inputs, tmp_path / "mixed", skip_existing=True, instrument_defaults=custom)
