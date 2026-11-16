@@ -163,8 +163,10 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
     flipped = turned.isel(x=slice(None, None, -1)).assign_coords(
         x=("x", old_y.values[0] + old_y.values[-1] - old_y.values[::-1], old_y.attrs)
     )
-    # The caller's dimension order, so that the array and a plot of it are not mirrored.
-    return flipped.assign({name: flipped[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
+    # The rename keeps every dimension in its place, which swaps x and y in a variable along both:
+    # give it the caller's order back, so that the array and a plot of it are not mirrored.
+    both = [name for name in vdem.data_vars if {"x", "y"} <= set(vdem[name].dims)]
+    return flipped.assign({name: flipped[name].transpose(*vdem[name].dims) for name in both})
 
 
 @format_docstring(
@@ -272,6 +274,7 @@ def match_fov(
         msg = f"Unsupported extent {extent!r}; use 'extend', 'crop', or 'keep'"
         raise ValueError(msg)
     quarter_turns = rotation.to_value(u.deg) / 90
+    # An absolute tolerance, for the rounding of a conversion: 6 hourangle is 0.9999999999999999 turns.
     if not rotation.isscalar or not np.isclose(quarter_turns, round(quarter_turns), rtol=0):
         msg = f"rotation must be one multiple of 90 degrees, got {rotation}"
         raise ValueError(msg)

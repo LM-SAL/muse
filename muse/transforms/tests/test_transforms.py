@@ -293,6 +293,9 @@ def test_match_fov_turns_by_any_multiple_of_a_quarter(vdem) -> None:
             half.vdem.isel(x=last_x - x, y=last_y - y).values, vdem.vdem.isel(x=x, y=y).values
         )
     xr.testing.assert_identical(match_fov(vdem, rotation=-90 * u.deg).vdem, match_fov(vdem, rotation=270 * u.deg).vdem)
+    # a variable along x alone turns with the field, onto y
+    turned = match_fov(vdem.assign(row=vdem.vdem.isel(logT=0, doppler_velocity=0, y=0, drop=True)), rotation=90 * u.deg)
+    assert turned.row.sizes == {"y": turned.sizes["y"]}
     with pytest.raises(ValueError, match="multiple of 90 degrees"):
         match_fov(vdem, rotation=45 * u.deg)
     with pytest.raises(ValueError, match="multiple of 90 degrees"):
