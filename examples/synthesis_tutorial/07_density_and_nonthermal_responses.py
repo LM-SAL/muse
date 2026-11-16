@@ -99,8 +99,9 @@ plt.title("171 Angstrom response with electron density")
 # **Nonthermal broadening**
 #
 # We go back to the fixed-pressure line list, we add a
-# ``nonthermal_velocity`` axis via the keyword. Each value adds in
-# quadrature to the thermal width, mimicking unresolved motions
+# ``nonthermal_velocity`` axis via the keyword. Each value is the 1/e
+# nonthermal velocity xi of the EIS and IRIS literature and adds
+# lambda xi / (c sqrt 2) in quadrature to the thermal width, mimicking unresolved motions
 # such as Alfvén-wave turbulence in the Alfvén Wave Solar Model (AWSoM); see e.g.
 # `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__.
 
