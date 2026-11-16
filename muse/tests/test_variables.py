@@ -1,13 +1,11 @@
 import pickle
 
-import attrs
 import numpy as np
 import pytest
 import xarray as xr
 from attrs.exceptions import FrozenInstanceError
 
 import astropy.units as u
-from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.units import imperial
 
 from muse.variables import DEFAULTS_MUSE
@@ -73,29 +71,6 @@ def test_instrument_nested_sequences_are_converted_to_tuples():
 
     assert defaults.main_lines_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
     assert defaults.target_logT["QS"] == (1, 2, 3)
-
-
-def test_instrumental_width_sg():
-    width = DEFAULTS_MUSE.instrumental_width_SG
-
-    # the 1 sigma width of the FWHM, over the spectral order: 1 for 284, 2 for 108
-    sigma = DEFAULTS_MUSE.instrumental_fwhm_SG.to_value(u.AA) / gaussian_sigma_to_fwhm
-    np.testing.assert_allclose(width.sel(channel=284).data.to_value(u.AA), sigma)
-    np.testing.assert_allclose(width.sel(channel=108).data.to_value(u.AA), sigma / 2)
-
-
-def test_instrumental_fwhm_sg_normalizes_to_angstrom():
-    defaults = attrs.evolve(DEFAULTS_MUSE, instrumental_fwhm_SG=0.00815 * u.nm)
-
-    assert defaults.instrumental_fwhm_SG.unit == u.AA
-    np.testing.assert_allclose(defaults.instrumental_fwhm_SG.value, 0.0815)
-
-
-def test_instrumental_width_sg_requires_fwhm():
-    defaults = attrs.evolve(DEFAULTS_MUSE, instrumental_fwhm_SG=None)
-
-    with pytest.raises(ValueError, match="requires instrumental_fwhm_SG"):
-        defaults.instrumental_width_SG  # NOQA: B018
 
 
 def test_instrument_defaults_pickle_round_trip():

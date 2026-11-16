@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 import astropy.constants as const
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 
 from muse.log import logger
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
@@ -64,7 +65,7 @@ def create_spectral_response(
     wavelength_grid: u.Quantity | None = None,
     *,
     main_lines: Sequence[str] | None,
-    instrumental_width: u.Quantity = 0 * u.AA,
+    instrumental_fwhm: u.Quantity = 0 * u.AA,
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
@@ -88,8 +89,11 @@ def create_spectral_response(
         Stable ``full_name`` values to retain, in output order. Repeated
         transitions with the same name are summed. If `None` or empty, no
         named lines are retained and ``include_contaminants`` must be `True`.
-    instrumental_width : `astropy.units.Quantity`, optional
-        Scalar instrumental-width sigma, by default 0 Angstrom.
+    instrumental_fwhm : `astropy.units.Quantity`, optional
+        Scalar instrumental FWHM, by default 0 Angstrom. It is turned into the sigma of
+        the Gaussian profile, which adds in quadrature to the thermal and nonthermal
+        widths. For an SG channel of MUSE, take
+        ``DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=171)``.
     doppler_velocity : `astropy.units.Quantity`, optional
         Scalar or one-dimensional Doppler-velocity axis. If `None`, line
         centers remain at their rest wavelengths and no ``doppler_velocity``
@@ -132,7 +136,7 @@ def create_spectral_response(
     response = _build_spectral_response(
         line_list,
         wavelength_grid,
-        instrumental_width=instrumental_width,
+        instrumental_fwhm=instrumental_fwhm,
         doppler_velocity=doppler_velocity,
         nonthermal_velocity=nonthermal_velocity,
         effective_area=effective_area,
@@ -148,7 +152,7 @@ def create_spectral_response(
 
 @u.quantity_input(
     wavelength_grid=u.AA,
-    instrumental_width=u.AA,
+    instrumental_fwhm=u.AA,
     doppler_velocity=u.km / u.s,
     nonthermal_velocity=u.km / u.s,
     wavelength_edges=u.AA,
@@ -157,7 +161,7 @@ def _build_spectral_response(
     line_list: xr.Dataset,
     wavelength_grid: u.Quantity | None = None,
     *,
-    instrumental_width: u.Quantity = 0 * u.AA,
+    instrumental_fwhm: u.Quantity = 0 * u.AA,
     doppler_velocity: u.Quantity | None = None,
     nonthermal_velocity: u.Quantity | None = None,
     effective_area: xr.DataArray | None = None,
@@ -177,7 +181,7 @@ def _build_spectral_response(
         msg = f"bin_method must be one of {_BIN_METHODS}, got {bin_method!r}"
         raise ValueError(msg)
     wavelength_grid, edges = _wavelength_bins(wavelength_grid, wavelength_edges)
-    instrumental_width = _instrumental_width_in_angstrom(instrumental_width)
+    instrumental_sigma = _instrumental_sigma_in_angstrom(instrumental_fwhm)
     if doppler_velocity is not None:
         doppler_velocity = _velocity_axis(doppler_velocity, "doppler_velocity")
     if nonthermal_velocity is not None:
@@ -229,7 +233,7 @@ def _build_spectral_response(
     atomic_mass = _atomic_mass_from_atomic_number(line_list.atomic_number, pt.elements, atomic_mass_unit)
     thermal_velocity = np.sqrt(boltzmann * 10**line_list.logT / atomic_mass)
     thermal_line_width = line_centers * thermal_velocity / speed_of_light_ms
-    line_widths_squared = thermal_line_width**2 + instrumental_width**2
+    line_widths_squared = thermal_line_width**2 + instrumental_sigma**2
     if nonthermal_velocity is not None:
         line_widths_squared = (
             line_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
@@ -384,15 +388,18 @@ def _centers_to_edges(centers: np.ndarray) -> np.ndarray:
     return edges
 
 
-def _instrumental_width_in_angstrom(instrumental_width: u.Quantity) -> float:
-    if not instrumental_width.isscalar:
-        msg = "instrumental_width must be scalar"
+def _instrumental_sigma_in_angstrom(instrumental_fwhm: u.Quantity) -> float:
+    """
+    The Gaussian sigma of ``instrumental_fwhm``, in Angstrom.
+    """
+    if not instrumental_fwhm.isscalar:
+        msg = "instrumental_fwhm must be scalar"
         raise ValueError(msg)
-    converted = instrumental_width.to_value(u.AA)
+    converted = instrumental_fwhm.to_value(u.AA)
     if not np.all(np.isfinite(converted)) or np.any(converted < 0):
-        msg = "instrumental_width must contain finite, non-negative values"
+        msg = "instrumental_fwhm must contain finite, non-negative values"
         raise ValueError(msg)
-    return converted
+    return converted / gaussian_sigma_to_fwhm
 
 
 def _effective_area_in_cm2(effective_area: xr.DataArray | None) -> xr.DataArray | None:

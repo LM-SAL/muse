@@ -11,7 +11,6 @@ import xarray as xr
 from attrs import Converter, cmp_using, converters, define, field, fields, validators
 
 import astropy.units as u
-from astropy.stats import gaussian_sigma_to_fwhm
 from astropy.units import imperial
 
 __all__ = [
@@ -624,11 +623,12 @@ class InstrumentDefaults:
     Spectral order of main line for each band (channel)
     """
 
-    instrumental_fwhm_SG: u.Quantity | None = field(default=None, converter=_quantity(u.AA))
+    instrumental_fwhm_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
     """
-    Instrumental FWHM for the SG, with the spectral plate scale baked in.
+    Instrumental FWHM of each SG channel, with the spectral plate scale and the spectral
+    order of the channel baked in.
 
-    Normalized to Angstroms.
+    Values normalized to Angstroms.
     """
 
     def __repr__(self) -> str:
@@ -702,16 +702,3 @@ class InstrumentDefaults:
         if missing := sorted(set(line_names) - set(self.main_lines_SG_wavelength)):
             msg = f"main_lines_SG_wavelength is missing entries for {missing}"
             raise ValueError(msg)
-
-    @property
-    def instrumental_width_SG(self):
-        """
-        Instrumental width sigma in Angstroms.
-
-        ``instrumental_fwhm_SG`` converted to 1 sigma and divided by the channel
-        spectral order.
-        """
-        if self.instrumental_fwhm_SG is None or self.channel_spectral_order_SG is None:
-            msg = "instrumental_width_SG requires instrumental_fwhm_SG and channel_spectral_order_SG"
-            raise ValueError(msg)
-        return self.instrumental_fwhm_SG / gaussian_sigma_to_fwhm / self.channel_spectral_order_SG

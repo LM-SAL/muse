@@ -106,9 +106,13 @@ _DEFAULTS_MUSE_VALUES = {
         dims="channel",
     ),
     "channel_spectral_order_SG": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
-    # Value provided by Paul B.; spectral plate scale baked in. Replace with a measured
-    # calibration when one exists.
-    "instrumental_fwhm_SG": 0.0815 * u.AA,
+    # Value provided by Paul B.; spectral plate scale baked in: 0.0815 Angstrom at first order, over
+    # the spectral order of each channel. Replace with a measured calibration when one exists.
+    "instrumental_fwhm_SG": xr.DataArray(
+        np.array([0.0815 / 2, 0.0815 / 2, 0.0815]) * u.AA,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
+    ),
     # Effective areas
     "main_line_effective_area_SG": xr.DataArray(
         np.array([2.6, 4.3, 0.87]) * u.cm**2,

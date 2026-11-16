@@ -429,7 +429,7 @@ def test_settings_keyed_by_a_wavelength_count_as_those_keyed_by_a_number(inputs,
         f"respfunc_171_FeX174.500_waveband_{TAIL}_TEST",
         f"respfunc_171_FeX174.500_{GEOMETRY}_{TAIL}_TEST",
     ]
-    wider = _sg(inputs, tmp_path / "wider", instrumental_width_by_channel={171 * u.AA: 0.1 * u.AA})
+    wider = _sg(inputs, tmp_path / "wider", instrumental_fwhm_by_channel={171 * u.AA: 0.1 * u.AA})
     assert float(_main_response(wider).max()) < float(_main_response(sg_products).max())
 
 
@@ -781,9 +781,9 @@ def test_a_repeated_abundance_is_taken_once(inputs, sg_products, tmp_path):
         (_sg, {"transition_selection": [("fe_9", 1)]}, "a transition is"),
         # per-channel settings: an unknown channel, names that differ by spaces alone, a width without a unit
         (_sg, {"main_lines_by_channel": {94: [MAIN_LINE]}}, "the SG channels are 108, 171, 284"),
-        (_sg, {"instrumental_width_by_channel": {193 * u.AA: 1 * u.AA}}, "the SG channels are 108, 171, 284"),
+        (_sg, {"instrumental_fwhm_by_channel": {193 * u.AA: 1 * u.AA}}, "the SG channels are 108, 171, 284"),
         (_sg, {"main_lines_by_channel": {171: [MAIN_LINE, "FeIX 171.073"]}}, "would get one file name"),
-        (_sg, {"instrumental_width_by_channel": {171: 0.02}}, "must be one wavelength, such as 0.02"),
+        (_sg, {"instrumental_fwhm_by_channel": {171: 0.02}}, "must be one wavelength, such as 0.04"),
         # what goes into a file name: not empty, no slash, which makes a directory, and no underscore in the label
         (_sg, {"author": ""}, "author is part of a file name"),
         (_sg, {"author": "A/B"}, "author is part of a file name"),

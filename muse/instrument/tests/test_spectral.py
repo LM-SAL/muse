@@ -9,6 +9,7 @@ import xarray as xr
 
 import astropy.constants as const
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 
 import muse.instrument.response.spectral as spectral_module
 from muse.instrument.response.spectral import _build_spectral_response as _build_spectral_response_impl
@@ -128,18 +129,31 @@ def test_gaussian_window_matches_full_grid():
     np.testing.assert_allclose(response, expected + 1, rtol=1e-15, atol=0)
 
 
-def test_thermal_width_takes_the_element_mass_in_atomic_mass_units():
-    # Fe at 1 MK: sigma = wavelength * sqrt(k T / (55.845 u)) / c. The proton mass in place of u makes
-    # the line 0.36 % too narrow.
+def _sigma_of_an_iron_line_at_1_MK(**kwargs) -> float:
+    """
+    The measured sigma, in Angstrom, of one Fe line at 171 Angstrom and 1 MK.
+    """
     line_list = fake_line_list(1, wavelength=[171.0], logT=[6.0])
     response = create_spectral_response(
-        line_list, DEFAULT_WAVELENGTH_GRID, main_lines=line_list.full_name.values.tolist(), instrumental_width=0 * u.AA
+        line_list, DEFAULT_WAVELENGTH_GRID, main_lines=line_list.full_name.values.tolist(), **kwargs
     )
     profile = response.spectral_response.squeeze().values
     offset = response.wavelength_grid.values - 171.0
-    sigma = np.sqrt(np.sum(profile * offset**2) / np.sum(profile))
+    return float(np.sqrt(np.sum(profile * offset**2) / np.sum(profile)))
+
+
+def test_thermal_width_takes_the_element_mass_in_atomic_mass_units():
+    # Fe at 1 MK: sigma = wavelength * sqrt(k T / (55.845 u)) / c. The proton mass in place of u makes
+    # the line 0.36 % too narrow.
     thermal_velocity = np.sqrt(const.k_B * 1e6 * u.K / (55.845 * const.u)).to_value(u.m / u.s)
-    np.testing.assert_allclose(sigma, 171.0 * thermal_velocity / const.c.value, rtol=1e-4)
+    np.testing.assert_allclose(_sigma_of_an_iron_line_at_1_MK(), 171.0 * thermal_velocity / const.c.value, rtol=1e-4)
+
+
+def test_instrumental_fwhm_adds_its_sigma_in_quadrature():
+    # 0.05 Angstrom FWHM is a sigma of 0.05 / (2 sqrt(2 ln 2)), added in quadrature to the thermal sigma.
+    thermal = _sigma_of_an_iron_line_at_1_MK()
+    broadened = _sigma_of_an_iron_line_at_1_MK(instrumental_fwhm=0.05 * u.AA)
+    np.testing.assert_allclose(broadened**2 - thermal**2, (0.05 / gaussian_sigma_to_fwhm) ** 2, rtol=1e-3)
 
 
 def test_peak_follows_doppler_shift():
@@ -147,7 +161,7 @@ def test_peak_follows_doppler_shift():
     response = _build_spectral_response(
         ll,
         doppler_velocity=DOPPLER_VELOCITY,
-        instrumental_width=0.02 * u.AA,
+        instrumental_fwhm=0.02 * u.AA,
     )
     speed_of_light_kms = 299792.458
     for velocity in (-200.0, 200.0):
@@ -166,7 +180,7 @@ def test_scalar_velocity_inputs():
         ll,
         doppler_velocity=0.0 * u.km / u.s,
         nonthermal_velocity=0.0 * u.km / u.s,
-        instrumental_width=0.02 * u.AA,
+        instrumental_fwhm=0.02 * u.AA,
     )
     assert response.spectral_response.sizes["doppler_velocity"] == 1
     assert response.spectral_response.sizes["nonthermal_velocity"] == 1
@@ -177,7 +191,7 @@ def test_multiline_nonthermal_uses_each_line_wavelength():
     kwargs = {
         "doppler_velocity": np.array([0.0]) * u.km / u.s,
         "nonthermal_velocity": np.array([0.0, 50.0]) * u.km / u.s,
-        "instrumental_width": 0.02 * u.AA,
+        "instrumental_fwhm": 0.02 * u.AA,
     }
     combined = _build_spectral_response(line_list, **kwargs)
 
@@ -244,7 +258,7 @@ def test_line_list_requires_physical_units(name, units):
 def test_velocity_axes_convert_to_kilometers_per_second():
     kwargs = {
         "line_list": fake_line_list(1),
-        "instrumental_width": 0.02 * u.AA,
+        "instrumental_fwhm": 0.02 * u.AA,
     }
     response_km = _build_spectral_response(
         doppler_velocity=np.array([-20.0, 20.0]) * u.km / u.s,
@@ -278,7 +292,7 @@ def test_velocity_axes_require_velocity_units(name, value, error):
 
 
 def test_wavelength_inputs_convert_to_angstrom():
-    kwargs = {"line_list": fake_line_list(1), "instrumental_width": 0.02 * u.AA}
+    kwargs = {"line_list": fake_line_list(1), "instrumental_fwhm": 0.02 * u.AA}
     wavelength_grid_nm = DEFAULT_WAVELENGTH_GRID.to(u.nm)
 
     response_AA = _build_spectral_response(wavelength_grid=DEFAULT_WAVELENGTH_GRID, **kwargs)
@@ -457,8 +471,8 @@ def test_atomic_number_must_be_supported():
 @pytest.mark.parametrize(
     ("name", "value", "error"),
     [
-        ("instrumental_width", -0.01 * u.AA, ValueError),
-        ("instrumental_width", np.nan * u.AA, ValueError),
+        ("instrumental_fwhm", -0.01 * u.AA, ValueError),
+        ("instrumental_fwhm", np.nan * u.AA, ValueError),
         ("doppler_velocity", np.array([0.0, np.nan]) * u.km / u.s, ValueError),
         ("nonthermal_velocity", np.array([-1.0, 0.0]) * u.km / u.s, ValueError),
     ],
@@ -523,7 +537,7 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
     line_list = xr.concat([line_list, line_list.isel(trans_index=[1])], dim="trans_index")
     main_lines = [line_list.full_name[1].item(), line_list.full_name[0].item()]
     kwargs = {
-        "instrumental_width": 0.02 * u.AA,
+        "instrumental_fwhm": 0.02 * u.AA,
     }
 
     response = _build_spectral_response(line_list, main_lines=main_lines, **kwargs)
@@ -571,29 +585,29 @@ def test_no_main_lines_require_contaminant_opt_in(main_lines):
         )
 
 
-def test_instrumental_width_converts_to_angstrom():
+def test_instrumental_fwhm_converts_to_angstrom():
     kwargs = {
         "line_list": fake_line_list(1),
     }
 
-    response_AA = _build_spectral_response(instrumental_width=0.02 * u.AA, **kwargs)
-    response_nm = _build_spectral_response(instrumental_width=0.002 * u.nm, **kwargs)
+    response_AA = _build_spectral_response(instrumental_fwhm=0.02 * u.AA, **kwargs)
+    response_nm = _build_spectral_response(instrumental_fwhm=0.002 * u.nm, **kwargs)
 
     xr.testing.assert_allclose(response_AA, response_nm)
 
 
 @pytest.mark.parametrize(
-    ("instrumental_width", "error"),
+    ("instrumental_fwhm", "error"),
     [
         (5 * u.km / u.s, u.UnitsError),
         (np.array([0.01, 0.02]) * u.AA, ValueError),
     ],
 )
-def test_instrumental_width_requires_wavelength_units(instrumental_width, error):
-    with pytest.raises(error, match="instrumental_width"):
+def test_instrumental_fwhm_requires_wavelength_units(instrumental_fwhm, error):
+    with pytest.raises(error, match="instrumental_fwhm"):
         _build_spectral_response(
             fake_line_list(1),
-            instrumental_width=instrumental_width,
+            instrumental_fwhm=instrumental_fwhm,
         )
 
 
@@ -640,7 +654,7 @@ def test_average_matches_center_when_the_line_is_resolved():
     # sigma / h ~ 25: the midpoint total is exact and the per-bin values differ only
     # by the curvature term (h / sigma)^2 / 24.
     line_list = fake_line_list(2)
-    kwargs = {"main_lines": list(line_list.full_name.values), "instrumental_width": 0.05 * u.AA}
+    kwargs = {"main_lines": list(line_list.full_name.values), "instrumental_fwhm": 0.05 * u.AA * gaussian_sigma_to_fwhm}
     averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
     centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
     assert averaged.spectral_response.dims == centered.spectral_response.dims

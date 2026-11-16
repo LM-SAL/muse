@@ -57,7 +57,7 @@ response = create_spectral_response(
     line_list,
     np.arange(194.5, 195.7, dispersion.to_value(u.AA)) * u.AA,
     main_lines=["Fe XII 195.119", "Fe XII 195.179"],
-    instrumental_width=instrumental_fwhm / (2 * np.sqrt(2 * np.log(2))),
+    instrumental_fwhm=instrumental_fwhm,
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
     effective_area=effective_area,
 )

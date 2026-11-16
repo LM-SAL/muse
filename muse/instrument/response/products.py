@@ -69,7 +69,7 @@ def generate_sg_responses(
     density: xr.DataArray | None = None,
     doppler_velocity: u.Quantity | None = None,
     main_lines_by_channel: Mapping[int | u.Quantity, Sequence[str]] | None = None,
-    instrumental_width_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
+    instrumental_fwhm_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
     maximum_contaminants: int = 10000,
     minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
     line_list_backend: str = "fiasco",
@@ -137,9 +137,9 @@ def generate_sg_responses(
         The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
         Angstrom or as a wavelength. A channel that is not a key keeps
         ``DEFAULTS_MUSE.main_lines_SG``.
-    instrumental_width_by_channel : `dict`, optional
-        The 1 sigma instrumental width of a channel, keyed alike. A channel that is not a key
-        keeps ``DEFAULTS_MUSE.instrumental_width_SG``.
+    instrumental_fwhm_by_channel : `dict`, optional
+        The instrumental FWHM of a channel, keyed alike. A channel that is not a key keeps
+        ``DEFAULTS_MUSE.instrumental_fwhm_SG``.
     maximum_contaminants : `int`, optional
         How many of the brightest other lines of a waveband are summed into the contaminant
         products, by default 10000; below 1 there are none.
@@ -219,7 +219,7 @@ def generate_sg_responses(
             msg = f"maximum_contaminants must be an integer, got {maximum_contaminants!r}"
             raise TypeError(msg)
         main_lines_by_sg_channel = _main_lines_by_sg_channel(main_lines_by_channel)
-        instrumental_width_by_sg_channel = _instrumental_width_by_sg_channel(instrumental_width_by_channel)
+        instrumental_fwhm_by_sg_channel = _instrumental_fwhm_by_sg_channel(instrumental_fwhm_by_channel)
         wavebands = u.Quantity([_sg_waveband(_channel(area)) for area in run.effective_areas])
         load_line_list = _line_list_loader(
             run,
@@ -252,7 +252,7 @@ def generate_sg_responses(
                     line_list.isel({run.request.plasma_dim: plasma_point}),
                     area,
                     main_lines=main_lines_by_sg_channel[_channel(area)],
-                    instrumental_width=instrumental_width_by_sg_channel[_channel(area)],
+                    instrumental_fwhm=instrumental_fwhm_by_sg_channel[_channel(area)],
                     doppler_velocity=doppler_velocity,
                     maximum_contaminants=maximum_contaminants,
                     abundance=abundance,
@@ -700,7 +700,7 @@ def _write_sg_products(
     area: xr.Dataset,
     *,
     main_lines: list[str],
-    instrumental_width: u.Quantity,
+    instrumental_fwhm: u.Quantity,
     doppler_velocity: u.Quantity,
     maximum_contaminants: int,
     abundance: str,
@@ -717,7 +717,7 @@ def _write_sg_products(
         response = create_spectral_response(
             lines,
             grid,
-            instrumental_width=instrumental_width,
+            instrumental_fwhm=instrumental_fwhm,
             doppler_velocity=doppler_velocity,
             effective_area=curve,
             **kwargs,
@@ -1029,15 +1029,15 @@ def _main_lines_by_sg_channel(overrides: Mapping | None) -> dict[int, list[str]]
     return main_lines
 
 
-def _instrumental_width_by_sg_channel(overrides: Mapping | None) -> dict[int, u.Quantity]:
+def _instrumental_fwhm_by_sg_channel(overrides: Mapping | None) -> dict[int, u.Quantity]:
     widths = {}
-    defaults = DEFAULTS_MUSE.instrumental_width_SG.data
-    for channel, width in _by_sg_channel(overrides, "instrumental_width_by_channel", defaults).items():
+    defaults = DEFAULTS_MUSE.instrumental_fwhm_SG.data
+    for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults).items():
         widths[channel] = u.Quantity(width)
         if not widths[channel].isscalar or not widths[channel].unit.is_equivalent(u.AA):
             msg = (
-                f"instrumental_width_by_channel: the width of channel {channel} must be one wavelength, such as "
-                f"0.02 * u.AA, got {width!r}"
+                f"instrumental_fwhm_by_channel: the FWHM of channel {channel} must be one wavelength, such as "
+                f"0.04 * u.AA, got {width!r}"
             )
             raise ValueError(msg)
     return widths
