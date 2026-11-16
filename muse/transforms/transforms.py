@@ -340,6 +340,7 @@ def match_fov(
 )
 def reshape_x_to_slit_step(
     ds: xr.Dataset,
+    *,
     number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
