@@ -71,7 +71,11 @@ _DEFAULTS_MUSE_VALUES = {
     ),
     # Synthesis/inversions
     "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
-    "main_lines_by_channel_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
+    "main_lines_by_channel_SG": {
+        108: ("Fe XIX 108.355", "Fe XXI 108.117"),
+        171: ("Fe IX 171.073",),
+        284: ("Fe XV 284.163",),
+    },
     "fov_pad_mode": "wrap",
     "fov_extent": "extend",
     "fov_oversampling": 2,

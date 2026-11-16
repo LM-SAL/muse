@@ -1167,18 +1167,16 @@ def _require_ci_files(
             raise ValueError(msg)
 
 
-def _by_sg_channel(
-    overrides: Mapping | None, name: str, defaults: Iterable, sg_channels: tuple[int, ...]
-) -> dict[int, object]:
+def _by_sg_channel(overrides: Mapping | None, name: str, defaults: Mapping[int, object]) -> dict[int, object]:
     """
     The default value of every SG channel, replaced by the caller's where one is given;
     a key is a channel in Angstrom as a number or as a wavelength.
     """
-    values = dict(zip(sg_channels, defaults, strict=True))
+    values = dict(defaults)
     for key, value in (overrides or {}).items():
         channel = round(float(u.Quantity(key, u.AA).value))
         if channel not in values:
-            msg = f"{name} has the key {key!r}; the SG channels are {', '.join(map(str, sg_channels))}"
+            msg = f"{name} has the key {key!r}; the SG channels are {', '.join(map(str, values))}"
             raise ValueError(msg)
         values[channel] = value
     return values
@@ -1189,10 +1187,7 @@ def _main_lines_by_sg_channel(
 ) -> dict[int, list[str]]:
     main_lines = {}
     for channel, lines in _by_sg_channel(
-        overrides,
-        "main_lines_by_channel",
-        _required(instrument_defaults, "main_lines_by_channel_SG"),
-        _sg_channels(instrument_defaults),
+        overrides, "main_lines_by_channel", _required(instrument_defaults, "main_lines_by_channel_SG")
     ).items():
         # One name alone is one line, not its characters.
         main_lines[channel] = [lines] if isinstance(lines, str) else list(lines)
@@ -1213,9 +1208,9 @@ def _instrumental_fwhm_by_sg_channel(
     overrides: Mapping | None, instrument_defaults: InstrumentDefaults
 ) -> dict[int, u.Quantity]:
     widths = {}
-    defaults = _required(instrument_defaults, "instrumental_fwhm_SG").data
-    sg_channels = _sg_channels(instrument_defaults)
-    for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults, sg_channels).items():
+    fwhm = _required(instrument_defaults, "instrumental_fwhm_SG")
+    defaults = dict(zip(fwhm.channel.values.tolist(), fwhm.data, strict=True))
+    for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults).items():
         widths[channel] = u.Quantity(width)
         if not widths[channel].isscalar or not widths[channel].unit.is_equivalent(u.AA):
             msg = (

@@ -939,7 +939,7 @@ def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, s
         waveband_half_width_SG=10 * u.AA,
         wavelength_step_SG=10 * u.mAA,
         instrumental_fwhm_SG=xr.DataArray([0.08, 0.08, 0.08] * u.AA, **by_channel),
-        main_lines_by_channel_SG=(("Fe XIX 108.355",), ("Fe X 174.500",), ("Fe XV 284.163",)),
+        main_lines_by_channel_SG={108: "Fe XIX 108.355", 171: "Fe X 174.500", 284: "Fe XV 284.163"},
         pixel_width_SG=0.8 * u.arcsec,
         pixel_height_SG=0.3 * u.arcsec,
     )

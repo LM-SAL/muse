@@ -102,8 +102,8 @@ def _optional_int(value, attribute):
 _int_converter = Converter(_optional_int, takes_field=True)
 
 
-def _nested_tuple(value):
-    return tuple(tuple(item) if isinstance(item, (list, tuple)) else item for item in value)
+def _frozen_lines(value):
+    return FrozenDict({channel: lines if isinstance(lines, str) else tuple(lines) for channel, lines in value.items()})
 
 
 def _set_readonly(value):
@@ -315,9 +315,9 @@ class InstrumentDefaults:
     Dimensions to sum over during synthesis/inversions.
     """
 
-    main_lines_by_channel_SG: tuple | None = field(default=None, converter=converters.optional(_nested_tuple))
+    main_lines_by_channel_SG: FrozenDict | None = field(default=None, converter=converters.optional(_frozen_lines))
     """
-    Main spectral lines for the SG, grouped per channel.
+    Main spectral lines for the SG, keyed by channel.
     """
 
     fov_pad_mode: str | None = field(default=None, validator=_instance(str))
@@ -446,6 +446,10 @@ class InstrumentDefaults:
             if field_channels != channels:
                 msg = f"{name} and {reference} must have matching channel coordinates"
                 raise ValueError(msg)
+        lines = self.main_lines_by_channel_SG
+        if lines is not None and channels is not None and set(lines) != set(channels):
+            msg = f"main_lines_by_channel_SG must be keyed by the channels of {reference}, {list(channels)}"
+            raise ValueError(msg)
 
 
 def _required(defaults: InstrumentDefaults, name: str):

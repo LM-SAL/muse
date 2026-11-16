@@ -27,13 +27,13 @@ def test_instrument_array_fields_are_read_only_and_copied():
         defaults.response_doppler_velocity[0] = 999 * u.km / u.s
 
 
-def test_instrument_nested_sequences_are_converted_to_tuples():
-    main_lines = [["Fe XIX 108.355", "Fe XXI 108.117"]]
+def test_instrument_main_lines_are_copied_to_tuples():
+    main_lines = {108: ["Fe XIX 108.355", "Fe XXI 108.117"]}
     defaults = InstrumentDefaults(main_lines_by_channel_SG=main_lines)
 
-    main_lines[0][0] = "changed"
+    main_lines[108][0] = "changed"
 
-    assert defaults.main_lines_by_channel_SG == (("Fe XIX 108.355", "Fe XXI 108.117"),)
+    assert defaults.main_lines_by_channel_SG == {108: ("Fe XIX 108.355", "Fe XXI 108.117")}
 
 
 def test_instrument_defaults_pickle_round_trip():
@@ -84,6 +84,8 @@ def test_instrument_defaults_validate_spectral_channels():
     mismatched_pair_energy = xr.DataArray([3.65] * u.eV / u.electron, coords={"channel": [284]}, dims="channel")
     with pytest.raises(ValueError, match="matching channel coordinates"):
         InstrumentDefaults(wavelength_start_SG=initial, pair_energy_SG=mismatched_pair_energy)
+    with pytest.raises(ValueError, match=r"main_lines_by_channel_SG must be keyed by .*\[108, 171\]"):
+        InstrumentDefaults(wavelength_start_SG=initial, main_lines_by_channel_SG={108: "Fe XIX 108.355"})
 
 
 def test_ci_calibrations_require_channel_dimension():
