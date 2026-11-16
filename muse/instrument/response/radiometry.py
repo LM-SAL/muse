@@ -21,10 +21,9 @@ __all__ = ["transform_flux_units", "transform_response_units"]
 
 def _unit_power(unit: u.UnitBase | str, base: u.UnitBase) -> float | Fraction:
     """
-    Return the exponent of ``base`` in ``unit``, or zero when ``base`` is absent.
+    The exponent of ``base`` in ``unit``, zero when absent.
 
-    astropy stores non-integer exponents as `fractions.Fraction`, which must pass
-    through exactly so the downstream unit arithmetic stays symbolic.
+    A `fractions.Fraction` exponent passes through so the unit arithmetic stays exact.
     """
     unit = u.Unit(unit)
     return unit.powers[unit.bases.index(base)] if base in unit.bases else 0
@@ -35,10 +34,7 @@ def _chain_steps(old_unit: u.UnitBase, new_unit: u.UnitBase) -> tuple[float, flo
     How often the photon, electron and DN steps of the detector chain are taken from
     ``old_unit`` to ``new_unit``; zero for a step that is not taken.
     """
-    # Each `+` below is load-bearing: the chain is energy -> photon -> electron -> DN,
-    # so a step carries the steps downstream of it. Asking for DN from a photon
-    # quantity needs the electron step too, which independent per-base deltas
-    # would skip, leaving an erg/electron residue that cannot reach the target.
+    # A step carries the ones downstream of it: DN from photons needs the electron step too.
     dn_steps = _unit_power(new_unit, u.DN) - _unit_power(old_unit, u.DN)
     electron_steps = _unit_power(new_unit, u.electron) - _unit_power(old_unit, u.electron) + dn_steps
     photon_steps = _unit_power(new_unit, u.ph) - _unit_power(old_unit, u.ph) + electron_steps
@@ -101,9 +97,8 @@ def transform_response_units(
     """
     Convert the radiometric units of a wavelength-space response.
 
-    The conversion is: detector chain energy -> photon -> electron -> data
-    number (DN), and converts a per-steradian response into a per-detector-pixel one,
-    as required by ``new_units``.
+    Steps along the detector chain energy -> photon -> electron -> data number (DN), and
+    from per steradian to per detector pixel, as ``new_units`` requires.
 
     .. warning::
 
@@ -114,29 +109,25 @@ def transform_response_units(
     Parameters
     ----------
     response : `xarray.Dataset`
-        Wavelength-space response containing ``spectral_response`` and
-        ``wavelength_grid``, e.g. from
+        With ``spectral_response`` and ``wavelength_grid``, e.g. from
         `muse.instrument.create_spectral_response`.
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g.,
         ``"1e-27 cm5 ph / (Angstrom s)"``.
     channel : `astropy.units.Quantity`, optional
-        Nominal MUSE channel wavelength. Selects the detector-specific
-        per-channel ``gain`` and ``pair_energy`` calibrations, so it is
-        required unless both are given explicitly, e.g. for a non-MUSE
-        instrument.
+        Nominal MUSE channel wavelength, which selects the default ``gain`` and
+        ``pair_energy``; required unless both are given.
     detector : {{"SG", "CI"}}, optional
         Detector whose default calibration to use, case-insensitive, by default ``"SG"``.
     pixel_width, pixel_height : `astropy.units.Quantity`, optional
-        Pixel angular size used to convert steradians to detector pixels. If
-        `None`, use {pixel_width_sg} by {pixel_height_sg} for SG or
+        Pixel angular size. If `None`, {pixel_width_sg} by {pixel_height_sg} for SG or
         {pixel_width_ci} by {pixel_height_ci} for CI.
     gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN. If `None`, use the channel's
-        detector-specific value from ``instrument_defaults``.
+        Camera gain, convertible to electron/DN. If `None`, the channel's value from
+        ``instrument_defaults``.
     pair_energy : `astropy.units.Quantity`, optional
-        Mean energy that frees one electron-hole pair in silicon. If `None`,
-        use the channel's detector-specific value from ``instrument_defaults``.
+        Mean energy that frees one electron-hole pair in silicon. If `None`, the
+        channel's value from ``instrument_defaults``.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
         The pixel sizes and calibrations to fall back on, by default
         `~muse.variables.DEFAULTS_MUSE`.
@@ -215,39 +206,33 @@ def transform_flux_units(
     """
     Convert the flux of a spectrum between photons, electrons and data numbers (DN).
 
-    The conversion follows the detector chain photon -> electron -> DN, line by
-    line: a photon at the wavelength of the line frees
-    ``h c / line_wavelength / pair_energy`` electrons, and ``gain`` electrons
-    make one DN. The rest of the unit, such as ``/ s``, can only change to an
-    equivalent unit, such as ``/ min``.
+    Line by line, a photon frees ``h c / line_wavelength / pair_energy`` electrons and
+    ``gain`` electrons make one DN. The rest of the unit, such as ``/ s``, can only change
+    to an equivalent one, such as ``/ min``.
 
     Parameters
     ----------
     spectrum : `xarray.Dataset`
-        Spectrum, e.g. from `muse.synthesis.vdem_synthesis`. ``flux`` and the
-        ``line_wavelength`` coordinate must define units, and
-        ``line_wavelength`` must lie along one dimension of ``flux``, such as
-        ``line`` or ``channel``. An entry without a line wavelength (NaN), such
-        as the continuum or a channel summed over lines of different
-        wavelengths, has no photon energy: a conversion between photons and
-        electrons or DN is refused for a spectrum that holds one.
+        E.g. from `muse.synthesis.vdem_synthesis`, with units on ``flux`` and on a
+        ``line_wavelength`` coordinate along one dimension of ``flux``, such as ``line``
+        or ``channel``. An entry with a NaN line wavelength, such as the continuum or a
+        channel summed over lines of different wavelengths, has no photon energy, so a spectrum that holds one
+        cannot be converted between photons and electrons or DN.
     new_units : `str`
         Target units, as an `astropy.units.Unit` string, e.g. ``"DN / s"``.
     detector : {"SG", "CI"}, optional
         Detector whose default calibration to use, case-insensitive, by default
         ``"SG"``.
     gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN: one value, or one per line.
-        If `None`, use the ``gain`` coordinate of ``spectrum`` when it has one,
-        otherwise the value of each line's channel from ``instrument_defaults``.
-        Read only for a conversion to or from DN.
+        Camera gain, convertible to electron/DN, one value or one per line. If `None`,
+        the ``gain`` coordinate of ``spectrum``, else each line's channel value from
+        ``instrument_defaults``. Read only for a conversion to or from DN.
     pair_energy : `astropy.units.Quantity`, optional
-        Mean energy that frees one electron-hole pair in silicon: one value, or
-        one per line. If `None`, use the ``pair_energy`` coordinate of
-        ``spectrum`` when it has one, as a spectrum made from a response of
-        `muse.instrument.read_response` does, otherwise the value of each line's
-        channel from ``instrument_defaults``. Read only for a conversion between
-        photons and electrons or DN.
+        Mean energy that frees one electron-hole pair in silicon, one value or one per
+        line. If `None`, the ``pair_energy`` coordinate of ``spectrum`` (a spectrum made
+        from a response of `muse.instrument.read_response` has one), else each line's channel value
+        from ``instrument_defaults``. Read only for a conversion between photons and
+        electrons or DN.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
         The calibrations to fall back on, by default `~muse.variables.DEFAULTS_MUSE`.
 
@@ -259,10 +244,9 @@ def transform_flux_units(
     Raises
     ------
     ValueError
-        If ``flux`` or ``line_wavelength`` has no units, if the detector chain
-        cannot take the units of ``flux`` to ``new_units``, or if a default is
-        needed and ``spectrum`` has no ``channel`` coordinate or has a channel
-        that ``detector`` does not have.
+        If ``flux`` or ``line_wavelength`` has no units, the detector chain cannot take
+        ``flux`` to ``new_units``, or a default is needed and ``spectrum`` has no
+        ``channel`` coordinate or a channel ``detector`` lacks.
     """
     if not isinstance(detector, str) or detector.lower() not in ("sg", "ci"):
         msg = "detector must be 'SG' or 'CI' (case-insensitive)"
@@ -274,8 +258,6 @@ def transform_flux_units(
         msg = "spectrum.line_wavelength must lie along one dimension of spectrum.flux"
         raise ValueError(msg)
 
-    # The gain and the pair energy are read only for a step the conversion takes: electrons to DN
-    # needs no pair energy, and photons to electrons no gain, whatever the spectrum carries.
     photon_steps, electron_steps, dn_steps = _chain_steps(old_unit, new_unit)
     if (photon_steps or electron_steps) and not np.isfinite(wavelength.values).all():
         dim = wavelength.dims[0]

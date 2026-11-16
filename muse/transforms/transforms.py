@@ -46,10 +46,8 @@ def _resample_weights(coord_values: np.ndarray, n_pixels: int, samples_per_pixel
     """
     Matrix mapping samples at ``coord_values`` onto ``n_pixels`` output pixels.
 
-    Row ``i`` holds the weights that linearly interpolate the input onto
-    ``samples_per_pixel`` evenly spaced sub-samples of output pixel ``i`` and average
-    them, so applying the matrix reproduces interpolate-then-block-average in a single
-    product.
+    Row ``i`` linearly interpolates the input onto ``samples_per_pixel`` evenly spaced
+    points in pixel ``i`` and averages them, so one product interpolates and averages.
     """
     fine = np.linspace(coord_values[0], coord_values[-1], n_pixels * samples_per_pixel)
     right = np.clip(np.searchsorted(coord_values, fine, side="right"), 1, coord_values.size - 1)
@@ -68,17 +66,11 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
 
     Interpolates up when the target grid is finer, integer-factor averages down when it
     is much coarser, and otherwise sub-interpolates before averaging. A size-1 axis is
-    returned unchanged. ``coord`` must be strictly monotonically increasing and roughly
-    evenly spaced for block averaging.
+    returned unchanged; ``coord`` must be strictly increasing and roughly evenly spaced.
 
-    The interpolate-then-average pipeline is one linear map along ``axis``, applied per
-    block with `xarray.apply_ufunc`: dask-backed inputs stay lazy and every output chunk
-    depends only on its local input chunks, so chained x/y resampling streams instead of
-    materializing the intermediate.
-
-    Only data variables carrying ``axis`` are resampled; any auxiliary coordinate that
-    depends on ``axis`` is dropped with the old grid (`match_fov` rebuilds the
-    ``x``/``y`` coordinates and their units afterwards).
+    The pipeline is one linear map applied per block, so dask inputs stay lazy and
+    chained x/y resampling streams. Only data variables along ``axis`` are resampled;
+    other coordinates along it are dropped (`match_fov` rebuilds ``x`` and ``y``).
     """
     coord = ds[axis]
     if coord.size <= 1:
@@ -90,14 +82,11 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
     span_pixels = (coord[-1].data - coord[0].data) * to_cm / (_CM_PER_ARCSEC_AT_1_AU * pixel_arcsec)
     n_pixels = int(np.round(span_pixels))
     if n_pixels > coord.size:
-        # Finer target grid: pure interpolation, no block averaging.
         samples_per_pixel = 1
     elif coord.size // n_pixels > 3:
-        # factor = coord.size / span_pixels; the rounded pixel count n_pixels equals round(span_pixels).
         samples_per_pixel = int(np.round(coord.size / span_pixels))
     else:
-        # oversampling == 0 means "no sub-grid", but the averaging still needs
-        # >= 1 sample per pixel; fall back to interpolating straight onto the n_pixels output pixels.
+        # oversampling=0 still needs one sample per pixel: interpolate straight onto the pixels.
         samples_per_pixel = max(1, int(coord.size / n_pixels * oversampling))
     # No coords on the weights array: alignment must be by dimension only.
     weights = xr.DataArray(_resample_weights(coord.values, n_pixels, samples_per_pixel), dims=("_center", axis))
@@ -106,10 +95,7 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
     def apply_weights(block: np.ndarray, weight_block: np.ndarray, dtype=None) -> np.ndarray:
         return (block @ weight_block.T).astype(dtype)
 
-    # apply_ufunc(dask="parallelized") applies the matrix per block, so every output
-    # chunk depends only on its local input chunks. xr.dot builds a chunked einsum
-    # graph instead, and chaining two of those (x then y) forms an all-to-all barrier
-    # that holds the entire intermediate in memory at once (~7 GB on the tutorial VDEM).
+    # Not xr.dot: two chained chunked einsums hold the whole intermediate (~7 GB on the tutorial VDEM).
     resampled = {
         name: xr.apply_ufunc(
             apply_weights,
@@ -139,12 +125,9 @@ def _fit_axis(ds: xr.Dataset, axis: str, target_size: int, pad_mode: str, *, ext
     if current_size == target_size or not extend:
         return ds
     if pad_mode == "wrap":
-        # dask.array.pad silently clips a wrap pad wider than the axis; modular
-        # indexing tiles any width and works on both numpy and dask backends.
+        # dask.array.pad clips a wrap wider than the axis; modular indexing tiles any width.
         return ds.isel({axis: np.arange(target_size) % current_size})
-    # xarray.pad defaults constant_values to NaN, which would poison every
-    # downstream sum; a padded VDEM pixel means "no emission here", so fill
-    # with zeros. Only "constant" accepts the argument.
+    # Zeros, not xarray's NaN: a padded pixel has no emission. Only "constant" takes the argument.
     fill = {"constant_values": 0} if pad_mode == "constant" else {}
     return ds.pad({axis: (0, target_size - current_size)}, mode=pad_mode, **fill)
 
@@ -154,14 +137,12 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
     ``vdem`` turned a quarter counter-clockwise: the point at (x, y) moves to (-y, x).
     """
     turned = vdem.rename({"x": "x_turned"}).rename({"y": "x"}).rename({"x_turned": "y"})
-    # The new x runs against the old y: the samples are reversed, and their positions are -y
-    # shifted to the same origin, which keeps them ascending and right on an uneven grid.
+    # The new x is the old -y shifted to the same origin: ascending, and right on an uneven grid.
     old_y = turned.x
     flipped = turned.isel(x=slice(None, None, -1)).assign_coords(
         x=("x", old_y.values[0] + old_y.values[-1] - old_y.values[::-1], old_y.attrs)
     )
-    # The rename keeps every dimension in its place, which swaps x and y in a variable along both:
-    # give it the caller's order back, so that the array and a plot of it are not mirrored.
+    # The rename swaps x and y in a variable along both; restore the order so plots are not mirrored.
     both = [name for name in vdem.data_vars if {"x", "y"} <= set(vdem[name].dims)]
     return flipped.assign({name: flipped[name].transpose(*vdem[name].dims) for name in both})
 
@@ -188,81 +169,55 @@ def match_fov(
     y_pixels: int | None = None,
 ) -> xr.Dataset:
     """
-    Match a VDEM's spatial resolution and available extent to the MUSE FOV.
+    Match a VDEM's spatial resolution and extent to the MUSE FOV.
 
     Parameters
     ----------
     vdem : `xarray.Dataset`
-        VDEM dataset. The ``x`` and ``y`` coordinates must define units.
+        VDEM dataset. The ``x`` and ``y`` coordinates must define units; coordinates in
+        cm are converted to arcsec at 1 AU.
     pixel_width : `astropy.units.Quantity`, optional
-        Pixel size in arcsec along the x axis, by default is {pixel_width}
+        Pixel size along x, by default {pixel_width}.
     pixel_height : `astropy.units.Quantity`, optional
-        Pixel size in arcsec along the y axis, by default is {pixel_height}
+        Pixel size along y, by default {pixel_height}.
     number_of_slits : `int`
-        Number of slits, by default is {number_of_slits}.
+        Number of slits, by default {number_of_slits}.
     steps_per_raster : `int`
-        Number of raster steps, by default is {steps_per_raster}.
+        Number of raster steps, by default {steps_per_raster}.
     extent : `str`, optional
-        How to treat the x width relative to ``number_of_slits * steps_per_raster``, by default
-        ``"extend"``. ``"extend"`` crops wider inputs and extends narrower ones
-        with ``pad_mode``. ``"crop"`` crops wider inputs but retains a narrower
-        input at its available width. ``"keep"`` leaves the width untouched
-        and only matches the spatial resolution, for building the FOV of
-        instruments whose width is not tied to the MUSE raster. Spatial
-        resolution matching is always performed.
+        How to treat the x width against ``number_of_slits * steps_per_raster``, by
+        default ``"extend"``, which crops wider inputs and extends narrower ones with
+        ``pad_mode``. ``"crop"`` crops wider inputs and keeps narrower ones. ``"keep"``
+        leaves the width alone, for instruments whose width is not tied to the MUSE
+        raster. The resolution is always matched.
     pad_mode : `str`, optional
-        How an axis is extended when ``extent="extend"``, by default ``"wrap"``. See
-        `xarray.DataArray.pad` for supported values.
-        ``"wrap"`` repeats the input along the axis.
-        ``"constant"`` fills the padded columns with zeros rather than the
-        `xarray.DataArray.pad` default of NaN, so they read as "no emission here".
+        How an axis is extended, by default ``"wrap"``, which repeats the input. See
+        `xarray.DataArray.pad` for the others; ``"constant"`` fills with zeros, not NaN.
     oversampling : `int`, optional
-        Sub-samples per input sample that a coarse input is interpolated onto
-        before it is averaged into pixels, by default 2; 0
-        interpolates straight onto the pixels.
+        Sub-samples per input sample that a coarse input is interpolated onto before it is
+        averaged into pixels, by default 2; 0 interpolates straight onto the pixels.
     rotation : `astropy.units.Quantity`, optional
-        Turn of the field counter-clockwise before it is matched, a multiple of
-        90 degrees, by default 0 degrees. A quarter turn moves the point at
-        (x, y) to (-y, x).
+        Counter-clockwise rotation of the field before matching, a multiple of 90 degrees,
+        by default 0 degrees. A quarter turn moves the point at (x, y) to (-y, x).
     y_pixels : `int`, optional
-        Number of pixels along y in the output, counted after the resampling.
-        More are cropped to the first ``y_pixels``. Fewer are extended with
-        ``pad_mode`` when ``extent="extend"``, as x is, and kept otherwise. A
-        single row, one position along the slit, is always kept. By default
-        `None`, which leaves y as it is.
+        Output pixels along y, counted after resampling. More are cropped to the first
+        ``y_pixels``; fewer are extended with ``pad_mode`` when ``extent="extend"`` and
+        kept otherwise. A single row is always kept. By default `None`, which leaves y as
+        it is.
 
     Returns
     -------
     `xarray.Dataset`
-        VDEM data resampled to the requested pixel sizes and cropped or extended
-        along x as described by ``extent``, and along y when ``y_pixels`` is given.
+        The VDEM resampled to the pixel sizes, and cropped or extended along x by
+        ``extent`` and along y by ``y_pixels``.
 
     Notes
     -----
-    Depending on the input grid, one of the following paths is taken:
-
-    1. **Already matched** - if there is no rotation, the measurable spatial
-       axes have the requested pixel spacing, and neither the x width nor the
-       rows need a crop or extension, the input dataset is returned unchanged.
-       After a rotation, matched axes skip resampling but continue through
-       output finalization.
-    2. **Single row or column** - if only one axis has more than one point, the
-       resolution match is decided on that axis alone because the other spacing
-       cannot be measured. The x extent still follows ``extent``.
-    3. **Resample** - otherwise each axis is resampled onto the requested
-       pixel size (interpolated up, integer-factor averaged down, or
-       oversampled and averaged).
-    4. **Match the x extent** - inputs wider than ``number_of_slits * steps_per_raster`` are
-       cropped. Narrower inputs are extended with ``pad_mode`` only when
-       ``extent="extend"``; ``"crop"`` retains their available width. Skipped
-       entirely when ``extent="keep"``.
-    5. **Single pixel** - a 1x1 input has no measurable spatial spacing. Its x
-       extent is extended when ``extent="extend"`` and otherwise retained.
-    6. **Match the y extent** - with ``y_pixels``, an output of more than one
-       row is cropped to its first ``y_pixels`` rows whatever ``extent`` is,
-       and extended to ``y_pixels`` rows with ``pad_mode`` only when
-       ``extent="extend"``. This follows the resampling, so the count is in
-       output pixels.
+    An input whose measurable axes already have the pixel spacing is not resampled, and is
+    returned unchanged when it needs no rotation, crop or extension. When one axis has a
+    single point, the resolution is decided on the other alone; a size-1 axis is never
+    resampled. Resampling interpolates up, averages down by an integer factor, or
+    oversamples and averages, before the crop or extension.
     """
     if extent not in ("extend", "crop", "keep"):
         msg = f"Unsupported extent {extent!r}; use 'extend', 'crop', or 'keep'"
@@ -297,22 +252,20 @@ def match_fov(
         or vdem.coords["x"].size == target_width
         or (extent == "crop" and vdem.coords["x"].size < target_width)
     )
-    # The input rows are the ones to count here: the early return is only taken when nothing is resampled.
+    # Input rows: the early return is only taken when nothing is resampled.
     ny = vdem.coords["y"].size
     rows_need_no_change = y_pixels is None or ny in (1, y_pixels) or (ny < y_pixels and extent != "extend")
     if quarter_turns == 0 and resolution_matches and width_needs_no_change and rows_need_no_change:
         logger.info("vdem already has the requested pixel size and needs no extent change")
         return vdem
 
-    # Shallow copy: every transform below returns a new object; the copy only isolates
-    # coord/attr mutations on the degenerate size-1 paths where resampling is a no-op.
+    # Shallow copy: guards the coord and attr writes below when nothing is resampled.
     matched = vdem.copy()
 
     if not resolution_matches:
         matched = _resample_axis_to_pixel(matched, "x", pixel_width.value, oversampling)
         matched = _resample_axis_to_pixel(matched, "y", pixel_height.value, oversampling)
-        # The unstack inside the resampling moves the resampled axis last; restore each
-        # variable's original dimension order so downstream plots keep their orientation.
+        # The resampling moves its axis last; restore the order so plots keep their orientation.
         matched = matched.assign({name: matched[name].transpose(*vdem[name].dims) for name in vdem.data_vars})
 
     if extent != "keep":
@@ -345,25 +298,21 @@ def reshape_x_to_slit_step(
     steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
     """
-    For a given xarray data set (either vdem or spectra) we reshape from the x spatial
-    axis to raster step and slits.
-
-    TODO: Similar function should be done when we have time and we want to
-    interpolate or integrate in MUSE time integration and step.
+    Reshape the x axis of a VDEM or spectrum into ``slit`` and ``step`` axes.
 
     Parameters
     ----------
     ds : `xarray.Dataset`
-        Data that contains x spatial axis. The ``x`` coordinate must define units.
+        Data along x. The ``x`` coordinate must define units.
     number_of_slits : `int`
-        Number of slits, by default is {number_of_slits}.
+        Number of slits, by default {number_of_slits}.
     steps_per_raster : `int`
-        Number of raster steps, by default is {steps_per_raster}.
+        Number of raster steps, by default {steps_per_raster}.
 
     Returns
     -------
     `xarray.Dataset`
-        vdem or spectra with raster and slit axis.
+        ``ds`` with ``slit`` and ``step`` axes in place of ``x``.
     """
     x_unit = require_unit(ds, "x", "x coordinate", coord_only=True)
     step_size = ds.x[1] - ds.x[0]
@@ -377,13 +326,10 @@ def reshape_x_to_slit_step(
 
 def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
     """
-    Inverse of `reshape_x_to_slit_step`: collapse the slit and raster step axes back
-    onto a single x spatial axis.
+    Collapse the ``slit`` and ``step`` axes onto x, undoing `reshape_x_to_slit_step`.
 
-    The x coordinate is rebuilt from the per-step spacing recorded in
-    ``ds.attrs["step_size"]``, such as ``"0.4 arcsec"`` (set by
-    `reshape_x_to_slit_step`); when that attribute is missing the default MUSE
-    pixel size is used.
+    The x spacing is ``ds.attrs["step_size"]``, such as ``"0.4 arcsec"``, which
+    `reshape_x_to_slit_step` sets, or else the default MUSE pixel width.
 
     Parameters
     ----------
@@ -393,7 +339,7 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
     Returns
     -------
     `xarray.Dataset`
-        vdem or spectra with a single x spatial axis.
+        ``ds`` with a single x axis.
     """
     for coord in ("slit", "step"):
         if coord not in ds.coords:

@@ -5,4 +5,4 @@
 Example Gallery
 ***************
 
-This gallery contains examples of how to use ``muse``.
+Examples of how to use ``muse``.

@@ -1,6 +1,5 @@
 """
-Atomic data: line lists and continua from CHIANTI, through ChiantiPy or fiasco, and the
-files they are kept in.
+Line lists and continua from CHIANTI via ChiantiPy or fiasco, and their cache files.
 """
 
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list

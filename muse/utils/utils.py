@@ -1,5 +1,5 @@
 """
-Functions whose scope is not limited to one part of the muse package.
+Functions shared across the muse package.
 """
 
 import re
@@ -48,20 +48,18 @@ def require_unit(
     ds : `xarray.Dataset`
         Dataset to inspect.
     name : `str`
-        Variable or coordinate name to look up.
+        Variable or coordinate name.
     label : `str`
-        Human-readable name used in error messages (e.g. ``"vdem.vdem"`` or
-        ``"x coordinate"``).
+        Name used in error messages, e.g. ``"x coordinate"``.
     coord_only : `bool`, optional
-        When `True`, require ``name`` to be a coordinate rather than any
-        variable, by default `False`.
+        Require a coordinate rather than any variable, by default `False`.
     convertible_to : `astropy.units.Unit`, optional
-        When given, also require the unit to be convertible to this unit.
+        Also require the unit to convert to this one.
 
     Returns
     -------
     `astropy.units.Unit`
-        The parsed unit of ``ds[name]``.
+        The unit of ``ds[name]``.
     """
     if name not in (ds.coords if coord_only else ds):
         msg = f"{label} is missing"
@@ -95,22 +93,20 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit: u.UnitBase | str, labe
     name : `str`
         Coordinate name.
     target_unit : `str`
-        Unit to convert the coordinate values to.
-        Must be a valid astropy unit string.
+        Astropy unit to convert to.
     label : `str`
-        Human-readable name used in error messages.
+        Name used in error messages.
 
     Returns
     -------
     `xarray.DataArray`
-        Coordinate values in ``target_unit`` with updated ``units`` attrs. Coordinates
-        attached to the source coordinate are not retained.
+        The coordinate in ``target_unit``, ``units`` attribute included, without the
+        coordinates attached to it.
     """
     target_unit = u.Unit(target_unit)
     unit = require_unit(ds, name, label, coord_only=True, convertible_to=target_unit)
     converted = unit.to(target_unit, ds.coords[name].data)
-    # Rebuilt without coords on purpose: multiplying an index coordinate scales the
-    # data but not the index, so the converted values must not stay self-indexed.
+    # No coords: scaling an index coordinate scales its data but not its index.
     return xr.DataArray(
         converted,
         dims=ds.coords[name].dims,
@@ -121,12 +117,10 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit: u.UnitBase | str, labe
 
 def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: bool = False) -> None:
     """
-    Validate that ``values`` form a usable one-dimensional axis.
+    Raise `ValueError` unless ``values`` are one-dimensional, non-empty, finite,
+    strictly increasing and, when ``positive``, above zero.
 
-    Raises `ValueError` unless the values are one-dimensional, non-empty, finite,
-    strictly increasing and, when ``positive``, greater than zero. The conditions are
-    checked in one short-circuiting expression so ``numpy.diff`` never sees a zero-
-    dimensional input.
+    ``ndim`` is checked first because ``numpy.diff`` rejects a scalar.
     """
     values = np.asarray(values)
     if (
@@ -143,9 +137,7 @@ def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: boo
 
 # Provenance is owned by add_history alone; update_attrs never copies these keys.
 _PROVENANCE_ATTRS = ("history", "date_created", "date_modified", "muse_version")
-# Keyword inputs that say how the code ran, not what the result is: the history entry records
-# them, the attributes do not, so that they neither crowd out the description of the data nor
-# overwrite one another from call to call.
+# How the code ran, not what the result is: the history records them, the attributes do not.
 _EXECUTION_OPTIONS = frozenset(
     {
         "workers",
@@ -176,17 +168,15 @@ def _history_entries(history: str | list[str] | None) -> list[str]:
 
 def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.DataArray) -> None:
     """
-    Append ``source`` history to ``ds``, skipping any shared-ancestry prefix so that
-    merging sources with nested histories never duplicates entries, whatever their
-    order.
+    Append the history of ``source`` to ``ds``, less the entries they start with in
+    common, so nested histories never repeat an entry.
     """
     source_history = _history_entries(source.attrs.get("history"))
     if not source_history:
         return
     history = _history_entries(ds.attrs.get("history"))
     shared = 0
-    # Without the stamps: the two outputs of one call, such as align_response_and_vdem, may be
-    # stamped a second apart and are still one step.
+    # Without the stamps: the two outputs of one call may be stamped a second apart.
     for ours, theirs in zip(history, source_history, strict=False):
         if _STAMP.sub("", ours) != _STAMP.sub("", theirs):
             break
@@ -196,12 +186,10 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
 
 def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
     """
-    How the history and the attributes name an
-    `~muse.variables_schema.InstrumentDefaults`.
+    Name an `InstrumentDefaults` in the history and the attributes.
 
-    The whole object does not fit an attribute: ``DEFAULTS_MUSE`` for the MUSE values or
-    ``custom`` for others, and a digest of every value, which tells products made with
-    different values apart, the MUSE values of another muse included.
+    ``DEFAULTS_MUSE`` or ``custom``, and a digest of every value, which tells apart
+    products made with other values, those of another muse version included.
     """
     digest = hashlib.sha256()
     for name in attrs.fields_dict(type(instrument_defaults)):
@@ -212,14 +200,12 @@ def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
 
 def _written_in_full(value: object) -> str:
     """
-    ``value`` as text, every element of an array included: the repr of numpy leaves out
-    the middle of a large one.
+    ``value`` as text with every array element, unlike the numpy repr of a large array.
 
-    Equal values give equal text: numbers as floats, so an
-    integer equals its float, and coordinates in the order of their names.
+    Equal values give equal text: numbers as floats, coordinates sorted by name.
     """
     if isinstance(value, xr.DataArray):
-        # with its dimensions and unit: the same numbers along another axis or in another unit differ
+        # dims and unit too: the same numbers on another axis or in another unit differ
         coords = {name: _written_in_full(value.coords[name].values) for name in sorted(value.coords)}
         return f"{_written_in_full(value.data)} {value.dims} {value.attrs.get('units')} {coords}"
     if isinstance(value, u.Quantity):
@@ -231,17 +217,17 @@ def _written_in_full(value: object) -> str:
         items = sorted(value.items(), key=lambda item: str(item[0]))
         return "{" + ", ".join(f"{_written_in_full(key)}: {_written_in_full(item)}" for key, item in items) + "}"
     if isinstance(value, list | tuple | set | frozenset):
-        # a set in sorted order: its own order changes with the hash seed of the process
+        # sorted: the order of a set changes with the hash seed
         items = sorted(value, key=_written_in_full) if isinstance(value, set | frozenset) else value
         return "[" + ", ".join(map(_written_in_full, items)) + "]"
-    # what an InstrumentDefaults holds is in its label; anything else as Python writes it
+    # the label of an InstrumentDefaults digests every value
     return repr(_instrument_defaults_label(value) if isinstance(value, InstrumentDefaults) else value)
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray, now: str) -> None:
     """
-    Date ``ds``: its creation and the muse that made it the first time, a modification
-    after that.
+    Stamp the creation date and muse version the first time, the modification date
+    after.
     """
     if "date_created" in ds.attrs:
         ds.attrs["date_modified"] = now
@@ -252,10 +238,10 @@ def _touch_attrs(ds: xr.Dataset | xr.DataArray, now: str) -> None:
 
 def _entry_value(value: object) -> str:
     """
-    How a history entry writes one input: with its unit, and an array as its size and,
-    when it is one-dimensional and in memory, its range.
+    One input as a history entry writes it, unit included.
 
-    Nothing lazy is computed.
+    An array is its size and, when one-dimensional and in memory, its range; nothing
+    lazy is computed.
     """
     # .data reads a file-backed array, which is never a Quantity
     if isinstance(value, xr.DataArray) and _loaded(value) and isinstance(value.data, u.Quantity):
@@ -276,8 +262,7 @@ def _entry_value(value: object) -> str:
 
 def _loaded(array: object) -> bool:
     """
-    Whether the values of ``array`` are at hand: neither computed with dask nor read
-    from a file, which an entry must never do.
+    Whether ``array`` is in memory: an entry never computes dask or reads a file.
     """
     in_memory = getattr(getattr(array, "variable", None), "_in_memory", True)  # xarray's own test
     return not isinstance(array, da.Array) and getattr(array, "chunks", None) is None and in_memory
@@ -294,13 +279,10 @@ def _array_summary(array: np.ndarray | da.Array | xr.DataArray, unit: str) -> st
 
 def _attr_safe(value: object) -> str | int | float | list | None:
     """
-    Coerce ``value`` to a form serializable by both netCDF4 and Zarr v3, or `None` to
-    skip it.
+    ``value`` in a form both netCDF4 and Zarr v3 store, or `None` to skip it.
 
-    The safe intersection of the two backends is ``str``, ``int``, ``float`` and (small)
-    lists of those; ``Quantity`` becomes a ``"<value> <unit>"`` string, ``bool`` is cast
-    to ``int``, and anything else (arrays larger than 8 elements, datasets, ``None``,
-    custom objects) is dropped.
+    ``str``, ``int``, ``float`` and lists of them pass; a scalar ``Quantity`` becomes
+    ``"<value> <unit>"``, a ``bool`` an ``int``, an array of up to 8 elements a list.
     """
     if isinstance(value, u.Quantity):
         return f"{value.value} {value.unit}" if value.isscalar else None
@@ -324,38 +306,31 @@ def add_history(
     reading: bool = False,
 ) -> None:
     """
-    Record a call in the dataset history and store its keyword inputs as attributes.
+    Record a call in the history of ``ds`` and store its keyword inputs as attributes.
 
-    This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
-    constructed output that the calling function owns, never a caller-owned
-    input. It is the sole owner of the provenance attributes ``history``,
+    A finalizer: it mutates ``ds`` in place, so ``ds`` must be a new output the calling
+    function owns, never a caller's input. It alone sets ``history``,
     ``date_created``, ``date_modified`` and ``muse_version``.
 
-    The entry reads ``name(inputs) [<UTC time> muse <version>]``, with units kept
-    and arrays summarised. Every keyword input (a parameter of ``func`` that has a
-    default) is also stored on ``ds.attrs`` after being coerced to a
-    netCDF/zarr-serializable form (see `_attr_safe`), except the options that only
-    say how the code ran, such as ``workers``; required positional parameters such
-    as the data itself are skipped.
+    The entry reads ``name(inputs) [<UTC time> muse <version>]``, with units kept and
+    arrays summarised. Each input with a default is also stored in ``ds.attrs`` as a
+    ``str``, number or short list, which netCDF and zarr can write; options of how the
+    code ran, such as ``workers``, and values with no such form are not.
 
     Parameters
     ----------
     ds : `xarray.Dataset` or `xarray.DataArray`
         Dataset to update.
     local_vars : `dict`
-        Inputs of the call being recorded, normally ``locals()``. Pass an empty
-        mapping to record the name alone.
+        Inputs of the call, normally ``locals()``; empty to record the name alone.
     func : `Callable` or `str`
-        Function being recorded. A plain string is used as the label as-is and
-        records no inputs.
+        Function recorded, or a label as-is, which records no inputs.
     sources : sequence of `xarray.Dataset` or `xarray.DataArray`, optional
-        Inputs whose ``history`` the result inherits, in order, before the new
-        entry is appended. Omit it for a result that starts a new lineage.
+        Inputs whose ``history`` comes first, in order. Omit for a new lineage.
     reading : `bool`, optional
-        `True` for a call that reads a file: its entry is added, and the dates and
-        version stay as the file has them. By default `False`.
+        `True` for a call that reads a file: the dates and version stay as the file
+        has them. By default `False`.
     """
-    # A string label has no signature to inspect, so it records no inputs.
     params = inspect.signature(func).parameters if callable(func) else {}
     formatted_args = []
     for arg, value in local_vars.items():
@@ -369,7 +344,6 @@ def add_history(
             if safe is not None:
                 ds.attrs[arg] = safe
             elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
-                # Drop Arrays/datasets silently; only warn for other types.
                 logger.warning(
                     f"Not storing keyword input {arg!r} as an attribute: a "
                     f"{type(value).__name__} is not netCDF/zarr serializable.",
@@ -393,23 +367,20 @@ def update_attrs(
     **attrs,
 ) -> None:
     """
-    Copy non-provenance source attributes and apply explicit updates.
+    Copy the attributes of ``source`` to ``ds``, then set ``attrs``.
 
-    This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
-    constructed output that the calling function owns, never a caller-owned
-    input. The provenance attributes (``history``, ``date_created``,
-    ``date_modified``, ``muse_version``) are owned by `add_history` and never copied
-    here; passing one as an explicit update raises `ValueError`. Pass the
-    inputs to ``add_history(..., sources=...)`` to inherit their lineage.
+    A finalizer like `add_history`, which alone sets the provenance attributes: they are
+    never copied, and passing one in ``attrs`` raises `ValueError`. Pass the inputs to
+    ``add_history(..., sources=...)`` to inherit their lineage.
 
     Parameters
     ----------
     ds : `xarray.Dataset` or `xarray.DataArray`
-        Data whose attributes are updated in place.
+        Data to update in place.
     source : `xarray.Dataset` or `xarray.DataArray`, optional
         Data to copy attributes from.
     **attrs
-        Attributes to add or update after source attributes are copied.
+        Attributes to set after the copy.
     """
     if forbidden := [key for key in attrs if key in _PROVENANCE_ATTRS]:
         msg = f"update_attrs cannot set provenance attributes {forbidden}; they are owned by add_history"
@@ -421,8 +392,8 @@ def update_attrs(
 
 def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
     """
-    Write ``dataset`` as a zarr store of format 3: a directory or, for a destination
-    that ends in ``.zip``, one file.
+    Write ``dataset`` as a zarr v3 store: a directory, or one file for a ``.zip``
+    destination.
 
     ``kwargs`` go to `xarray.Dataset.to_zarr`.
     """
@@ -430,8 +401,7 @@ def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
     if destination.suffix.lower() != ".zip":
         dataset.to_zarr(destination, **options)
         return
-    # zarr writes its metadata more than once, and a zip keeps every version as an entry of the
-    # same name. So the store is written as a directory first and packed whole.
+    # zarr rewrites its metadata and a zip would keep every version: write a directory, then pack it.
     with tempfile.TemporaryDirectory(dir=destination.parent, prefix=f".{destination.name}.") as staging:
         store = Path(staging) / "store.zarr"
         dataset.to_zarr(store, **options)

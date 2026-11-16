@@ -3,10 +3,9 @@
 07 - Density and nonthermal-velocity response variants
 ======================================================
 
-This tutorial shows how the 171 Angstrom SG response changes when the
-CHIANTI line list is computed on an electron-density grid instead of
-at a fixed pressure, and when nonthermal broadening
-(e.g., from unresolved Alfvén-wave turbulence) is added to the spectral response.
+The 171 Angstrom SG response from a CHIANTI line list on an electron-density
+grid instead of a fixed pressure, and with nonthermal broadening (e.g., from
+unresolved Alfvén-wave turbulence).
 """
 
 import matplotlib.pyplot as plt
@@ -20,19 +19,13 @@ from muse.instrument import create_spectral_response, map_response_to_sg_detecto
 from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
-# muse logs at DEBUG level by default; raise it to INFO to reduce the noise.
+# muse logs at DEBUG by default; INFO is quieter.
 change_logging_level("INFO")
 
 ##############################################################################
-# We fetch the two precomputed CHIANTI line lists for the 171 Angstrom band.
-#
-# The fixed-pressure list was generated with the same workflow as
-# :ref:`tutorial 04 <sphx_glr_generated_gallery_synthesis_tutorial_04_create_sg_responses.py>`,
-# and the density-grid one generated with the snippet below.
-#
-# The density-grid list was generated with the same workflow as
-# :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`,
-# passing ``density`` instead of ``pressure``:
+# We fetch two 171 Angstrom line lists made as in
+# :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`:
+# one at a fixed pressure, and one with ``density`` instead of ``pressure``:
 #
 # .. code-block:: python
 #
@@ -46,7 +39,7 @@ change_logging_level("INFO")
 #         ion_list=["fe_9"],
 #     )
 #
-# The line list, and everything derived from it, then carries a ``logD``
+# The density-grid list, and everything derived from it, carries a ``logD``
 # dimension whose coordinate is ``log10(density)``.
 
 line_lists = {
@@ -58,8 +51,7 @@ line_lists = {
 }
 
 ##############################################################################
-# Since both variants share the 171 Angstrom band configuration we can use the
-# same wavelength grid, instrumental width, and effective area.
+# Both variants share the wavelength grid, instrumental width and effective area.
 
 band = 171
 main_lines = ["Fe IX 171.073"]
@@ -69,8 +61,7 @@ upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
 instrumental_fwhm = DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data
 effective_area = DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band)
-# Since we will only plot at ``doppler_velocity=0``, we pass a single
-# Doppler-velocity point. This makes the code faster and use less RAM.
+# One Doppler velocity, the only one plotted, saves time and memory.
 doppler_velocity = [0] * u.km / u.s
 
 ##############################################################################
@@ -98,12 +89,11 @@ plt.title("171 Angstrom response with electron density")
 ##############################################################################
 # **Nonthermal broadening**
 #
-# We go back to the fixed-pressure line list, we add a
-# ``nonthermal_velocity`` axis via the keyword. Each value is the 1/e
-# nonthermal velocity xi of the EIS and IRIS literature and adds
-# lambda xi / (c sqrt 2) in quadrature to the thermal width, mimicking unresolved motions
-# such as Alfvén-wave turbulence in the Alfvén Wave Solar Model (AWSoM); see e.g.
-# `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__.
+# On the fixed-pressure line list, ``nonthermal_velocity`` adds an axis. Each
+# value is the 1/e nonthermal velocity xi of the EIS and IRIS literature and
+# adds lambda xi / (c sqrt 2) in quadrature to the thermal width, mimicking
+# unresolved motions such as Alfvén-wave turbulence in the Alfvén Wave Solar
+# Model (AWSoM; e.g. `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__).
 
 waveband_response = create_spectral_response(
     line_lists["pressure"],

@@ -1,6 +1,5 @@
 """
-Shared by the line lists and the continua: the plasma grid they are computed on, and the
-ChiantiPy and fiasco backends that compute them.
+The plasma grid and the ChiantiPy and fiasco backends of the line lists and continua.
 """
 
 import os
@@ -25,8 +24,8 @@ def _validate_plasma_inputs(
     temperature: u.Quantity, density: u.Quantity | None, pressure: u.Quantity | None
 ) -> tuple[xr.DataArray, xr.DataArray]:
     """
-    The temperature in K along ``logT`` and the plasma grid, a density in cm^-3 along
-    ``density`` or a pressure in K cm^-3 along ``pressure``, without units.
+    Unitless temperature in K along ``logT``, and density in cm^-3 along ``density`` or
+    pressure in K cm^-3 along ``pressure``.
     """
     if density is None and pressure is None:
         msg = "Specify density or pressure"
@@ -63,9 +62,6 @@ def _validate_grid(values: u.Quantity, name: str, unit: u.UnitBase, dimension: s
 
 
 def _plasma_axis_units(plasma_dim: str) -> str:
-    """
-    The units of the plasma axis: the log of a density on ``logD``, else a pressure.
-    """
     return str(u.dex(u.cm**-3) if plasma_dim == "logD" else u.K / u.cm**3)
 
 
@@ -73,10 +69,9 @@ def _broadcast_plasma_grid(
     temperature: xr.DataArray, plasma_grid: xr.DataArray, *, by_density: bool
 ) -> tuple[xr.DataArray, xr.DataArray, dict[str, np.ndarray]]:
     """
-    Temperature and density on the full grid, and the coordinate of the plasma axis.
-
-    A density grid becomes a ``logD`` axis holding ``log10(density)``; on a pressure
-    grid the density at each temperature is ``pressure / temperature``.
+    Temperature and density on the full grid, and the plasma coordinate: ``logD``
+    (``log10(density)``) for a density grid, else the pressure, with density ``pressure
+    / temperature``.
     """
     if by_density:
         plasma_grid = plasma_grid.rename({plasma_grid.dims[0]: "logD"})
@@ -105,10 +100,9 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
         raise OSError(msg)
 
     with warnings.catch_warnings():
-        # Without a chiantirc file, ChiantiPy evaluates os.path.isfile(False)
-        # at import, which raises a RuntimeWarning on Python >= 3.14.
+        # Without a chiantirc, ChiantiPy calls os.path.isfile(False) at import: a RuntimeWarning on Python >= 3.14.
         warnings.simplefilter("ignore", RuntimeWarning)
-        # ChiantiPy imports its optional ipyparallel implementation from core.
+        # ChiantiPy.core imports its optional ipyparallel implementation.
         warnings.filterwarnings(
             "ignore",
             message=r"ipyparallel not found\.",
@@ -135,9 +129,7 @@ def _import_fiasco():
     except ImportError:
         msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
-    # 0.9.0 is the first release with IonCollection.build_line_list and with a free-free
-    # emission that is not per steradian: an older fiasco would silently give a continuum that
-    # is too low by a factor of 4 pi.
+    # 0.9.0 added IonCollection.build_line_list; with an older one the free-free would silently be 4 pi too low.
     if not minversion(fiasco, "0.9.0"):
         msg = f"fiasco 0.9.0 or later is required, found {fiasco.__version__}"
         raise ImportError(msg)
@@ -145,41 +137,26 @@ def _import_fiasco():
 
 
 def _fiasco_ion_kwargs(abundance: str | None, hdf5_dbase_root: str | Path | None) -> dict:
-    """
-    The ``abundance`` and ``hdf5_dbase_root`` keywords for fiasco's ions, without those
-    left at `None`.
-    """
     options = {"abundance": abundance, "hdf5_dbase_root": hdf5_dbase_root}
     return {key: value for key, value in options.items() if value is not None}
 
 
 def _map_ion_groups(function, ions: list, workers: int, *args, single_ions: bool = False, **kwargs) -> list:
     """
-    Call ``function(group, *args, **kwargs)`` on groups of ``ions`` and return the
-    results, one per group.
+    Call ``function(group, *args, **kwargs)`` on groups of ``ions`` in ``workers``
+    processes; return one result per group, not in the order of ``ions``.
 
-    With ``workers`` equal to 1, or a single ion, there is one group, all of ``ions``,
-    and no process is started. Otherwise the groups run in ``workers`` processes.
-
-    By default there is one group per worker, and a group is every n-th ion. The ions of
-    one element are neighbors in the list and differ widely in cost, so a block of
-    neighbors would leave one worker with most of the work.
-
-    With ``single_ions`` every ion is its own group. The ions with the most levels go
-    first, and a free worker takes the next ion. This suits work whose cost grows with
-    the number of levels, as that of a line list does: a few ions then hold most of the
-    work, and groups of every n-th ion are still unequal.
-
-    The results are not in the order of ``ions``. A caller that needs that order has to
-    restore it.
+    One worker or one ion makes one group of all ``ions`` and starts no process.
+    Otherwise each worker gets every n-th ion, as the ions of one element are neighbors
+    and differ widely in cost. With ``single_ions`` each ion is its own group, those
+    with the most levels first, for work whose cost grows with the levels, as a line
+    list's does.
     """
     if workers < 1 and workers != -1:
         msg = f"workers must be at least 1, or -1 for every CPU this process may use, got {workers}"
         raise ValueError(msg)
     if workers == -1:
-        # os.process_cpu_count gives the CPUs this process may run on. os.cpu_count gives every
-        # core of the machine, also where a batch job holds only a few of them, and one worker
-        # per core would then exhaust the job's memory.
+        # Not os.cpu_count: one worker per core of the machine would exhaust a small batch job's memory.
         workers = os.process_cpu_count() or 1
     if workers == 1 or len(ions) <= 1:
         return [function(list(ions), *args, **kwargs)]
@@ -189,16 +166,13 @@ def _map_ion_groups(function, ions: list, workers: int, *args, single_ions: bool
         msg = "joblib is required for workers != 1, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
     if single_ions:
-        # The number of levels of an ion, zero for one without data, ranks its cost well enough
-        # to order the queue.
+        # An ion without data has no n_levels.
         groups = [[ion] for ion in sorted(ions, key=lambda ion: getattr(ion, "n_levels", 0), reverse=True)]
     else:
         number_of_groups = min(workers, len(ions))
         groups = [list(ions[first::number_of_groups]) for first in range(number_of_groups)]
     with warnings.catch_warnings():
-        # loky restarts a worker whose memory grew, as it does when a worker first loads the
-        # database, and says so in a warning. Where warnings are errors, that error is raised in
-        # loky's own thread and the run waits forever.
+        # loky warns when it restarts a worker whose memory grew; as an error, in loky's thread, it hangs the run.
         warnings.filterwarnings("ignore", "A worker stopped while some jobs were given to the executor", UserWarning)
         # batch_size=1: joblib would otherwise bundle short tasks, and a bundle is a block of neighbors again.
         return Parallel(n_jobs=workers, batch_size=1)(delayed(function)(group, *args, **kwargs) for group in groups)

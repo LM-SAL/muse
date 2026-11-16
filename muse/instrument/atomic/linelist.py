@@ -52,20 +52,19 @@ def create_chianti_line_list(
     ----------
     temperature : `astropy.units.Quantity`
         One-dimensional temperatures convertible to K, such as
-        ``np.arange(5.5, 7.0, 0.1) * u.dex(u.K)``. The output holds them along ``logT``.
+        ``np.arange(5.5, 7.0, 0.1) * u.dex(u.K)``, held along ``logT``.
     density : `astropy.units.Quantity`, optional
-        One-dimensional electron densities convertible to cm^-3. Mutually exclusive
-        with ``pressure``. The output holds them along ``logD`` as ``log10(density)``.
+        One-dimensional electron densities convertible to cm^-3, held along ``logD`` as
+        ``log10(density)``. Give exactly one of ``density`` and ``pressure``.
     pressure : `astropy.units.Quantity`, optional
         One-dimensional electron pressures convertible to K cm^-3, held along
-        ``pressure``. Mutually exclusive with ``density``.
+        ``pressure``.
     abundance : `str`, optional
-        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``. If not
-        given, ChiantiPy's configured default applies
-        (``sun_photospheric_2021_asplund`` unless a ``chiantirc`` file overrides
-        it); the resolved name is recorded in the ``abundance`` attribute.
+        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``; by default
+        ChiantiPy's (``sun_photospheric_2021_asplund`` unless a ``chiantirc`` overrides
+        it). The name used is recorded in the ``abundance`` attribute.
     wavelength_range : `astropy.units.Quantity`
-        Two-element wavelength range convertible to Angstroms.
+        Lowest and highest wavelength, convertible to Angstrom.
     minimum_abundance : `float`, optional
         Finite positive minimum elemental abundance to keep. Mutually exclusive
         with ``element_list`` and ``ion_list``.
@@ -206,7 +205,7 @@ def _line_list_dataset(
         line_list[plasma_dim].attrs["units"] = _plasma_axis_units(plasma_dim)
 
     in_range = (line_list.wavelength >= wavelength_range[0]) & (line_list.wavelength <= wavelength_range[1])
-    # isel copies every array, the contribution functions among them: skipped when nothing is cut.
+    # isel copies every array, gofnt included: skipped when nothing is cut.
     return line_list if bool(in_range.all()) else line_list.isel(transition=in_range)
 
 
@@ -265,10 +264,8 @@ def _validate_species_selection(
     minimum_abundance: float | None, element_list: list[str] | None, ion_list: list[str] | None
 ) -> tuple[float | None, list[str] | None, list[str] | None]:
     """
-    Require exactly one species selection and normalize it.
-
-    Returns the ``(minimum_abundance, element_list, ion_list)`` triple with the two
-    unselected entries set to `None`.
+    Require exactly one species selection and normalize it; the other two come back
+    `None`.
     """
     given = [
         name
@@ -314,18 +311,16 @@ def create_fiasco_line_list(
     """
     Generate a line list with contribution functions using fiasco.
 
-    The counterpart of `create_chianti_line_list` built on
-    ``fiasco.IonCollection.build_line_list``, returning the same layout, so the two are
-    interchangeable downstream.
+    Built on ``fiasco.IonCollection.build_line_list``, with the layout of
+    `create_chianti_line_list`.
 
     Parameters
     ----------
     temperature, density, pressure, wavelength_range
         As for `create_chianti_line_list`.
     abundance : `str`, optional
-        CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``. If not given,
-        fiasco's default applies, which need not be ChiantiPy's; give the name to compare
-        the two backends. The resolved name is recorded in the ``abundance`` attribute.
+        CHIANTI abundance name; by default fiasco's, which need not be ChiantiPy's. The
+        name used is recorded in the ``abundance`` attribute.
     minimum_abundance : `float`, optional
         Elements with an abundance relative to hydrogen below this are skipped, by
         default 1e-21. Unlike in `create_chianti_line_list`, it combines with ``ion_list``.
@@ -333,10 +328,9 @@ def create_fiasco_line_list(
         CHIANTI ion names to include, such as ``"fe_9"`` (not fiasco's ``"Fe 9"``); by
         default every ion in the database.
     workers : `int`, optional
-        Number of processes that share the ions, by default 1; ``-1`` uses every CPU
-        this process may run on. A worker computes one ion at a time and holds the
-        level populations of that ion on the whole grid, so the memory in use grows
-        with ``workers``.
+        Processes that share the ions, by default 1; ``-1`` uses every CPU this process
+        may run on. Each holds the level populations of one ion on the whole grid, so
+        memory grows with ``workers``.
     hdf5_dbase_root : `str` or `pathlib.Path`, optional
         fiasco's HDF5 database; by default its configured one.
 
@@ -368,7 +362,7 @@ def create_fiasco_line_list(
     temperature_flat = temperature_broadcast.data.reshape(-1) * u.K
     density_flat = density_broadcast.data.reshape(-1) * u.cm**-3
     ion_kwargs = _fiasco_ion_kwargs(abundance, hdf5_dbase_root)
-    # The proton-to-electron ratio depends only on the temperature grid and the datasets.
+    # Computed once: it depends only on the temperatures and the datasets, not the ion.
     proton_electron_ratio = fiasco.proton_electron_ratio(temperature_flat, **ion_kwargs)
     ions = [
         fiasco.Ion(name, temperature_flat, proton_electron_ratio=proton_electron_ratio, **ion_kwargs)
@@ -392,14 +386,12 @@ def create_fiasco_line_list(
         raise ValueError(msg)
     from astropy.table import vstack  # noqa: PLC0415
 
-    # The workers take the ions one by one, those with the most levels first, so the tables are
-    # put back in the order of the ions: the line list is the same for any number of workers.
-    # The tables are sorted, not the rows of the stacked one, which would be one more copy of it.
+    # Back in ion order, so any number of workers gives the same list; sorting tables, not rows, saves a copy.
     ion_order = {ion.ion_name_roman: index for index, ion in enumerate(ions)}
     tables.sort(key=lambda table: ion_order[str(table["ion name"][0])])
     table = vstack(tables)
     del tables
-    # CHIANTI's name of an ion, fe_9, from fiasco's public attributes; list_ions gives "Fe 9".
+    # CHIANTI's ion name, fe_9, where fiasco's is "Fe 9".
     roman_to_name = {ion.ion_name_roman: f"{ion.atomic_symbol.lower()}_{ion.ionization_stage}" for ion in ions}
     spectroscopic_name = np.asarray(table["ion name"]).astype(str)
     per_transition = {
@@ -451,9 +443,8 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     """
     Multiply the contribution functions of chosen transitions by a factor.
 
-    For example, SolarSoft's ``aia_bp_make_emiss`` multiplies the He II 303.786 Angstrom line
-    by 20 to stand in for its optical depth; a response meant to be compared with SolarSoft's
-    AIA temperature responses needs the same factor.
+    SolarSoft's ``aia_bp_make_emiss``, for one, multiplies He II 303.786 Angstrom by 20 to
+    stand in for its optical depth; matching SolarSoft's AIA responses needs the same.
 
     Parameters
     ----------
@@ -466,9 +457,8 @@ def boost_transitions(line_list: xr.Dataset, boosts: dict[tuple[str, int, int], 
     Returns
     -------
     `xarray.Dataset`
-        A copy with ``gofnt`` scaled; the input is untouched. The attribute
-        ``transition_boosts`` records the factors, and for a line list that was boosted
-        before, the product of both.
+        A copy with ``gofnt`` scaled. Its ``transition_boosts`` attribute records the
+        factors, multiplied by any earlier boosts.
 
     Raises
     ------
@@ -496,17 +486,15 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
     line_list : `xarray.Dataset`
         A line list from `create_chianti_line_list` or `create_fiasco_line_list`.
     effective_area : `xarray.DataArray` or `xarray.Dataset`, optional
-        A curve along ``wavelength``; the curve and its ``wavelength`` coordinate must
-        define units. Each transition is weighted by the area at its wavelength, zero
-        outside the curve. The Dataset that `muse.instrument.create_effective_area`
-        returns is taken by its ``effective_area``.
+        A curve along ``wavelength``, with units on it and its coordinate, or the Dataset
+        of `muse.instrument.create_effective_area`. Each transition is weighted by the
+        area at its wavelength, zero outside the curve.
 
     Returns
     -------
     `xarray.Dataset`
-        The line list reordered along ``transition``, with a ``brightness`` variable:
-        the largest value of ``gofnt`` over the temperatures and over the densities or
-        pressures, times the area when one is given, with its units.
+        The line list reordered along ``transition``, with ``brightness``: the peak of
+        ``gofnt`` over the plasma grid, times the area if given, with its units.
 
     Raises
     ------
@@ -516,7 +504,7 @@ def rank_line_list(line_list: xr.Dataset, effective_area: xr.DataArray | xr.Data
     brightness = line_list.gofnt.max(dim=[dim for dim in line_list.gofnt.dims if dim != "transition"])
     units = u.Unit(line_list.gofnt.attrs["units"])
     if isinstance(effective_area, xr.Dataset) and "effective_area" in effective_area:
-        # The Dataset of create_effective_area or read_effective_area; its scalar channel stays behind.
+        # Also read_effective_area's Dataset; its scalar channel coordinate is dropped.
         effective_area = effective_area["effective_area"].reset_coords(drop=True)
     if effective_area is not None:
         if not isinstance(effective_area, xr.DataArray) or effective_area.dims != ("wavelength",):
@@ -555,9 +543,8 @@ def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, i
     Returns
     -------
     `xarray.Dataset`
-        The line list reduced to those transitions, in the order of the line list, not of
-        ``transitions``. The attribute ``transition_selection`` records the selection.
-        The input is untouched.
+        A copy with those transitions, in the order of the line list, not of
+        ``transitions``. Its ``transition_selection`` attribute records them.
 
     Raises
     ------
@@ -568,7 +555,7 @@ def select_transitions(line_list: xr.Dataset, transitions: Iterable[tuple[str, i
     keep = xr.zeros_like(line_list.wavelength, dtype=bool)
     for transition in transitions:
         keep = keep | _match_transition(line_list, transition)
-    # assign_attrs, as isel shares the attributes of the input, which must stay as it is
+    # isel shares the attrs of the input; assign_attrs copies them.
     return line_list.isel(transition=keep.values).assign_attrs(
         transition_selection=json.dumps([f"{ion} {lower}-{upper}" for ion, lower, upper in transitions])
     )

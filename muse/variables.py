@@ -1,5 +1,5 @@
 """
-This module stores package wide constants and variables.
+Package-wide constants.
 """
 
 import numpy as np
@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-# The headings are those of `InstrumentDefaults`. The order of the entries has no effect.
+# Headings as in `InstrumentDefaults`; the order has no effect.
 _DEFAULTS_MUSE_VALUES = {
     # Context Imager (CI) parameters
     "pixel_width_CI": 0.143 * u.arcsec,
@@ -25,7 +25,7 @@ _DEFAULTS_MUSE_VALUES = {
     "detector_x_pixels_SG": 1024,
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
-    # Nominal: 390 mAngstrom at second order, so twice that in the first-order 284 channel.
+    # 390 mAngstrom at second order, so twice that in the first-order 284 channel.
     "spectral_slit_separation_SG": xr.DataArray(
         np.array([390.0, 390.0, 780.0]) * u.mAA,
         coords={"channel": [108, 171, 284]},
@@ -40,8 +40,7 @@ _DEFAULTS_MUSE_VALUES = {
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
-    # Until the private wavelength-dependent throughput is available, both CI
-    # channels use the same provisional scalar area.
+    # Provisional: one area for both CI channels until the wavelength-dependent throughput exists.
     "main_line_effective_area_CI": xr.DataArray(
         np.array([4.55, 4.55]) * u.cm**2,
         coords={"channel": [195, 304]},
@@ -58,7 +57,6 @@ _DEFAULTS_MUSE_VALUES = {
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
-    # CI calibrations are independently scoped from the SG hardware.
     "gain_CI": xr.DataArray(
         np.array([10.0, 10.0]) * u.electron / u.DN,
         coords={"channel": [195, 304]},
@@ -80,8 +78,7 @@ _DEFAULTS_MUSE_VALUES = {
         dims="channel",
     ),
     "channel_spectral_order_SG": xr.DataArray(np.array([2, 2, 1]), coords={"channel": [108, 171, 284]}, dims="channel"),
-    # Value provided by Paul B.; spectral plate scale baked in: 0.0815 Angstrom at first order, over
-    # the spectral order of each channel. Replace with a measured calibration when one exists.
+    # From Paul B.: 0.0815 Angstrom at first order over the spectral order; replace when measured.
     "instrumental_fwhm_SG": xr.DataArray(
         np.array([0.0815 / 2, 0.0815 / 2, 0.0815]) * u.AA,
         coords={"channel": [108, 171, 284]},
@@ -93,8 +90,8 @@ DEFAULTS_MUSE = InstrumentDefaults(**_DEFAULTS_MUSE_VALUES)
 """
 Default MUSE instrument parameters.
 
-``print(DEFAULTS_MUSE)`` lists every configured value, one field per line; see
-`~muse.variables_schema.InstrumentDefaults` for what each field means.
+``print(DEFAULTS_MUSE)`` lists them; `~muse.variables_schema.InstrumentDefaults` says
+what each means.
 
 :meta hide-value:
 """

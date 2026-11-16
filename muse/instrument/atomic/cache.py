@@ -1,7 +1,5 @@
 """
-Line lists and continua stored in files: created once, then read by every later call.
-
-A file is a zarr store packed into one zip.
+Line lists and continua cached as zipped zarr stores, created once and then read.
 """
 
 import os
@@ -53,16 +51,15 @@ def load_or_create_line_list(
     """
     Read a line list from a cache directory, creating it first if it is not there.
 
-    The file is ``line_list_<backend>_<lower>-<upper>A_<abundance>.zarr.zip``, with
-    ``_density`` before the suffix for a density grid. A file that holds more plasma points
-    than requested serves the requested ones. One created on other temperatures, without one
-    of the requested plasma points or with another minimum abundance is refused and left as
-    it is: a line list is costly to create, and other processes may be reading the file.
+    The file is ``line_list_<backend>_<lower>-<upper>A_<abundance>[_density].zarr.zip``,
+    with ``_density`` for a density grid. A file with more plasma points than requested
+    serves the requested ones. One on other temperatures, missing a requested plasma point
+    or with another minimum abundance is refused and left in place, as other processes may
+    be reading it.
 
-    While a file is being created, ``<file>.lock`` stands beside it and says which process
-    is creating it; another call for the same file raises instead of waiting. A process that
-    is killed, for example at the time limit of a batch job, leaves the lock behind: delete it
-    by hand before the next call.
+    While a file is created, ``<file>.lock`` beside it names the creating process, and
+    another call for that file raises instead of waiting. A killed process, say at the time
+    limit of a batch job, leaves the lock behind: delete it by hand.
 
     Parameters
     ----------
@@ -71,28 +68,26 @@ def load_or_create_line_list(
     abundance : `str`
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``.
     wavelength_range : `astropy.units.Quantity`
-        The lowest and the highest wavelength of the line list.
+        Lowest and highest wavelength.
     temperature, pressure, density : `astropy.units.Quantity`
         As for `muse.instrument.create_chianti_line_list`; give exactly one of pressure and density.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out, by default 1e-21.
     backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``; ``"chianti"`` needs
-        ChiantiPy and ``XUVTOP``. The file name carries the backend, so the line lists of the
-        two never mix.
+        ChiantiPy and ``XUVTOP``.
     create_if_missing : `bool`, optional
         If `False`, raise for a missing file instead of creating it, so that one of many
-        processes that expect the file does not start the costly creation; by default `True`.
+        processes does not start the costly creation; by default `True`.
     chianti_version : `str`, optional
-        Refuse a line list made from a CHIANTI version other than this, e.g. ``"11.0.2"``, as
-        the file name does not carry the version; by default any version is accepted.
+        Refuse a line list of another CHIANTI version than this, e.g. ``"11.0.2"``, as the
+        file name does not carry it; by default any version is accepted.
     workers : `int`, optional
-        Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every CPU
-        this process may run on. The ChiantiPy backend does not use it.
+        Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every
+        CPU this process may run on. Ignored by ``"chianti"``.
     threads : `int`, optional
-        Upper limit on the BLAS, OpenMP and numexpr threads during the call, by default 4. A
-        pool that is set lower stays as it is, and the limit is never more than the CPUs this
-        process may use.
+        Upper limit on the BLAS, OpenMP and numexpr threads during the call, by default 4,
+        and at most the CPUs this process may use; a pool set lower stays as it is.
 
     Returns
     -------
@@ -163,10 +158,9 @@ def load_or_create_continuum(
     """
     Read a continuum from a cache directory, creating it first if it is not there.
 
-    It is the rest-frame continuum of one abundance on one wavelength grid. The file is
-    ``continuum_<backend>_<lower>-<upper>A_n<wavelengths>_<abundance>.zarr.zip``, with
-    ``_density`` before the suffix for a density grid. It is served, refused and locked as
-    for `load_or_create_line_list`; a file created on other wavelengths is refused as well.
+    The file is ``continuum_<backend>_<lower>-<upper>A_n<wavelengths>_<abundance>[_density].zarr.zip``.
+    It is served, refused and locked as for `load_or_create_line_list`, and refused on
+    other wavelengths too.
 
     Parameters
     ----------
@@ -226,8 +220,7 @@ def load_or_create_continuum(
 
 class _PlasmaRequest:
     """
-    The temperatures and the plasma points of a call, as a line list or a continuum
-    holds them.
+    The temperatures and plasma points of a call, as a cache file holds them.
     """
 
     def __init__(self, temperature: u.Quantity, pressure: u.Quantity | None, density: u.Quantity | None) -> None:
@@ -266,9 +259,7 @@ class _PlasmaRequest:
         selected = dataset.isel(
             {self.plasma_dim: [int(np.argmin(np.abs(stored - value))) for value in self.plasma_values]}
         )
-        # The coordinates are set to the requested numbers: a value read from a file can differ
-        # from the request in the last bit after a unit conversion, and a line list and a
-        # continuum that each kept their own number would not align.
+        # The requested values, as stored ones can differ in the last bit and misalign line list and continuum.
         return selected.assign_coords(
             logT=("logT", self.logT, dataset.logT.attrs),
             **{self.plasma_dim: (self.plasma_dim, self.plasma_values, dataset[self.plasma_dim].attrs)},
@@ -289,11 +280,8 @@ def _cache_path(
 
 def _require_name_part(name: str, value: str, punctuation: str = ".+-") -> None:
     """
-    Refuse a string that goes into a file name unless it is made of plain characters: a
-    slash would make a directory, and a bracket or a brace a pattern.
-
-    Dots alone, as an abundance whose folder holds products, would name this directory
-    or the one above.
+    Refuse a file-name part that is not plain characters: a slash makes a directory, a
+    bracket or brace a pattern, and dots alone this directory or the one above.
     """
     if (
         not isinstance(value, str)
@@ -318,8 +306,8 @@ def _load_or_create(
     wavelength_grid: np.ndarray | None = None,
 ) -> xr.Dataset:
     """
-    Shared by both caches: create the file if it is missing, read it, check it against
-    the request and return the requested part of it.
+    Create the file if missing, read it, check it against the request and return the
+    requested part.
     """
     if not path.exists():
         if not create_if_missing:
@@ -328,11 +316,9 @@ def _load_or_create(
         with _creation_lock(path, what):
             # Another process may have finished the file between the check above and the lock.
             if not path.exists():
-                # The minimum abundance is recorded here, so that the check below does not rest
-                # on what a backend stores.
+                # Recorded here, so the check below does not rest on what a backend stores.
                 created = create().assign_attrs(minimum_abundance=minimum_abundance)
-                # One chunk per plasma point and temperature, so that a call for one pressure reads
-                # that pressure alone and no chunk exceeds the size limit of the compressor.
+                # One chunk per plasma point and temperature: a call reads only its points, within the compressor limit.
                 encoding = {
                     name: {
                         "chunks": tuple(
@@ -345,8 +331,7 @@ def _load_or_create(
                 }
                 _replace_atomically(path, lambda staging: _to_zarr(created, staging, encoding=encoding))
     logger.info(f"Reading the {what} from {path}")
-    # A file created just now is read back too: the first call then returns what every later
-    # one will. Opened without loading, so that only the requested part is read.
+    # Read back also when just created, so the first call returns what later ones will; lazily, for the part asked.
     store = ZipStore(path, mode="r")
     try:
         cached = xr.open_zarr(store, consolidated=False, chunks=None, decode_coords="all")
@@ -422,9 +407,8 @@ def _replace_atomically(path: Path, write: Callable[[Path], None]) -> None:
 @contextlib.contextmanager
 def _limited_threads(threads: int):
     """
-    Cap the BLAS, OpenMP and numexpr pools for the block at the lowest of ``threads``,
-    the CPUs this process may use, and what each pool is set to now: a pool is lowered,
-    never increased.
+    Cap the BLAS, OpenMP and numexpr pools for the block at ``threads`` and the CPUs of
+    this process; a pool is lowered, never raised.
     """
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         msg = f"threads must be a positive integer, got {threads!r}"

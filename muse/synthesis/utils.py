@@ -19,9 +19,7 @@ __all__ = [
     "wavelength_to_doppler",
 ]
 
-# Deliberate fixed cap, not os.cpu_count(): it bounds peak memory (per-slice temporaries
-# scale with worker count) and this runs nested under gallery/CI parallelism on
-# 2-4 vCPU builders, where a cpu-derived pool would oversubscribe.
+# Fixed, not os.cpu_count(): bounds peak memory and does not oversubscribe nested CI runs.
 _VDEM_MAX_WORKERS = 4
 
 
@@ -48,108 +46,69 @@ def create_simple_vdem(
     integration_axis: int = 2,
 ) -> xr.Dataset:
     r"""
-    Calculates DEM as a function of temperature and velocity,
-    x (0) and y (1) axes are horizontal z (2) vertical.
-    Right hand rule.
-    velocity is LOS velocity and positive is towards the observer.
+    Bin a simulation box into a VDEM in temperature and line-of-sight velocity.
 
-    Every argument is keyword-only, and every physical one is an
-    `astropy.units.Quantity` in any unit convertible to the one given below.
+    Axes 0 (x) and 1 (y) are horizontal and axis 2 (z) vertical, right-handed. Physical
+    arguments take any unit convertible to the one given below.
 
     Parameters
     ----------
     temperature : `astropy.units.Quantity`
-        3D array of gas temperature, in K.
+        3D gas temperature, in K.
     velocity : `astropy.units.Quantity`
-        3D array of the velocity component along ``integration_axis``, in km/s
-        (positive towards the observer).
+        3D velocity along ``integration_axis``, in km/s, positive towards the observer.
     ne_nh : `astropy.units.Quantity`
-        3D array of ``n_e * n_H``, in 1/cm^6.
+        3D ``n_e * n_H``, in 1/cm^6.
     cell_length : `astropy.units.Quantity`
-        1D array of cell length along the line-of-sight (``integration_axis``) axis,
-        in cm (may be non-uniform).
+        1D cell length along ``integration_axis``, in cm (may be non-uniform).
     x : `astropy.units.Quantity`
-        1D array of the coordinate of the first non-LOS axis, in cm.
+        1D coordinate of the first non-LOS axis, in cm.
     y : `astropy.units.Quantity`
-        1D array of the coordinate of the second non-LOS axis, in cm.
+        1D coordinate of the second non-LOS axis, in cm.
     velocity_grid : `astropy.units.Quantity`
         1D velocity bin centers, in km/s.
     logT_grid : `astropy.units.Quantity`
-        1D temperature bin centers, in dex(K), as the ``logT`` coordinate of a VDEM
-        and of a response, e.g. ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
+        1D temperature bin centers, in dex(K) like the ``logT`` of a response, e.g.
+        ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
     integration_axis : int, optional
-        Axis of ``temperature``/``velocity``/``ne_nh`` to integrate along, by default 2.
-        ``x`` and ``y`` label the two remaining axes in their original order, and the
-        integration enters the box at index 0 of this axis.
+        Axis of the 3D arrays to integrate along, by default 2, entered at index 0.
+        ``x`` and ``y`` label the other two axes in their order.
 
     Returns
     -------
     xarray.Dataset
-        VDEM with dimensions of the 2D spatial axes from the simulation plus
-        temperature and velocity bins. Its ``x`` and ``y`` coordinates are in cm,
-        ``logT`` in dex(K) and ``doppler_velocity`` in km/s.
+        VDEM over ``logT`` (dex(K)), ``doppler_velocity`` (km/s), ``x`` and ``y`` (cm).
+        Plasma moving towards the observer gets a negative ``doppler_velocity``.
 
     Raises
     ------
     ValueError
-        If ``temperature`` is not 3D, if ``velocity``/``ne_nh`` do not match its
-        shape, or if ``cell_length``/``x``/``y`` lengths do not match the
-        corresponding axes. Non-finite values in ``temperature``/``velocity``/``ne_nh``
-        only log a warning; the affected voxels can propagate NaN into the output.
+        If ``temperature`` is not 3D, or another input does not match its shape or axes. Non-finite
+        values only log a warning, and can propagate NaN into the output.
 
     Notes
     -----
-    Remove any convection zone from the box first.
+    Remove any convection zone from the box first. Each x slice is binned on a worker
+    thread, so temporaries scale with one (y, z) slice; the VDEM is allocated in full.
 
-    Integration is along ``integration_axis`` (the last axis by default).
-
-    Intermediate arrays are processed one x slice per worker thread; temporaries stay
-    bounded by the slice size (y times z) and the fixed worker count.
-
-    The returned VDEM is still allocated eagerly in full.
-
-    The intensity of a spectral line can be defined as :math:`I = \int n_e^2\, G(T) dl`, where
-    :math:`n_e` is the electron density, :math:`G(T)` is the contribution function, and the emission
-    measure is :math:`EM = \int n_e^2\, dl`. This can be defined also as
-    :math:`I = \int DEM\, G(T) dT`, where DEM is the differential emission measure typically defined
-    as :math:`DEM(T) = n_e^2\, dl / dT`. However, one could break the EM into finite voxels as a
-    function of other variables. This is relevant when the response function depends on various
-    variables. For MUSE or any spectrograph, one could build a response function which depends on the
-    velocity (Doppler shift), hence it will need a VDEM which is defined as follows:
+    A line intensity is :math:`I = \int n_e^2\, G(T) dl = \int DEM\, G(T) dT`, with
+    :math:`G(T)` the contribution function and :math:`DEM(T) = n_e^2\, dl / dT`. Splitting
+    the emission measure by line-of-sight velocity as well gives
 
     .. math::
 
         VDEM = \sum_l n_e(T, v_{los})^2 \Delta l / (\Delta T\, \Delta v_{los})
 
-    So, with a response function that includes the Doppler shift information
-    (:math:`G(T,v_{los})_\lambda`), the convolution of the VDEM with this response function will be
+    so that, with a response :math:`G(T, v_{los})_\lambda` that includes the Doppler shift,
 
     .. math::
 
-        I(\lambda) = \sum_T \sum_{vlos} VDEM\, G(T,v_{los})_\lambda \Delta T\, \Delta v_{los}
+        I(\lambda) = \sum_T \sum_{v_{los}} VDEM\, G(T,v_{los})_\lambda \Delta T\, \Delta v_{los}
 
-    and the total intensity:
-
-    .. math::
-
-        I = \sum_\lambda I(\lambda) d\lambda
-          = \sum_\lambda \sum_T \sum_{vlos} VDEM\, G(T,v_{los})_\lambda
-            \Delta T\, \Delta v_{los}\, \Delta\lambda
-          = \sum_T DEM\, G(T) \Delta T
-
-    In principle, we could even create VDEM as a function of density
-
-    .. math::
-
-        VDEM = \sum_l n_e(T, v_{los}, n_e)^2\, \Delta l / (\Delta T\, \Delta v_{los}\, \Delta n_e)
-
-    or abundances.
-
-    Working with VDEMs allows us to create a single one and synthesize any optically thin spectral
-    line.
+    and :math:`\sum_\lambda I(\lambda) \Delta\lambda = \sum_T DEM\, G(T) \Delta T`. One VDEM
+    synthesizes any optically thin line.
     """
-    # Plain arrays in the units the binning works in. Taken before call_inputs, so that the
-    # history names the arrays instead of listing their values.
+    # Before call_inputs, so the history names the arrays instead of listing their values.
     temperature = temperature.to_value(u.K)
     velocity = velocity.to_value(u.km / u.s)
     ne_nh = ne_nh.to_value(u.cm**-6)
@@ -163,7 +122,7 @@ def create_simple_vdem(
     if temperature.ndim != 3:
         msg = f"temperature must be a 3D array, got {temperature.ndim}D"
         raise ValueError(msg)
-    # Views only; the rest of the function integrates over the last axis.
+    # Views; the binning below integrates over the last axis.
     temperature, velocity, ne_nh = (np.moveaxis(q, integration_axis, -1) for q in (temperature, velocity, ne_nh))
     if velocity.shape != temperature.shape or ne_nh.shape != temperature.shape:
         msg = f"velocity {velocity.shape} and ne_nh {ne_nh.shape} must match temperature {temperature.shape}"
@@ -191,32 +150,25 @@ def create_simple_vdem(
     n_y = len(y)
     log_temperature_bin_width = logT_grid[1] - logT_grid[0]
     velocity_bin_width = velocity_grid[1] - velocity_grid[0]
-    # Contiguous half-open velocity bins [center - dv/2, center + dv/2): a voxel sitting exactly
-    # on an edge lands in the upper bin, matching the half-open temperature-bin convention below.
+    # Half-open bins, as for temperature below: a voxel on an edge lands in the upper bin.
     velocity_edges = np.append(velocity_grid - velocity_bin_width / 2.0, velocity_grid[-1] + velocity_bin_width / 2.0)
     log_temperature_lower_edge = logT_grid[0] - log_temperature_bin_width / 2.0
     log_temperature_upper_edge = logT_grid[-1] + log_temperature_bin_width / 2.0
     cell_length_los = cell_length.reshape(1, -1)
 
-    # Only the output scales with n_x; full-cube intermediates stay bounded by the
-    # (y, z) slice size times the number of worker threads.
     vdem_dtype = (np.empty(0, dtype=ne_nh.dtype) / 1e27).dtype
     vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=vdem_dtype)
 
     def process_slice(ix: int) -> None:
         ne_nh_slice = ne_nh[ix] / 1e27  # normalize to the 1e27 / cm^5 output units
-        # n_e * n_H * cell_length is the emission each voxel spreads over temperature bins.
         emission_slice = ne_nh_slice * cell_length_los
-        # Each line-of-sight cell spans the temperatures between it and its neighbour; its
-        # emission is distributed across temperature bins by the log-T overlap (DEM = dl/dT).
+        # Each cell spans the log T between it and its neighbour, and spreads its emission by overlap.
         log_temperature_slice = np.log10(temperature[ix])
         log_temperature_previous = np.roll(log_temperature_slice, 1, axis=1)
         log_temperature_previous[:, 0] = 2.0  # boundary cell is entered from 100 K
         max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
         min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
-        # Every voxel falls in exactly one velocity bin, so scatter each voxel onto a flat
-        # (velocity_bin, y) index; that index has no z axis, so np.bincount's accumulation
-        # is the line-of-sight sum.
+        # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
         velocity_bin = np.searchsorted(velocity_edges, velocity[ix], side="right") - 1
         voxel_mask = (
             (velocity_bin >= 0)
@@ -226,8 +178,6 @@ def create_simple_vdem(
         )
         scatter_index = velocity_bin * n_y + np.arange(n_y).reshape(n_y, 1)
 
-        # Flatten the contributing voxels; each spans [segment_lo, segment_hi] in log T,
-        # clamped to the temperature axis.
         n_velocity_y = n_velocity_bins * n_y
         velocity_y_index = scatter_index[voxel_mask]
         emission = emission_slice[voxel_mask]
@@ -243,10 +193,7 @@ def create_simple_vdem(
             0,
             n_temperature_bins - 1,
         )
-        # A voxel contributes its bin overlap / bin width to every bin it spans. Instead of
-        # looping over temperature bins, scatter the partial overlaps of the two end bins as
-        # point weights; interior bins (weight = full emission, rare because adjacent cells
-        # usually differ by less than a bin) are expanded per spanned bin with np.repeat.
+        # Weight is overlap / bin width: partial at the two end bins, full on the (rare) interior ones.
         single = bin_lo == bin_hi
         multi = ~single
         upper_edge_of_bin_lo = log_temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
@@ -281,8 +228,7 @@ def create_simple_vdem(
         )
         vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)
 
-    # Slices are independent and write disjoint x indices; numpy releases the GIL in the
-    # heavy ops (log10, searchsorted, bincount), so threads scale without extra copies.
+    # Slices write disjoint x; numpy releases the GIL in log10, searchsorted and bincount.
     with ThreadPoolExecutor(max_workers=_VDEM_MAX_WORKERS) as executor:
         for done in [executor.submit(process_slice, ix) for ix in range(n_x)]:
             done.result()
@@ -330,31 +276,25 @@ def calculate_moments(
     Parameters
     ----------
     spectrum : `xarray.Dataset`
-        Input spectrum. Must carry a Doppler-velocity coordinate (km/s); run
-        `wavelength_to_doppler` first if you only have wavelengths.
+        Spectrum with a Doppler-velocity coordinate in any velocity unit, which
+        `wavelength_to_doppler` adds.
     moment_dim : `str`, optional
-        Spectral axis to integrate the line profile over, by default
-        ``"detector_x_pixel"``.
-        The Doppler velocities used for the moments come from the ``doppler_name``
-        coordinate, which is normalized to km/s on entry.
+        Spectral axis to integrate over, by default ``"detector_x_pixel"``.
     variable_name : `str`, optional
-        Name of the variable to integrate over ``spectrum``, by default ``"flux"``.
+        Variable to integrate, by default ``"flux"``.
     doppler_name : `str`, optional
-        Name of the Doppler-velocity coordinate in ``spectrum``, by default
-        ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds. Its
-        dimensions must be a subset of the dimensions of ``variable_name``.
+        Doppler-velocity coordinate, by default ``"detector_doppler_velocity"``. Its
+        dimensions must be a subset of those of ``variable_name``.
     maximum_doppler_velocity : `astropy.units.Quantity` or None, optional
-        Maximum absolute Doppler velocity to include in the integration, convertible
-        to km/s, by default None.
+        Largest absolute Doppler velocity to include, by default None.
     peak_half_width : `astropy.units.Quantity` or None, optional
-        Half-width of the window kept around the line peak, in pixels along
-        ``moment_dim``, by default None.
+        Half-width in pixels of the window kept around the line peak, by default None.
         With ``maximum_doppler_velocity`` the peak is found within that velocity.
 
     Returns
     -------
     `xarray.Dataset`
-        Dataset containing the moments.
+        The moments ``0th``, ``1st`` and ``2nd``, the last two in km/s.
     """
     require_unit(spectrum, variable_name, f"spectrum.{variable_name}")
     if doppler_name not in spectrum.coords:
@@ -363,7 +303,7 @@ def calculate_moments(
     doppler_unit = require_unit(
         spectrum, doppler_name, f"spectrum.{doppler_name}", coord_only=True, convertible_to=u.km / u.s
     )
-    # Normalize to km/s so the raw .data used by the einsum is correct regardless of input unit.
+    # The sums below take raw values, which must be in km/s.
     spectrum = spectrum.assign_coords({doppler_name: spectrum[doppler_name] * doppler_unit.to(u.km / u.s)})
     spectrum[doppler_name].attrs["units"] = str(u.km / u.s)
     if not set(spectrum[doppler_name].dims).issubset(spectrum[variable_name].dims):
@@ -372,8 +312,8 @@ def calculate_moments(
 
     masked_spectrum = spectrum
     if maximum_doppler_velocity is not None:
-        # NaN Doppler coordinates stay included, matching the old 0/1 mask.
-        maximum_speed = maximum_doppler_velocity.to_value(u.km / u.s)  # the coordinate is in km/s by now
+        # ~(>) keeps NaN Doppler coordinates in, as the old 0/1 mask did.
+        maximum_speed = maximum_doppler_velocity.to_value(u.km / u.s)
         masked_flux = spectrum[variable_name].where(~(np.abs(spectrum[doppler_name]) > maximum_speed), 0)
         masked_spectrum = spectrum.assign({variable_name: masked_flux})
     if peak_half_width is not None:
@@ -391,13 +331,12 @@ def calculate_moments(
     )
     zeroth = masked_spectrum[variable_name].sum(dim=moment_dim)
     velocity = masked_spectrum[doppler_name]
-    # Pixels with no flux (e.g. fully masked) would divide by zero; leave them NaN, not inf.
+    # No flux (e.g. fully masked) gives NaN, not inf.
     safe_zeroth = zeroth.where(zeroth > 0)
     first = (masked_spectrum[variable_name] * velocity).sum(dim=moment_dim) / safe_zeroth
-    # Note that int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
+    # int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
     variance = (masked_spectrum[variable_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
     second = np.sqrt(variance.clip(min=0))
-    # zeroth/first/second are already DataArrays carrying the non-moment dims and coords.
     moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second})
     update_attrs(moments, spectrum)
     moments["0th"].attrs = dict(masked_spectrum[variable_name].attrs)
@@ -414,16 +353,14 @@ def wavelength_to_doppler(data: xr.Dataset) -> xr.Dataset:
     Parameters
     ----------
     data : `xarray.Dataset`
-        A spectrum or a response. It must include the ``detector_wavelength``
-        and ``line_wavelength`` coordinates.
+        A spectrum or a response with ``detector_wavelength`` and ``line_wavelength``.
 
     Returns
     -------
     `xarray.Dataset`
-        A new dataset with an added ``detector_doppler_velocity`` coordinate in
-        km/s: the Doppler shift of each detector pixel from the line. It is not
-        the ``doppler_velocity`` axis of a VDEM or a response, which stays as
-        it is.
+        ``data`` with a ``detector_doppler_velocity`` coordinate, the shift of each detector
+        pixel from the line, positive to the red. The ``doppler_velocity`` axis of a VDEM or
+        a response is left as it is.
     """
     speed_of_light_kms = speed_of_light.to_value(u.km / u.s)
     detector_wavelength = coord_as_unit(data, "detector_wavelength", u.AA, "data.detector_wavelength")
@@ -442,18 +379,16 @@ def doppler_to_wavelength(data: xr.Dataset, *, doppler_name: str = "detector_dop
     Parameters
     ----------
     data : `xarray.Dataset`
-        A spectrum or a response. It must include the coordinate that
-        ``doppler_name`` names and the ``line_wavelength`` coordinate.
+        A spectrum or a response with ``line_wavelength`` and the ``doppler_name``
+        coordinate.
     doppler_name : `str`, optional
-        Name of the Doppler-velocity coordinate to convert, by default
-        ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds.
-        Pass ``"doppler_velocity"`` for the velocity axis of a response.
+        Doppler-velocity coordinate to convert, by default ``"detector_doppler_velocity"``;
+        ``"doppler_velocity"`` for the velocity axis of a response.
 
     Returns
     -------
     `xarray.Dataset`
-        A new dataset with an added ``detector_wavelength`` coordinate in
-        Angstrom.
+        ``data`` with a ``detector_wavelength`` coordinate in Angstrom.
 
     Raises
     ------
@@ -492,28 +427,25 @@ def apply_exposure_time(spectrum: xr.Dataset, exposure_time: u.Quantity) -> xr.D
     Parameters
     ----------
     spectrum : `xarray.Dataset`
-        Spectrum whose ``flux`` is a rate, such as ``ph / s``. ``flux`` must
-        define units in the attrs.
+        Spectrum whose ``flux`` has a rate unit in its attrs, such as ``ph / s``.
     exposure_time : `astropy.units.Quantity`
-        Length of the exposure, a scalar convertible to seconds.
+        Scalar length of the exposure, in any time unit.
 
     Returns
     -------
     `xarray.Dataset`
-        A new dataset whose ``flux`` is multiplied by the exposure time and no
-        longer per unit time, e.g. ``ph`` for ``ph / s``. The time is recorded
-        as the scalar coordinate ``exposure_time`` in seconds, which
-        `remove_exposure_time` reads.
+        ``spectrum`` with ``flux`` times the exposure time, e.g. ``ph`` for ``ph / s``, and
+        the scalar coordinate ``exposure_time`` in seconds, which `remove_exposure_time`
+        reads.
 
     Raises
     ------
     ValueError
-        If ``flux`` has no units or is not per unit time, if ``exposure_time``
-        is not a positive scalar, or if the spectrum already carries an
-        exposure time.
+        If ``flux`` has no units or is not per unit time, ``exposure_time`` is not a
+        positive scalar, or the spectrum already carries an exposure time.
     """
     flux_unit = require_unit(spectrum, "flux", "spectrum.flux")
-    # A data variable of that name counts too: the coordinate would replace it without a word.
+    # A data variable counts too: the coordinate would silently replace it.
     if "exposure_time" in spectrum.variables:
         msg = "spectrum already has an exposure time applied; call remove_exposure_time first"
         raise ValueError(msg)
@@ -545,15 +477,14 @@ def remove_exposure_time(spectrum: xr.Dataset) -> xr.Dataset:
     Parameters
     ----------
     spectrum : `xarray.Dataset`
-        Spectrum returned by `apply_exposure_time`: its ``flux`` must define
-        units and it must carry the ``exposure_time`` coordinate.
+        Spectrum from `apply_exposure_time`, with ``flux`` units and the ``exposure_time``
+        coordinate.
 
     Returns
     -------
     `xarray.Dataset`
-        A new dataset without the ``exposure_time`` coordinate, whose ``flux``
-        is divided by the exposure time and so is per second, e.g. ``ph / s``
-        for ``ph``.
+        ``spectrum`` without ``exposure_time``, its ``flux`` divided by it and so per
+        second, e.g. ``ph / s`` for ``ph``.
 
     Raises
     ------
@@ -578,45 +509,38 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
     Parameters
     ----------
     data : `xarray.Dataset`
-        A spectrum or a response with a ``line`` dimension and a ``channel``
-        coordinate along it.
+        A spectrum or a response with a ``line`` dimension and a ``channel`` coordinate
+        along it.
     sum_slits : `bool`, optional
-        Also sum over ``slit`` when the data has that dimension, by default
-        `False`.
+        Also sum over ``slit``, if present, by default `False`.
 
     Returns
     -------
     `xarray.Dataset`
-        A new dataset in which ``channel`` replaces ``line``. Every data
-        variable along ``line`` is the sum of the lines of the channel, and a
-        NaN in a line stays a NaN in the sum. Every coordinate along ``line``,
-        such as ``gain``, takes the value of the first line of the channel;
-        ``line_wavelength`` does too where every line of the channel has the
-        same wavelength, and is NaN otherwise. The channels keep the order in
-        which they first appear. With ``sum_slits``, the coordinates along
-        ``slit`` are dropped.
+        ``data`` with ``channel`` in place of ``line``. Data variables along ``line`` are
+        summed per channel, a NaN staying NaN. Coordinates along ``line``, such as
+        ``gain``, take the value of the first line of the channel; ``line_wavelength``
+        too where all lines of the channel share it, and NaN otherwise. Channels keep the
+        order they first appear in. With ``sum_slits``, coordinates along ``slit`` are
+        dropped.
 
     Raises
     ------
     ValueError
-        If ``data`` has no ``line`` dimension or no ``channel`` coordinate along
-        it.
+        If ``data`` has no ``line`` dimension or no ``channel`` coordinate along it.
 
     Notes
     -----
-    Sum after converting photons to electrons or DN, not before. A channel
-    whose lines differ in wavelength has no single photon energy, so its
-    ``line_wavelength`` is NaN in the sum and
-    `muse.instrument.transform_flux_units` refuses to take it across the photon
-    step.
+    Sum after converting photons to electrons or DN: a channel whose lines differ in
+    wavelength has no single photon energy, and `muse.instrument.transform_flux_units`
+    refuses to take it across the photon step.
     """
     if "line" not in data.dims or "channel" not in data.coords or data.channel.dims != ("line",):
         msg = "data must have a line dimension and a channel coordinate along it"
         raise ValueError(msg)
     channels, first_line = np.unique(data.channel.values, return_index=True)
     channels, first_line = channels[np.argsort(first_line)], np.sort(first_line)
-    # Start from the first line of each channel, which gives the coordinates; the sums then replace the
-    # data variables along line.
+    # The first line of each channel gives the coordinates; the sums replace the variables.
     result = data.isel(line=first_line).swap_dims(line="channel").drop_vars("line")
     for name, variable in data.data_vars.items():
         if "line" not in variable.dims:
@@ -624,8 +548,6 @@ def sum_lines_per_channel(data: xr.Dataset, *, sum_slits: bool = False) -> xr.Da
         summed = variable.groupby("channel").sum(skipna=False, keep_attrs=True).sel(channel=channels)
         result[name] = summed.transpose(*("channel" if dim == "line" else dim for dim in variable.dims))
     if "line_wavelength" in data.coords and data.line_wavelength.dims == ("line",):
-        # The sum of lines at different wavelengths has no single photon energy: without a wavelength,
-        # transform_flux_units refuses the photon step instead of taking the first line's for all.
         wavelengths = data.line_wavelength.groupby("channel")
         mixed = (wavelengths.max(skipna=False) != wavelengths.min(skipna=False)).sel(channel=channels)
         result = result.assign_coords(line_wavelength=result.line_wavelength.where(~mixed.values))

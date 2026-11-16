@@ -3,19 +3,16 @@
 01 - Create a VDEM
 ==================
 
-This tutorial demonstrates how to create a Velocity-Differential Emission Measure (VDEM) for MUSE.
-
-A VDEM is the emission measure of the solar atmosphere as a function of temperature, velocity, and spatial structure.
+Create a velocity-differential emission measure (VDEM), the emission measure
+as a function of temperature, velocity and position, from a MURaM simulation.
 
 .. warning::
 
-    This example requires the optional ``PlasmaCalcs`` package. Install it with
-    ``pip install "plasmacalcs[most]"`` before running the script.
+    Requires the optional ``PlasmaCalcs`` package: ``pip install "plasmacalcs[most]"``.
 
 .. note::
 
-    This example is skipped due to amount of RAM it requires to generate the VDEM.
-    This is why there are no plots.
+    Not run in the gallery, as it needs too much RAM, so it has no plots.
 """
 
 import os
@@ -34,31 +31,25 @@ from muse.synthesis import calculate_moments, create_simple_vdem
 ##############################################################################
 # Creating a VDEM
 #
-# The MUSE library includes a simple function to create VDEMs.
-# But we will use `PlasmaCalcs <https://plasmacalcs.readthedocs.io/>`__ to derive the VDEM properties from a MURaM simulation snapshot.
-#
-# PlasmaCalcs includes the possibility to create VDEMs with many more options: absorption, other interpolation methods, TRAC if applies, limb view options, etc.
-#
-# We will use a MURaM simulation snapshot of a flare.
-# `The data is stored online at Stanford. <https://purl.stanford.edu/dv883vb9686>`__
-# It was used in `A comprehensive three-dimensional radiative magnetohydrodynamic simulation of a solar flare. <https://www.nature.com/articles/s41550-018-0629-3#article-info>`__
-#
-# `muse.data.fetch_example_data` downloads a tar-ed snapshot of it.
+# `PlasmaCalcs <https://plasmacalcs.readthedocs.io/>`__ reads the plasma of a MURaM flare snapshot
+# (`stored at Stanford <https://purl.stanford.edu/dv883vb9686>`__, from
+# `Cheung et al. 2019 <https://www.nature.com/articles/s41550-018-0629-3#article-info>`__), and
+# :func:`muse.synthesis.create_simple_vdem` builds the VDEM from it.
+# PlasmaCalcs can also build VDEMs with more options: absorption, other interpolation methods, TRAC, limb views.
+# :func:`muse.data.fetch_example_data` downloads the snapshot.
 
 simulation_path = fetch_example_data("flare_nature_astro")
 
-# PlasmaCalcs returns the simulation in cgs units; each input of create_simple_vdem carries its
-# unit, and the function converts it to the one it works in.
+# PlasmaCalcs returns cgs; create_simple_vdem converts each input from its unit.
 muram_calc = MuramCalculator(dir=simulation_path, snap="0297000", units="cgs")
 muram_calc.eos_mode = "aux"
 temperature = muram_calc("T").values * u.K
 # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
 r_per_nH_tot = 2.383931923587366e-24
-ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure
+ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2
 # Zero out non-finite voxels so they cannot poison the VDEM.
 ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0).values * u.cm**-6
 velocity = muram_calc("u", component="z").values * u.cm / u.s  # LOS velocity
-# Grid spacing along the line of sight.
 cell_length = (muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0).values * u.cm
 x_coord = muram_calc("maindims_x_coord").values * u.cm
 y_coord = muram_calc("maindims_y_coord").values * u.cm
@@ -72,29 +63,17 @@ vdem = create_simple_vdem(
     y=y_coord,
     velocity_grid=np.arange(-500, 510, 10) * u.km / u.s,
     logT_grid=np.arange(5.5, 7.6, 0.1) * u.dex(u.K),
-    # This is the axis along which the integration is performed,
-    # in this case along the line of sight (z-axis)
+    # The line of sight, the z axis.
     integration_axis=2,
 )
-
-##############################################################################
-# The VDEM contains information about:
-#
-# - Temperature distribution (logT dimension)
-# - Doppler velocity distribution (doppler_velocity dimension)
-# - Spatial distribution (x, y dimensions)
-# - Temporal evolution (time dimension)
-#
-# We can now print the VDEM we created.
 
 print(vdem)
 
 ##############################################################################
 # Calculate the VDEM moments
 #
-# The velocity moments can be calculated directly from the VDEM without first
-# synthesizing spectra. ``calculate_moments`` integrates one spectral axis, so
-# we first sum over temperature and then calculate the moments along ``doppler_velocity``.
+# The velocity moments come straight from the VDEM, without synthesizing spectra.
+# :func:`muse.synthesis.calculate_moments` integrates one axis, so we first sum over temperature.
 
 velocity_distribution = vdem[["vdem"]].sum(dim="logT", skipna=False)
 vdem_moments = calculate_moments(
@@ -114,14 +93,10 @@ axes[2].set_title("VDEM 2nd moment")
 
 
 ##############################################################################
-# Finally we save the VDEM so the later tutorials can reuse it.
-# This is the artifact hosted online for examples 02 and 05.
+# Save the VDEM for the later tutorials, which fetch the hosted copy when there is no local one.
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 output_dir.mkdir(parents=True, exist_ok=True)
 vdem.to_zarr(output_dir / "muse_example_vdem.zarr", mode="w", zarr_format=3)
-
-##############################################################################
-# Now that you have a VDEM, you can use it to create a synthetic MUSE observation.
 
 plt.show()

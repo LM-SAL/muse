@@ -3,13 +3,12 @@
 Synthesize an EIS Fe XII spectrum
 =================================
 
-This tutorial builds on the
+Synthesize an EIS Fe XII 195 Å raster from the VDEM of the
+:ref:`MUSE synthesis tutorial
+<sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`
+with the response of the
 :ref:`EIS response example
-<sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`
-and synthesizes an EIS Fe XII 195 Å raster from the same VDEM used in
-the :ref:`MUSE synthesis tutorial
-<sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`,
-using :func:`muse.synthesis.vdem_synthesis`.
+<sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`.
 """
 
 import matplotlib.pyplot as plt
@@ -23,21 +22,14 @@ from muse.data import fetch_example_data
 from muse.instrument import create_spectral_response
 from muse.synthesis import calculate_moments, vdem_synthesis, wavelength_to_doppler
 
-##############################################################################
-# We fetch the VDEM used by the MUSE synthesis tutorial. Its ``logT`` and
-# ``doppler_velocity`` grids will define the response axes below, so no
-# interpolation is needed before the synthesis.
-
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
 
 print(vdem)
 
 ##############################################################################
-# We recreate the EIS Fe XII response as :func:`muse.synthesis.vdem_synthesis`
-# pairs the VDEM and response grid point by grid point without interpolating,
-# so the response must be evaluated on the VDEM's exact ``logT`` and
-# ``doppler_velocity`` grids, while the response example used wider display
-# grids to show the full response shape.
+# :func:`muse.synthesis.vdem_synthesis` does not interpolate, so we recreate
+# the response on the ``logT`` and ``doppler_velocity`` grids of the VDEM
+# rather than the wider display grids of the response example.
 
 line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
 line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.logT, method="nearest", tolerance=0.05)
@@ -61,7 +53,7 @@ response = create_spectral_response(
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
     effective_area=effective_area,
 )
-# Convert the per-Å response to one value per EIS spectral detector pixel.
+# Per Å times the dispersion gives one value per EIS spectral pixel.
 response_unit = u.Unit(response.spectral_response.attrs["units"]) * u.AA
 binned_response = (response.spectral_response * dispersion.to_value(u.AA)).assign_attrs(
     {**response.spectral_response.attrs, "units": str(response_unit)}
@@ -69,11 +61,9 @@ binned_response = (response.spectral_response * dispersion.to_value(u.AA)).assig
 response = response.assign(spectral_response=binned_response)
 
 ##############################################################################
-# :func:`muse.synthesis.vdem_synthesis` contracts the dimensions the VDEM and
-# response share by name. It accepts the wavelength-space names produced by
-# :func:`muse.instrument.create_spectral_response` directly (renaming them to
-# the detector-style names internally), and drops the MUSE ``slit`` dimension
-# from the default ``sum_over`` since neither input here has one.
+# :func:`muse.synthesis.vdem_synthesis` takes the wavelength-space dimension
+# names of :func:`muse.instrument.create_spectral_response` directly, and
+# leaves ``slit`` out of the default ``sum_over`` as neither input has one.
 
 spectrum = vdem_synthesis(vdem, response).compute()
 print(spectrum)
@@ -84,8 +74,7 @@ print(spectrum)
 
 plt.figure(figsize=(10, 5))
 spectrum_image = spectrum.flux.isel(x=128, pressure=0).sum(dim="line")
-# The line wings decay to numerically zero, so anchor the log scale to the
-# brightest pixel and show four decades below it.
+# The wings decay to zero, so show four decades below the brightest pixel.
 spectrum_image.plot(
     x="detector_wavelength",
     y="y",
@@ -95,10 +84,9 @@ spectrum_image.plot(
 plt.title("Synthesized EIS Fe XII spectrum at one raster position")
 
 ##############################################################################
-# Finally we compute the spectral moments of the main line:
-# total intensity, Doppler shift, and line width.
+# The spectral moments of the main line.
 # :func:`muse.synthesis.wavelength_to_doppler` adds the velocity coordinate
-# required by :func:`muse.synthesis.calculate_moments`.
+# that :func:`muse.synthesis.calculate_moments` needs.
 
 velocity_spectrum = wavelength_to_doppler(spectrum)
 moments = calculate_moments(velocity_spectrum, moment_dim="wavelength_bin")
@@ -106,8 +94,7 @@ moments = calculate_moments(velocity_spectrum, moment_dim="wavelength_bin")
 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 line_moments = moments.sel(line="Fe XII 195.119").isel(pressure=0)
 intensity = line_moments["0th"]
-# Anchor the log scale to the data: median to max spans the quiet
-# background and the flare core without washing either out.
+# Median to max spans the quiet background and the flare core.
 intensity.plot(
     x="x",
     y="y",

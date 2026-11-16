@@ -3,9 +3,7 @@ Response functions: building them in wavelength space, mapping them onto a detec
 their units and their files.
 """
 
-# The generators of products.py are exported by muse.instrument alone: they build on the atomic
-# data and the effective areas, whose modules import this package, so importing them here
-# would be a circular import.
+# products.py is exported by muse.instrument alone: importing it here would be circular.
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
 from muse.instrument.response.io import (
     align_response_and_vdem,

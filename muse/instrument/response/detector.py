@@ -15,7 +15,6 @@ from muse.variables_schema import InstrumentDefaults, _required
 
 __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
-# Wavelength-space response units these mappings accept.
 _ACCEPTED_SG_RESPONSE_UNITS = tuple(unit * u.cm**5 / (u.AA * u.s) for unit in (u.erg / u.sr, u.ph, u.DN))
 _ACCEPTED_CI_RESPONSE_UNITS = tuple(
     unit * emission_measure / (u.AA * u.s)
@@ -101,10 +100,8 @@ def map_response_to_sg_detector(
     """
     Map one wavelength-space response onto a multi-slit detector.
 
-    Pass ``channel`` to use the MUSE SG calibration, or provide the detector
-    geometry explicitly. The input should come from
-    `muse.instrument.create_spectral_response` with effective area(s) already
-    applied.
+    Pass ``channel`` for the MUSE SG geometry, or give the geometry explicitly. Apply the
+    effective area first, in `muse.instrument.create_spectral_response`.
 
     .. warning::
 
@@ -114,20 +111,16 @@ def map_response_to_sg_detector(
     Parameters
     ----------
     response : `xarray.Dataset`
-        Wavelength-space response containing ``spectral_response``,
-        ``wavelength_grid``, and ``line_wavelength``.
+        With ``spectral_response``, ``wavelength_grid`` and ``line_wavelength``.
     channel : `astropy.units.Quantity`, optional
-        Nominal MUSE SG channel wavelength, e.g. 171 Angstrom. When given, fills
-        any omitted geometry parameters from ``instrument_defaults`` and records
-        the channel on the output.
+        Nominal MUSE SG channel wavelength, e.g. 171 Angstrom; fills omitted geometry
+        from ``instrument_defaults`` and is recorded on the output.
     number_of_slits : `int`, optional
         Number of simultaneous slits. Required when ``channel`` is omitted.
     dispersion : `astropy.units.Quantity`, optional
-        Nominal wavelength width per detector pixel, also used for detector-bin
-        integration. When ``channel`` is given, derive it from the slit separation
-        of the channel and the pixels between slits by default. Otherwise it is
-        required. Adjacent detector-pixel centers are separated by exactly
-        ``dispersion``.
+        Wavelength step between adjacent detector pixels, and the width each pixel
+        integrates over. If `None`, the channel's slit separation over
+        ``pixels_between_slits``; required without ``channel``.
     pixels_between_slits : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits. Required for an explicit
         multi-slit geometry; unused for a single slit.
@@ -144,11 +137,9 @@ def map_response_to_sg_detector(
     Returns
     -------
     `xarray.Dataset`
-        Detector response containing ``detector_response`` in the units of
-        ``response.spectral_response`` integrated over the detector pixel
-        width, so per Angstrom becomes per pixel, and
-        ``detector_wavelength`` and ``line_wavelength`` coordinates
-        in Angstrom.
+        ``detector_response``, ``response.spectral_response`` integrated over each
+        pixel's width so per Angstrom becomes per pixel, with ``detector_wavelength``
+        and ``line_wavelength`` coordinates in Angstrom.
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(response)
@@ -227,16 +218,13 @@ def map_response_to_sg_detector(
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid).swap_dims(
         wavelength_bin="wavelength_grid"
     )
-    # Coordinates that do not lie along the wavelength axis are kept; the others are replaced by
-    # those of the detector.
     kept = {name: coord for name, coord in spectral_response.coords.items() if "wavelength_grid" not in coord.dims}
     spectral_response = spectral_response.drop_vars(
         [name for name in spectral_response.coords if name not in kept and name != "wavelength_grid"]
     )
     leading_dims = [dim for dim in spectral_response.dims if dim != "wavelength_grid"]
     if isinstance(spectral_response.data, np.ndarray):
-        # One slit at a time, into an array allocated once, so that the temporaries of the
-        # interpolation are those of one slit, not of the whole result.
+        # One slit at a time, so the interpolation temporaries are one slit's, not the whole result's.
         values = np.empty((*(spectral_response.sizes[dim] for dim in leading_dims), number_of_slits, detector_x_pixels))
         for slit in range(number_of_slits):
             on_slit = spectral_response.interp(
@@ -261,7 +249,6 @@ def map_response_to_sg_detector(
             *leading_dims, "slit", "detector_x_pixel"
         )
         mapped = mapped.assign_coords(detector_wavelength=detector_wavelength)
-    # The attributes of the spectral response, such as its bin method, with the units of the mapped one.
     mapped.attrs = {**response.spectral_response.attrs, "units": str(response_unit * u.AA)}
     mapped.detector_wavelength.attrs["units"] = str(u.AA)
 
@@ -274,8 +261,7 @@ def map_response_to_sg_detector(
             channel=("line", np.full(response.sizes["line"], channel_value), {"units": str(u.AA)})
         )
     if slit_separation is not None:
-        # How far apart in wavelength the slits fall on the detector, which no product name states.
-        # twelve digits: a value kept in Angstrom comes back with noise, 410 as 410.00000000000006
+        # No product name states it; mAngstrom to 12 digits, as Angstrom gives 410.00000000000006.
         result = result.assign_attrs(spectral_slit_separation=f"{slit_separation.to_value(u.mAA):.12g} mAngstrom")
     add_history(result, locals(), map_response_to_sg_detector)
     return result
@@ -289,24 +275,21 @@ def map_response_to_ci_detector(response: xr.Dataset, *, channel: u.Quantity) ->
     Parameters
     ----------
     response : `xarray.Dataset`
-        Wavelength-space response containing ``spectral_response``,
-        ``wavelength_grid``, and ``line_wavelength``. If it carries
-        ``wavelength_bounds``, as every response from
+        With ``spectral_response``, ``wavelength_grid`` and ``line_wavelength``, on a
+        grid that may be non-uniform. With ``wavelength_bounds``, as from
         `muse.instrument.create_spectral_response` and
-        `muse.instrument.create_continuum_response` does, each bin is multiplied
-        by its width and the bins are summed, which is exact for
-        ``bin_method="average"``. Without bounds the response is integrated
-        between the bin centers by the trapezoidal rule. The wavelength grid may
-        be non-uniform.
+        `muse.instrument.create_continuum_response`, the bins times their widths are
+        summed, which is exact for ``bin_method="average"``; without, the trapezoidal
+        rule runs between the bin centers.
     channel : `astropy.units.Quantity`
         Nominal channel wavelength recorded in the output coordinates.
 
     Returns
     -------
     `xarray.Dataset`
-        Band-integrated response containing ``detector_response`` in the units
-        of ``response.spectral_response`` integrated over wavelength, with
-        ``channel`` and ``detector_wavelength`` coordinates along ``line``.
+        ``detector_response``, ``response.spectral_response`` integrated over
+        wavelength, with ``channel`` and ``detector_wavelength`` coordinates along
+        ``line``.
     """
     response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(
         response, accepted_units=_ACCEPTED_CI_RESPONSE_UNITS
@@ -319,8 +302,6 @@ def map_response_to_ci_detector(response: xr.Dataset, *, channel: u.Quantity) ->
 
     spectral_response = response.spectral_response.assign_coords(wavelength_grid=wavelength_grid)
     if "wavelength_bounds" in response.coords:
-        # The value of each bin times its width: exact for bin averages on any grid, the
-        # midpoint rule for samples at the bin centers.
         bounds = response.wavelength_bounds
         if "units" not in bounds.attrs:
             # A netCDF file keeps the units of the bounds on the grid alone, as the CF conventions prescribe.

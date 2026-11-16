@@ -57,7 +57,7 @@ _DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
 # A continuum varies slowly with wavelength, so its velocities are coarser.
 _CONTINUUM_DOPPLER_VELOCITY = np.arange(-1000, 1001, 200) * u.km / u.s
 _ANGSTROM = {"units": str(u.AA)}
-# The attributes in which a line list or a continuum records the software and the database that made it.
+# The attributes that record the software and database that made a line list or a continuum.
 _VERSION_ATTRS = ("chianti_version", "chiantipy_version", "fiasco_version")
 
 
@@ -92,65 +92,55 @@ def generate_sg_responses(
     """
     Generate the spectrograph (SG) line responses of a set of effective-area files.
 
-    One set of products is written per file, abundance and plasma point. A plasma point is
-    one pressure; a density grid is one plasma point as a whole. One line list per abundance
-    serves every file. Every main line of a channel gets two products: its response in
-    wavelength space (the waveband cube) and that cube mapped onto the slits of the detector.
-    The brightest other lines of the waveband, summed, get the same pair as the
-    ``contaminants``; if the waveband holds no other line, a warning is logged and the channel
-    gets none.
+    Per file, abundance and plasma point (one pressure, or a whole density grid), every
+    main line of the channel gets a waveband cube and that cube mapped onto the slits of
+    the detector, one line at a time so that one detector response is in memory. The
+    brightest other lines of the waveband, summed, get the same pair as the
+    ``contaminants``; a waveband with no other line logs a warning and gets none. One line
+    list per abundance serves every file.
 
-    Each product is one file, a zarr store packed into a zip, in a folder named after its
-    abundance: ``<abundance>/response_sg_<channel>_<line>_<kind>_<label>_<plasma>.zarr.zip``.
-    ``<line>`` is the name of the main line without spaces, or ``contaminants``; ``<kind>`` is
-    ``waveband`` for a cube and ``detector`` for a detector response; ``<plasma>`` is
-    ``density``, or ``pressure_<value>`` in K / cm3 to six significant digits, e.g.
-    ``pressure_3e+15``. The name holds what selects a product; how it was made, such as the
-    author, the date, the number of slits and their separation, is in its attributes. All
-    names are checked before any work is done.
-
-    The main lines are mapped onto the detector one at a time, so only one detector response
-    is in memory at a time. It holds one value per Doppler velocity, temperature, slit and
-    detector pixel, and per density of a density grid.
+    Each product is a zipped zarr store,
+    ``<abundance>/response_sg_<channel>_<line>_<kind>_<label>_<plasma>.zarr.zip``:
+    ``<line>`` is the main line without spaces, or ``contaminants``; ``<kind>`` is
+    ``waveband`` or ``detector``; ``<plasma>`` is ``density``, or ``pressure_<value>`` in
+    K / cm3 to six significant digits, e.g. ``pressure_3e+15``. How a product was made,
+    such as the author, the date and the slits, is in its attributes. All names are
+    checked before any work is done.
 
     Parameters
     ----------
     output_directory : `str` or `pathlib.Path`
-        Directory of the products; created if needed.
+        Created if needed.
     author : `str`
         Initials for the attributes.
     effective_area_label : `str`
-        What tells these effective areas from others in the names, e.g. the coating: letters,
-        digits, ``.``, ``+`` and ``-``, so ``Al-Zr`` and not ``Al_Zr``.
+        Tells these effective areas from others in the names, e.g. the coating: letters,
+        digits, ``.``, ``+`` and ``-`` (``Al-Zr``, not ``Al_Zr``).
     effective_area_files : `list` of `str` or `pathlib.Path`
-        Files of `muse.instrument.save_effective_area`, each of one SG channel of
-        ``instrument_defaults``, in cm2. A file that describes its detector in the attributes
-        ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` is converted with
-        those instead of the MUSE values.
+        Files of `muse.instrument.save_effective_area` in cm2, one SG channel of
+        ``instrument_defaults`` each. Their attributes ``pixel_width``, ``pixel_height``,
+        ``gain`` and ``pair_energy``, where given, replace those of
+        ``instrument_defaults``.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
-        The instrument values the products are made with, by default
-        `~muse.variables.DEFAULTS_MUSE`: the detector geometry and calibration, the
-        spectral orders, the wavebands, the instrument FWHM and the main lines. The
-        products record whether these were the MUSE values or others, with a digest of
-        them.
+        Detector geometry and calibration, spectral orders, wavebands, instrumental FWHM
+        and main lines, by default `~muse.variables.DEFAULTS_MUSE`. The products record
+        whether these were the MUSE values, and a digest of them.
     abundances : `list` of `str`, optional
         CHIANTI abundance names, by default ``sun_coronal_2021_chianti`` and
         ``sun_photospheric_2021_asplund``.
     temperature : `astropy.units.Quantity`, optional
-        Temperatures convertible to K, by default 10**4.5 to 10**7.9 K in steps of 0.1 dex.
+        Convertible to K, by default 10**4.5 to 10**7.9 K in steps of 0.1 dex.
     pressure, density : `astropy.units.Quantity`, optional
         The plasma points, as for `muse.instrument.create_chianti_line_list`; at most one
         of the two, by default 3e14, 3e15 and 3e16 K / cm3.
     doppler_velocity : `astropy.units.Quantity`, optional
-        Doppler velocities of the products, by default
-        -1000 to 1000 km / s in steps of 10 km / s.
+        By default -1000 to 1000 km / s in steps of 10 km / s.
     main_lines_by_channel : `dict`, optional
-        The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
-        Angstrom or as a wavelength. A channel that is not a key keeps those of
-        ``instrument_defaults``.
+        The ``full_name`` of a channel's main lines, keyed by the channel in Angstrom (an
+        `int`) or as a wavelength; other channels keep those of ``instrument_defaults``.
     instrumental_fwhm_by_channel : `dict`, optional
-        The instrumental FWHM of a channel, keyed alike. A channel that is not a key keeps
-        that of ``instrument_defaults``.
+        The instrumental FWHM of a channel, keyed alike; other channels keep that of
+        ``instrument_defaults``.
     maximum_contaminants : `int`, optional
         How many of the brightest other lines of a waveband are summed into the contaminant
         products, by default 10000; below 1 there are none.
@@ -160,17 +150,16 @@ def generate_sg_responses(
         What creates a missing line list, by default ``"fiasco"``.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
         The range of the line list, by default from the lowest to the highest end of the
-        wavebands of the files' channels, the gaps between the wavebands included. Pass a
-        wider one, e.g. one that covers the imager's files too, so that separate calls share
-        one cached line list.
+        files' wavebands. A wider one, e.g. covering the imager's files too, lets separate
+        calls share one cached line list.
     line_list_file : `str` or `pathlib.Path`, optional
-        A line list of the one abundance in ``abundances``, on ``temperature`` and holding
-        the plasma points, to use instead of the cache: a netCDF file or a zarr store.
+        A netCDF file or zarr store to use instead of the cache: the line list of the one
+        abundance in ``abundances``, on ``temperature`` and holding the plasma points.
         ``line_list_backend``, ``minimum_abundance``, ``create_if_missing`` and ``workers``
         then do not apply to the line list.
     transition_boosts : `dict`, optional
-        Passed to `muse.instrument.boost_transitions` after the line list is read, so the
-        cache stays as it was made.
+        Passed to `muse.instrument.boost_transitions` once the line list is read; the cache
+        is left as made.
     transition_selection : iterable of `tuple`, optional
         Passed to `muse.instrument.select_transitions` after the boosts.
     cache_directory : `str` or `pathlib.Path`, optional
@@ -178,21 +167,19 @@ def generate_sg_responses(
         ``output_directory / "cache"``.
     create_if_missing : `bool`, optional
         If `False`, a missing line list raises instead of being created. Pass `False` when
-        several processes each handle one pressure: a line list created by one of them holds
-        that pressure alone and is refused by the others. Create it first, on every pressure,
-        with `muse.instrument.load_or_create_line_list`.
+        several processes each take one pressure, after creating the line list on every
+        pressure with `muse.instrument.load_or_create_line_list`: one created by a process
+        holds its pressure alone and the others refuse it.
     skip_existing : `bool`, optional
-        If `True`, a product that is already there is kept and only the others are made, so
-        that a call that stopped halfway can be finished; one made with other instrument
-        values than this call's raises. By default such a product raises, as its name does
-        not carry every setting.
+        If `True`, existing products are kept and only the missing ones made, to finish a
+        call that stopped halfway; one made with other settings raises. By default an
+        existing product raises, as its name does not carry every setting.
     workers : `int`, optional
-        Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every CPU
-        this process may run on. The ChiantiPy backend does not use it.
+        Processes the fiasco backend splits the ions over, by default 1; ``-1`` uses every
+        CPU this process may run on. Unused by ChiantiPy.
     threads : `int`, optional
-        Upper limit on the BLAS, OpenMP and numexpr threads during the call, by default 4. A
-        pool that is set lower stays as it is, and the limit is never more than the CPUs this
-        process may use.
+        Upper limit on the BLAS, OpenMP and numexpr threads during the call, by default 4,
+        and at most the CPUs this process may use; a pool set lower stays as it is.
 
     Returns
     -------
@@ -220,7 +207,7 @@ def generate_sg_responses(
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     if transition_selection is not None and not isinstance(transition_selection, Collection):
-        # a generator, read once and written as its address: a list is recorded and digested alike
+        # a generator is read once and would be recorded by its address, not its contents
         transition_selection = list(transition_selection)
     call_inputs = dict(locals())
     settings = {
@@ -241,8 +228,7 @@ def generate_sg_responses(
         wavebands = u.Quantity([_sg_waveband(_channel(area), instrument_defaults) for area in run.effective_areas])
         load_line_list = _line_list_loader(
             run,
-            # One range over the wavebands of the files, not over the effective areas, which may
-            # span far more and would make the line list far slower to create.
+            # The wavebands, not the effective areas: those may span far more and slow the line list.
             u.Quantity([wavebands.min(), wavebands.max()]),
             wavelength_range=line_list_wavelength_range,
             line_list_file=line_list_file,
@@ -312,25 +298,23 @@ def generate_sg_continuum_responses(
     """
     Generate the spectrograph (SG) continuum responses of a set of effective-area files.
 
-    One product is written per file, abundance and plasma point: the continuum alone on the
-    detector. The rest-frame continuum of a channel, on a fine grid over its waveband, is
-    folded through the effective area with `muse.instrument.create_continuum_response`,
-    converted to photons and mapped onto the detector.
+    Per file, abundance and plasma point, the rest-frame continuum on a fine grid over the
+    channel's waveband is folded through the effective area with
+    `muse.instrument.create_continuum_response`, converted to photons and mapped onto the
+    detector.
 
-    Each product is one file, a zarr store packed into a zip, named
-    ``<abundance>/response_sg_<channel>_continuum_<backend>_detector_<label>_<plasma>.zarr.zip``:
-    ``<backend>`` is ``continuum_backend``, and the other parts and their rules are as in
-    `generate_sg_responses`.
+    Each product is named
+    ``<abundance>/response_sg_<channel>_continuum_<backend>_detector_<label>_<plasma>.zarr.zip``,
+    with ``continuum_backend`` as ``<backend>`` and the rest as in `generate_sg_responses`.
 
     Parameters
     ----------
     output_directory, author, effective_area_label, effective_area_files, instrument_defaults, abundances
         As for `generate_sg_responses`.
     temperature, pressure, density
-        The temperatures and the plasma points, as for `generate_sg_responses`.
+        As for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
-        Doppler velocities of the products, by default
-        -1000 to 1000 km / s in steps of 200 km / s.
+        By default -1000 to 1000 km / s in steps of 200 km / s.
     wavelength_step : `astropy.units.Quantity`, optional
         Sampling of the fine grid, by default 0.01 Angstrom.
     minimum_abundance : `float`, optional
@@ -436,34 +420,31 @@ def generate_ci_responses(
     """
     Generate the imager responses of a set of effective-area files.
 
-    The files are of the MUSE context imager (CI) or of another imager. Per file, abundance
-    and plasma point there are three products: a waveband cube in photons and one in DN,
-    which hold the brightest lines summed and the continuum components on bins of constant
-    velocity width, and the imager response in DN, which is the DN cube summed over
-    wavelength and over its parts.
+    The files are of the MUSE context imager (CI) or another imager. Per file, abundance
+    and plasma point there are three products: waveband cubes in photons and in DN, holding
+    the brightest lines summed and the continuum components on bins of constant velocity
+    width, and the imager response in DN, the DN cube summed over wavelength and its parts.
 
-    Each product is one file, a zarr store packed into a zip, named
-    ``<abundance>/response_ci_<channel>[_waveband]_<label>_<plasma>[_DN].zarr.zip``:
-    ``_waveband`` marks a cube and ``_DN`` a product in DN; the other parts of the names and
-    the rules for them are as in `generate_sg_responses`.
+    Each product is named
+    ``<abundance>/response_ci_<channel>[_waveband]_<label>_<plasma>[_DN].zarr.zip``, with
+    ``_waveband`` marking a cube and ``_DN`` a product in DN; the rest is as in
+    `generate_sg_responses`.
 
     Parameters
     ----------
     output_directory, author, effective_area_label, abundances
         As for `generate_sg_responses`.
     effective_area_files : `list` of `str` or `pathlib.Path`
-        Files of `muse.instrument.save_effective_area`, one channel each. A file of an
-        imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
-        attributes, and should give ``pixel_width`` and ``pixel_height``, which are otherwise
-        those of ``instrument_defaults``; `muse.instrument.create_aia_effective_area` writes
-        all four.
+        Files of `muse.instrument.save_effective_area`, one channel each. A file of another
+        imager must give ``gain`` and ``pair_energy`` in its attributes, and should give
+        ``pixel_width`` and ``pixel_height``, else taken from ``instrument_defaults``;
+        `muse.instrument.create_aia_effective_area` writes all four.
     instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
-        The instrument values the products are made with, as for `generate_sg_responses`.
+        As for `generate_sg_responses`.
     temperature, pressure, density
-        The temperatures and the plasma points, as for `generate_sg_responses`.
+        As for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
-        Doppler velocities of the products, by default
-        -1000 to 1000 km / s in steps of 10 km / s.
+        By default -1000 to 1000 km / s in steps of 10 km / s.
     maximum_lines : `int`, optional
         How many of the brightest lines of a channel go into its products, by default 10000;
         at least 1.
@@ -477,11 +458,10 @@ def generate_ci_responses(
         Elements less abundant than this are left out of the line list and the continuum, by
         default 1e-21.
     line_list_backend, line_list_file
-        The line list, as for `generate_sg_responses`.
+        As for `generate_sg_responses`.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
-        The range of the line list, by default the one the effective-area files span. Pass
-        the range of every file when they are processed in separate calls, so that the calls
-        share one cached line list.
+        The range of the line list, by default the one the files span. Pass that of every
+        file to separate calls, so that they share one cached line list.
     transition_boosts, transition_selection
         As for `generate_sg_responses`.
     cache_directory : `str` or `pathlib.Path`, optional
@@ -510,7 +490,7 @@ def generate_ci_responses(
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     if transition_selection is not None and not isinstance(transition_selection, Collection):
-        # a generator, read once and written as its address: a list is recorded and digested alike
+        # a generator is read once and would be recorded by its address, not its contents
         transition_selection = list(transition_selection)
     call_inputs = dict(locals())
     settings = {
@@ -559,8 +539,7 @@ def generate_ci_responses(
             for area, plasma_point, names in tasks:
                 continuum = None
                 if include_continuum:
-                    # At the wavelength samples of the effective area: the continuum is smooth, so
-                    # samples that resolve the area resolve their product.
+                    # On the area's samples: the continuum is smooth, so they resolve the product too.
                     continuum = load_continuum(abundance, area.wavelength.values * u.AA).isel(
                         {run.request.plasma_dim: plasma_point}
                     )
@@ -581,21 +560,19 @@ def generate_ci_responses(
 
 class _Run:
     """
-    What the generators share: the checked inputs of a call, the names of its products
-    and their writing.
+    What the generators share: the checked inputs of a call, its product names and their
+    writing.
     """
 
     def __init__(self, generator: Callable, settings: dict, call_inputs: dict) -> None:
         """
-        ``call_inputs`` holds the arguments of ``generator`` by name, as ``locals()``
-        gives them at its start; ``settings`` those that go into the history and the
-        attributes of every product.
+        ``call_inputs`` is ``locals()`` at the start of ``generator``; ``settings`` go
+        into the history and the attributes of every product.
         """
         self.generator, self.settings = generator, settings
         self.author, self.effective_area_label = call_inputs["author"], call_inputs["effective_area_label"]
         _require_name_part("effective_area_label", self.effective_area_label)
         abundances = call_inputs["abundances"]
-        # A repeated abundance is taken once.
         self.abundances = [abundances] if isinstance(abundances, str) else list(dict.fromkeys(abundances))
         if not self.abundances:
             msg = "pass at least one abundance"
@@ -610,14 +587,12 @@ class _Run:
         if pressure is None and density is None:
             pressure = _PRESSURE
         self.request = _PlasmaRequest(_or_default(call_inputs["temperature"], _TEMPERATURE), pressure, density)
-        # What every read of a cache in the call shares.
         self._cache_options = {
             "temperature": self.request.temperature,
             "pressure": self.request.pressure,
             "density": self.request.density,
             **{name: call_inputs[name] for name in ("minimum_abundance", "create_if_missing", "workers", "threads")},
         }
-        # One plasma point per pressure; a density grid is one plasma point as a whole.
         self.plasma_points = (
             [("density", slice(None))]
             if density is not None
@@ -631,8 +606,7 @@ class _Run:
         if not self.effective_areas:
             msg = "pass at least one effective-area file"
             raise ValueError(msg)
-        # What shapes every product of the call; the effective area and the settings of its
-        # channel are added per product, and a given line-list file once the names are checked.
+        # The area and its channel's settings join per product, a line-list file once the names pass.
         self._line_list_file = call_inputs.get("line_list_file")
         self._shaping = {
             **settings,
@@ -650,8 +624,7 @@ class _Run:
 
     def cached(self, load: Callable[..., xr.Dataset], **kwargs) -> xr.Dataset:
         """
-        Call ``load``, one of the two cache functions, on the cache directory, the
-        temperatures, the plasma points and the cache options of the call.
+        Call the cache function ``load`` with the call's cache directory and options.
         """
         return load(self.cache_directory, **self._cache_options, **kwargs)
 
@@ -659,15 +632,13 @@ class _Run:
         self, names_of: Callable[[xr.Dataset], dict], settings_of: Callable[[xr.Dataset], dict] | None = None
     ) -> dict[str, list[tuple]]:
         """
-        Name every product of the call, and return what is still to make: per abundance,
-        the ``(effective area, plasma point, names)`` of every group with a product
-        missing.
+        Name every product, and return per abundance the ``(effective area, plasma
+        point, names)`` of every group with a product missing.
 
-        For one effective area, ``names_of(effective_area)`` maps a key of the caller's
-        choice to the ``(prefix, units tag)`` of each product. A name is the path of a
-        product below the output directory, without its suffix.
-        ``settings_of(effective_area)`` gives what else shapes the products of an area,
-        such as the main lines of its channel.
+        ``names_of(area)`` maps a key of the caller's choice to the ``(prefix, units
+        tag)`` of each product; ``settings_of(area)`` gives what else shapes them, such
+        as the channel's main lines. A name is a product's path below the output
+        directory, without suffix.
         """
         tasks = {
             abundance: [
@@ -735,8 +706,7 @@ class _Run:
 
     def _settings_digest(self, area: xr.Dataset, per_area: dict) -> str:
         """
-        A digest of all that shapes a product of ``area``: the shaping settings of the
-        call, ``per_area``, and the values, units and detector of the area.
+        A digest of all that shapes a product of ``area``.
         """
         detector = {name: area.attrs.get(name) for name in _DETECTOR_ATTRS}
         values = {
@@ -751,15 +721,12 @@ class _Run:
 
     def write(self, dataset: xr.Dataset, name: str, save: Callable, **attrs) -> None:
         """
-        Write ``dataset`` with ``save`` as the product ``name``, with the call that made
-        it in its history and ``attrs`` among its attributes.
-
-        A product that is kept is not written.
+        Write ``dataset`` with ``save`` as the product ``name``, unless it is kept.
         """
         if name in self._done:
             logger.info(f"Keeping the existing {self._done[name].name}")
             return
-        # One order of the dimensions for every product, whatever order its parts came in.
+        # One dimension order for every product, whatever order its parts came in.
         dataset = dataset.transpose(
             "line", "doppler_velocity", "logT", self.request.plasma_dim, ..., missing_dims="ignore"
         ).assign_attrs(
@@ -775,22 +742,19 @@ class _Run:
 
     def products(self) -> list[Path]:
         """
-        The products of the call that exist, made or kept, in the order they were named.
+        The products made or kept, in the order they were named.
         """
         return [self._done[name] for name in self._paths if name in self._done]
 
 
-# Inputs of a generator that shape its products besides those its settings record. The others
-# say where the products go, who made them or how the code ran, or are in the path of a product:
-# its abundance, label, pressure and units.
+# Inputs besides the settings that shape a product; the others only place, sign or run it, or are in its name.
 _SHAPING_INPUTS = ("temperature", "density", "doppler_velocity", "transition_boosts", "transition_selection")
 
 
 def _line_list_identity(line_list_file: str | Path) -> dict:
     """
-    What tells a given line-list file from another of its name without reading it: its
-    size and the time it was last written, which any rewrite changes; of a zarr store
-    that is a folder, those of the files in it.
+    Tell a line-list file from another of its name without reading it, by the size and
+    last write of its files, which any rewrite changes.
     """
     path = Path(line_list_file)
     statuses = [part.stat() for part in ([path] if path.is_file() else path.rglob("*")) if part.is_file()]
@@ -815,8 +779,7 @@ def _write_sg_products(
     instrument_defaults: InstrumentDefaults,
 ) -> None:
     """
-    The cube and the detector response of every main line of one SG channel, and of its
-    brightest other lines summed, at one plasma point.
+    Write the products of one SG channel at one plasma point.
     """
     channel = _channel(area) * u.AA
     curve = _curve(area)
@@ -851,8 +814,7 @@ def _write_sg_products(
     if maximum_contaminants < 1:
         return
 
-    # The contaminants are the lines of the waveband itself, not of the grid, whose last step
-    # may reach beyond it: a wider line list then gives the same product.
+    # Lines of the waveband, not the grid, whose last sample may pass it: a wider line list gives the same product.
     lower, upper = _sg_waveband(_channel(area), instrument_defaults).to_value(u.AA)
     in_waveband = (
         (line_list.wavelength >= lower) & (line_list.wavelength <= upper) & ~line_list.full_name.isin(main_lines)
@@ -871,8 +833,7 @@ def _write_sg_products(
         )
         .assign_attrs(number_of_lines=ranked.sizes["transition"])
     )
-    # On the detector the contaminants are referenced to the channel's first main line, not to the
-    # brightest contaminant as in the cube, so that a reader derives one geometry per channel.
+    # At the first main line, not the brightest contaminant, so that a reader derives one geometry per channel.
     at_main_line = contaminants.assign_coords(line_wavelength=("line", [float(main.line_wavelength[0])], _ANGSTROM))
     on_detector = map_response_to_sg_detector(at_main_line, channel=channel, instrument_defaults=instrument_defaults)
     write(contaminants, on_detector, "contaminants")
@@ -909,7 +870,7 @@ def _write_ci_products(
     ).assign_coords(line=[line_label], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
     cube.attrs["number_of_lines"] = ranked.sizes["transition"]
     if continuum is not None:
-        # The area without its history: the lines bring it into the cube already.
+        # Without its history: the lines already bring it into the cube.
         folded = create_continuum_response(
             continuum, edges, effective_area=area.drop_attrs(deep=False), doppler_velocity=doppler_velocity
         )
@@ -917,8 +878,7 @@ def _write_ci_products(
             line=[f"{_channel(area)} continuum {component}" for component in folded.line.values]
         )
         versions = {f"continuum_{key}": value for key, value in continuum.attrs.items() if key in _VERSION_ATTRS}
-        # join="exact": a continuum on other temperatures or plasma points than the lines stops
-        # here instead of filling the cube with NaN.
+        # join="exact": a continuum on another grid than the lines raises instead of filling NaN.
         cube = xr.concat(
             [cube, folded.transpose(*cube.spectral_response.dims, "bound", missing_dims="ignore")],
             dim="line",
@@ -926,7 +886,7 @@ def _write_ci_products(
             combine_attrs="override",
             join="exact",
         ).assign_attrs(versions)
-        # The attributes are those of the lines: the calls that made the continuum join the history here.
+        # The attributes are the lines'; the calls that made the continuum join the history here.
         _inherit_history(cube, folded)
         line_label += " + continuum"
 
@@ -952,9 +912,8 @@ def _line_list_loader(
     transition_selection: Iterable | None,
 ) -> Callable[[str], xr.Dataset]:
     """
-    Check the line-list options of a call, and return the function that gives the line
-    list of one abundance at the plasma points of the call; ``needed_range`` is what the
-    products of the call use of it.
+    Check the line-list options, and return the loader of one abundance's line list;
+    ``needed_range`` is the range the products use.
     """
     _require_choice("line_list_backend", backend, _LINE_LIST_BACKENDS)
     if line_list_file is not None and len(run.abundances) != 1:
@@ -969,7 +928,7 @@ def _line_list_loader(
         msg = f"line_list_wavelength_range {wavelength_range} does not cover what the products need, {needed_range}"
         raise ValueError(msg)
     transition_selection = list(transition_selection or [])
-    # Checked here, before a line list is created, and again where a transition is matched.
+    # Before a line list is created; checked again where a transition is matched.
     for transition in (*(transition_boosts or {}), *transition_selection):
         if not isinstance(transition, tuple | list) or len(transition) != 3:
             msg = (
@@ -984,7 +943,6 @@ def _line_list_loader(
                 load_or_create_line_list, abundance=abundance, wavelength_range=wavelength_range, backend=backend
             )
         else:
-            # A netCDF file or a zarr store, such as a cache file of load_or_create_line_list.
             with _open_dataset_file(Path(line_list_file)) as opened:
                 line_list = opened.load()
             problem = run.request.mismatch(line_list)
@@ -1005,8 +963,8 @@ def _line_list_loader(
 
 def _continuum_loader(run: _Run, backend: str) -> Callable[[str, u.Quantity], xr.Dataset]:
     """
-    Check the continuum backend, and return the function that gives the continuum of one
-    abundance on one wavelength grid at the plasma points of the call, read once.
+    Check the continuum backend, and return the loader of one abundance's continuum on
+    one wavelength grid, read once.
     """
     _require_choice("continuum_backend", backend, _CONTINUUM_BACKENDS)
     loaded = {}
@@ -1024,10 +982,8 @@ def _continuum_loader(run: _Run, backend: str) -> Callable[[str, u.Quantity], xr
 
 def _line_list_settings(line_list_file: str | Path | None, line_list_backend: str, minimum_abundance: float) -> dict:
     """
-    What a product records of its line list.
-
-    A given line list was made elsewhere: its file can be recorded, by name alone as the
-    effective area is, but neither a backend nor a minimum abundance can be claimed for it.
+    What a product records of its line list: of a given file, its name alone, as no
+    backend or minimum abundance can be claimed for it.
     """
     if line_list_file is None:
         return {"line_list_backend": line_list_backend, "minimum_abundance": minimum_abundance}
@@ -1046,8 +1002,8 @@ def _require_choice(name: str, value: str, choices: Iterable[str]) -> None:
 
 def _channel(area: xr.Dataset) -> int:
     """
-    The channel of an effective area as the names and the MUSE defaults state it: whole
-    Angstrom.
+    The channel of an effective area in whole Angstrom, as the names and defaults give
+    it.
     """
     return round(float(area.channel))
 
@@ -1073,8 +1029,8 @@ def _attribute_of_product(product: Path, name: str):
 
 def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: InstrumentDefaults) -> dict[str, u.Quantity]:
     """
-    The detector of an effective area, for `transform_response_units`: what its file
-    states in its attributes, and the values of ``instrument_defaults`` for the rest.
+    The detector of an effective area for `transform_response_units`: its file's
+    attributes, else ``instrument_defaults``.
     """
     detector = detector.upper()
     channel = _channel(area)
@@ -1105,7 +1061,7 @@ def _sg_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
 
 def _ci_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
     """
-    The channels of the imager, whose gain or pair energy the defaults hold.
+    The imager channels: those with a gain or pair energy in the defaults.
     """
     tables = (instrument_defaults.gain_CI, instrument_defaults.pair_energy_CI)
     return tuple(sorted({int(channel) for table in tables if table is not None for channel in table.channel.values}))
@@ -1139,8 +1095,8 @@ def _require_ci_files(effective_areas: list[xr.Dataset], instrument_defaults: In
 
 def _by_sg_channel(overrides: Mapping | None, name: str, defaults: Mapping[int, object]) -> dict[int, object]:
     """
-    The default value of every SG channel, replaced by the caller's where one is given;
-    a key is a channel in Angstrom as a number or as a wavelength.
+    ``defaults`` with the caller's ``overrides``, keyed by channel in Angstrom or as a
+    wavelength.
     """
     values = dict(defaults)
     for key, value in (overrides or {}).items():
@@ -1193,8 +1149,7 @@ def _instrumental_fwhm_by_sg_channel(
 
 def _sg_waveband(channel: int, instrument_defaults: InstrumentDefaults) -> u.Quantity:
     """
-    The two ends of what an SG channel covers: the half width divided by the spectral
-    order, on either side of the channel wavelength.
+    The two ends of the waveband of an SG channel.
     """
     order = int(_required(instrument_defaults, "channel_spectral_order_SG").sel(channel=channel))
     half_width = _required(instrument_defaults, "waveband_half_width_SG") / order
@@ -1205,9 +1160,9 @@ def _sg_waveband_grid(
     channel: int, instrument_defaults: InstrumentDefaults, step: u.Quantity | None = None
 ) -> u.Quantity:
     """
-    The waveband of an SG channel in steps of ``step`` from its lower end, by default
-    the step of ``instrument_defaults``; the last sample is the one nearest its upper
-    end, and may lie just beyond it.
+    The waveband of an SG channel in steps of ``step``, by default that of
+    ``instrument_defaults``, from its lower end; the last sample may lie just beyond the
+    upper end.
     """
     step = _required(instrument_defaults, "wavelength_step_SG") if step is None else step
     lower, upper = _sg_waveband(channel, instrument_defaults).to_value(u.AA)

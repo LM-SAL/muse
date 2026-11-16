@@ -1,9 +1,5 @@
 """
-Private array-backend bridge for synthesis.
-
-`vdem_synthesis` is the only production consumer of the Torch conversion helper, the
-device resolution and the memory-budgeted product, so they live here rather than in the
-public ``muse.utils`` surface.
+Array backends of `vdem_synthesis`, kept out of the public ``muse.utils``.
 """
 
 import importlib.util
@@ -20,26 +16,22 @@ if TYPE_CHECKING:
 
 def _resolve_backend(device: "str | torch.device | None" = None, backend: str = "numpy") -> str:
     """
-    Validate and resolve the array backend, returning ``"numpy"`` or ``"torch"``.
+    Validate ``backend`` and return ``"numpy"`` or ``"torch"``.
 
-    Torch is opt-in: ``backend`` defaults to ``"numpy"`` (also for `None`), so the array
-    library never changes with what happens to be installed in the environment (the
-    accelerator path is float32, the NumPy path keeps the input dtype). This is the
-    single source of truth for which backends are valid.
+    Torch is opt-in, so the array library and dtype never change with what is installed.
 
     Parameters
     ----------
     device : `str`, `torch.device` or `None`, optional
-        Torch device of the product (requires ``backend="torch"``), or `None` for the CPU.
+        Torch device of the product (needs ``backend="torch"``), or `None` for the CPU.
     backend : `str`, optional
         ``"numpy"`` (default) or ``"torch"``.
 
     Raises
     ------
     ValueError
-        For an unknown ``backend``, an accelerator backend or its psutil that is not
-        installed, or NumPy asked for a device. A device Torch cannot serve is reported later, when
-        the arrays are placed.
+        For an unknown ``backend``, Torch or psutil not installed, or NumPy asked for a
+        device. A device Torch cannot serve is reported when the arrays are placed.
     """
     if backend not in ("numpy", "torch"):
         msg = f"Unknown backend {backend!r}; choose 'numpy' or 'torch'"
@@ -138,10 +130,7 @@ def _available_memory_bytes(device: "torch.device") -> int:
 
 def torch_to_numpy(torch_tensor: "torch.Tensor") -> np.ndarray:
     """
-    Convert a `torch.Tensor` to a `numpy.ndarray`.
-
-    The tensor is detached from the autograd graph and moved to the CPU first
-    so tensors on accelerator devices convert cleanly.
+    Convert a `torch.Tensor` to a `numpy.ndarray`, detached and on the CPU.
 
     Parameters
     ----------
@@ -165,15 +154,13 @@ def torch_einsum(
     device: "str | torch.device | None" = None,
 ) -> np.ndarray:
     """
-    Contract ``vdem`` with ``detector_response`` on ``device`` in float32, in chunks
-    that fit.
+    Contract ``vdem`` with ``detector_response`` on ``device`` in float32, in chunks.
 
-    The product goes in chunks along the first ``vdem`` axis kept in the output and not
-    shared with the response, each within half of what the device may still allocate and
-    half of the free host memory: a product too large for MPS is copied back to the host
-    as zeros, with no exception and at most an out-of-memory report from Metal on stderr.
-    On the device a chunk costs its vdem and output plus einsum's permuted copies of both,
-    next to the response and its copy; on the host, the chunk copied back.
+    Chunks run along the first ``vdem`` axis kept in the output and not shared with the
+    response, each within half of what the device may still allocate and half of the
+    free host memory: MPS copies a product too large back as zeros, without an exception.
+    A chunk costs twice its vdem and output on the device (einsum's permuted copies), next
+    to twice the response, and its output on the host.
 
     Parameters
     ----------
@@ -201,9 +188,7 @@ def torch_einsum(
     torch_device = _resolve_device(device)
     vdem_indices, response_indices, output_indices = list(vdem_indices), list(response_indices), list(output_indices)
     logger.debug(f"Synthesis einsum on {torch_device}")
-    # At most one float32 copy each, made in NumPy: MPS has no float64, a float64 tensor cast
-    # afterwards would hold the VDEM three times over on the host, and a contiguous writable
-    # float32 input is used as is.
+    # Cast in NumPy, one copy at most: MPS has no float64, and a Torch cast would hold the VDEM thrice.
     vdem_tensor = torch.from_numpy(np.require(vdem, dtype=np.float32, requirements="CW"))
     response_tensor = torch.from_numpy(np.require(detector_response, dtype=np.float32, requirements="CW"))
     sizes = dict(zip((*vdem_indices, *response_indices), (*vdem_tensor.shape, *response_tensor.shape), strict=True))
@@ -243,8 +228,7 @@ def torch_einsum(
             torch_device.type == "mps" and not product.any() and chunk.any() and response_tensor.any()
         ):  # pragma: no cover
             # Oversubscribed unified memory: the product is right on the GPU, its copy to the host is zeros.
-            # ponytail: a chunk whose nonzero operands do not overlap along the summed axes trips this too;
-            # if a real response ever does, compare one row against a CPU product before raising.
+            # shortcut: disjoint nonzero operands trip this too, check one row on the CPU if a real response does.
             msg = "The synthesis copied back from MPS is all zero, which happens when memory runs out; use device='cpu'"
             raise RuntimeError(msg)
         out_slices = [slice(None)] * out.ndim
