@@ -194,7 +194,7 @@ def read_response(
     Parameters
     ----------
     response_file : `str` | `pathlib.Path`
-        Response function in Xarray readable format (netCDF file or Zarr store).
+        A zarr store (a directory or a ``.zip``) or a netCDF file.
     logT : `astropy.units.Quantity`, optional
         Temperature axis to (re)sample onto, in a unit convertible to the response's,
         e.g. ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)``.
@@ -211,8 +211,8 @@ def read_response(
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
-        peak memory stays bounded by the chunks. By default `False` (eager).
-        A zipped zarr store (``.zip``) behaves like a zarr directory.
+        peak memory stays bounded by the chunks. By default `False`: without dask, the
+        arrays are read from the file when used, by resampling at once.
 
     Returns
     -------
@@ -452,9 +452,8 @@ def read_responses(
         Interpolation method for doppler_velocity, by default "linear".
         Passed to `muse.instrument.read_response`.
     chunked : `bool`, optional
-        When `True`, load each response dask-backed so the concatenated
-        response stays lazy and synthesis peak memory stays bounded by the
-        chunks. Passed to `muse.instrument.read_response`. By default `False`.
+        When `True`, the concatenated response stays dask-backed. Passed to
+        `muse.instrument.read_response`. By default `False`: in memory.
 
     Returns
     -------
