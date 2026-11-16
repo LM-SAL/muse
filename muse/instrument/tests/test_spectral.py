@@ -112,6 +112,13 @@ def test_instrumental_fwhm_adds_its_sigma_in_quadrature():
     np.testing.assert_allclose(broadened**2 - thermal**2, (0.05 / gaussian_sigma_to_fwhm) ** 2, rtol=1e-3)
 
 
+def test_nonthermal_velocity_is_the_1e_velocity():
+    # xi is the 1/e velocity of the EIS/IRIS literature: it adds (lambda xi / c)^2 / 2 to sigma^2.
+    thermal = _sigma_of_an_iron_line_at_1_MK()
+    broadened = _sigma_of_an_iron_line_at_1_MK(nonthermal_velocity=20 * u.km / u.s)
+    np.testing.assert_allclose(broadened**2 - thermal**2, (171.0 * 20 / 299792.458) ** 2 / 2, rtol=1e-3)
+
+
 def test_peak_follows_doppler_shift():
     ll = fake_line_list(1)
     response = _build_spectral_response(

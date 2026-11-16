@@ -1,0 +1,1 @@
+``nonthermal_velocity`` is the 1/e (most probable) velocity xi of the EIS and IRIS literature, which adds a sigma of lambda xi / (c sqrt 2): the same value now gives a nonthermal width smaller by sqrt 2.

@@ -101,8 +101,10 @@ def create_spectral_response(
         centers remain at their rest wavelengths and no ``doppler_velocity``
         dimension is added.
     nonthermal_velocity : `astropy.units.Quantity`, optional
-        Scalar or one-dimensional nonthermal-velocity axis. If `None`, no
-        nonthermal broadening or ``nonthermal_velocity`` dimension is added.
+        Nonthermal velocity xi, the 1/e (most probable) velocity of the EIS and IRIS
+        literature, which adds a sigma of lambda xi / (c sqrt 2): a scalar or a
+        one-dimensional axis. If `None`, no nonthermal broadening or
+        ``nonthermal_velocity`` dimension is added.
     effective_area : `xarray.DataArray` or `xarray.Dataset`, optional
         Either a one-dimensional effective-area curve with a unit-bearing
         ``wavelength`` coordinate, or a zero-dimensional scalar area convertible
@@ -233,9 +235,8 @@ def _build_spectral_response(
     thermal_line_width = line_centers * thermal_velocity / speed_of_light_ms
     line_widths_squared = thermal_line_width**2 + instrumental_sigma**2
     if nonthermal_velocity is not None:
-        line_widths_squared = (
-            line_widths_squared + (line_list["wavelength"] * (nonthermal_velocity / speed_of_light_kms)) ** 2
-        )
+        # the 1/e velocity xi of a Maxwellian is sqrt(2) times its sigma
+        line_widths_squared = line_widths_squared + (line_centers * (nonthermal_velocity / speed_of_light_kms)) ** 2 / 2
     line_widths = np.sqrt(line_widths_squared)
     gaussian_norm = np.sqrt(2 * np.pi)
 
