@@ -273,9 +273,6 @@ def read_response(
         # Relabelled from 0, so that downstream exact joins see byte-identical axes.
         response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
-    if "channel" not in response.dims and "line" not in response.dims:
-        response = response.expand_dims("line")
-
     gain_unit = u.electron / u.DN
     if gain is None and "gain" in response.coords:
         # A file that holds a gain per line, such as a saved set of responses, keeps it.

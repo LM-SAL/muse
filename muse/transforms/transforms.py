@@ -34,14 +34,11 @@ def _spacing_matches(coord: xr.DataArray, to_arcsec: float, pixel_arcsec: float)
     """
     Whether ``coord`` is already sampled at ``pixel_arcsec``, within 0.5%.
 
-    Returns `False` for a size-1 axis, whose spacing cannot be measured. The coordinate
-    data may be a plain array or an `astropy.units.Quantity`, so the scaled spacing is
-    unwrapped before it is compared with a plain float.
+    Returns `False` for a size-1 axis, whose spacing cannot be measured.
     """
     if coord.size < 2:
         return False
     spacing = (coord[1] - coord[0]).data * to_arcsec
-    spacing = getattr(spacing, "value", spacing)
     return bool(abs(spacing - pixel_arcsec) / pixel_arcsec < 0.005)
 
 
@@ -371,16 +368,11 @@ def reshape_x_to_slit_step(
         vdem or spectra with raster and slit axis.
     """
     x_unit = require_unit(ds, "x", "x coordinate", coord_only=True)
-    attrs = {}
-    if "slit" in ds.coords:
-        reshaped = ds.unstack("x")
-    else:
-        step_size = ds.x[1] - ds.x[0]
-        step, slit = (array.flatten() for array in np.meshgrid(range(steps_per_raster), range(number_of_slits)))
-        reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
-        reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
-        attrs = {"step_size": str(u.Quantity(step_size.values, x_unit))}
-    update_attrs(reshaped, ds, **attrs)
+    step_size = ds.x[1] - ds.x[0]
+    step, slit = (array.flatten() for array in np.meshgrid(range(steps_per_raster), range(number_of_slits)))
+    reshaped = ds.assign_coords(slit=("x", slit), step=("x", step))
+    reshaped = reshaped.set_index(x=("slit", "step")).unstack("x")
+    update_attrs(reshaped, ds, step_size=str(u.Quantity(step_size.values, x_unit)))
     add_history(reshaped, locals(), reshape_x_to_slit_step, sources=(ds,))
     return reshaped
 

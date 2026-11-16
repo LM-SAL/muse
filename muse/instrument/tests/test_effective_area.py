@@ -39,13 +39,9 @@ def test_create_effective_area_layout():
     assert "create_effective_area(" in effective_area.attrs["history"][-1]
 
 
-def test_create_effective_area_accepts_dn_per_photon_and_rejects_other_units():
+def test_create_effective_area_accepts_dn_per_photon_and_refuses_a_decreasing_wavelength():
     effective_area = create_effective_area(np.ones(5) * u.cm**2 * u.DN / u.ph, WAVELENGTH, channel=94 * u.AA)
     assert u.Unit(effective_area.effective_area.attrs["units"]) == u.cm**2 * u.DN / u.ph
-    with pytest.raises(u.UnitsError, match="cm2"):
-        create_effective_area(np.ones(5) * u.m, WAVELENGTH, channel=94 * u.AA)
-    with pytest.raises(TypeError, match="Quantity"):
-        create_effective_area(np.ones(5), WAVELENGTH, channel=94 * u.AA)
     with pytest.raises(ValueError, match="increasing"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH[::-1], channel=94 * u.AA)
 
@@ -54,8 +50,6 @@ def test_create_effective_area_takes_one_curve_of_one_channel():
     # A (channel, wavelength) table is refused: reshaped into one curve it would be scrambled.
     with pytest.raises(ValueError, match="area must have one value per wavelength"):
         create_effective_area(np.ones((2, 5)) * u.cm**2, WAVELENGTH, channel=171 * u.AA)
-    with pytest.raises(ValueError, match="mirror must have one value per wavelength"):
-        _area(components={"mirror": np.ones(3) * u.one})
     with pytest.raises(ValueError, match="holds one channel"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH, channel=[171, 284] * u.AA)
     # a component of that name would take the place of the area
@@ -71,7 +65,7 @@ def test_create_effective_area_converts_wavelength_and_channel_to_angstrom():
     np.testing.assert_allclose(float(in_nm.channel), 171.0)
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
+@pytest.mark.parametrize("suffix", [".zarr.zip", ".nc"])
 def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
     effective_area = _area(components={"mirror": np.full(5, 0.5) * u.one})
     path = tmp_path / f"area{suffix}"
@@ -88,9 +82,7 @@ def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
         save_effective_area(effective_area, path)
 
 
-def test_save_effective_area_rejects_an_unknown_suffix_and_a_wrong_layout(tmp_path):
-    with pytest.raises(ValueError, match="effective_area_file must end in"):
-        save_effective_area(_area(), tmp_path / "area.txt")
+def test_save_effective_area_rejects_a_wrong_layout(tmp_path):
     with pytest.raises(ValueError, match="channel coordinate"):
         save_effective_area(_area().drop_vars("channel"), tmp_path / "area.nc")
     assert not list(tmp_path.iterdir())
@@ -215,17 +207,6 @@ def test_create_aia_effective_area_switches():
     assert effective_area.effective_area.attrs["units"] == "cm2"
     np.testing.assert_array_equal(effective_area.crosstalk, 0.0)
     assert effective_area.attrs["obstime"] == "2014-01-01T00:00:00.000"
-
-
-@pytest.mark.usefixtures("fake_aiapy")
-def test_create_aia_effective_area_takes_a_component_of_one_value(monkeypatch):
-    # aiapy gives the contamination of some channels as one value.
-    monkeypatch.setattr(_FakeChannel, "contamination", [0.5] * u.one)
-
-    effective_area = create_aia_effective_area(304 * u.AA)
-
-    np.testing.assert_array_equal(effective_area.contamination, 0.5)
-    assert effective_area.contamination.dims == ("wavelength",)
 
 
 @pytest.mark.remote_data

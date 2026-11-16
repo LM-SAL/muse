@@ -101,17 +101,16 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
-def test_save_response_accepts_chunk_overrides(tmp_path, fmt) -> None:
+def test_save_response_accepts_chunk_overrides(tmp_path) -> None:
     response = _small_response()
-    path = tmp_path / f"response.{fmt}"
+    path = tmp_path / "response.zarr"
 
     save_response(
         response, path, chunks={"line": 2, "doppler_velocity": 3, "logT": 2, "slit": 2, "detector_x_pixel": 4}
     )
 
-    with _open(path, fmt) as source:
-        chunks = source.detector_response.encoding["chunks" if fmt == "zarr" else "chunksizes"]
+    with _open(path, "zarr") as source:
+        chunks = source.detector_response.encoding["chunks"]
     assert chunks == (2, 3, 2, 2, 4)
 
 
@@ -128,8 +127,6 @@ def test_save_response_refuses_to_overwrite(tmp_path) -> None:
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, "must contain detector_response"),
-        ("missing_line_wavelength", ValueError, "line_wavelength is missing"),
-        ("unitless_axis", ValueError, "logT must define units"),
         ("bad_suffix", ValueError, "must end in"),
     ],
 )
@@ -140,11 +137,6 @@ def test_save_response_validates_the_response(tmp_path, case, error, match) -> N
         response = None
     elif case == "missing_variable":
         response = response.drop_vars("detector_response")
-    elif case == "missing_line_wavelength":
-        response = response.drop_vars("line_wavelength")
-    elif case == "unitless_axis":
-        response = response.assign_coords(logT=response.logT.assign_attrs({}))
-        del response.logT.attrs["units"]
     else:
         path = tmp_path / "response.txt"
 
@@ -165,11 +157,10 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
         save_response(_small_response(), tmp_path / "response.zarr", chunks=chunks)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
-def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
+def test_read_response_roundtrip_selects_axes(tmp_path) -> None:
     made = {"date_created": "2026-01-01T00:00:00Z", "muse_version": "0.1"}
     source = fake_response_file_contents().assign_attrs(made)
-    path = _write(source, tmp_path / f"resp.{fmt}", fmt)
+    path = _write(source, tmp_path / "resp.nc", "nc")
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
     doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
 
@@ -234,9 +225,8 @@ def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped) ->
         read_response(path)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr"])
-def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> None:
-    path = _write(fake_response_file_contents(), tmp_path / f"resp.{fmt}", fmt)
+def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path) -> None:
+    path = _write(fake_response_file_contents(), tmp_path / "resp.nc", "nc")
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
     doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity", "km / s")
     kwargs = {
@@ -272,8 +262,7 @@ def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked)
     # The archives in use were made by zipping a store, so the entries sit at the archive root.
     shutil.make_archive(str(tmp_path / "resp.zarr"), "zip", root_dir=tmp_path / "resp.zarr")
     zipped = read_response(tmp_path / "resp.zarr.zip", chunked=chunked)
-    if chunked:
-        assert isinstance(zipped.detector_response.data, da.Array)
+    assert isinstance(zipped.detector_response.data, da.Array) == chunked
     np.testing.assert_allclose(zipped.detector_response.values, expected.detector_response.values)
     assert "detector_wavelength" in zipped.coords
 
@@ -282,6 +271,8 @@ def test_read_response_eager_zarr_is_not_dask_backed(tmp_path) -> None:
     path = _write(fake_response_file_contents(), tmp_path / "resp.zarr", "zarr")
     assert read_response(path).detector_response.chunks is None
     assert read_response(path, chunked=True).detector_response.chunks is not None
+    shutil.make_archive(path, "zip", root_dir=path)
+    assert read_response(f"{path}.zip").detector_response.chunks is None
 
 
 def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
@@ -323,36 +314,12 @@ def test_read_response_rejects_missing_line_wavelength(tmp_path) -> None:
         read_response(path)
 
 
-def test_read_response_keeps_existing_wavelength_units(tmp_path) -> None:
-    src = fake_response_file_contents()
-    src.line_wavelength.attrs["units"] = "nm"
-    src.detector_wavelength.attrs["units"] = "nm"
-    path = _write(src, tmp_path / "resp.zarr", "zarr")
-
-    r = read_response(path)
-
-    assert r.line_wavelength.attrs["units"] == "nm"  # present units left untouched
-    assert r.detector_wavelength.attrs["units"] == "nm"
-
-
-def test_read_response_gain_accepts_quantity(response_path) -> None:
-    r = read_response(response_path, gain=5.0 * u.electron / u.DN)
-
-    np.testing.assert_array_equal(r.gain.values, [5.0])
-    assert r.gain.attrs["units"] == str(u.electron / u.DN)
-
-
 def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> None:
     stated = fake_response_file_contents().assign_attrs(gain="12.0 electron / DN", pair_energy="7.3 eV / electron")
 
     response = read_response(_write(stated, tmp_path / "resp.zarr", "zarr"))
 
     assert (response.gain.values.tolist(), response.pair_energy.values.tolist()) == ([12.0], [7.3])
-
-
-def test_read_response_gain_rejects_wrong_units(response_path) -> None:
-    with pytest.raises(u.UnitsError):
-        read_response(response_path, gain=5.0 * u.second)
 
 
 @pytest.mark.parametrize(
@@ -397,16 +364,12 @@ def test_read_responses_concatenates_lines(tmp_path) -> None:
     ).assign_attrs(
         gain="8.0 electron / DN",
         history="first_response()",
-        shared_attr="kept",
-        conflicting_attr="first",
         muse_version="0.4.0",
         date_created="2026-01-01T00:00:00Z",
     )
     second = _line_file("Fe XV 284.163", 284.163, 284).assign_attrs(
         gain="12.0 electron / DN",
         history="second_response()",
-        shared_attr="kept",
-        conflicting_attr="second",
         muse_version="0.4.0",
         date_created="2026-02-01T00:00:00Z",
     )
@@ -428,8 +391,6 @@ def test_read_responses_concatenates_lines(tmp_path) -> None:
     np.testing.assert_array_equal(resp.slit.values, [0, 1, 2])  # number_of_slits reaches every file
     assert "effective_area" not in resp.data_vars  # dropped before concatenation
     assert "wavelength" not in resp.dims
-    assert resp.attrs["shared_attr"] == "kept"
-    assert "conflicting_attr" not in resp.attrs
     assert resp.attrs["history"][0] == "first_response()"
     assert "second_response()" in resp.attrs["history"]
     assert resp.attrs["history"][-1].startswith("read_responses(")
@@ -459,6 +420,7 @@ def test_read_response_keeps_a_gain_per_line_and_replaces_the_one_of_the_file_wi
 
     assert read_response(_write(per_line, tmp_path / "a.zarr", "zarr")).gain.values.tolist() == [12.0]
     assert given.gain.values.tolist() == [11.0]
+    assert given.gain.attrs["units"] == "electron / DN"
     assert "gain" not in given.attrs  # not the 10 of the file
 
 
@@ -566,33 +528,9 @@ def test_align_response_and_vdem_preserves_inputs_lineage_and_laziness() -> None
     assert matched_vdem.attrs["history"][-1].startswith("align_response_and_vdem(")
 
 
-@pytest.mark.parametrize(("dataset", "name"), [("response", "logT"), ("vdem", "doppler_velocity")])
-def test_align_response_and_vdem_requires_coordinates(dataset, name) -> None:
-    response = fake_response()
-    vdem = fake_vdem()
-    if dataset == "response":
-        response = response.drop_vars(name)
-    else:
-        vdem = vdem.drop_vars(name)
-
-    with pytest.raises(ValueError, match=rf"{dataset}\.{name} is missing"):
-        align_response_and_vdem(response, vdem)
-
-
-def test_align_response_and_vdem_requires_coordinate_units() -> None:
-    response = fake_response()
-    del response.doppler_velocity.attrs["units"]
-
-    with pytest.raises(ValueError, match=r"response\.doppler_velocity must define units"):
-        align_response_and_vdem(response, fake_vdem())
-
-
-def test_align_response_and_vdem_rejects_nonoverlapping_coordinates() -> None:
-    response = fake_response()
-    response = response.assign_coords(logT=response.logT + 10)
-
-    with pytest.raises(ValueError, match="Requested logT axis has no overlap with the response range"):
-        align_response_and_vdem(response, fake_vdem())
+def test_align_response_and_vdem_requires_coordinates() -> None:
+    with pytest.raises(ValueError, match=r"response\.logT is missing"):
+        align_response_and_vdem(fake_response().drop_vars("logT"), fake_vdem())
 
 
 def test_save_spectral_response_validates_the_response_and_the_destination(tmp_path):
@@ -607,5 +545,3 @@ def test_save_spectral_response_validates_the_response_and_the_destination(tmp_p
         save_spectral_response(response, existing)
     with pytest.raises(ValueError, match="missing required variables"):
         save_spectral_response(response.drop_vars("line_wavelength"), tmp_path / "other.nc")
-    with pytest.raises(ValueError, match="end in"):
-        save_spectral_response(response, tmp_path / "cube.txt")

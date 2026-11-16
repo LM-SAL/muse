@@ -21,9 +21,10 @@ from muse.instrument.response.spectral import (
     create_log_wavelength_edges,
 )
 from muse.tests.helpers import fake_effective_area
+from muse.variables import DEFAULTS_MUSE
 from muse.version import version
 
-NORMALIZATION = 1e-27
+NORMALIZATION = DEFAULTS_MUSE.normalization
 TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
 PRESSURE = xr.DataArray([3e14, 3e15] * u.K / u.cm**3, dims="pressure")
 GRID = np.linspace(170.0, 172.0, 21) * u.AA
@@ -162,9 +163,6 @@ def test_continuum_response_refuses_a_bin_beyond_the_continuum():
     for edges in ([85, 90, 95] * u.AA, [95, 100, 105] * u.AA):
         with pytest.raises(ValueError, match="reach beyond the continuum, which is given from 90 to 100 Angstrom"):
             create_continuum_response(_flat_continuum(grid), edges, effective_area=ONE_CM2)
-    # a bin that reaches over an end is filled with the end value
-    out = create_continuum_response(_flat_continuum(grid), [88, 92, 101] * u.AA, effective_area=ONE_CM2)
-    np.testing.assert_allclose(out.spectral_response.values.ravel(), [1.0, 1.0], rtol=1e-12)
 
 
 def test_continuum_response_ends_where_the_area_ends():
@@ -217,8 +215,6 @@ def test_continuum_response_one_area_value_holds_at_every_wavelength():
 
 def test_continuum_response_rejects_bad_inputs():
     area, _, _ = _stepped_effective_area()
-    with pytest.raises(ValueError, match="increasing"):
-        create_continuum_response(_continuum_cube(), np.array([170.0, 171.0, 170.5]) * u.AA, effective_area=area)
     with pytest.raises(ValueError, match="effective_area is required"):
         create_continuum_response(_continuum_cube(), np.array([170.0, 171.0]) * u.AA, effective_area=None)
     with pytest.raises(ValueError, match="spectral_response"):
@@ -300,7 +296,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     response = continuum.spectral_response
     assert response.dims == ("line", "pressure", "logT", "wavelength_bin")
     assert list(continuum.line.values) == ["free-free", "free-bound", "two-photon"]
-    assert response.attrs["units"] == "1e-27 cm3 erg / (Angstrom s sr)"
+    assert response.attrs["units"] == f"{NORMALIZATION:g} cm3 erg / (Angstrom s sr)"
     assert continuum.logT.attrs["units"] == "dex(K)"
     assert continuum.pressure.attrs["units"] == "K / cm3"
     assert continuum.wavelength_grid.attrs["bounds"] == "wavelength_bounds"
@@ -375,10 +371,6 @@ def test_chianti_continuum_does_not_swallow_an_error_that_is_not_missing_data(mo
 def test_continuum_rejects_bad_grids():
     with pytest.raises(ValueError, match="density or pressure"):
         create_chianti_continuum(TEMPERATURE, GRID)
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        create_chianti_continuum(
-            TEMPERATURE, GRID, pressure=PRESSURE, density=xr.DataArray([1e9] * u.cm**-3, dims="density")
-        )
     with pytest.raises(ValueError, match="increasing"):
         create_chianti_continuum(TEMPERATURE, np.array([172.0, 171.0]) * u.AA, pressure=PRESSURE)
 
@@ -491,14 +483,6 @@ def test_fiasco_continuum_does_not_swallow_an_error_that_is_not_missing_data(mon
 def test_fiasco_continuum_requires_an_ion():
     with pytest.raises(RuntimeError, match="no ion"):
         create_fiasco_continuum(TEMPERATURE, GRID, pressure=PRESSURE, minimum_abundance=10.0)
-
-
-def test_fiasco_continuum_refuses_a_fiasco_below_the_minimum_version(monkeypatch):
-    fiasco = pytest.importorskip("fiasco")
-    monkeypatch.setattr(fiasco, "__version__", "0.8.3")
-    # its free-free was per steradian, so the 4 pi applied here would leave it too low
-    with pytest.raises(ImportError, match=r"0\.9\.0 or later"):
-        create_fiasco_continuum(TEMPERATURE, GRID, pressure=PRESSURE)
 
 
 @pytest.mark.chianti

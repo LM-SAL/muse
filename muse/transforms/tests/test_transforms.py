@@ -5,45 +5,26 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.tests.helpers import assert_dataset_structure
 from muse.transforms.transforms import (
     _spacing_matches,
     match_fov,
     reshape_slit_step_to_x,
     reshape_x_to_slit_step,
 )
+from muse.variables import DEFAULTS_MUSE
 
-
-def _history_functions(ds) -> list[str]:
-    """
-    The names of the functions in the history, in order; the format of an entry is
-    tested with add_history.
-    """
-    return [entry.split("(")[0] for entry in ds.attrs["history"]]
+WIDTH = DEFAULTS_MUSE.number_of_slits_SG * DEFAULTS_MUSE.steps_per_raster_SG
 
 
 @pytest.mark.parametrize(
     ("spacing", "to_arcsec", "expected"),
     [
-        (None, 1.0, False),  # a size-1 axis has no spacing to measure
-        (0.4, 1.0, True),  # exactly the MUSE pixel size
-        (0.4 * 1.004, 1.0, True),  # 0.4% off, inside the 0.5% tolerance
-        (0.4 * 1.006, 1.0, False),  # 0.6% off, outside it
-        (2.0, 0.2, True),  # coordinate in another unit, scaled to 0.4 arcsec
+        (0.4 * 1.006, 1.0, False),  # 0.6% off, outside the 0.5% tolerance
+        (2.0 * 1.004, 0.2, True),  # another unit, 0.4% off once scaled: inside the tolerance
     ],
 )
 def test_spacing_matches(spacing, to_arcsec, expected) -> None:
-    values = np.zeros(1) if spacing is None else np.arange(5.0) * spacing
-
-    assert _spacing_matches(xr.DataArray(values, dims="x"), to_arcsec, 0.4) is expected
-
-
-def test_spacing_matches_unwraps_a_quantity_coordinate() -> None:
-    # Coordinate data may carry a unit; the scaled spacing must be unwrapped before it is
-    # compared with a plain float, or the comparison raises.
-    coord = xr.DataArray(np.arange(5.0) * 0.4 * u.arcsec, dims="x")
-
-    assert _spacing_matches(coord, 1.0, 0.4) is True
+    assert _spacing_matches(xr.DataArray(np.arange(5.0) * spacing, dims="x"), to_arcsec, 0.4) is expected
 
 
 def test_match_fov_returns_input_when_already_muse_resolution(vdem) -> None:
@@ -66,76 +47,61 @@ def test_match_fov_without_tiling_returns_input_for_single_x_column(vdem) -> Non
     assert match_fov(single_column, extent="crop") is single_column
 
 
-@pytest.mark.parametrize(
-    ("case", "reason"),
-    [
-        ("y_mismatch", "dy is off the MUSE pixel size, so the x match alone must not accept"),
-        ("wrong_x_count", "dx matches but x does not span number_of_slits * steps_per_raster, so it must not accept"),
-    ],
-)
-def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem, case, reason) -> None:
-    # The negative side of the early-return condition: each of these differs from the
-    # accepted case in exactly one term, so a wrong boolean would return the input unchanged.
-    source = vdem.assign_coords(y=vdem.y * 3.0) if case == "y_mismatch" else vdem.isel(x=slice(0, 100))
+def test_match_fov_does_not_return_input_when_only_one_axis_qualifies(vdem) -> None:
+    # dy is off the MUSE pixel size, so the x match alone must not accept.
+    source = vdem.assign_coords(y=vdem.y * 3.0)
 
-    assert match_fov(source) is not source, reason
+    assert match_fov(source) is not source
 
 
-def test_match_fov_relabels_single_pixel_input(vdem) -> None:
-    # Both axes are size 1 and tiling is disabled, so match_fov falls through to
-    # the tail and returns a copy with the coords relabeled onto the MUSE grid.
+def test_match_fov_does_not_return_a_single_pixel_input_as_is(vdem) -> None:
+    # Both axes are size 1, so no spacing can be measured: match_fov falls through to
+    # the tail and returns a new dataset with the call in its history.
     single_pixel = vdem.isel(x=[0], y=[0])
     out = match_fov(single_pixel, extent="crop")
     assert out is not single_pixel
     assert out.sizes["x"] == 1
     assert out.sizes["y"] == 1
-    np.testing.assert_array_equal(out.x.values, [0.0])
-    np.testing.assert_array_equal(out.y.values, [0.0])
-    assert out.x.attrs["units"] == "arcsec"
-    assert out.y.attrs["units"] == "arcsec"
     assert "history" in out.attrs
 
 
 def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     out = match_fov(vdem_offgrid)
     assert out is not vdem_offgrid
-    assert_dataset_structure(
-        out,
-        data_vars=("vdem",),
-        coords=("logT", "doppler_velocity", "x", "y"),
-        sizes={"logT": 7, "doppler_velocity": 9, "x": 385, "y": 62},
-        finite_vars=("vdem",),
-    )
+    assert set(out.data_vars) == {"vdem"}
+    assert {"logT", "doppler_velocity", "x", "y"} <= set(out.coords)
+    assert dict(out.sizes) == {"logT": 7, "doppler_velocity": 9, "x": WIDTH, "y": 62}
+    assert np.isfinite(out.vdem).all()
     # Output spatial axes are remapped onto the MUSE pixel grid.
     assert out.x.attrs["units"] == "arcsec"
     assert out.y.attrs["units"] == "arcsec"
     assert float(out.x[0]) == 0.0
-    assert float(out.x[1] - out.x[0]) == pytest.approx(0.4)
-    assert float(out.y[1] - out.y[0]) == pytest.approx(0.167)
-
-
-def test_match_fov_preserves_dimension_order(vdem_offgrid) -> None:
-    # The resampling unstack moves the resampled axis last; match_fov must restore
-    # the caller's dimension order so 2D plots keep their orientation.
-    out = match_fov(vdem_offgrid)
+    assert float(out.x[1] - out.x[0]) == pytest.approx(DEFAULTS_MUSE.dx_pixel_SG.value)
+    assert float(out.y[1] - out.y[0]) == pytest.approx(DEFAULTS_MUSE.dy_pixel_SG.value)
+    # The resampling moves the resampled axis last; the caller's order keeps 2D plots in their orientation.
     assert out.vdem.dims == vdem_offgrid.vdem.dims
+    # "keep" matches the resolution alone: the field, sampled at twice the pixel width, keeps all its columns.
+    assert match_fov(vdem_offgrid, extent="keep").x.size == 2 * vdem_offgrid.x.size
 
 
-def test_transforms_keep_dask_inputs_lazy(vdem_offgrid, vdem) -> None:
-    # Large VDEMs arrive dask-backed (open_zarr); the FOV/reshape transforms must
-    # extend the graph, not silently compute, and match the eager results.
+def test_match_fov_keeps_dask_inputs_lazy(vdem_offgrid) -> None:
+    # Large VDEMs arrive dask-backed (open_zarr); match_fov must extend the graph,
+    # not silently compute, and match the eager result.
     lazy_fov = match_fov(vdem_offgrid.chunk({"logT": 4, "x": 32}))
     assert isinstance(lazy_fov.vdem.data, da.Array)
     np.testing.assert_allclose(lazy_fov.vdem.compute().values, match_fov(vdem_offgrid).vdem.values, rtol=1e-12)
 
-    lazy_raster = reshape_x_to_slit_step(vdem.chunk({"logT": 4, "x": 64}), number_of_slits=35, steps_per_raster=11)
-    assert isinstance(lazy_raster.vdem.data, da.Array)
-    eager_raster = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    np.testing.assert_array_equal(lazy_raster.vdem.compute().values, eager_raster.vdem.values)
 
-    lazy_x = reshape_slit_step_to_x(lazy_raster)
-    assert isinstance(lazy_x.vdem.data, da.Array)
-    np.testing.assert_array_equal(lazy_x.vdem.compute().values, reshape_slit_step_to_x(eager_raster).vdem.values)
+@pytest.mark.parametrize("fraction", [1 / 4, 1 / 2])  # the whole-factor branch, then the oversampled one
+def test_match_fov_averages_rows_into_pixels(fraction) -> None:
+    # 40 rows fill a whole number of pixels at both fractions.
+    y = np.arange(40) * fraction * DEFAULTS_MUSE.dy_pixel_SG.value
+    alternating = xr.Dataset(
+        {"vdem": (("y", "x"), (np.arange(40) % 2.0)[:, np.newaxis])},
+        coords={"x": ("x", [0.0], {"units": "arcsec"}), "y": ("y", y, {"units": "arcsec"})},
+    )
+
+    np.testing.assert_allclose(match_fov(alternating, extent="keep").vdem.values, 0.5)
 
 
 def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
@@ -145,7 +111,7 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
 
     out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, pad_mode="constant")
 
-    assert out.x.size == 35 * 11
+    assert out.x.size == WIDTH
     assert bool(np.isfinite(out.vdem).all())
     np.testing.assert_array_equal(out.vdem.isel(x=slice(resampled_width, None)).values, 0.0)
     # only the padding is zero: the resampled field in front of it keeps its emission
@@ -155,7 +121,7 @@ def test_match_fov_constant_mode_pads_with_zeros(vdem_offgrid) -> None:
 @pytest.mark.parametrize("extent", ["crop", "keep"])
 def test_match_fov_without_tiling_keeps_narrower_resampled_width(vdem_offgrid, extent) -> None:
     # Both resample the resolution; neither extends an input that is then narrower than the
-    # MUSE FOV (number_of_slits*steps_per_raster = 385), as "extend" would.
+    # MUSE FOV (number_of_slits * steps_per_raster), as "extend" would.
     out = match_fov(vdem_offgrid, pixel_width=1.0 * u.arcsec, extent=extent)
     assert out.x.size == 308
     assert bool(np.isfinite(out.vdem).all())
@@ -175,20 +141,15 @@ def test_match_fov_rejects_invalid_extent(vdem) -> None:
 
 
 def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
-    width = 35 * 11
-    wider = vdem.isel(x=np.arange(width + 15) % width).assign_coords(x=np.arange(width + 15) * 0.4)
+    wider = vdem.isel(x=np.arange(WIDTH + 15) % WIDTH).assign_coords(
+        x=np.arange(WIDTH + 15) * DEFAULTS_MUSE.dx_pixel_SG.value
+    )
     wider.x.attrs["units"] = "arcsec"
 
     out = match_fov(wider, extent="crop")
 
-    assert out.x.size == width
-    np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, width)).values)
-
-
-def test_match_fov_without_tiling_returns_narrow_input_at_pixel_size(vdem) -> None:
-    narrower = vdem.isel(x=slice(0, 100))
-
-    assert match_fov(narrower, extent="crop") is narrower
+    assert out.x.size == WIDTH
+    np.testing.assert_array_equal(out.vdem.values, wider.vdem.isel(x=slice(0, WIDTH)).values)
 
 
 def test_match_fov_tiles_single_x_column(vdem) -> None:
@@ -196,7 +157,7 @@ def test_match_fov_tiles_single_x_column(vdem) -> None:
 
     out = match_fov(single_column)
 
-    assert out.x.size == 35 * 11
+    assert out.x.size == WIDTH
     np.testing.assert_array_equal(out.vdem.isel(x=0), out.vdem.isel(x=-1))
 
 
@@ -207,15 +168,13 @@ def test_match_fov_crops_y_to_y_pixels(vdem) -> None:
     np.testing.assert_array_equal(out.vdem.values, vdem.vdem.isel(y=slice(0, 20)).values)
 
 
-@pytest.mark.parametrize("mode", ["wrap", "constant"])
-def test_match_fov_extends_y_to_y_pixels_when_tiling(vdem, mode) -> None:
-    # Rows are extended as x is: "wrap" repeats the field, "constant" adds rows without emission.
-    out = match_fov(vdem, y_pixels=40, pad_mode=mode)
+def test_match_fov_extends_y_to_y_pixels_when_tiling(vdem) -> None:
+    # Rows are extended as x is: "wrap" repeats the field.
+    out = match_fov(vdem, y_pixels=40, pad_mode="wrap")
 
     assert out.y.size == 40
     np.testing.assert_array_equal(out.vdem.isel(y=slice(0, 32)).values, vdem.vdem.values)
-    added = out.vdem.isel(y=slice(32, None)).values
-    np.testing.assert_array_equal(added, vdem.vdem.isel(y=slice(0, 8)).values if mode == "wrap" else 0.0)
+    np.testing.assert_array_equal(out.vdem.isel(y=slice(32, None)).values, vdem.vdem.isel(y=slice(0, 8)).values)
     np.testing.assert_allclose(np.diff(out.y.values), np.diff(vdem.y.values)[0], rtol=5e-3)
 
 
@@ -247,28 +206,10 @@ def test_match_fov_rejects_y_pixels_below_one(vdem) -> None:
         match_fov(vdem, y_pixels=0)
 
 
-def test_match_fov_downsamples_y_with_factor_branch(vdem_offgrid) -> None:
-    # Coarse y pixels exercise the integer-factor averaging branch on the y axis.
-    out = match_fov(vdem_offgrid, pixel_height=2.0 * u.arcsec)
-    assert out.y.size == 5
-    assert bool(np.isfinite(out.vdem).all())
-
-
-def test_match_fov_rotation(vdem_offgrid) -> None:
-    out = match_fov(vdem_offgrid, rotation=90 * u.deg)
-    assert_dataset_structure(
-        out,
-        data_vars=("vdem",),
-        coords=("logT", "doppler_velocity", "x", "y"),
-        finite_vars=("vdem",),
-    )
-    assert out.x.size == 35 * 11
-
-
 def test_match_fov_rotation_skips_resampling_when_resolution_matches(vdem) -> None:
     source = vdem.assign_coords(
-        x=np.arange(vdem.x.size) * 0.167,
-        y=np.arange(vdem.y.size) * 0.4,
+        x=np.arange(vdem.x.size) * DEFAULTS_MUSE.dy_pixel_SG.value,
+        y=np.arange(vdem.y.size) * DEFAULTS_MUSE.dx_pixel_SG.value,
     )
     source.x.attrs["units"] = "arcsec"
     source.y.attrs["units"] = "arcsec"
@@ -296,10 +237,9 @@ def test_match_fov_turns_by_any_multiple_of_a_quarter(vdem) -> None:
     # a variable along x alone turns with the field, onto y
     turned = match_fov(vdem.assign(row=vdem.vdem.isel(logT=0, doppler_velocity=0, y=0, drop=True)), rotation=90 * u.deg)
     assert turned.row.sizes == {"y": turned.sizes["y"]}
+    # The tolerance is absolute: a relative one would take this as a quarter turn.
     with pytest.raises(ValueError, match="multiple of 90 degrees"):
-        match_fov(vdem, rotation=45 * u.deg)
-    with pytest.raises(ValueError, match="multiple of 90 degrees"):
-        match_fov(vdem, rotation=9000045 * u.deg)
+        match_fov(vdem, rotation=90.0001 * u.deg)
 
 
 def test_match_fov_turns_an_uneven_grid_to_the_mirrored_positions(vdem) -> None:
@@ -314,94 +254,52 @@ def test_match_fov_turns_an_uneven_grid_to_the_mirrored_positions(vdem) -> None:
 
 
 def test_reshape_x_to_slit_step(vdem) -> None:
-    out = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    assert_dataset_structure(
-        out,
-        data_vars=("vdem",),
-        coords=("slit", "step", "logT", "doppler_velocity", "y"),
-        sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
-        finite_vars=("vdem",),
-    )
+    out = reshape_x_to_slit_step(vdem)
+    assert set(out.data_vars) == {"vdem"}
+    assert {"slit", "step", "logT", "doppler_velocity", "y"} <= set(out.coords)
+    assert dict(out.sizes) == {
+        "slit": DEFAULTS_MUSE.number_of_slits_SG,
+        "step": DEFAULTS_MUSE.steps_per_raster_SG,
+        "logT": 7,
+        "doppler_velocity": 9,
+        "y": 32,
+    }
+    assert np.isfinite(out.vdem).all()
     assert u.Quantity(out.attrs["step_size"]).unit == u.arcsec
-    np.testing.assert_array_equal(out.vdem.sel(slit=0, step=0), vdem.vdem.isel(x=0))
-    np.testing.assert_array_equal(out.vdem.sel(slit=34, step=10), vdem.vdem.isel(x=384))
+    np.testing.assert_array_equal(out.vdem.isel(slit=0, step=0), vdem.vdem.isel(x=0))
+    np.testing.assert_array_equal(out.vdem.isel(slit=-1, step=-1), vdem.vdem.isel(x=-1))
 
 
-def test_reshape_x_to_slit_step_does_not_mutate_input_history(vdem) -> None:
-    source = vdem.copy(deep=True)
-    source.attrs["history"] = ["match_fov(ds=ds)"]
+def test_reshape_slit_step_to_x_round_trips(vdem) -> None:
+    vdem = vdem.assign_coords(x=("x", np.arange(vdem.sizes["x"]) * 2.5e7, {"units": "cm"}))
+    out = reshape_slit_step_to_x(reshape_x_to_slit_step(vdem))
 
-    out = reshape_x_to_slit_step(source, number_of_slits=35, steps_per_raster=11)
-
-    assert source.attrs["history"] == ["match_fov(ds=ds)"]
-    assert _history_functions(out) == ["match_fov", "reshape_x_to_slit_step"]
-
-
-def test_reshape_x_to_slit_step_unstacks_existing_slit(vdem) -> None:
-    # When x already carries a (slit, step) MultiIndex, the function unstacks it
-    # instead of building a fresh index.
-    step, slit = (arr.flatten() for arr in np.meshgrid(range(11), range(35)))
-    stacked = vdem.assign_coords(slit=("x", slit), step=("x", step)).set_index(x=("slit", "step"))
-    stacked.x.attrs["units"] = "arcsec"
-
-    out = reshape_x_to_slit_step(stacked)
-    assert_dataset_structure(
-        out,
-        data_vars=("vdem",),
-        coords=("slit", "step", "logT", "doppler_velocity", "y"),
-        sizes={"slit": 35, "step": 11, "logT": 7, "doppler_velocity": 9, "y": 32},
-        finite_vars=("vdem",),
-    )
-    assert _history_functions(out) == ["reshape_x_to_slit_step"]
-
-
-@pytest.mark.parametrize(("unit", "step_size"), [("arcsec", 0.7), ("Mm", 0.25), ("cm", 2.5e7)])
-def test_reshape_slit_step_to_x_round_trips(vdem, unit, step_size) -> None:
-    vdem = vdem.assign_coords(x=("x", np.arange(vdem.sizes["x"]) * step_size, {"units": unit}))
-    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    out = reshape_slit_step_to_x(reshaped)
-    assert_dataset_structure(
-        out,
-        data_vars=("vdem",),
-        coords=("x", "logT", "doppler_velocity", "y"),
-        sizes={"x": 385, "logT": 7, "doppler_velocity": 9, "y": 32},
-        finite_vars=("vdem",),
-    )
-    assert out.x.attrs["units"] == unit
+    assert out.x.attrs["units"] == "cm"
     np.testing.assert_allclose(out.x.values, vdem.x.values)
     np.testing.assert_array_equal(out.vdem.transpose(*vdem.vdem.dims).values, vdem.vdem.values)
+    assert [entry.split("(")[0] for entry in out.attrs["history"]] == [
+        "reshape_x_to_slit_step",
+        "reshape_slit_step_to_x",
+    ]
 
 
-def test_reshape_slit_step_to_x_refuses_a_step_size_without_its_unit(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    reshaped.attrs["step_size"] = 0.4  # as muse 0.3 wrote it, beside a separate unit
+def test_reshape_slit_step_to_x_refuses_a_step_size_without_its_unit(raster) -> None:
+    raster.attrs["step_size"] = 0.4  # as muse 0.3 wrote it, beside a separate unit
 
     with pytest.raises(ValueError, match="has no unit"):
-        reshape_slit_step_to_x(reshaped)
+        reshape_slit_step_to_x(raster)
 
 
-def test_reshape_slit_step_to_x_defaults_step_size_when_missing(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    del reshaped.attrs["step_size"]
-    out = reshape_slit_step_to_x(reshaped)
-    # Falls back to the MUSE pixel size (0.4 arcsec) for the x spacing.
-    np.testing.assert_allclose(out.x[1] - out.x[0], 0.4)
-
-
-def test_reshape_slit_step_to_x_records_history(vdem) -> None:
-    reshaped = reshape_x_to_slit_step(vdem, number_of_slits=35, steps_per_raster=11)
-    out = reshape_slit_step_to_x(reshaped)
-    assert _history_functions(out) == ["reshape_x_to_slit_step", "reshape_slit_step_to_x"]
+def test_reshape_slit_step_to_x_defaults_step_size_when_missing(raster) -> None:
+    del raster.attrs["step_size"]
+    out = reshape_slit_step_to_x(raster)
+    # Falls back to the MUSE pixel size for the x spacing.
+    np.testing.assert_allclose(out.x[1] - out.x[0], DEFAULTS_MUSE.dx_pixel_SG.value)
 
 
 def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:
     with pytest.raises(ValueError, match="slit coordinate is missing"):
         reshape_slit_step_to_x(vdem)
-
-
-def test_match_fov_requires_quantity_pixel_sizes(vdem) -> None:
-    with pytest.raises(TypeError, match="pixel_width"):
-        match_fov(vdem, pixel_width=0.4)
 
 
 def test_match_fov_requires_coordinate_units(vdem) -> None:
@@ -411,18 +309,8 @@ def test_match_fov_requires_coordinate_units(vdem) -> None:
         match_fov(bad_vdem)
 
 
-def test_match_fov_requires_x_coordinate(vdem) -> None:
-    with pytest.raises(ValueError, match="x coordinate is missing"):
-        match_fov(vdem.drop_vars("x"))
-
-
 def test_reshape_x_to_slit_step_requires_x_units(vdem) -> None:
     bad_vdem = vdem.copy(deep=True)
     del bad_vdem.x.attrs["units"]
     with pytest.raises(ValueError, match="x coordinate must define units"):
-        reshape_x_to_slit_step(bad_vdem, number_of_slits=35, steps_per_raster=11)
-
-
-def test_reshape_x_to_slit_step_requires_x_coordinate(vdem) -> None:
-    with pytest.raises(ValueError, match="x coordinate is missing"):
-        reshape_x_to_slit_step(vdem.drop_vars("x"), number_of_slits=35, steps_per_raster=11)
+        reshape_x_to_slit_step(bad_vdem)

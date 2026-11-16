@@ -93,7 +93,7 @@ def _optional_int(value, attribute):
     """
     if value is None:
         return None
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Integral):
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral):
         msg = f"{attribute.name} must be an integer, not {type(value).__name__}"
         raise TypeError(msg)
     return int(value)

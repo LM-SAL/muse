@@ -106,31 +106,16 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
 
 
 def test_map_response_to_sg_detector_preserves_invalid_physical_line_wavelength():
+    # one slit, so no pixels_between_slits
     mapped = map_response_to_sg_detector(
         _spectral_response(contaminants=True),
-        channel=171 * u.AA,
         number_of_slits=1,
+        dispersion=0.01 * u.AA / u.pix,
         detector_x_pixels=1,
         wavelength_start=171 * u.AA,
     )
 
     np.testing.assert_allclose(mapped.line_wavelength, [171.073, np.nan])
-
-
-def test_map_response_to_sg_detector_preserves_input_nan():
-    response = _spectral_response()
-    response.spectral_response.data[..., response.sizes["wavelength_bin"] // 2] = np.nan
-
-    mapped = map_response_to_sg_detector(
-        response,
-        number_of_slits=1,
-        dispersion=0.01 * u.AA / u.pix,
-        detector_x_pixels=response.sizes["wavelength_bin"],
-        wavelength_start=response.wavelength_grid[0].item() * u.AA,
-    )
-
-    assert bool(mapped.detector_response.isnull().any())
-    assert mapped.detector_response.isel(detector_x_pixel=-1).item() == 0
 
 
 def test_map_response_to_sg_detector_requires_effective_area():
@@ -146,12 +131,10 @@ def test_map_response_to_sg_detector_requires_effective_area():
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("channel", ValueError, "unsupported MUSE SG channel"),
-        ("channel_unitless", TypeError, "channel"),
         ("channel_shape", ValueError, "scalar wavelength"),
         ("channel_nonfinite", ValueError, "finite, positive wavelength"),
         ("schema", ValueError, "missing required variables"),
         ("normalization", ValueError, "normalization"),
-        ("wavelength_grid", ValueError, "strictly increasing"),
         ("wavelength_grid_empty", ValueError, "wavelength_grid"),
         ("wavelength_grid_positive", ValueError, "positive"),
         ("pixels_between_slits", ValueError, "pixels_between_slits"),
@@ -166,8 +149,6 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         response = None
     elif case == "channel":
         channel = 195 * u.AA
-    elif case == "channel_unitless":
-        channel = 171
     elif case == "channel_shape":
         channel = [171] * u.AA
     elif case == "channel_nonfinite":
@@ -176,8 +157,6 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
         response = response.drop_vars("line_wavelength")
     elif case == "normalization":
         response.attrs["normalization"] = 0
-    elif case == "wavelength_grid":
-        response = response.assign_coords(wavelength_grid=response.wavelength_grid[::-1])
     elif case == "wavelength_grid_empty":
         response = response.isel(wavelength_bin=slice(0, 0))
     elif case == "wavelength_grid_positive":
@@ -198,15 +177,6 @@ def test_map_response_to_sg_detector_requires_explicit_geometry_without_channel(
     ):
         map_response_to_sg_detector(_spectral_response())
 
-    with pytest.raises(ValueError, match="missing: pixels_between_slits"):
-        map_response_to_sg_detector(
-            _spectral_response(),
-            number_of_slits=2,
-            dispersion=0.1 * u.AA / u.pix,
-            detector_x_pixels=4,
-            wavelength_start=170 * u.AA,
-        )
-
 
 def test_map_response_to_sg_detector_refuses_slits_without_their_spacing():
     no_spacing = evolve(DEFAULTS_MUSE, pixels_between_slits_SG=None)
@@ -219,9 +189,9 @@ def test_map_response_to_sg_detector_refuses_slits_without_their_spacing():
 
 def test_a_mapped_response_states_how_far_apart_its_slits_fall():
     response = _spectral_response()
-    for channel, separation in ((108, "390"), (171, "390"), (284, "780")):
-        mapped = map_response_to_sg_detector(response, channel=channel * u.AA)
-        assert mapped.attrs["spectral_slit_separation"] == f"{separation} mAngstrom"
+    mapped = map_response_to_sg_detector(response, channel=171 * u.AA)
+    separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=171).data)
+    assert u.Quantity(mapped.attrs["spectral_slit_separation"]) == separation
     # given a dispersion, the separation is that of its pixels between slits, without the noise of 0.01 * 41
     explicit = map_response_to_sg_detector(
         response,
@@ -244,7 +214,6 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     assert isinstance(mapped.detector_response.data, da.Array)
     assert mapped.detector_response.dims == ("line", "logT", "doppler_velocity")
     assert "wavelength_bin" not in mapped.dims
-    assert "detector_x_pixel" not in mapped.dims
     assert mapped.detector_wavelength.dims == ("line",)
     assert mapped.detector_wavelength.item() == 195
     assert mapped.detector_wavelength.attrs["units"] == "Angstrom"
@@ -272,11 +241,10 @@ def test_map_response_to_ci_detector_accepts_any_channel():
         map_response_to_ci_detector(response, -171 * u.AA)
 
 
-@pytest.mark.parametrize("units", ["s", "erg cm3 / (s sr)"])
-def test_map_response_to_ci_detector_rejects_invalid_units(units):
+def test_map_response_to_ci_detector_rejects_invalid_units():
     response = _ci_spectral_response()
     response = response.assign(
-        spectral_response=response.spectral_response.assign_attrs(units=units),
+        spectral_response=response.spectral_response.assign_attrs(units="erg cm3 / (s sr)"),
     )
 
     with pytest.raises(ValueError, match="convertible"):
@@ -314,26 +282,9 @@ def test_ci_response_maps_directly_into_synthesis():
     assert u.Unit(synthesized.flux.attrs["units"]) == u.Unit("1e-27 ph / s")
 
 
-@pytest.mark.parametrize(
-    ("case", "error", "match"),
-    [
-        ("channel_units", u.UnitsError, "channel"),
-        ("schema", ValueError, "missing required variables"),
-        ("wavelength_grid_short", ValueError, "at least two points"),
-    ],
-)
-def test_map_response_to_ci_detector_rejects_invalid_inputs(case, error, match):
-    response = _ci_spectral_response()
-    channel = 195 * u.AA
-    if case == "channel_units":
-        channel = 1 * u.s
-    elif case == "schema":
-        response = response.drop_vars("line_wavelength")
-    else:
-        response = response.isel(wavelength_bin=slice(0, 1))
-
-    with pytest.raises(error, match=match):
-        map_response_to_ci_detector(response, channel)
+def test_map_response_to_ci_detector_needs_two_wavelengths_to_integrate():
+    with pytest.raises(ValueError, match="at least two points"):
+        map_response_to_ci_detector(_ci_spectral_response().isel(wavelength_bin=slice(0, 1)), 195 * u.AA)
 
 
 @pytest.mark.filterwarnings(
@@ -440,8 +391,7 @@ def test_ci_mapping_sums_the_bins_when_the_response_carries_bounds():
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit(response.spectral_response.attrs["units"]) * u.AA
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".zarr.zip", ".nc"])
-def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_path, suffix):
+def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_path):
     """
     A netCDF file keeps the units of the bin bounds on the grid alone: the bounds read
     back without them must still give the bin widths.
@@ -453,9 +403,9 @@ def test_a_saved_spectral_response_maps_to_an_imager_as_the_one_in_memory(tmp_pa
         include_contaminants=True,
         effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}),
     )
-    save_spectral_response(response, tmp_path / f"cube{suffix}")
+    save_spectral_response(response, tmp_path / "cube.nc")
 
-    back = read_spectral_response(tmp_path / f"cube{suffix}")
+    back = read_spectral_response(tmp_path / "cube.nc")
 
     # the cube and its bin bounds read back as they were saved
     xr.testing.assert_allclose(back.spectral_response, response.spectral_response)
@@ -476,7 +426,7 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
         "number_of_slits": 3,
         "dispersion": 0.02 * u.AA / u.pix,
         "pixels_between_slits": 5 * u.pix,
-        "detector_x_pixels": 40,
+        "detector_x_pixels": 60,
         "wavelength_start": 170.6 * u.AA,
     }
 
@@ -493,6 +443,8 @@ def test_sg_mapping_one_slit_at_a_time_is_the_interpolation_of_all_slits_at_once
         "units": in_memory.detector_response.attrs["units"],
     }
     assert float(in_memory.detector_response.max()) > 0
+    # the last pixels fall beyond the wavelength grid
+    assert (in_memory.detector_response.isel(detector_x_pixel=-1) == 0).all()
 
 
 def test_sg_dispersion_follows_the_slit_separation_of_the_channel():

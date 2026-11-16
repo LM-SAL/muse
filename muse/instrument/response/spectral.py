@@ -627,8 +627,8 @@ def _evaluate_gaussian_response(
     gaussian_norm: float,
     *,
     accumulator: np.ndarray | None = None,
-    edges: np.ndarray | None = None,
-    bin_method: str = "center",
+    edges: np.ndarray,
+    bin_method: str,
     area_at_center: xr.DataArray | None = None,
 ) -> tuple[np.ndarray, xr.DataArray]:
     """
@@ -640,9 +640,6 @@ def _evaluate_gaussian_response(
     Doppler velocity) scales the line.
     """
     average = bin_method == "average"
-    if average and edges is None:
-        msg = "bin averages need the bin edges"
-        raise ValueError(msg)
     center, width_for_bounds = xr.broadcast(line_center, line_width)
     half_window = _GAUSSIAN_WINDOW_SIGMA * width_for_bounds
     window_lower, window_upper = np.min((center - half_window).data), np.max((center + half_window).data)

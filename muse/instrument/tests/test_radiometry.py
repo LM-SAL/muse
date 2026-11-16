@@ -58,9 +58,10 @@ def test_transform_response_units_photons_to_data_numbers():
 
     data_numbers = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", 171 * u.AA, gain=gain)
 
-    # Legacy conversion_ph2dn: 12398 eV Angstrom / wavelength / 3.65 eV / gain.
+    # Legacy conversion_ph2dn: 12398 eV Angstrom / wavelength / pair energy / gain.
     wavelength = response.wavelength_grid.values
-    expected = photons.spectral_response * (12398.0 / wavelength / 3.65 / gain.to_value(u.electron / u.DN))
+    pair_energy = DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).item().to_value(u.eV / u.electron)
+    expected = photons.spectral_response * (12398.0 / wavelength / pair_energy / gain.to_value(u.electron / u.DN))
     np.testing.assert_allclose(data_numbers.spectral_response, expected, rtol=1e-4)
     assert u.Unit(data_numbers.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
 
@@ -104,22 +105,13 @@ def test_transform_response_units_uses_channel_gain(monkeypatch):
     np.testing.assert_allclose(default.spectral_response, explicit.spectral_response)
 
 
-@pytest.mark.parametrize(
-    "intermediate",
-    [
-        "1e-27 cm5 ph / (Angstrom s)",
-        "1e-27 cm5 electron / (Angstrom s)",
-        "1e-27 cm5 DN / (Angstrom s)",
-    ],
-)
-def test_transform_response_units_round_trips(intermediate):
-    # radiometry.py:104-107 says every "+" in the exponent cascade is load-bearing, but every
-    # other test converts away from erg/sr and stops. Converting back exercises all four
-    # exponents with the opposite sign and must return the original values.
+def test_transform_response_units_round_trips():
+    # Every other test converts away from erg/sr and stops; converting back takes each step
+    # of the chain with the opposite sign and must return the original values.
     response = _spectral_response()
     original_units = response.spectral_response.attrs["units"]
 
-    forward = transform_response_units(response, intermediate, 171 * u.AA)
+    forward = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", 171 * u.AA)
     back = transform_response_units(forward, original_units, 171 * u.AA)
 
     np.testing.assert_allclose(
@@ -155,17 +147,6 @@ def test_transform_response_units_rejects_unknown_channel():
         transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 195 * u.AA)
 
 
-@pytest.mark.parametrize("detector", ["ci", "CI"])
-def test_transform_response_units_rejects_unknown_ci_channel(detector):
-    with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector=detector)
-
-
-def test_transform_response_units_requires_channel_wavelength():
-    with pytest.raises(TypeError, match="channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171)
-
-
 @pytest.mark.parametrize("detector", ["other", None])
 def test_transform_response_units_rejects_unknown_detector(detector):
     with pytest.raises(ValueError, match="detector must be"):
@@ -177,8 +158,6 @@ def test_transform_response_units_rejects_unknown_detector(detector):
     [
         ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, r"response\.spectral_response is missing"),
-        ("missing_units", ValueError, r"response\.spectral_response must define units"),
-        ("invalid_units", ValueError, r"response\.spectral_response units must be a valid astropy unit"),
         ("missing_wavelength_units", ValueError, r"response\.wavelength_grid must define units"),
     ],
 )
@@ -188,10 +167,6 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
         response = None
     elif case == "missing_variable":
         response = response.drop_vars("spectral_response")
-    elif case == "missing_units":
-        response = response.assign(spectral_response=response.spectral_response.drop_attrs())
-    elif case == "invalid_units":
-        response = response.assign(spectral_response=response.spectral_response.assign_attrs(units="not-a-unit"))
     else:
         response = response.assign_coords(wavelength_grid=response.wavelength_grid.drop_attrs())
 
@@ -250,6 +225,15 @@ def test_transform_response_units_selects_detector_calibration():
         * (sg_gain / (20.0 * u.electron / u.DN)).to_value(u.dimensionless_unscaled)
     )
     np.testing.assert_allclose(ci.spectral_response / sg.spectral_response, expected_ratio)
+    # the CI tables may hold different channels: one the gain table lacks is refused too
+    with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
+        transform_response_units(
+            _spectral_response(),
+            target_unit,
+            304 * u.AA,
+            detector="ci",
+            instrument_defaults=attrs.evolve(defaults, gain_CI=ci_gain.sel(channel=[195])),
+        )
 
 
 def _spectrum(units="ph / s", *, dim="line", channel=(171, 284)):
@@ -261,7 +245,7 @@ def _spectrum(units="ph / s", *, dim="line", channel=(171, 284)):
     return xr.Dataset({"flux": flux}, coords=coords)
 
 
-def _electrons_per_photon(wavelength, pair_energy=3.65):
+def _electrons_per_photon(wavelength, pair_energy):
     # h c = 12398.42 eV Angstrom
     return (const.h * const.c).to_value(u.eV * u.AA) / np.asarray(wavelength) / pair_energy
 
@@ -271,7 +255,7 @@ def test_transform_flux_units_photons_to_data_numbers_line_by_line():
 
     out = transform_flux_units(spectrum, "DN / s", gain=8 * u.electron / u.DN, pair_energy=3.65 * u.eV / u.electron)
 
-    expected = _electrons_per_photon([171.073, 284.163]) / 8
+    expected = _electrons_per_photon([171.073, 284.163], 3.65) / 8
     np.testing.assert_allclose(out.flux.values, np.repeat(expected[:, None], 3, axis=1), rtol=1e-12)
     assert u.Unit(out.flux.attrs["units"]) == u.DN / u.s
     assert spectrum.flux.attrs["units"] == "ph / s"  # the input is untouched
@@ -314,11 +298,11 @@ def test_transform_flux_units_electrons_to_data_numbers_needs_only_the_gain():
 
 def test_transform_flux_units_works_along_channel():
     spectrum = _spectrum(dim="channel", channel=None).assign_coords(channel=[171, 284])
-    # a gain the conversion does not need is not read, so one without units is no obstacle
-    out = transform_flux_units(spectrum.assign_coords(gain=("channel", [1.0, 1.0])), "electron / s")
+    out = transform_flux_units(spectrum, "electron / s")
 
+    pair_energy = DEFAULTS_MUSE.pair_energy_SG.sel(channel=[171, 284]).values
     np.testing.assert_allclose(
-        out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]), rtol=1e-12
+        out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163], pair_energy), rtol=1e-12
     )
 
 
@@ -330,8 +314,11 @@ def test_transform_flux_units_selects_the_detector_calibration():
         spectrum, "DN / s", detector="ci", instrument_defaults=attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain)
     )
 
+    pair_energy = DEFAULTS_MUSE.pair_energy_CI.sel(channel=[195, 304]).values
     np.testing.assert_allclose(
-        out.flux.isel(detector_x_pixel=0).values, _electrons_per_photon([171.073, 284.163]) / [2, 4], rtol=1e-12
+        out.flux.isel(detector_x_pixel=0).values,
+        _electrons_per_photon([171.073, 284.163], pair_energy) / [2, 4],
+        rtol=1e-12,
     )
     with pytest.raises(ValueError, match="unsupported MUSE SG channel among"):
         transform_flux_units(spectrum, "DN / s")

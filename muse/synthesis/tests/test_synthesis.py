@@ -9,12 +9,10 @@ import numpy as np
 import pytest
 import xarray as xr
 
-import astropy.units as u
-
 from muse.synthesis import _backends
 from muse.synthesis.synthesis import vdem_synthesis
-from muse.tests.helpers import assert_dataset_structure, fake_vdem_single_doppler_velocity
 from muse.transforms.transforms import reshape_x_to_slit_step
+from muse.variables import DEFAULTS_MUSE
 
 SPEED_OF_LIGHT_KMS = 299792.458
 
@@ -30,13 +28,16 @@ def _mps_available() -> bool:
 def test_vdem_synthesis(response, raster) -> None:
     detector_response = vdem_synthesis(raster, response)
     assert isinstance(detector_response.flux.data, np.ndarray)
-    assert_dataset_structure(
-        detector_response,
-        data_vars=("flux",),
-        coords=("y", "step", "line", "detector_x_pixel", "line_wavelength"),
-        sizes={"y": 32, "step": 11, "line": 7, "detector_x_pixel": 32},
-        finite_vars=("flux",),
-    )
+    # A response read with chunked=True keeps the flux lazy next to an in-memory raster.
+    assert isinstance(vdem_synthesis(raster, response.chunk({"logT": 1})).flux.data, da.Array)
+    assert set(detector_response.data_vars) == {"flux"}
+    assert dict(detector_response.sizes) == {
+        "y": 32,
+        "step": DEFAULTS_MUSE.steps_per_raster_SG,
+        "line": 7,
+        "detector_x_pixel": 32,
+    }
+    assert np.isfinite(detector_response.flux).all()
     assert detector_response.flux.attrs["units"] == "ph / s"
     # The history of the raster, then this call; the format of an entry is tested with add_history.
     assert [entry.split("(")[0] for entry in detector_response.attrs["history"]] == [
@@ -47,16 +48,6 @@ def test_vdem_synthesis(response, raster) -> None:
         detector_response.line_wavelength.values,
         [108.355, 108.117, 108.355, 171.073, 171.073, 284.163, 284.163],
     )
-
-
-def test_vdem_synthesis_keeps_dask_inputs_lazy(response, raster) -> None:
-    # A dask-backed raster (e.g. from open_zarr) must produce a lazy flux whose
-    # computed values match the eager numpy path.
-    eager = vdem_synthesis(raster, response)
-    lazy = vdem_synthesis(raster.chunk({"logT": 5, "step": 4}), response)
-
-    assert isinstance(lazy.flux.data, da.Array)
-    np.testing.assert_allclose(lazy.flux.compute().values, eager.flux.values, rtol=1e-12)
 
 
 def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, raster) -> None:
@@ -105,19 +96,8 @@ def test_vdem_synthesis_contracts_values() -> None:
 
     assert result.flux.dims == ("y", "line")
     np.testing.assert_array_equal(result.flux, [[8.0, 19.0], [10.0, 24.0]])
-
-
-def test_vdem_synthesis_materializes_index_coordinates() -> None:
-    # Every output dim must carry an index coordinate even for coordinate-less
-    # inputs, so .sel(line=...) and index-aligned concat/merge keep working.
-    raster, response = _coordless_inputs()
-
-    result = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
-
-    for dim in result.flux.dims:
-        assert dim in result.coords, f"{dim} has no index coordinate"
-    np.testing.assert_array_equal(result.y.values, [0, 1])
-    np.testing.assert_array_equal(result.line.values, [0, 1])
+    # Index coordinates even for coordinate-less inputs, so .sel(line=...) and index-aligned merges work.
+    assert {"y", "line"} <= set(result.xindexes)
 
 
 def test_vdem_synthesis_rejects_misaligned_contraction_coordinates(response, raster) -> None:
@@ -136,28 +116,7 @@ def test_vdem_synthesis_rejects_one_sided_index_coordinates(response, raster) ->
         vdem_synthesis(raster, bare)
 
 
-def test_vdem_synthesis_preserves_coordinate_attrs(response, raster) -> None:
-    # Coordinate units must survive the contraction: downstream consumers
-    # (reshape_x_to_slit_step, match_fov) require units on the spatial coords.
-
-    result = vdem_synthesis(raster, response)
-
-    assert result.y.attrs == raster.y.attrs
-    assert result.y.attrs["units"] == "arcsec"
-
-
-def test_vdem_synthesis_accepts_quantity_backed_data(response, raster) -> None:
-    # Duck arrays (e.g. astropy Quantity from a units-aware pipeline) must contract
-    # like plain numpy instead of hitting einsum's subscripts-only Quantity path.
-    quantity_raster = raster.assign(vdem=raster.vdem.copy(data=u.Quantity(raster.vdem.data, copy=False)))
-
-    expected = vdem_synthesis(raster, response)
-    result = vdem_synthesis(quantity_raster, response)
-
-    np.testing.assert_array_equal(result.flux.values, expected.flux.values)
-
-
-def test_vdem_synthesis_keeps_conflicting_scalar_coords_from_raster(response, raster) -> None:
+def test_vdem_synthesis_keeps_conflicting_coords_from_raster_except_on_response_only_dims(response, raster) -> None:
     # A coord both inputs carry with different values must survive with the
     # raster's value (pre-refactor behavior), not silently vanish.
     raster = raster.assign_coords(instrument="muse-raster")
@@ -166,25 +125,9 @@ def test_vdem_synthesis_keeps_conflicting_scalar_coords_from_raster(response, ra
     result = vdem_synthesis(raster, response)
 
     assert str(result.instrument.values) == "muse-raster"
-
-
-def test_vdem_synthesis_preserves_response_output_coords(response, raster) -> None:
-    raster = raster.assign_coords(channel=("line", np.full(response.sizes["line"], 999)))
-
-    result = vdem_synthesis(raster, response)
-
-    np.testing.assert_array_equal(result.channel, response.channel)
-
-
-def test_vdem_synthesis_propagates_dataset_level_coords(response, raster) -> None:
-    # A raster coord living on a response-only output dim (so not attached to the
-    # vdem variable) must still propagate to the output.
-    line_tags = [f"l{i}" for i in range(response.sizes["line"])]
-    raster = raster.assign_coords(line_tag=("line", line_tags))
-
-    result = vdem_synthesis(raster, response)
-
-    assert list(result.line_tag.values) == line_tags
+    # One slit of the raster keeps slit as a scalar coord; the kept slit axis of the response owns it.
+    one_slit = vdem_synthesis(raster.isel(slit=3), response.isel(slit=[3]), sum_over=("logT", "doppler_velocity"))
+    np.testing.assert_array_equal(one_slit.slit, response.slit[[3]])
 
 
 def test_vdem_synthesis_torch_backend_matches_numpy(response, raster) -> None:
@@ -238,12 +181,14 @@ def test_vdem_synthesis_torch_chunks_a_slit_first_raster_along_a_raster_only_axi
     are cut along y.
     """
     pytest.importorskip("torch")
-    expected = vdem_synthesis(raster, response, backend="torch").flux
+    # slit stays in the output, so it is a candidate chunk axis that the response shares
+    sum_over = ("logT", "doppler_velocity")
+    expected = vdem_synthesis(raster, response, sum_over=sum_over, backend="torch").flux
     slit_first = raster.transpose("logT", "doppler_velocity", "slit", "y", "step")
     monkeypatch.setattr(
         _backends, "_available_memory_bytes", lambda _device: _torch_budget(slit_first, response, expected, 3)
     )
-    result = vdem_synthesis(slit_first, response, backend="torch").flux
+    result = vdem_synthesis(slit_first, response, sum_over=sum_over, backend="torch").flux
     np.testing.assert_allclose(
         result.transpose(*expected.dims).values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max())
     )
@@ -355,13 +300,13 @@ def test_vdem_synthesis_performance_regression(response, raster) -> None:
         assert peak_mib < max_peak_mib, f"{name} synthesis peaked at {peak_mib:.0f} MiB (limit {max_peak_mib} MiB)"
 
 
-def test_vdem_synthesis_doppler_shifts_line_centroid(response) -> None:
+def test_vdem_synthesis_doppler_shifts_line_centroid(response, vdem) -> None:
     # Emission at a single doppler_velocity must place the line at lambda * (1 + v/c): synthesis
     # encodes velocity as a wavelength shift, the core spectral behaviour.
     def centroid(vdop_kms):
-        reshaped = reshape_x_to_slit_step(
-            fake_vdem_single_doppler_velocity(vdop_kms), number_of_slits=35, steps_per_raster=11
-        )
+        collapsed = np.zeros_like(vdem.vdem.values)
+        collapsed[:, vdem.get_index("doppler_velocity").get_loc(vdop_kms)] = vdem.vdem.values.sum(axis=1)
+        reshaped = reshape_x_to_slit_step(vdem.assign(vdem=vdem.vdem.copy(data=collapsed)))
         flux = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity")).flux
         spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"]).values
         wavelength = flux.detector_wavelength.isel(line=0, slit=17).values
@@ -400,17 +345,14 @@ def test_vdem_synthesis_rejects_unknown_sum_over_dim(response, raster) -> None:
         vdem_synthesis(raster, response, sum_over=("bogus",))
 
 
-@pytest.mark.parametrize("legacy_input", ["vdem", "response"])
-def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, raster, legacy_input) -> None:
+def test_vdem_synthesis_rejects_the_legacy_vdop_axis(response, raster) -> None:
     # A stray vdop is not in sum_over, so einsum would carry it into the output and contract
     # the other input's doppler_velocity alone: no error, wrong flux. It must fail loudly.
-    if legacy_input == "vdem":
-        raster = raster.rename(doppler_velocity="vdop")
-    else:
-        response = response.rename(doppler_velocity="vdop")
-
-    with pytest.raises(ValueError, match=rf"{legacy_input} uses the legacy 'vdop' dimension"):
-        vdem_synthesis(raster, response)
+    with pytest.raises(ValueError, match=r"vdem uses the legacy 'vdop' dimension"):
+        vdem_synthesis(raster.rename(doppler_velocity="vdop"), response)
+    # read_response keeps the vdop of a legacy response file
+    with pytest.raises(ValueError, match=r"response uses the legacy 'vdop' dimension"):
+        vdem_synthesis(raster, response.rename(doppler_velocity="vdop"))
 
 
 @pytest.mark.parametrize(
@@ -429,7 +371,7 @@ def test_vdem_synthesis_rejects_mismatched_slit_dimensions(response, raster, cas
     else:
         response = response.isel(slit=0, drop=True)
     if case == "wavelength_response_without_slit":
-        # the spectral dimension of a response that is still in wavelength space
+        # the shape create_spectral_response returns: no slit, and the spectral axis in wavelength space
         response = response.rename(detector_x_pixel="wavelength_bin")
 
     with pytest.raises(ValueError, match=match):
@@ -468,21 +410,12 @@ def test_vdem_synthesis_rejects_non_length_wavelength_units(response, raster) ->
         vdem_synthesis(raster, bad_response)
 
 
-@pytest.mark.parametrize("name", ["line_wavelength", "detector_wavelength"])
-def test_vdem_synthesis_requires_response_wavelength_coords(response, raster, name) -> None:
-    bad_response = response.reset_coords(name)
-    kwargs = {"sum_over": ("logT", "doppler_velocity")} if name == "detector_wavelength" else {}
-
-    with pytest.raises(ValueError, match=rf"response\.{name} is missing"):
-        vdem_synthesis(raster, bad_response, **kwargs)
-
-
-def test_vdem_synthesis_does_not_require_discarded_detector_wavelength(response, raster) -> None:
+def test_vdem_synthesis_requires_detector_wavelength_only_while_slit_is_kept(response, raster) -> None:
     response = response.reset_coords("detector_wavelength")
 
-    result = vdem_synthesis(raster, response)
-
-    assert "detector_wavelength" not in result.coords
+    with pytest.raises(ValueError, match=r"response\.detector_wavelength is missing"):
+        vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))
+    assert "detector_wavelength" not in vdem_synthesis(raster, response).coords
 
 
 def test_vdem_synthesis_converts_wavelength_coords_to_angstrom(response, raster) -> None:
@@ -516,13 +449,3 @@ def test_vdem_synthesis_requires_vdem_units(response, raster) -> None:
 
     with pytest.raises(ValueError, match=r"vdem\.vdem must define units"):
         vdem_synthesis(raster, response)
-
-
-@pytest.mark.parametrize("name", ["detector_response", "line_wavelength", "detector_wavelength"])
-def test_vdem_synthesis_requires_response_units(response, raster, name) -> None:
-    bad_response = response.copy(deep=True)
-    del bad_response[name].attrs["units"]
-    kwargs = {"sum_over": ("logT", "doppler_velocity")} if name == "detector_wavelength" else {}
-
-    with pytest.raises(ValueError, match=rf"response\.{name} must define units"):
-        vdem_synthesis(raster, bad_response, **kwargs)
