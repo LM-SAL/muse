@@ -314,7 +314,7 @@ def create_simple_vdem(
     return vdem_ds
 
 
-@u.quantity_input(maximum_doppler_velocity=u.km / u.s)
+@u.quantity_input(maximum_doppler_velocity=u.km / u.s, peak_half_width=u.pix)
 def calculate_moments(
     spectrum: xr.Dataset,
     *,
@@ -322,7 +322,7 @@ def calculate_moments(
     variable_name: str = "flux",
     doppler_name: str = "detector_doppler_velocity",
     maximum_doppler_velocity: u.Quantity | None = None,
-    peak_half_width: float | None = None,
+    peak_half_width: u.Quantity | None = None,
 ) -> xr.Dataset:
     """
     Compute the zeroth, first, and second moments from a spectrum.
@@ -346,9 +346,9 @@ def calculate_moments(
     maximum_doppler_velocity : `astropy.units.Quantity` or None, optional
         Maximum absolute Doppler velocity to include in the integration, convertible
         to km/s, by default None.
-    peak_half_width : `float` or None, optional
-        Half-width of the window kept around the line peak, in the units of the
-        ``moment_dim`` coordinate (detector pixels by default), by default None.
+    peak_half_width : `astropy.units.Quantity` or None, optional
+        Half-width of the window kept around the line peak, in pixels along
+        ``moment_dim``, by default None.
         With ``maximum_doppler_velocity`` the peak is found within that velocity.
 
     Returns
@@ -378,10 +378,9 @@ def calculate_moments(
         masked_spectrum = spectrum.assign({variable_name: masked_flux})
     if peak_half_width is not None:
         peak_index = masked_spectrum[variable_name].argmax(dim=moment_dim)
-        peak_coord = masked_spectrum[moment_dim].isel({moment_dim: peak_index})
-        distance = np.abs(masked_spectrum[moment_dim] - peak_coord)
+        distance = np.abs(xr.DataArray(np.arange(masked_spectrum.sizes[moment_dim]), dims=moment_dim) - peak_index)
         masked_spectrum = masked_spectrum.assign(
-            {variable_name: masked_spectrum[variable_name].where(distance < peak_half_width, 0)}
+            {variable_name: masked_spectrum[variable_name].where(distance < peak_half_width.to_value(u.pix), 0)}
         )
     masked_spectrum = masked_spectrum.assign(
         {

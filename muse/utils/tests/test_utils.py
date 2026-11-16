@@ -210,13 +210,13 @@ def test_the_two_outputs_of_one_call_are_one_step_even_stamped_apart() -> None:
 
 
 def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alone(monkeypatch) -> None:
-    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    custom = evolve(DEFAULTS_MUSE, pixel_width_SG=0.8 * u.arcsec)
     late = ("gain_CI", "pair_energy_SG", "wavelength_start_SG", "channel_spectral_order_SG")
     changed = [evolve(custom, **{name: 2 * getattr(custom, name)}) for name in late]
 
     assert len({_instrument_defaults_label(defaults) for defaults in [custom, *changed]}) == 1 + len(late)
     # an integer and its float are one value
-    as_float = evolve(custom, detector_x_pixels_SG=custom.detector_x_pixels_SG.astype(float))
+    as_float = evolve(custom, channel_spectral_order_SG=custom.channel_spectral_order_SG.astype(float))
     assert _instrument_defaults_label(as_float) == _instrument_defaults_label(custom)
     # the MUSE values of another muse are told from today's
     today = _instrument_defaults_label(DEFAULTS_MUSE)

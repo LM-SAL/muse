@@ -15,24 +15,23 @@ import xarray as xr
 import astropy.units as u
 
 from muse.instrument.atomic import cache
-from muse.instrument.atomic.backends import _validate_plasma_inputs
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
 from muse.utils.utils import _to_zarr
-from muse.variables import DEFAULTS_MUSE
 
-TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
+TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}
 CONTINUUM = {"abundance": "a", "wavelength_grid": [170.0, 171.0, 172.0] * u.AA, "temperature": TEMPERATURE}
 
 
-def _pressure(values, dim="pressure"):
-    return xr.DataArray(values * u.K / u.cm**3, dims=dim)
+def _pressure(values):
+    return values * u.K / u.cm**3
 
 
 def _density(values):
-    return xr.DataArray(values * u.cm**-3, dims="density")
+    return values * u.cm**-3
 
 
 def fake_line_list_backend(temperature, *, density=None, pressure=None, **_kwargs):
@@ -84,7 +83,7 @@ def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
     xr.testing.assert_identical(first, second)
     assert first.gofnt.dims == ("pressure", "logT", "transition")
     assert first.pressure.attrs["units"] == "K / cm3"
-    assert first.attrs["minimum_abundance"] == DEFAULTS_MUSE.minimum_abundance
+    assert first.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
 
 
 @pytest.mark.usefixtures("line_list_calls", "continuum_calls")
@@ -134,14 +133,14 @@ def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, gr
 
 MINIMUM_ABUNDANCE = (
     {"minimum_abundance": 1e-2},
-    f"minimum abundance {DEFAULTS_MUSE.minimum_abundance}, not the requested 0.01",
+    f"minimum abundance {_MINIMUM_ABUNDANCE}, not the requested 0.01",
 )
 # The checks are shared: of the continuum, only what its own call passes on, the minimum abundance.
 MISMATCHES = {
     "line-list-nearby-pressure": ("line list", {"pressure": _pressure([3.0001e15])}, "holds the pressure values"),
     "line-list-temperatures": (
         "line list",
-        {"temperature": TEMPERATURE.isel(logT=[0, 1])},
+        {"temperature": TEMPERATURE[:2]},
         "is on other temperatures than requested",
     ),
     "line-list-minimum-abundance": ("line list", *MINIMUM_ABUNDANCE),
@@ -192,8 +191,8 @@ def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
     continuum that each kept their own number would not align.
     """
     load_or_create_continuum(tmp_path, **CONTINUUM, pressure=_pressure([1e15]))
-    in_si = xr.DataArray([1e21] * u.K / u.m**3, dims="pressure")
-    requested = in_si.data.to_value(u.K / u.cm**3).tolist()
+    in_si = [1e21] * u.K / u.m**3
+    requested = in_si.to_value(u.K / u.cm**3).tolist()
     assert requested != [1e15]
 
     continuum = load_or_create_continuum(tmp_path, **CONTINUUM, pressure=in_si)
@@ -201,19 +200,9 @@ def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
 
     assert continuum.pressure.values.tolist() == requested
     assert line_list.pressure.values.tolist() == requested
-    np.testing.assert_array_equal(continuum.logT.values, np.log10(TEMPERATURE.data.value))
+    np.testing.assert_array_equal(continuum.logT.values, np.log10(TEMPERATURE.value))
     np.testing.assert_array_equal(line_list.logT.values, continuum.logT.values)
     assert len(continuum_calls) == 1
-
-
-def test_a_pressure_axis_of_another_name_is_stored_as_pressure(tmp_path, line_list_calls):
-    line_list = load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15], dim="p"))
-
-    assert line_list_calls[0]["pressure"].dims == ("pressure",)
-    assert line_list.gofnt.dims == ("pressure", "logT", "transition")
-    # and a call with the usual name reads the same file
-    load_or_create_line_list(tmp_path, **LINE_LIST, pressure=_pressure([3e15]))
-    assert len(line_list_calls) == 1
 
 
 @pytest.mark.usefixtures("line_list_calls")

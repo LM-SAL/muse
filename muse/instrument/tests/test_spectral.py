@@ -2,7 +2,6 @@
 Tests for CHIANTI-line Gaussian spectral responses.
 """
 
-import attrs
 import numpy as np
 import pytest
 import xarray as xr
@@ -16,12 +15,11 @@ from muse.instrument import create_effective_area
 from muse.instrument.response.spectral import _build_spectral_response as _build_spectral_response_impl
 from muse.instrument.response.spectral import create_log_wavelength_edges, create_spectral_response
 from muse.tests.helpers import fake_effective_area, fake_line_list
-from muse.variables import DEFAULTS_MUSE
 
 pytest.importorskip("numexpr")
 pytest.importorskip("periodictable")
 
-RESPONSE_NORMALIZATION = DEFAULTS_MUSE.normalization
+RESPONSE_NORMALIZATION = 1e-27
 DEFAULT_WAVELENGTH_GRID = np.arange(170.0, 172.002, 0.002) * u.AA
 DOPPLER_VELOCITY = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
 
@@ -55,25 +53,7 @@ def test_public_contract_records_history_and_excludes_unselected_lines():
     assert response.attrs["history"][1].startswith("create_spectral_response(")
     assert response.attrs["chianti_version"] == "10.1"
     assert response.attrs["normalization"] == RESPONSE_NORMALIZATION
-
-
-def test_spectral_response_uses_default_normalization(monkeypatch):
-    defaults = attrs.evolve(DEFAULTS_MUSE, normalization=2e-27)
-    monkeypatch.setattr(spectral_module, "DEFAULTS_MUSE", defaults)
-    line_list = fake_line_list(1)
-
-    response = create_spectral_response(
-        line_list,
-        DEFAULT_WAVELENGTH_GRID,
-        main_lines=[line_list.full_name[0].item()],
-    )
-
-    assert response.attrs["normalization"] == defaults.normalization
-    dlam = float(response.wavelength_grid[1] - response.wavelength_grid[0])
-    integral = (response.spectral_response.isel(line=0) * dlam).sum("wavelength_bin")
-    expected = line_list.gofnt.isel(transition=0) / defaults.normalization
-    np.testing.assert_allclose(integral.values, expected.values, rtol=1e-3)
-    assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("2e-27 erg cm3 / (Angstrom s sr)")
+    assert u.Unit(response.spectral_response.attrs["units"]) == u.Unit("1e-27 erg cm3 / (Angstrom s sr)")
 
 
 def test_off_grid_contaminants_are_skipped(monkeypatch):
@@ -308,8 +288,8 @@ def test_an_effective_area_dataset_counts_as_its_curve():
     xr.testing.assert_identical(from_dataset, _build_spectral_response(line_list, effective_area=curve))
 
 
-def test_an_effective_area_that_carries_the_gain_is_refused_with_a_way_out():
-    # An area that carries the gain is in cm2 DN / ph; the response builders take cm2.
+def test_an_effective_area_in_dn_per_photon_is_refused_with_a_way_out():
+    # An area that includes the conversion to DN is in cm2 DN / ph; the response builders take cm2.
     with_gain = fake_effective_area(area_units="cm2 DN / ph")
 
     with pytest.raises(ValueError, match="convertible to cm2; this area includes the conversion from photons to DN"):

@@ -74,10 +74,10 @@ def _detector_chain_factor(
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    pixel_width_sg="dx_pixel_SG",
-    pixel_height_sg="dy_pixel_SG",
-    pixel_width_ci="dx_pixel_CI",
-    pixel_height_ci="dy_pixel_CI",
+    pixel_width_sg="pixel_width_SG",
+    pixel_height_sg="pixel_height_SG",
+    pixel_width_ci="pixel_width_CI",
+    pixel_height_ci="pixel_height_CI",
 )
 @u.quantity_input(
     channel=u.AA,
@@ -89,8 +89,8 @@ def _detector_chain_factor(
 def transform_response_units(
     response: xr.Dataset,
     new_units: str,
-    channel: u.Quantity | None = None,
     *,
+    channel: u.Quantity | None = None,
     detector: str = "SG",
     pixel_width: u.Quantity | None = None,
     pixel_height: u.Quantity | None = None,
@@ -159,8 +159,8 @@ def transform_response_units(
 
     defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     suffix = detector.upper()
-    pixel_width = _required(defaults, f"dx_pixel_{suffix}") if pixel_width is None else pixel_width
-    pixel_height = _required(defaults, f"dy_pixel_{suffix}") if pixel_height is None else pixel_height
+    pixel_width = _required(defaults, f"pixel_width_{suffix}") if pixel_width is None else pixel_width
+    pixel_height = _required(defaults, f"pixel_height_{suffix}") if pixel_height is None else pixel_height
 
     if gain is None or pair_energy is None:
         if channel is None:
@@ -172,9 +172,9 @@ def transform_response_units(
         channel_value = _channel_as_angstrom(channel, (pair_energies if gains is None else gains)["channel"], detector)
         try:
             if gain is None:
-                gain = u.Quantity(gains.sel(channel=channel_value).data)
+                gain = gains.sel(channel=channel_value).data
             if pair_energy is None:
-                pair_energy = u.Quantity(pair_energies.sel(channel=channel_value).data)
+                pair_energy = pair_energies.sel(channel=channel_value).data
         except KeyError:
             msg = f"unsupported MUSE {detector.upper()} channel {channel}"
             raise ValueError(msg) from None
@@ -305,11 +305,9 @@ def transform_flux_units(
         defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
         try:
             if needs_gain:
-                gain = u.Quantity(_required(defaults, f"gain_{detector.upper()}").sel(channel=spectrum.channel).data)
+                gain = _required(defaults, f"gain_{detector.upper()}").sel(channel=spectrum.channel).data
             if needs_pair_energy:
-                pair_energy = u.Quantity(
-                    _required(defaults, f"pair_energy_{detector.upper()}").sel(channel=spectrum.channel).data
-                )
+                pair_energy = _required(defaults, f"pair_energy_{detector.upper()}").sel(channel=spectrum.channel).data
         except KeyError:
             channels = np.unique(spectrum.channel.values).tolist()
             msg = f"unsupported MUSE {detector.upper()} channel among {channels}"

@@ -15,6 +15,7 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE
 from muse.instrument.atomic.cache import (
     _CONTINUUM_BACKENDS,
     _LINE_LIST_BACKENDS,
@@ -50,6 +51,12 @@ __all__ = ["generate_ci_responses", "generate_sg_continuum_responses", "generate
 
 _PHOTON_UNITS = "1e-27 cm5 ph / (Angstrom s)"
 _DN_UNITS = "1e-27 cm5 DN / (Angstrom s)"
+_ABUNDANCES = ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund")
+_TEMPERATURE = 10 ** np.arange(4.5, 8.0, 0.1) * u.K
+_PRESSURE = [3e14, 3e15, 3e16] * u.K / u.cm**3
+_DOPPLER_VELOCITY = np.arange(-1000, 1010, 10) * u.km / u.s
+# A continuum varies slowly with wavelength, so its velocities are coarser.
+_CONTINUUM_DOPPLER_VELOCITY = np.arange(-1000, 1001, 200) * u.km / u.s
 _ANGSTROM = {"units": str(u.AA)}
 # The attributes in which a line list or a continuum records the software and the database that made it.
 _VERSION_ATTRS = ("chianti_version", "chiantipy_version", "fiasco_version")
@@ -63,15 +70,15 @@ def generate_sg_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
-    temperature: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    abundances: Sequence[str] = _ABUNDANCES,
+    temperature: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     main_lines_by_channel: Mapping[int | u.Quantity, Sequence[str]] | None = None,
     instrumental_fwhm_by_channel: Mapping[int | u.Quantity, u.Quantity] | None = None,
     maximum_contaminants: int = 10000,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,
@@ -125,21 +132,19 @@ def generate_sg_responses(
         The instrument values the products are made with, by default
         `~muse.variables.DEFAULTS_MUSE`: the detector geometry and calibration, the
         spectral orders, the wavebands, the instrument FWHM and the main lines. The
-        grids, the abundances, ``minimum_abundance`` and the normalization keep their own
-        defaults. The products record whether these were the MUSE values or others, with a
-        digest of them.
+        products record whether these were the MUSE values or others, with a digest of
+        them.
     abundances : `list` of `str`, optional
-        CHIANTI abundance names, by default ``DEFAULTS_MUSE.response_abundances``.
-    temperature : `xarray.DataArray`, optional
-        Temperatures along ``logT`` with units convertible to K, by default
-        ``DEFAULTS_MUSE.response_temperature``.
-    pressure, density : `xarray.DataArray`, optional
-        The plasma points: pressures with units convertible to K / cm3, or densities with
-        units convertible to cm-3; at most one of the two, by default
-        ``DEFAULTS_MUSE.response_pressure``.
+        CHIANTI abundance names, by default ``sun_coronal_2021_chianti`` and
+        ``sun_photospheric_2021_asplund``.
+    temperature : `astropy.units.Quantity`, optional
+        Temperatures convertible to K, by default 10**4.5 to 10**7.9 K in steps of 0.1 dex.
+    pressure, density : `astropy.units.Quantity`, optional
+        The plasma points, as for `muse.instrument.create_chianti_line_list`; at most one
+        of the two, by default 3e14, 3e15 and 3e16 K / cm3.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 10 km / s.
     main_lines_by_channel : `dict`, optional
         The ``full_name`` of the main lines of a channel, keyed by the channel as an `int` in
         Angstrom or as a wavelength. A channel that is not a key keeps those of
@@ -151,8 +156,7 @@ def generate_sg_responses(
         How many of the brightest other lines of a waveband are summed into the contaminant
         products, by default 10000; below 1 there are none.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out of the line list, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        Elements less abundant than this are left out of the line list, by default 1e-21.
     line_list_backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
@@ -207,7 +211,7 @@ def generate_sg_responses(
         If ``maximum_contaminants`` is not an integer.
     ValueError
         If an option is not valid, two products would get one name, a product exists and
-        ``skip_existing`` is `False`, a file is of no SG channel or carries the camera gain,
+        ``skip_existing`` is `False`, a file is of no SG channel or is in cm2 DN / ph,
         or a line list does not hold the requested temperatures and plasma points.
     FileNotFoundError
         If a line list is missing and ``create_if_missing`` is `False`.
@@ -247,7 +251,7 @@ def generate_sg_responses(
             transition_boosts=transition_boosts,
             transition_selection=transition_selection,
         )
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             channel = _channel(area)
@@ -292,13 +296,13 @@ def generate_sg_continuum_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
-    temperature: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    abundances: Sequence[str] = _ABUNDANCES,
+    temperature: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     wavelength_step: u.Quantity = 0.01 * u.AA,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     continuum_backend: str = "fiasco",
     cache_directory: str | Path | None = None,
     create_if_missing: bool = True,
@@ -327,12 +331,11 @@ def generate_sg_continuum_responses(
         The temperatures and the plasma points, as for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.continuum_response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 200 km / s.
     wavelength_step : `astropy.units.Quantity`, optional
         Sampling of the fine grid, by default 0.01 Angstrom.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out of the continuum, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        Elements less abundant than this are left out of the continuum, by default 1e-21.
     continuum_backend : {"chianti", "fiasco"}, optional
         What creates a missing continuum, by default ``"fiasco"``.
     cache_directory : `str` or `pathlib.Path`, optional
@@ -369,7 +372,7 @@ def generate_sg_continuum_responses(
         run = _Run(generate_sg_continuum_responses, settings, call_inputs)
         _require_sg_files(run.effective_areas, instrument_defaults)
         load_continuum = _continuum_loader(run, continuum_backend)
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.continuum_response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _CONTINUUM_DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             return {"continuum": (f"sg_{_channel(area)}_continuum_{continuum_backend}_detector", "")}
@@ -385,7 +388,11 @@ def generate_sg_continuum_responses(
                     doppler_velocity=doppler_velocity,
                 )
                 photons = transform_response_units(
-                    folded, _PHOTON_UNITS, channel, detector="SG", **_detector_kwargs(area, "SG", instrument_defaults)
+                    folded,
+                    _PHOTON_UNITS,
+                    channel=channel,
+                    detector="SG",
+                    **_detector_kwargs(area, "SG", instrument_defaults),
                 )
                 mapped = map_response_to_sg_detector(photons, channel=channel, instrument_defaults=instrument_defaults)
                 run.write(
@@ -406,17 +413,17 @@ def generate_ci_responses(
     effective_area_label: str,
     effective_area_files: Sequence[str | Path],
     instrument_defaults: InstrumentDefaults | None = None,
-    abundances: Sequence[str] = DEFAULTS_MUSE.response_abundances,
-    temperature: xr.DataArray | None = None,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
+    abundances: Sequence[str] = _ABUNDANCES,
+    temperature: u.Quantity | None = None,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
     doppler_velocity: u.Quantity | None = None,
     maximum_lines: int = 10000,
     bin_fractional_width: float = 0.01,
     include_continuum: bool = True,
     continuum_backend: str = "fiasco",
     units: Sequence[str] = ("ph", "DN"),
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     line_list_backend: str = "fiasco",
     line_list_wavelength_range: u.Quantity | None = None,
     line_list_file: str | Path | None = None,
@@ -447,7 +454,7 @@ def generate_ci_responses(
         As for `generate_sg_responses`.
     effective_area_files : `list` of `str` or `pathlib.Path`
         Files of `muse.instrument.save_effective_area`, one channel each. An area in
-        cm2 DN / ph carries the camera gain, so only DN products exist for it. A file of
+        cm2 DN / ph gives DN already, so only DN products exist for it. A file of
         an imager other than the MUSE one must give ``gain`` and ``pair_energy`` in its
         attributes, and should give ``pixel_width`` and ``pixel_height``, which are otherwise
         those of ``instrument_defaults``; `muse.instrument.create_aia_effective_area` writes
@@ -458,7 +465,7 @@ def generate_ci_responses(
         The temperatures and the plasma points, as for `generate_sg_responses`.
     doppler_velocity : `astropy.units.Quantity`, optional
         Doppler velocities of the products, by default
-        ``DEFAULTS_MUSE.response_doppler_velocity``.
+        -1000 to 1000 km / s in steps of 10 km / s.
     maximum_lines : `int`, optional
         How many of the brightest lines of a channel go into its products, by default 10000;
         at least 1.
@@ -472,7 +479,7 @@ def generate_ci_responses(
         The units the products are written in: ``"ph"``, ``"DN"`` or both, the default.
     minimum_abundance : `float`, optional
         Elements less abundant than this are left out of the line list and the continuum, by
-        default ``DEFAULTS_MUSE.minimum_abundance``.
+        default 1e-21.
     line_list_backend, line_list_file
         The line list, as for `generate_sg_responses`.
     line_list_wavelength_range : `astropy.units.Quantity`, optional
@@ -546,11 +553,11 @@ def generate_ci_responses(
             transition_selection=transition_selection,
         )
         load_continuum = _continuum_loader(run, continuum_backend)
-        doppler_velocity = _or_default(doppler_velocity, DEFAULTS_MUSE.response_doppler_velocity)
+        doppler_velocity = _or_default(doppler_velocity, _DOPPLER_VELOCITY)
 
         def names_of(area: xr.Dataset) -> dict:
             tags = (
-                ["_DN"] if _carries_gain(area) else [tag for unit, tag in (("ph", ""), ("DN", "_DN")) if unit in units]
+                ["_DN"] if _in_dn_per_ph(area) else [tag for unit, tag in (("ph", ""), ("DN", "_DN")) if unit in units]
             )
             return {
                 (tag, kind): (f"ci_{_channel(area)}{suffix}", tag)
@@ -612,10 +619,8 @@ class _Run:
         self.skip_existing = call_inputs["skip_existing"]
         pressure, density = call_inputs["pressure"], call_inputs["density"]
         if pressure is None and density is None:
-            pressure = DEFAULTS_MUSE.response_pressure
-        self.request = _PlasmaRequest(
-            _or_default(call_inputs["temperature"], DEFAULTS_MUSE.response_temperature), pressure, density
-        )
+            pressure = _PRESSURE
+        self.request = _PlasmaRequest(_or_default(call_inputs["temperature"], _TEMPERATURE), pressure, density)
         # What every read of a cache in the call shares.
         self._cache_options = {
             "temperature": self.request.temperature,
@@ -838,7 +843,7 @@ def _write_sg_products(
             **kwargs,
         )
         detector_kwargs = _detector_kwargs(area, "SG", instrument_defaults)
-        return transform_response_units(response, _PHOTON_UNITS, channel, detector="SG", **detector_kwargs)
+        return transform_response_units(response, _PHOTON_UNITS, channel=channel, detector="SG", **detector_kwargs)
 
     def write(cube: xr.Dataset, on_detector: xr.Dataset, tag: str) -> None:
         attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
@@ -904,8 +909,8 @@ def _write_ci_products(
     channel = _channel(area) * u.AA
     curve = _curve(area)
     response_area = area  # the Dataset, so that the products inherit its history
-    if _carries_gain(area):
-        # The gain is in the area already: the response is built from it as a plain cm2 area,
+    if _in_dn_per_ph(area):
+        # The area is in DN / ph already: the response is built from it as a plain cm2 area,
         # and what comes out per photon is DN. The products keep the area as it was given.
         response_area = area.assign(
             effective_area=curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
@@ -945,17 +950,17 @@ def _write_ci_products(
         line_label += " + continuum"
 
     detector_kwargs = _detector_kwargs(area, "CI", instrument_defaults)
-    photons = transform_response_units(cube, _PHOTON_UNITS, channel, detector="CI", **detector_kwargs)
-    if _carries_gain(area):
+    photons = transform_response_units(cube, _PHOTON_UNITS, channel=channel, detector="CI", **detector_kwargs)
+    if _in_dn_per_ph(area):
         in_dn = photons.assign(spectral_response=photons.spectral_response.assign_attrs(units=_DN_UNITS))
     else:
-        in_dn = transform_response_units(cube, _DN_UNITS, channel, detector="CI", **detector_kwargs)
+        in_dn = transform_response_units(cube, _DN_UNITS, channel=channel, detector="CI", **detector_kwargs)
     attrs = {"abundance": abundance, "effective_area_file": area.attrs["effective_area_file"]}
     for tag, converted in (("", photons), ("_DN", in_dn)):
         if (tag, "waveband") not in names:
             continue
         run.write(converted.assign(effective_area=curve), names[tag, "waveband"], save_spectral_response, **attrs)
-        summed = _sum_lines(map_response_to_ci_detector(converted, channel), line_label)
+        summed = _sum_lines(map_response_to_ci_detector(converted, channel=channel), line_label)
         run.write(summed.assign(effective_area=curve), names[tag, "summed"], save_response, **attrs)
 
 
@@ -1078,7 +1083,7 @@ def _curve(area: xr.Dataset) -> xr.DataArray:
     return area.effective_area.reset_coords("channel", drop=True)
 
 
-def _carries_gain(area: xr.Dataset) -> bool:
+def _in_dn_per_ph(area: xr.Dataset) -> bool:
     return u.Unit(area.effective_area.attrs["units"]).is_equivalent(_CM2_DN_PER_PHOTON)
 
 
@@ -1100,15 +1105,12 @@ def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: Instr
     """
     detector = detector.upper()
     channel = _channel(area)
-    kwargs = {
-        "pixel_width": getattr(instrument_defaults, f"dx_pixel_{detector}"),
-        "pixel_height": getattr(instrument_defaults, f"dy_pixel_{detector}"),
-    }
+    kwargs = {name: getattr(instrument_defaults, f"{name}_{detector}") for name in ("pixel_width", "pixel_height")}
     for name in ("gain", "pair_energy"):
         table = getattr(instrument_defaults, f"{name}_{detector}")
         # A channel of another instrument has no entry; its file gives the value.
         if table is not None and channel in table.channel.values:
-            kwargs[name] = u.Quantity(table.sel(channel=channel).data)
+            kwargs[name] = table.sel(channel=channel).data
     kwargs |= {name: u.Quantity(area.attrs[name]) for name in _DETECTOR_ATTRS if name in area.attrs}
     # Without this check transform_response_units would take what is missing from DEFAULTS_MUSE.
     if missing := [name for name in _DETECTOR_ATTRS if kwargs.get(name) is None]:
@@ -1146,8 +1148,8 @@ def _require_sg_files(effective_areas: list[xr.Dataset], instrument_defaults: In
                 f"{', '.join(map(str, sg_channels))}"
             )
             raise ValueError(msg)
-        if _carries_gain(area):
-            msg = f"{file_name} is in cm2 DN / ph; an SG product needs the area in cm2, without the camera gain"
+        if _in_dn_per_ph(area):
+            msg = f"{file_name} is in cm2 DN / ph; an SG product needs the area in cm2, without the conversion to DN"
             raise ValueError(msg)
 
 
@@ -1157,7 +1159,7 @@ def _require_ci_files(
     ci_channels = _ci_channels(instrument_defaults)
     for area in effective_areas:
         file_name = area.attrs["effective_area_file"]
-        if _carries_gain(area) and "DN" not in units:
+        if _in_dn_per_ph(area) and "DN" not in units:
             msg = f"{file_name} is in cm2 DN / ph, so only DN products exist for it; add 'DN' to units"
             raise ValueError(msg)
         missing = [name for name in ("gain", "pair_energy") if name not in area.attrs]
@@ -1170,18 +1172,16 @@ def _require_ci_files(
             raise ValueError(msg)
 
 
-def _by_sg_channel(
-    overrides: Mapping | None, name: str, defaults: Iterable, sg_channels: tuple[int, ...]
-) -> dict[int, object]:
+def _by_sg_channel(overrides: Mapping | None, name: str, defaults: Mapping[int, object]) -> dict[int, object]:
     """
     The default value of every SG channel, replaced by the caller's where one is given;
     a key is a channel in Angstrom as a number or as a wavelength.
     """
-    values = dict(zip(sg_channels, defaults, strict=True))
+    values = dict(defaults)
     for key, value in (overrides or {}).items():
         channel = round(float(u.Quantity(key, u.AA).value))
         if channel not in values:
-            msg = f"{name} has the key {key!r}; the SG channels are {', '.join(map(str, sg_channels))}"
+            msg = f"{name} has the key {key!r}; the SG channels are {', '.join(map(str, values))}"
             raise ValueError(msg)
         values[channel] = value
     return values
@@ -1192,10 +1192,7 @@ def _main_lines_by_sg_channel(
 ) -> dict[int, list[str]]:
     main_lines = {}
     for channel, lines in _by_sg_channel(
-        overrides,
-        "main_lines_by_channel",
-        _required(instrument_defaults, "main_lines_by_channel_SG"),
-        _sg_channels(instrument_defaults),
+        overrides, "main_lines_by_channel", _required(instrument_defaults, "main_lines_by_channel_SG")
     ).items():
         # One name alone is one line, not its characters.
         main_lines[channel] = [lines] if isinstance(lines, str) else list(lines)
@@ -1216,9 +1213,9 @@ def _instrumental_fwhm_by_sg_channel(
     overrides: Mapping | None, instrument_defaults: InstrumentDefaults
 ) -> dict[int, u.Quantity]:
     widths = {}
-    defaults = _required(instrument_defaults, "instrumental_fwhm_SG").data
-    sg_channels = _sg_channels(instrument_defaults)
-    for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults, sg_channels).items():
+    fwhm = _required(instrument_defaults, "instrumental_fwhm_SG")
+    defaults = dict(zip(fwhm.channel.values.tolist(), fwhm.data, strict=True))
+    for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults).items():
         widths[channel] = u.Quantity(width)
         if not widths[channel].isscalar or not widths[channel].unit.is_equivalent(u.AA):
             msg = (

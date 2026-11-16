@@ -37,7 +37,7 @@ def test_transform_response_units_energy_to_photons():
     converted = transform_response_units(
         response,
         "1e-27 cm5 ph / (Angstrom s)",
-        171 * u.AA,
+        channel=171 * u.AA,
         pixel_width=pixel_width,
         pixel_height=pixel_height,
     )
@@ -54,9 +54,9 @@ def test_transform_response_units_energy_to_photons():
 def test_transform_response_units_photons_to_data_numbers():
     response = _spectral_response()
     gain = 10 * u.electron / u.DN
-    photons = transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
+    photons = transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
 
-    data_numbers = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", 171 * u.AA, gain=gain)
+    data_numbers = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", channel=171 * u.AA, gain=gain)
 
     # Legacy conversion_ph2dn: 12398 eV Angstrom / wavelength / pair energy / gain.
     wavelength = response.wavelength_grid.values
@@ -92,13 +92,13 @@ def test_transform_response_units_uses_channel_gain(monkeypatch):
         "data",
         np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
     )
-    photons = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 284 * u.AA)
+    photons = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=284 * u.AA)
 
-    default = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", 284 * u.AA)
+    default = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", channel=284 * u.AA)
     explicit = transform_response_units(
         photons,
         "1e-27 cm5 DN / (Angstrom s)",
-        284 * u.AA,
+        channel=284 * u.AA,
         gain=12 * u.electron / u.DN,
     )
 
@@ -111,8 +111,8 @@ def test_transform_response_units_round_trips():
     response = _spectral_response()
     original_units = response.spectral_response.attrs["units"]
 
-    forward = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", 171 * u.AA)
-    back = transform_response_units(forward, original_units, 171 * u.AA)
+    forward = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel=171 * u.AA)
+    back = transform_response_units(forward, original_units, channel=171 * u.AA)
 
     np.testing.assert_allclose(
         back.spectral_response.values,
@@ -123,7 +123,7 @@ def test_transform_response_units_round_trips():
 
 
 def test_transform_response_units_rescales_without_a_stage_change():
-    converted = transform_response_units(_spectral_response(), "erg cm5 / (Angstrom s sr)", 171 * u.AA)
+    converted = transform_response_units(_spectral_response(), "erg cm5 / (Angstrom s sr)", channel=171 * u.AA)
 
     np.testing.assert_allclose(converted.spectral_response, 1e-27)
     assert u.Unit(converted.spectral_response.attrs["units"]) == u.Unit("erg cm5 / (Angstrom s sr)")
@@ -132,25 +132,27 @@ def test_transform_response_units_rescales_without_a_stage_change():
 def test_transform_response_units_stays_lazy():
     response = _spectral_response().chunk({"wavelength_bin": 1})
 
-    converted = transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
+    converted = transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
 
     assert converted.spectral_response.chunks is not None
 
 
 def test_transform_response_units_rejects_incompatible_units():
     with pytest.raises(ValueError, match="not convertible"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s K)", 171 * u.AA)
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s K)", channel=171 * u.AA)
 
 
 def test_transform_response_units_rejects_unknown_channel():
     with pytest.raises(ValueError, match="unsupported MUSE SG channel"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 195 * u.AA)
+        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=195 * u.AA)
 
 
 @pytest.mark.parametrize("detector", ["other", None])
 def test_transform_response_units_rejects_unknown_detector(detector):
     with pytest.raises(ValueError, match="detector must be"):
-        transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA, detector=detector)
+        transform_response_units(
+            _spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA, detector=detector
+        )
 
 
 @pytest.mark.parametrize(
@@ -171,16 +173,18 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
         response = response.assign_coords(wavelength_grid=response.wavelength_grid.drop_attrs())
 
     with pytest.raises(error, match=match):
-        transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", 171 * u.AA)
+        transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
 
 
 def test_transform_response_units_uses_the_channel_pair_energy():
     channel = 17.1 * u.nm
-    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data)
-    response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel)
+    pair_energy = DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data
+    response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=channel)
 
-    default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel)
-    doubled = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel, pair_energy=2 * pair_energy)
+    default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel=channel)
+    doubled = transform_response_units(
+        response, "1e-27 cm5 DN / (Angstrom s)", channel=channel, pair_energy=2 * pair_energy
+    )
 
     np.testing.assert_allclose(doubled.spectral_response, default.spectral_response / 2)
 
@@ -199,25 +203,25 @@ def test_transform_response_units_selects_detector_calibration():
     defaults = attrs.evolve(DEFAULTS_MUSE, gain_CI=ci_gain, pair_energy_CI=ci_pair_energy)
 
     target_unit = "1e-27 cm5 DN / (Angstrom s)"
-    sg = transform_response_units(_spectral_response(), target_unit, 171 * u.AA, instrument_defaults=defaults)
+    sg = transform_response_units(_spectral_response(), target_unit, channel=171 * u.AA, instrument_defaults=defaults)
     ci = transform_response_units(
-        _spectral_response(), target_unit, 195 * u.AA, detector="ci", instrument_defaults=defaults
+        _spectral_response(), target_unit, channel=195 * u.AA, detector="ci", instrument_defaults=defaults
     )
     # a channel the given pair energy makes the pair-energy table unnecessary for
     lacking = attrs.evolve(defaults, pair_energy_CI=ci_pair_energy.sel(channel=[195]))
     transform_response_units(
         _spectral_response(),
         target_unit,
-        304 * u.AA,
+        channel=304 * u.AA,
         detector="ci",
         pair_energy=7.3 * u.eV / u.electron,
         instrument_defaults=lacking,
     )
 
-    sg_solid_angle = (defaults.dx_pixel_SG * defaults.dy_pixel_SG).to_value(u.sr)
-    ci_solid_angle = (defaults.dx_pixel_CI * defaults.dy_pixel_CI).to_value(u.sr)
-    sg_pair_energy = u.Quantity(defaults.pair_energy_SG.sel(channel=171).data)
-    sg_gain = u.Quantity(defaults.gain_SG.sel(channel=171).data)
+    sg_solid_angle = (defaults.pixel_width_SG * defaults.pixel_height_SG).to_value(u.sr)
+    ci_solid_angle = (defaults.pixel_width_CI * defaults.pixel_height_CI).to_value(u.sr)
+    sg_pair_energy = defaults.pair_energy_SG.sel(channel=171).data
+    sg_gain = defaults.gain_SG.sel(channel=171).data
     expected_ratio = (
         ci_solid_angle
         / sg_solid_angle
@@ -230,7 +234,7 @@ def test_transform_response_units_selects_detector_calibration():
         transform_response_units(
             _spectral_response(),
             target_unit,
-            304 * u.AA,
+            channel=304 * u.AA,
             detector="ci",
             instrument_defaults=attrs.evolve(defaults, gain_CI=ci_gain.sel(channel=[195])),
         )

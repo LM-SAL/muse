@@ -155,12 +155,12 @@ X_AXIS = np.linspace(0.0, 154.0, N_X)
 Y_AXIS = np.arange(N_Y) * (67.468 / 403)
 LINE_NAMES = np.asarray(
     [
-        DEFAULTS_MUSE.main_lines_by_channel_SG[0][0],
-        DEFAULTS_MUSE.main_lines_by_channel_SG[0][1],
+        DEFAULTS_MUSE.main_lines_by_channel_SG[108][0],
+        DEFAULTS_MUSE.main_lines_by_channel_SG[108][1],
         "108 remaining 10000 lines",
-        DEFAULTS_MUSE.main_lines_by_channel_SG[1][0],
+        DEFAULTS_MUSE.main_lines_by_channel_SG[171][0],
         "171 remaining 10000 lines",
-        DEFAULTS_MUSE.main_lines_by_channel_SG[2][0],
+        DEFAULTS_MUSE.main_lines_by_channel_SG[284][0],
         "284 remaining 10000 lines",
     ]
 )

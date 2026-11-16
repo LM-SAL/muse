@@ -178,7 +178,7 @@ def test_calculate_moments_with_and_without_masks() -> None:
     np.testing.assert_allclose(moments["1st"].item(), first)
     np.testing.assert_allclose(moments["2nd"].item(), np.sqrt(np.average((velocity - first) ** 2, weights=flux)))
     assert synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=150 * u.km / u.s)["0th"].item() == 16.0
-    moments = synthesis_utils.calculate_moments(spectrum, peak_half_width=1)
+    moments = synthesis_utils.calculate_moments(spectrum, peak_half_width=1 * u.pix)
     assert moments["0th"].item() == 10.0
     assert moments["1st"].item() == 0.0
     assert moments["2nd"].item() == 0.0

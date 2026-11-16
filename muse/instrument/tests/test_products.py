@@ -25,6 +25,7 @@ from muse.instrument import (
     save_effective_area,
 )
 from muse.instrument.atomic import cache
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
@@ -35,8 +36,8 @@ MAIN_LINE = "Fe IX 171.073"
 LINE_NAMES = ["Fe X 155.000", "Fe VIII 165.000", MAIN_LINE, "Fe X 174.500", "Fe XI 180.000", "Fe XII 188.000"]
 ABUNDANCE = "sun_coronal_2021_chianti"
 OTHER_ABUNDANCE = "sun_photospheric_2021_asplund"
-TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
-PRESSURE = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
+PRESSURE = [3e15] * u.K / u.cm**3
 DOPPLER_VELOCITY = np.array([-500.0, 0.0, 500.0]) * u.km / u.s
 # 171 is no channel of the MUSE imager: the test area describes its detector, as an AIA file does.
 DETECTOR = {"gain": "10.0 electron / DN", "pair_energy": "3.65 eV / electron"}
@@ -206,7 +207,7 @@ def test_main_line_response(sg_products):
         "detector_x_pixel",
     )
     assert response.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG.value
+    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG
     assert response.sizes["pressure"] == 1
     assert response.sizes["doppler_velocity"] == 3
     assert list(response.line.values) == [MAIN_LINE]
@@ -252,7 +253,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     # An imager cube records its continuum: that it is included, its backend and minimum
     # abundance, and the calls that made it, which enter the history before the unit conversion.
     assert (cube.attrs["include_continuum"], cube.attrs["continuum_backend"]) == (1, "fiasco")
-    assert cube.attrs["minimum_abundance"] == DEFAULTS_MUSE.minimum_abundance
+    assert cube.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
         "create_effective_area",
@@ -307,7 +308,7 @@ def test_the_line_products_of_a_channel_load_together(sg_products):
 
     response = read_responses(
         [main, contaminants],
-        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+        doppler_velocity=DOPPLER_VELOCITY,
     )
 
     assert response.sizes["line"] == 2
@@ -407,7 +408,7 @@ def test_an_sg_file_is_converted_with_its_own_detector(inputs, sg_products, tmp_
     The detector attributes of an SG file count as those of an imager file do: here
     pixels twice as wide, which see twice the solid angle.
     """
-    width = 2 * DEFAULTS_MUSE.dx_pixel_SG
+    width = 2 * DEFAULTS_MUSE.pixel_width_SG
     area = _area_file(tmp_path, attrs={"pixel_width": str(width)})
 
     written = _sg(inputs, tmp_path / "run", effective_area_files=[area], maximum_contaminants=0)
@@ -447,7 +448,7 @@ def test_a_pressure_is_taken_by_value_from_a_longer_line_list(inputs, sg_product
     written = _sg(inputs, tmp_path / "run", **options)
 
     xr.testing.assert_allclose(_main_response(written), _main_response(sg_products))
-    missing = xr.DataArray([3e16] * u.K / u.cm**3, dims="pressure")
+    missing = [3e16] * u.K / u.cm**3
     with pytest.raises(ValueError, match=r"two_pressures\.nc holds the pressure values .* not all of the requested"):
         _sg(inputs, tmp_path / "missing", pressure=missing, **options)
     assert not (tmp_path / "missing").exists()
@@ -463,7 +464,7 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
         _sg(inputs, tmp_path / "run", line_list_file=photospheric)
 
     # on pressures, where densities are requested
-    density = xr.DataArray([1e9] * u.cm**-3, dims="density")
+    density = [1e9] * u.cm**-3
     with pytest.raises(ValueError, match=r"line_list_pressure\.nc has no logD axis"):
         _sg(inputs, tmp_path / "run", pressure=None, density=density)
 
@@ -472,7 +473,7 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
 
 @pytest.mark.usefixtures("_fake_continuum_backend")
 def test_a_density_grid_goes_into_one_product_whole(inputs, tmp_path):
-    options = {"pressure": None, "density": xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")}
+    options = {"pressure": None, "density": [1e9, 1e10] * u.cm**-3}
 
     written = [
         *_sg(inputs, tmp_path / "sg", line_list_file=inputs["density_line_list"], **options),
@@ -540,7 +541,7 @@ def test_calls_with_one_wavelength_range_share_one_cached_line_list(inputs, tmp_
     xr.testing.assert_allclose(_main_response(given), _main_response(first))
     # made by a backend: that is recorded with its minimum abundance, and no file
     attrs = read_response(first[1]).attrs
-    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", DEFAULTS_MUSE.minimum_abundance)
+    assert (attrs["line_list_backend"], attrs["minimum_abundance"]) == ("fiasco", _MINIMUM_ABUNDANCE)
     assert "line_list_file" not in attrs
 
 
@@ -603,15 +604,15 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
 def test_a_resumed_call_keeps_only_products_made_with_its_settings(inputs, tmp_path):
     path = tmp_path / "two_pressures.nc"
     _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
-    pressures = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+    pressures = [3e15, 3.4e15] * u.K / u.cm**3
     options = {"line_list_file": path, "skip_existing": True}
     first = _sg(inputs, tmp_path / "run", pressure=pressures, **options)
 
     # The pressure is in the name of a product and the author shapes none: both may differ.
-    assert _sg(inputs, tmp_path / "run", pressure=pressures.isel(pressure=[0]), author="OTHER", **options) == first[:4]
+    assert _sg(inputs, tmp_path / "run", pressure=pressures[:1], author="OTHER", **options) == first[:4]
     other = "made with other settings than this call's"
     for overrides in (
-        {"temperature": TEMPERATURE.isel(logT=[0, 1])},
+        {"temperature": TEMPERATURE[:2]},
         {"instrumental_fwhm_by_channel": {CHANNEL: 0.1 * u.AA}},
         # another main line renames the main products, not the contaminants
         {"main_lines_by_channel": {CHANNEL: ["Fe X 174.500"]}},
@@ -656,7 +657,7 @@ def test_close_pressures_get_their_own_products(inputs, tmp_path):
     """
     path = tmp_path / "close_pressures.nc"
     _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
-    pressure = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+    pressure = [3e15, 3.4e15] * u.K / u.cm**3
 
     written = _sg(inputs, tmp_path / "run", pressure=pressure, line_list_file=path, maximum_contaminants=0)
 
@@ -680,7 +681,7 @@ def _backends_that_scale(monkeypatch):
     """
 
     def line_list_backend(_temperature, *, pressure, abundance, **_kwargs):
-        values = pressure.data.to_value(u.K / u.cm**3)
+        values = pressure.to_value(u.K / u.cm**3)
         return _line_list(pressure=values, scale=SCALE_OF_ABUNDANCE[abundance] * values / 3e15)
 
     def continuum_backend(temperature, wavelength_grid, *, abundance, **kwargs):
@@ -702,7 +703,7 @@ def test_every_product_holds_the_abundance_and_the_pressure_of_its_name(inputs, 
     """
     options = {
         "abundances": list(SCALE_OF_ABUNDANCE),
-        "pressure": xr.DataArray([3e15, 6e15] * u.K / u.cm**3, dims="pressure"),
+        "pressure": [3e15, 6e15] * u.K / u.cm**3,
         "cache_directory": tmp_path / "cache",
     }
     pairs = [(abundance, tag) for abundance in SCALE_OF_ABUNDANCE for tag in ("3e+15", "6e+15")]
@@ -741,7 +742,7 @@ def test_two_products_with_one_name_stop_the_call_before_any_work(inputs, tmp_pa
     # what the generators read a line list with
     monkeypatch.setattr(products_module, "_open_dataset_file", not_called)
     second = _area_file(tmp_path, name="another_171.zarr")
-    twice = xr.DataArray([3e15, 3.0000001e15] * u.K / u.cm**3, dims="pressure")
+    twice = [3e15, 3.0000001e15] * u.K / u.cm**3
 
     for overrides in ({"effective_area_files": [inputs["area"], second]}, {"pressure": twice}):
         with pytest.raises(ValueError, match=r"product name\(s\) would be used twice"):
@@ -803,7 +804,7 @@ def test_files_a_generator_cannot_use_stop_the_call_before_any_work(inputs, tmp_
     for generate, options in ((_sg, {"line_list_file": None}), (_sg_continuum, {})):
         with pytest.raises(ValueError, match="is of channel 94 Angstrom; SG products exist for the MUSE channels 108"):
             generate(inputs, tmp_path / "run", effective_area_files=[other_channel], **options)
-        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the camera gain"):
+        with pytest.raises(ValueError, match="an SG product needs the area in cm2, without the conversion to DN"):
             generate(inputs, tmp_path / "run", effective_area_files=[with_the_gain], **options)
     # an imager: any channel, but one that is not of MUSE must describe its detector
     with pytest.raises(
@@ -838,7 +839,7 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     assert (tmp_path / "cache" / cached).is_file()
 
     # the detector a file describes counts here too: pixels twice as wide see twice the solid angle
-    wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_SG)})
+    wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.pixel_width_SG)})
     twice = _sg_continuum(inputs, tmp_path / "wide", effective_area_files=[wide])
     xr.testing.assert_allclose(read_response(twice[0]).detector_response, 2 * response.detector_response)
 
@@ -860,12 +861,12 @@ def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
 
     assert [(path.parent.name, path.name.split("detector_")[1]) for path in written] == [
         (abundance, f"testea_pressure_{pressure:g}.zarr.zip")
-        for abundance in DEFAULTS_MUSE.response_abundances
-        for pressure in DEFAULTS_MUSE.response_pressure.data.value
+        for abundance in products_module._ABUNDANCES
+        for pressure in products_module._PRESSURE.value
     ]
     response = read_response(written[0])
     assert response.sizes["pressure"] == 1
-    velocities = DEFAULTS_MUSE.continuum_response_doppler_velocity
+    velocities = products_module._CONTINUUM_DOPPLER_VELOCITY
     np.testing.assert_array_equal(response.doppler_velocity.values, velocities.value)
 
 
@@ -877,7 +878,7 @@ def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_p
 
     response = read_responses(
         [main, continuum[0]],
-        doppler_velocity=xr.DataArray(DOPPLER_VELOCITY.value, dims="doppler_velocity", attrs={"units": "km / s"}),
+        doppler_velocity=DOPPLER_VELOCITY,
     )
 
     assert list(response.line.values) == [MAIN_LINE, "free-free", "free-bound", "two-photon"]
@@ -933,15 +934,15 @@ def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, s
         spectral_slit_separation_SG=xr.DataArray([380.0, 385.0, 400.0] * u.mAA, **by_channel),
         number_of_slits_SG=5,
         pixels_between_slits_SG=20 * u.pix,
-        detector_x_pixels_SG=256 * u.pix,
+        detector_x_pixels_SG=256,
         wavelength_start_SG=xr.DataArray([107.0, 165.0, 280.0] * u.AA, **by_channel),
         channel_spectral_order_SG=xr.DataArray([2, 1, 1], **by_channel),
         waveband_half_width_SG=10 * u.AA,
         wavelength_step_SG=10 * u.mAA,
         instrumental_fwhm_SG=xr.DataArray([0.08, 0.08, 0.08] * u.AA, **by_channel),
-        main_lines_by_channel_SG=(("Fe XIX 108.355",), ("Fe X 174.500",), ("Fe XV 284.163",)),
-        dx_pixel_SG=0.8 * u.arcsec,
-        dy_pixel_SG=0.3 * u.arcsec,
+        main_lines_by_channel_SG={108: "Fe XIX 108.355", 171: "Fe X 174.500", 284: "Fe XV 284.163"},
+        pixel_width_SG=0.8 * u.arcsec,
+        pixel_height_SG=0.3 * u.arcsec,
     )
 
     lines = _sg(
@@ -994,7 +995,7 @@ def test_the_ci_products_follow_the_instrument_defaults_they_are_given(inputs, t
     defaults = evolve(
         DEFAULTS_MUSE,
         gain_CI=xr.DataArray([20.0, 10.0] * u.electron / u.DN, **imager),
-        dx_pixel_CI=3 * DEFAULTS_MUSE.dx_pixel_CI,
+        pixel_width_CI=3 * DEFAULTS_MUSE.pixel_width_CI,
     )
     options = {"effective_area_files": [area], "units": "DN", "include_continuum": False}
 
@@ -1033,10 +1034,10 @@ def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
     ``DEFAULTS_MUSE``, and products made with the MUSE defaults are not kept for a call
     with others.
     """
-    custom = evolve(DEFAULTS_MUSE, dx_pixel_SG=0.8 * u.arcsec)
+    custom = evolve(DEFAULTS_MUSE, pixel_width_SG=0.8 * u.arcsec)
     mixed = r"made with DEFAULTS_MUSE [0-9a-f]{12} instrument defaults and this call uses custom [0-9a-f]{12} ones"
     with pytest.raises(ValueError, match="gives the pixel_width"):
-        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, dx_pixel_SG=None))
+        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, pixel_width_SG=None))
     with pytest.raises(ValueError, match="instrument_defaults has no spectral_slit_separation_SG"):
         _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=None))
 

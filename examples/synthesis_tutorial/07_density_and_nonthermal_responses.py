@@ -36,8 +36,8 @@ change_logging_level("INFO")
 #
 # .. code-block:: python
 #
-#     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
-#     density = xr.DataArray(10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3, dims="logD")
+#     temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
+#     density = 10 ** np.arange(7.5, 12.5, 0.5) * u.cm**-3
 #     line_list = create_chianti_line_list(
 #         temperature=temperature,
 #         density=density,
@@ -67,7 +67,7 @@ spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item(
 lower = band - 35 / spectral_order
 upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
-instrumental_fwhm = u.Quantity(DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data)
+instrumental_fwhm = DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data
 effective_area = DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band)
 # Since we will only plot at ``doppler_velocity=0``, we pass a single
 # Doppler-velocity point. This makes the code faster and use less RAM.
@@ -87,7 +87,7 @@ waveband_response = create_spectral_response(
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", channel=band * u.AA)
 response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 
@@ -113,7 +113,7 @@ waveband_response = create_spectral_response(
     nonthermal_velocity=np.arange(0, 100, 20) * u.km / u.s,
     effective_area=effective_area,
 )
-waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", channel=band * u.AA)
 response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 

@@ -22,12 +22,11 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
-from muse.instrument.atomic.backends import _validate_plasma_inputs
+from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma_inputs
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
 from muse.utils.utils import _to_zarr
-from muse.variables import DEFAULTS_MUSE
 
 __all__ = ["load_or_create_continuum", "load_or_create_line_list"]
 
@@ -41,10 +40,10 @@ def load_or_create_line_list(
     *,
     abundance: str,
     wavelength_range: u.Quantity,
-    temperature: xr.DataArray,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    temperature: u.Quantity,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     chianti_version: str | None = None,
@@ -73,15 +72,10 @@ def load_or_create_line_list(
         CHIANTI abundance name, e.g. ``"sun_coronal_2021_chianti"``.
     wavelength_range : `astropy.units.Quantity`
         The lowest and the highest wavelength of the line list.
-    temperature : `xarray.DataArray`
-        Temperatures along ``logT``, with units convertible to K.
-    pressure, density : `xarray.DataArray`, optional
-        The plasma points: pressures with units convertible to K / cm3, or densities with
-        units convertible to cm-3. Give exactly one of the two. A pressure axis is stored as
-        ``pressure`` whatever the array calls it, and densities as their log10 along ``logD``.
+    temperature, pressure, density : `astropy.units.Quantity`
+        As for `muse.instrument.create_chianti_line_list`; give exactly one of pressure and density.
     minimum_abundance : `float`, optional
-        Elements less abundant than this are left out, by default
-        ``DEFAULTS_MUSE.minimum_abundance``.
+        Elements less abundant than this are left out, by default 1e-21.
     backend : {"chianti", "fiasco"}, optional
         What creates a missing line list, by default ``"fiasco"``; ``"chianti"`` needs
         ChiantiPy and ``XUVTOP``. The file name carries the backend, so the line lists of the
@@ -157,10 +151,10 @@ def load_or_create_continuum(
     *,
     abundance: str,
     wavelength_grid: u.Quantity,
-    temperature: xr.DataArray,
-    pressure: xr.DataArray | None = None,
-    density: xr.DataArray | None = None,
-    minimum_abundance: float = DEFAULTS_MUSE.minimum_abundance,
+    temperature: u.Quantity,
+    pressure: u.Quantity | None = None,
+    density: u.Quantity | None = None,
+    minimum_abundance: float = _MINIMUM_ABUNDANCE,
     backend: str = "fiasco",
     create_if_missing: bool = True,
     workers: int = 1,
@@ -236,14 +230,11 @@ class _PlasmaRequest:
     holds them.
     """
 
-    def __init__(self, temperature: xr.DataArray, pressure: xr.DataArray | None, density: xr.DataArray | None) -> None:
+    def __init__(self, temperature: u.Quantity, pressure: u.Quantity | None, density: u.Quantity | None) -> None:
         validated_temperature, plasma = _validate_plasma_inputs(temperature, density, pressure)
         self.temperature = temperature
         self.density = density
-        # Whatever the caller's array calls its axis, a file and a product hold it as "pressure".
         self.pressure = pressure
-        if pressure is not None and pressure.dims != ("pressure",):
-            self.pressure = pressure.rename({pressure.dims[0]: "pressure"})
         self.logT = np.log10(validated_temperature.data)
         self.plasma_dim = "pressure" if density is None else "logD"
         self.plasma_values = plasma.data if density is None else np.log10(plasma.data)

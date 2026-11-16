@@ -76,8 +76,8 @@ def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     assert out.x.attrs["units"] == "arcsec"
     assert out.y.attrs["units"] == "arcsec"
     assert float(out.x[0]) == 0.0
-    assert float(out.x[1] - out.x[0]) == pytest.approx(DEFAULTS_MUSE.dx_pixel_SG.value)
-    assert float(out.y[1] - out.y[0]) == pytest.approx(DEFAULTS_MUSE.dy_pixel_SG.value)
+    assert float(out.x[1] - out.x[0]) == pytest.approx(DEFAULTS_MUSE.pixel_width_SG.value)
+    assert float(out.y[1] - out.y[0]) == pytest.approx(DEFAULTS_MUSE.pixel_height_SG.value)
     # The resampling moves the resampled axis last; the caller's order keeps 2D plots in their orientation.
     assert out.vdem.dims == vdem_offgrid.vdem.dims
     # "keep" matches the resolution alone: the field, sampled at twice the pixel width, keeps all its columns.
@@ -95,7 +95,7 @@ def test_match_fov_keeps_dask_inputs_lazy(vdem_offgrid) -> None:
 @pytest.mark.parametrize("fraction", [1 / 4, 1 / 2])  # the whole-factor branch, then the oversampled one
 def test_match_fov_averages_rows_into_pixels(fraction) -> None:
     # 40 rows fill a whole number of pixels at both fractions.
-    y = np.arange(40) * fraction * DEFAULTS_MUSE.dy_pixel_SG.value
+    y = np.arange(40) * fraction * DEFAULTS_MUSE.pixel_height_SG.value
     alternating = xr.Dataset(
         {"vdem": (("y", "x"), (np.arange(40) % 2.0)[:, np.newaxis])},
         coords={"x": ("x", [0.0], {"units": "arcsec"}), "y": ("y", y, {"units": "arcsec"})},
@@ -142,7 +142,7 @@ def test_match_fov_rejects_invalid_extent(vdem) -> None:
 
 def test_match_fov_without_tiling_still_crops_to_fov(vdem) -> None:
     wider = vdem.isel(x=np.arange(WIDTH + 15) % WIDTH).assign_coords(
-        x=np.arange(WIDTH + 15) * DEFAULTS_MUSE.dx_pixel_SG.value
+        x=np.arange(WIDTH + 15) * DEFAULTS_MUSE.pixel_width_SG.value
     )
     wider.x.attrs["units"] = "arcsec"
 
@@ -208,8 +208,8 @@ def test_match_fov_rejects_y_pixels_below_one(vdem) -> None:
 
 def test_match_fov_rotation_skips_resampling_when_resolution_matches(vdem) -> None:
     source = vdem.assign_coords(
-        x=np.arange(vdem.x.size) * DEFAULTS_MUSE.dy_pixel_SG.value,
-        y=np.arange(vdem.y.size) * DEFAULTS_MUSE.dx_pixel_SG.value,
+        x=np.arange(vdem.x.size) * DEFAULTS_MUSE.pixel_height_SG.value,
+        y=np.arange(vdem.y.size) * DEFAULTS_MUSE.pixel_width_SG.value,
     )
     source.x.attrs["units"] = "arcsec"
     source.y.attrs["units"] = "arcsec"
@@ -294,7 +294,7 @@ def test_reshape_slit_step_to_x_defaults_step_size_when_missing(raster) -> None:
     del raster.attrs["step_size"]
     out = reshape_slit_step_to_x(raster)
     # Falls back to the MUSE pixel size for the x spacing.
-    np.testing.assert_allclose(out.x[1] - out.x[0], DEFAULTS_MUSE.dx_pixel_SG.value)
+    np.testing.assert_allclose(out.x[1] - out.x[0], DEFAULTS_MUSE.pixel_width_SG.value)
 
 
 def test_reshape_slit_step_to_x_requires_slit_and_step(vdem) -> None:

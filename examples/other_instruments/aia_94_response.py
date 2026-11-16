@@ -79,8 +79,8 @@ print(line_list)
 #
 # .. code-block:: python
 #
-#     temperature = xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT")
-#     pressure = xr.DataArray([3e15] * u.K / u.cm**3, dims="pressure")
+#     temperature = np.arange(4.5, 8.0, 0.1) * u.dex(u.K)
+#     pressure = [3e15] * u.K / u.cm**3
 #     abundance = "sun_coronal_2021_chianti"
 #     line_list = create_chianti_line_list(
 #         temperature=temperature,
@@ -121,8 +121,10 @@ def imager_response(lines):
         effective_area=effective_area,
         doppler_velocity=[0.0] * u.km / u.s,
     )
-    waveband = transform_response_units(waveband, "1e-27 cm5 DN / (Angstrom s)", channel, detector="CI", **detector)
-    band = map_response_to_ci_detector(waveband, channel)
+    waveband = transform_response_units(
+        waveband, "1e-27 cm5 DN / (Angstrom s)", channel=channel, detector="CI", **detector
+    )
+    band = map_response_to_ci_detector(waveband, channel=channel)
     return waveband, band.detector_response.isel(line=0, doppler_velocity=0, pressure=0)
 
 

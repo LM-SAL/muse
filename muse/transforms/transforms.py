@@ -168,25 +168,22 @@ def _quarter_turn(vdem: xr.Dataset) -> xr.Dataset:
 
 @format_docstring(
     "DEFAULTS_MUSE",
-    pixel_width="dx_pixel_SG",
-    pixel_height="dy_pixel_SG",
+    pixel_width="pixel_width_SG",
+    pixel_height="pixel_height_SG",
     number_of_slits="number_of_slits_SG",
     steps_per_raster="steps_per_raster_SG",
-    extent="fov_extent",
-    pad_mode="fov_pad_mode",
-    oversampling="fov_oversampling",
 )
 @u.quantity_input(pixel_width=u.arcsec, pixel_height=u.arcsec, rotation=u.deg)
 def match_fov(
     vdem: xr.Dataset,
     *,
-    pixel_width: u.Quantity = DEFAULTS_MUSE.dx_pixel_SG,
-    pixel_height: u.Quantity = DEFAULTS_MUSE.dy_pixel_SG,
+    pixel_width: u.Quantity = DEFAULTS_MUSE.pixel_width_SG,
+    pixel_height: u.Quantity = DEFAULTS_MUSE.pixel_height_SG,
     number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
-    extent: str = DEFAULTS_MUSE.fov_extent,
-    pad_mode: str = DEFAULTS_MUSE.fov_pad_mode,
-    oversampling: int = DEFAULTS_MUSE.fov_oversampling,
+    extent: str = "extend",
+    pad_mode: str = "wrap",
+    oversampling: int = 2,
     rotation: u.Quantity = 0 * u.deg,
     y_pixels: int | None = None,
 ) -> xr.Dataset:
@@ -207,21 +204,21 @@ def match_fov(
         Number of raster steps, by default is {steps_per_raster}.
     extent : `str`, optional
         How to treat the x width relative to ``number_of_slits * steps_per_raster``, by default
-        {extent}. ``"extend"`` crops wider inputs and extends narrower ones
+        ``"extend"``. ``"extend"`` crops wider inputs and extends narrower ones
         with ``pad_mode``. ``"crop"`` crops wider inputs but retains a narrower
         input at its available width. ``"keep"`` leaves the width untouched
         and only matches the spatial resolution, for building the FOV of
         instruments whose width is not tied to the MUSE raster. Spatial
         resolution matching is always performed.
     pad_mode : `str`, optional
-        How an axis is extended when ``extent="extend"``, by default {pad_mode}. See
+        How an axis is extended when ``extent="extend"``, by default ``"wrap"``. See
         `xarray.DataArray.pad` for supported values.
         ``"wrap"`` repeats the input along the axis.
         ``"constant"`` fills the padded columns with zeros rather than the
         `xarray.DataArray.pad` default of NaN, so they read as "no emission here".
     oversampling : `int`, optional
         Sub-samples per input sample that a coarse input is interpolated onto
-        before it is averaged into pixels, by default {oversampling}; 0
+        before it is averaged into pixels, by default 2; 0
         interpolates straight onto the pixels.
     rotation : `astropy.units.Quantity`, optional
         Turn of the field counter-clockwise before it is matched, a multiple of
@@ -343,6 +340,7 @@ def match_fov(
 )
 def reshape_x_to_slit_step(
     ds: xr.Dataset,
+    *,
     number_of_slits: int = DEFAULTS_MUSE.number_of_slits_SG,
     steps_per_raster: int = DEFAULTS_MUSE.steps_per_raster_SG,
 ) -> xr.Dataset:
@@ -401,7 +399,7 @@ def reshape_slit_step_to_x(ds: xr.Dataset) -> xr.Dataset:
         if coord not in ds.coords:
             msg = f"{coord} coordinate is missing"
             raise ValueError(msg)
-    step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.dx_pixel_SG))
+    step_size = u.Quantity(ds.attrs.get("step_size", DEFAULTS_MUSE.pixel_width_SG))
     if step_size.unit == u.dimensionless_unscaled:
         msg = f"step_size {ds.attrs['step_size']!r} has no unit; it is one value with its unit, such as '0.4 arcsec'"
         raise ValueError(msg)

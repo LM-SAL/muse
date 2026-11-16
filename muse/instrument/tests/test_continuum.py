@@ -21,12 +21,11 @@ from muse.instrument.response.spectral import (
     create_log_wavelength_edges,
 )
 from muse.tests.helpers import fake_effective_area
-from muse.variables import DEFAULTS_MUSE
 from muse.version import version
 
-NORMALIZATION = DEFAULTS_MUSE.normalization
-TEMPERATURE = xr.DataArray(10 ** np.array([5.5, 6.0, 6.5]) * u.K, dims="logT")
-PRESSURE = xr.DataArray([3e14, 3e15] * u.K / u.cm**3, dims="pressure")
+NORMALIZATION = 1e-27
+TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
+PRESSURE = [3e14, 3e15] * u.K / u.cm**3
 GRID = np.linspace(170.0, 172.0, 21) * u.AA
 
 
@@ -304,7 +303,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     assert continuum.attrs["chianti_version"] == "fake 11"
     assert continuum.attrs["abundance"] == "sun_coronal_2021_chianti"
     assert "create_chianti_continuum(" in continuum.attrs["history"][-1]
-    temperatures, wavelengths = TEMPERATURE.values, GRID.value
+    temperatures, wavelengths = TEMPERATURE.value, GRID.value
     # the three charged ions of H and He contribute free-free, two of them free-bound (h_2
     # reports no data), on both pressures; the neutrals are skipped
     expected_ff = 3 * _fake_intensity(temperatures, wavelengths, 1.0) / NORMALIZATION
@@ -317,7 +316,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
             response.sel(line="free-bound").isel(pressure=i_pressure).values, expected_fb, rtol=1e-12
         )
     # two-photon from He II only, at the density pressure / temperature of each pressure
-    for i_pressure, pressure in enumerate(PRESSURE.values):
+    for i_pressure, pressure in enumerate(PRESSURE.value):
         density = pressure / temperatures
         expected_tp = _fake_intensity(temperatures, wavelengths, 1.0) * (density / 1e9)[:, None] / NORMALIZATION
         np.testing.assert_allclose(
@@ -330,8 +329,8 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
 
 @pytest.mark.usefixtures("fake_chianti")
 def test_chianti_continuum_density_grid_and_single_temperature():
-    density = xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")
-    one = create_chianti_continuum(TEMPERATURE.isel(logT=[1]), GRID, density=density, minimum_abundance=0.01)
+    density = [1e9, 1e10] * u.cm**-3
+    one = create_chianti_continuum(TEMPERATURE[[1]], GRID, density=density, minimum_abundance=0.01)
     assert one.spectral_response.dims == ("line", "logT", "logD", "wavelength_bin")
     np.testing.assert_allclose(one.logD.values, [9.0, 10.0])
     assert one.logD.attrs["units"] == "dex(1 / cm3)"
@@ -437,7 +436,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
     response = continuum.spectral_response
     assert response.dims == ("line", "pressure", "logT", "wavelength_bin")
     assert continuum.attrs["fiasco_version"] == "0.9.0+fake"
-    temperatures, wavelengths = TEMPERATURE.values, GRID.value
+    temperatures, wavelengths = TEMPERATURE.value, GRID.value
     # five ions of H and He, divided by 4 pi; two-photon from the three hydrogen- and helium-like ones
     np.testing.assert_allclose(
         response.sel(line="free-free").isel(pressure=0).values,
@@ -449,7 +448,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
         5 * _fake_intensity(temperatures, wavelengths, 0.5) / NORMALIZATION,
         rtol=1e-12,
     )
-    for i_pressure, pressure in enumerate(PRESSURE.values):
+    for i_pressure, pressure in enumerate(PRESSURE.value):
         density = pressure / temperatures
         expected = 3 * _fake_intensity(temperatures, wavelengths, 1.0) * (density / 1e9)[:, None] / NORMALIZATION
         np.testing.assert_allclose(
@@ -459,7 +458,7 @@ def test_fiasco_continuum_matches_the_chianti_layout_per_steradian():
 
 @pytest.mark.usefixtures("fake_fiasco")
 def test_fiasco_continuum_density_grid():
-    density = xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")
+    density = [1e9, 1e10] * u.cm**-3
     continuum = create_fiasco_continuum(TEMPERATURE, GRID, density=density, minimum_abundance=0.01)
     assert continuum.spectral_response.dims == ("line", "logT", "logD", "wavelength_bin")
     two_photon = continuum.spectral_response.sel(line="two-photon")

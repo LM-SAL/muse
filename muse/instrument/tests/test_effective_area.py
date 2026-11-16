@@ -52,6 +52,8 @@ def test_create_effective_area_takes_one_curve_of_one_channel():
         create_effective_area(np.ones((2, 5)) * u.cm**2, WAVELENGTH, channel=171 * u.AA)
     with pytest.raises(ValueError, match="holds one channel"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH, channel=[171, 284] * u.AA)
+    with pytest.raises(ValueError, match="gain must be a scalar"):
+        _area(gain=[10, 12] * u.electron / u.DN)
     # a component of that name would take the place of the area
     with pytest.raises(ValueError, match="cannot be named effective_area"):
         _area(components={"effective_area": np.ones(5) * u.cm**2})

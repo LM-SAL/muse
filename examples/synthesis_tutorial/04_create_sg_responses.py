@@ -108,13 +108,13 @@ for band, config in bands.items():
         line_list,
         wavelength_grid,
         main_lines=config["main_lines"],
-        instrumental_fwhm=u.Quantity(DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data),
+        instrumental_fwhm=DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data,
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
         effective_area=DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band),
     )
     # Chunk over Doppler velocity so the detector mapping stays lazy
     waveband_response = waveband_response.chunk({"doppler_velocity": 10})
-    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", band * u.AA)
+    waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / (Angstrom s)", channel=band * u.AA)
     waveband_response = waveband_response.assign(
         spectral_response=waveband_response.spectral_response.astype(np.float32)
     )

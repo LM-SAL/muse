@@ -17,12 +17,12 @@ __all__ = [
 # The headings are those of `InstrumentDefaults`. The order of the entries has no effect.
 _DEFAULTS_MUSE_VALUES = {
     # Context Imager (CI) parameters
-    "dx_pixel_CI": 0.143 * u.arcsec,
-    "dy_pixel_CI": 0.143 * u.arcsec,
+    "pixel_width_CI": 0.143 * u.arcsec,
+    "pixel_height_CI": 0.143 * u.arcsec,
     # Spectrograph (SG) parameters
-    "dx_pixel_SG": 0.4 * u.arcsec,
-    "dy_pixel_SG": 0.167 * u.arcsec,
-    "detector_x_pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
+    "pixel_width_SG": 0.4 * u.arcsec,
+    "pixel_height_SG": 0.167 * u.arcsec,
+    "detector_x_pixels_SG": 1024,
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
     # Nominal: 390 mAngstrom at second order, so twice that in the first-order 284 channel.
@@ -69,20 +69,11 @@ _DEFAULTS_MUSE_VALUES = {
         coords={"channel": [195, 304]},
         dims="channel",
     ),
-    # Synthesis/inversions
-    "sum_over_dims_synthesis": ("logT", "doppler_velocity", "slit"),
-    "main_lines_by_channel_SG": [["Fe XIX 108.355", "Fe XXI 108.117"], ["Fe IX 171.073"], ["Fe XV 284.163"]],
-    "fov_pad_mode": "wrap",
-    "fov_extent": "extend",
-    "fov_oversampling": 2,
-    # Response creation
-    "response_abundances": ("sun_coronal_2021_chianti", "sun_photospheric_2021_asplund"),
-    "response_temperature": xr.DataArray(10 ** np.arange(4.5, 8.0, 0.1) * u.K, dims="logT"),
-    "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
-    "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
-    "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
-    # Response creation, continued
-    "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
+    "main_lines_by_channel_SG": {
+        108: ("Fe XIX 108.355", "Fe XXI 108.117"),
+        171: ("Fe IX 171.073",),
+        284: ("Fe XV 284.163",),
+    },
     "wavelength_start_SG": xr.DataArray(
         np.array([107.68034, 170.62314, 283.01608]) * u.AA,
         coords={"channel": [108, 171, 284]},

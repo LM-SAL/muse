@@ -4,10 +4,11 @@ Validated attrs schemas for package-wide variables.
 
 import numbers
 from contextlib import suppress
+from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
-from attrs import Converter, cmp_using, converters, define, field, fields, validators
+from attrs import Converter, cmp_using, converters, define, field, fields
 
 import astropy.units as u
 
@@ -80,13 +81,6 @@ def _data_array(unit=None):
     return converters.optional(to_unit)
 
 
-def _instance(type_):
-    """
-    Validator: value is `None` or an instance of ``type_``.
-    """
-    return validators.optional(validators.instance_of(type_))
-
-
 def _optional_int(value, attribute):
     """
     Converter: accept integer values, including numpy integer scalars, but reject bools.
@@ -102,8 +96,17 @@ def _optional_int(value, attribute):
 _int_converter = Converter(_optional_int, takes_field=True)
 
 
-def _nested_tuple(value):
-    return tuple(tuple(item) if isinstance(item, (list, tuple)) else item for item in value)
+def _frozen_lines(value):
+    if not isinstance(value, Mapping):
+        msg = "main_lines_by_channel_SG must be a mapping from channel to line names"
+        raise TypeError(msg)
+    # Keyed by the channel in Angstrom, as the generators' main_lines_by_channel is.
+    return FrozenDict(
+        {
+            round(u.Quantity(channel, u.AA).value): lines if isinstance(lines, str) else tuple(lines)
+            for channel, lines in value.items()
+        }
+    )
 
 
 def _set_readonly(value):
@@ -112,11 +115,7 @@ def _set_readonly(value):
 
 
 def _readonly_quantity(value, unit):
-    # dtype=None preserves the input dtype; the default casts integers to float.
-    quantity = u.Quantity(value, copy=True, dtype=None)
-    # ``.to`` always converts to float; skip it for matching units to preserve dtype.
-    if quantity.unit != unit:
-        quantity = quantity.to(unit)
+    quantity = u.Quantity(value).to(unit)
     _set_readonly(quantity)
     return quantity
 
@@ -124,13 +123,11 @@ def _readonly_quantity(value, unit):
 def _readonly_data_array(value, unit=None):
     data_array = value.copy(deep=True)
     if unit is not None:
-        quantity = u.Quantity(data_array.data, copy=True, dtype=None)
+        quantity = u.Quantity(data_array.data)
         if quantity.unit == u.dimensionless_unscaled:
             msg = f"DataArray values must have units convertible to {unit}"
             raise u.UnitsError(msg)
-        if quantity.unit != unit:
-            quantity = quantity.to(unit)
-        data_array.data = quantity
+        data_array.data = quantity.to(unit)
     _set_readonly(data_array.data)
     for coord in data_array.coords.values():
         _set_readonly(coord.data)
@@ -165,7 +162,6 @@ def _channel_coordinates(data_array, name, dimension="channel"):
     return tuple(np.asarray(data_array.coords[dimension].values).tolist())
 
 
-_array_eq = cmp_using(eq=_eq_optional(np.array_equal), class_name="_ArrayEq")
 _data_array_eq = cmp_using(eq=_eq_optional(lambda a, b: a.equals(b)), class_name="_DataArrayEq")
 
 
@@ -175,9 +171,9 @@ class InstrumentDefaults:
     Container of instrument properties used by functions and methods within the muse
     library; not a general-purpose instrument defaults class.
 
-    Every parameter is optional, and all but `normalization` default to `None`. Populate
-    the ones a given instrument needs (see `muse.variables` for the MUSE instance). Each
-    field documents its meaning and the unit it is normalized to.
+    Every parameter is optional and defaults to `None`. Populate the ones a given
+    instrument needs (see `muse.variables` for the MUSE instance). Each field documents
+    its meaning and the unit it is normalized to.
 
     Per-channel calibrations for both detectors are keyed by a ``channel`` dimension:
     the ``_SG``/``_CI`` field suffix identifies the detector, and the two channel sets
@@ -193,14 +189,14 @@ class InstrumentDefaults:
     """
 
     # Context Imager (CI) parameters
-    dx_pixel_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_width_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along x-axis for the CI.
 
     Normalized to arcseconds.
     """
 
-    dy_pixel_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_height_CI: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along y-axis for the CI.
 
@@ -208,21 +204,21 @@ class InstrumentDefaults:
     """
 
     # Spectrograph (SG) parameters
-    dx_pixel_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_width_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along x-axis for the SG.
 
     Normalized to arcseconds.
     """
 
-    dy_pixel_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
+    pixel_height_SG: u.Quantity | None = field(default=None, converter=_quantity(u.arcsec))
     """
     Spatial pixel size along y-axis for the SG.
 
     Normalized to arcseconds.
     """
 
-    detector_x_pixels_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pix))
+    detector_x_pixels_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of pixels along the spectral dimension for the SG.
     """
@@ -315,86 +311,9 @@ class InstrumentDefaults:
     CI calibration fields may cover different channel sets.
     """
 
-    # Synthesis/inversions
-    sum_over_dims_synthesis: tuple | None = field(default=None, converter=converters.optional(tuple))
+    main_lines_by_channel_SG: FrozenDict | None = field(default=None, converter=converters.optional(_frozen_lines))
     """
-    Dimensions to sum over during synthesis/inversions.
-    """
-
-    main_lines_by_channel_SG: tuple | None = field(default=None, converter=converters.optional(_nested_tuple))
-    """
-    Main spectral lines for the SG, grouped per channel.
-    """
-
-    fov_pad_mode: str | None = field(default=None, validator=_instance(str))
-    """
-    How `~muse.transforms.match_fov` extends an axis, a mode of `xarray.DataArray.pad`.
-    """
-
-    fov_extent: str | None = field(default=None, validator=_instance(str))
-    """
-    How `~muse.transforms.match_fov` treats the x width: ``"extend"`` crops wider inputs
-    and extends narrower ones, ``"crop"`` only crops, ``"keep"`` leaves the width
-    untouched.
-    """
-
-    fov_oversampling: int | None = field(default=None, converter=_int_converter)
-    """
-    Sub-samples per input sample that `~muse.transforms.match_fov` interpolates onto
-    before it averages them into pixels. Used only when the input has at least one and
-    fewer than four samples per pixel.
-
-    0 interpolates straight onto the pixels.
-    """
-
-    # Response creation
-    response_abundances: tuple | None = field(default=None, converter=converters.optional(tuple))
-    """
-    CHIANTI abundance names the response products are generated for.
-    """
-
-    response_temperature: xr.DataArray | None = field(default=None, converter=_data_array(u.K), eq=_data_array_eq)
-    """
-    Temperatures of the response products, along ``logT``.
-
-    Values normalized to Kelvin.
-    """
-
-    response_pressure: xr.DataArray | None = field(
-        default=None, converter=_data_array(u.K / u.cm**3), eq=_data_array_eq
-    )
-    """
-    Electron pressures of the response products, along ``pressure``.
-
-    Values normalized to Kelvin per cubic centimeter.
-    """
-
-    response_doppler_velocity: u.Quantity | None = field(default=None, converter=_quantity(u.km / u.s), eq=_array_eq)
-    """
-    Doppler velocities of the line response products.
-
-    Normalized to kilometers per second.
-    """
-
-    continuum_response_doppler_velocity: u.Quantity | None = field(
-        default=None, converter=_quantity(u.km / u.s), eq=_array_eq
-    )
-    """
-    Doppler velocities of the SG continuum response products; a continuum varies slowly
-    with wavelength, so they are coarser than those of the lines.
-
-    Normalized to kilometers per second.
-    """
-
-    # Response creation, continued
-    minimum_abundance: float | None = field(default=None, converter=converters.optional(float))
-    """
-    Minimum abundance considered for response creation.
-    """
-
-    normalization: float = field(default=1e-27, converter=float)
-    """
-    Normalization in the response function.
+    Main spectral lines for the SG, keyed by channel.
     """
 
     wavelength_start_SG: xr.DataArray | None = field(default=None, converter=_data_array(u.AA), eq=_data_array_eq)
@@ -452,6 +371,10 @@ class InstrumentDefaults:
             if field_channels != channels:
                 msg = f"{name} and {reference} must have matching channel coordinates"
                 raise ValueError(msg)
+        lines = self.main_lines_by_channel_SG
+        if lines is not None and channels is not None and set(lines) != set(channels):
+            msg = f"main_lines_by_channel_SG must be keyed by the channels of {reference}, {list(channels)}"
+            raise ValueError(msg)
 
 
 def _required(defaults: InstrumentDefaults, name: str):
