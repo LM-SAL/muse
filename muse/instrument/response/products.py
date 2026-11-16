@@ -1112,7 +1112,7 @@ def _detector_kwargs(area: xr.Dataset, detector: str, instrument_defaults: Instr
         table = getattr(instrument_defaults, f"{name}_{detector}")
         # A channel of another instrument has no entry; its file gives the value.
         if table is not None and channel in table.channel.values:
-            kwargs[name] = u.Quantity(table.sel(channel=channel).data)
+            kwargs[name] = table.sel(channel=channel).data
     kwargs |= {name: u.Quantity(area.attrs[name]) for name in _DETECTOR_ATTRS if name in area.attrs}
     # Without this check transform_response_units would take what is missing from DEFAULTS_MUSE.
     if missing := [name for name in _DETECTOR_ATTRS if kwargs.get(name) is None]:

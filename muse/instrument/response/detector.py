@@ -165,7 +165,7 @@ def map_response_to_sg_detector(
             _required(defaults, "detector_x_pixels_SG") if detector_x_pixels is None else detector_x_pixels
         )
         wavelength_start = (
-            u.Quantity(_required(defaults, "wavelength_start_SG").sel(channel=channel_value).data)
+            _required(defaults, "wavelength_start_SG").sel(channel=channel_value).data
             if wavelength_start is None
             else wavelength_start
         )
@@ -205,7 +205,7 @@ def map_response_to_sg_detector(
     slit_separation = None
     if dispersion is None:
         separations = _required(instrument_defaults, "spectral_slit_separation_SG")
-        slit_separation = u.Quantity(separations.sel(channel=channel_value).data)
+        slit_separation = separations.sel(channel=channel_value).data
         dispersion = slit_separation / pixels_between_slits
     elif pixels_between_slits is not None:
         slit_separation = pixels_between_slits * dispersion

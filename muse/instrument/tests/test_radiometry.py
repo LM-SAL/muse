@@ -178,7 +178,7 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
 
 def test_transform_response_units_uses_the_channel_pair_energy():
     channel = 17.1 * u.nm
-    pair_energy = u.Quantity(DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data)
+    pair_energy = DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data
     response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=channel)
 
     default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel=channel)
@@ -220,8 +220,8 @@ def test_transform_response_units_selects_detector_calibration():
 
     sg_solid_angle = (defaults.pixel_width_SG * defaults.pixel_height_SG).to_value(u.sr)
     ci_solid_angle = (defaults.pixel_width_CI * defaults.pixel_height_CI).to_value(u.sr)
-    sg_pair_energy = u.Quantity(defaults.pair_energy_SG.sel(channel=171).data)
-    sg_gain = u.Quantity(defaults.gain_SG.sel(channel=171).data)
+    sg_pair_energy = defaults.pair_energy_SG.sel(channel=171).data
+    sg_gain = defaults.gain_SG.sel(channel=171).data
     expected_ratio = (
         ci_solid_angle
         / sg_solid_angle

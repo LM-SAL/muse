@@ -99,7 +99,7 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
     assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG
-    expected_start = u.Quantity(DEFAULTS_MUSE.wavelength_start_SG.sel(channel=171).data).to_value(u.AA)
+    expected_start = DEFAULTS_MUSE.wavelength_start_SG.sel(channel=171).data.to_value(u.AA)
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=0).item() == pytest.approx(expected_start)
     assert mapped.channel.item() == 171
     assert mapped.channel.attrs["units"] == "Angstrom"
@@ -190,7 +190,7 @@ def test_map_response_to_sg_detector_refuses_slits_without_their_spacing():
 def test_a_mapped_response_states_how_far_apart_its_slits_fall():
     response = _spectral_response()
     mapped = map_response_to_sg_detector(response, channel=171 * u.AA)
-    separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=171).data)
+    separation = DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=171).data
     assert u.Quantity(mapped.attrs["spectral_slit_separation"]) == separation
     # given a dispersion, the separation is that of its pixels between slits, without the noise of 0.01 * 41
     explicit = map_response_to_sg_detector(
