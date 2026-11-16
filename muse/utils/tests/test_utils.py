@@ -216,7 +216,7 @@ def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alo
 
     assert len({_instrument_defaults_label(defaults) for defaults in [custom, *changed]}) == 1 + len(late)
     # an integer and its float are one value
-    as_float = evolve(custom, detector_x_pixels_SG=custom.detector_x_pixels_SG.astype(float))
+    as_float = evolve(custom, channel_spectral_order_SG=custom.channel_spectral_order_SG.astype(float))
     assert _instrument_defaults_label(as_float) == _instrument_defaults_label(custom)
     # the MUSE values of another muse are told from today's
     today = _instrument_defaults_label(DEFAULTS_MUSE)

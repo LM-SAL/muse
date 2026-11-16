@@ -56,10 +56,6 @@ def test_instrument_int_fields_reject_floats_and_bools():
         InstrumentDefaults(number_of_slits_SG=True)
 
 
-def test_instrument_quantity_converter_preserves_dtype_for_matching_unit():
-    assert DEFAULTS_MUSE.detector_x_pixels_SG.dtype.kind == "i"
-
-
 def test_instrument_quantity_converter_normalizes_units():
     # one field of each converter: a DataArray and a Quantity
     defaults = InstrumentDefaults(

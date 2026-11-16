@@ -98,7 +98,7 @@ def test_map_response_to_sg_detector_uses_muse_defaults():
     mapped = map_response_to_sg_detector(_spectral_response(), channel=17.1 * u.nm)
 
     assert mapped.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG.to_value(u.pix)
+    assert mapped.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG
     expected_start = u.Quantity(DEFAULTS_MUSE.wavelength_start_SG.sel(channel=171).data).to_value(u.AA)
     assert mapped.detector_wavelength.isel(slit=0, detector_x_pixel=0).item() == pytest.approx(expected_start)
     assert mapped.channel.item() == 171

@@ -112,11 +112,7 @@ def _set_readonly(value):
 
 
 def _readonly_quantity(value, unit):
-    # dtype=None preserves the input dtype; the default casts integers to float.
-    quantity = u.Quantity(value, copy=True, dtype=None)
-    # ``.to`` always converts to float; skip it for matching units to preserve dtype.
-    if quantity.unit != unit:
-        quantity = quantity.to(unit)
+    quantity = u.Quantity(value).to(unit)
     _set_readonly(quantity)
     return quantity
 
@@ -124,13 +120,11 @@ def _readonly_quantity(value, unit):
 def _readonly_data_array(value, unit=None):
     data_array = value.copy(deep=True)
     if unit is not None:
-        quantity = u.Quantity(data_array.data, copy=True, dtype=None)
+        quantity = u.Quantity(data_array.data)
         if quantity.unit == u.dimensionless_unscaled:
             msg = f"DataArray values must have units convertible to {unit}"
             raise u.UnitsError(msg)
-        if quantity.unit != unit:
-            quantity = quantity.to(unit)
-        data_array.data = quantity
+        data_array.data = quantity.to(unit)
     _set_readonly(data_array.data)
     for coord in data_array.coords.values():
         _set_readonly(coord.data)
@@ -222,7 +216,7 @@ class InstrumentDefaults:
     Normalized to arcseconds.
     """
 
-    detector_x_pixels_SG: u.Quantity | None = field(default=None, converter=_quantity(u.pix))
+    detector_x_pixels_SG: int | None = field(default=None, converter=_int_converter)
     """
     Number of pixels along the spectral dimension for the SG.
     """

@@ -162,9 +162,7 @@ def map_response_to_sg_detector(
             defaults.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
         )
         detector_x_pixels = (
-            int(_required(defaults, "detector_x_pixels_SG").to_value(u.pix))
-            if detector_x_pixels is None
-            else detector_x_pixels
+            _required(defaults, "detector_x_pixels_SG") if detector_x_pixels is None else detector_x_pixels
         )
         wavelength_start = (
             u.Quantity(_required(defaults, "wavelength_start_SG").sel(channel=channel_value).data)

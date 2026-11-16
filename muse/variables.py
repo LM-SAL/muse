@@ -22,7 +22,7 @@ _DEFAULTS_MUSE_VALUES = {
     # Spectrograph (SG) parameters
     "pixel_width_SG": 0.4 * u.arcsec,
     "pixel_height_SG": 0.167 * u.arcsec,
-    "detector_x_pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
+    "detector_x_pixels_SG": 1024,
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
     # Nominal: 390 mAngstrom at second order, so twice that in the first-order 284 channel.

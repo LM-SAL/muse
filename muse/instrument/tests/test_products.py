@@ -206,7 +206,7 @@ def test_main_line_response(sg_products):
         "detector_x_pixel",
     )
     assert response.sizes["slit"] == DEFAULTS_MUSE.number_of_slits_SG
-    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG.value
+    assert response.sizes["detector_x_pixel"] == DEFAULTS_MUSE.detector_x_pixels_SG
     assert response.sizes["pressure"] == 1
     assert response.sizes["doppler_velocity"] == 3
     assert list(response.line.values) == [MAIN_LINE]
@@ -933,7 +933,7 @@ def test_the_sg_products_follow_the_instrument_defaults_they_are_given(inputs, s
         spectral_slit_separation_SG=xr.DataArray([380.0, 385.0, 400.0] * u.mAA, **by_channel),
         number_of_slits_SG=5,
         pixels_between_slits_SG=20 * u.pix,
-        detector_x_pixels_SG=256 * u.pix,
+        detector_x_pixels_SG=256,
         wavelength_start_SG=xr.DataArray([107.0, 165.0, 280.0] * u.AA, **by_channel),
         channel_spectral_order_SG=xr.DataArray([2, 1, 1], **by_channel),
         waveband_half_width_SG=10 * u.AA,
