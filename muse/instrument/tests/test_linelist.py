@@ -39,13 +39,13 @@ def _workers_in_this_process():
 
 def test_rejects_missing_density_and_pressure():
     with pytest.raises(ValueError, match="Specify density or pressure"):
-        create_chianti_line_list(TEMPERATURE)
+        create_chianti_line_list(TEMPERATURE, wavelength_range=[170, 172] * u.AA)
 
 
 def test_rejects_both_density_and_pressure():
     grid = [1e9] / u.cm**3
     with pytest.raises(ValueError, match="mutually exclusive"):
-        create_chianti_line_list(TEMPERATURE, density=grid, pressure=grid)
+        create_chianti_line_list(TEMPERATURE, density=grid, pressure=grid, wavelength_range=[170, 172] * u.AA)
 
 
 @pytest.mark.parametrize(

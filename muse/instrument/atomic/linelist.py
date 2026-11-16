@@ -35,10 +35,11 @@ __all__ = [
 
 def create_chianti_line_list(
     temperature: u.Quantity,
+    *,
     density: u.Quantity | None = None,
     pressure: u.Quantity | None = None,
     abundance: str | None = None,
-    wavelength_range: u.Quantity | None = None,
+    wavelength_range: u.Quantity,
     minimum_abundance: float | None = None,
     element_list: list[str] | None = None,
     ion_list: list[str] | None = None,
