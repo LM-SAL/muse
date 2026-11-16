@@ -299,8 +299,15 @@ def _require_name_part(name: str, value: str, punctuation: str = ".+-") -> None:
     """
     Refuse a string that goes into a file name unless it is made of plain characters: a
     slash would make a directory, and a bracket or a brace a pattern.
+
+    Dots alone, as an abundance whose folder holds products, would name this directory
+    or the one above.
     """
-    if not isinstance(value, str) or not re.fullmatch(f"[A-Za-z0-9{re.escape(punctuation)}]+", value):
+    if (
+        not isinstance(value, str)
+        or not re.fullmatch(f"[A-Za-z0-9{re.escape(punctuation)}]+", value)
+        or set(value) == {"."}
+    ):
         msg = (
             f"{name} is part of a file name and may hold only letters, digits and the characters {punctuation}; "
             f"got {value!r}"

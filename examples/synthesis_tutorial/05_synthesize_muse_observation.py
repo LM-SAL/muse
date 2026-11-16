@@ -44,10 +44,9 @@ response_files = [
     )
 ]
 
+# Each file gives its channel and its camera gain.
 response = read_responses(
-    response_directory=response_files[0].parent,
-    response_files=[path.name for path in response_files],
-    channels=[108, 171, 284] * u.AA,
+    response_files,
     number_of_slits=vdem_raster.sizes["slit"],
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.

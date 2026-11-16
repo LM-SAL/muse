@@ -10,7 +10,6 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
-from muse.instrument.response.detector import _channel_as_angstrom
 from muse.log import logger
 from muse.utils.utils import (
     _to_zarr,
@@ -20,7 +19,6 @@ from muse.utils.utils import (
     require_unit,
     update_attrs,
 )
-from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import FrozenDict
 
 __all__ = [
@@ -221,10 +219,8 @@ def read_response(
     doppler_velocity_method : `str`, optional
         Interpolation method for doppler_velocity, by default "nearest".
     gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN. If `None`, use the per-channel
-        values from `~muse.variables_schema.InstrumentDefaults.gain_SG` or
-        `~muse.variables_schema.InstrumentDefaults.gain_CI` selected by the
-        response's ``channel`` coordinate.
+        Camera gain, convertible to electron/DN. By default the ``gain`` attribute of
+        the file, which the generators write.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
@@ -244,8 +240,8 @@ def read_response(
         If the requested ``logT`` or ``doppler_velocity`` axis has no units, is empty, not
         finite, in units that do not convert to the response's or wholly outside its range;
         if the file is not
-        in the layout `save_response` writes; or if ``gain`` is not given and the response has
-        no MUSE ``channel`` to take it from.
+        in the layout `save_response` writes; or if ``gain`` is not given and the file states
+        none, in a ``gain`` coordinate or attribute.
     """
     response_file = Path(response_file)
 
@@ -287,48 +283,25 @@ def read_response(
         response = response.expand_dims("line")
 
     gain_unit = u.electron / u.DN
-    if gain is None:
-        if "channel" not in response.coords:
-            msg = "response has no channel coordinate to select the per-channel default gain; pass gain explicitly"
-            raise ValueError(msg)
-        gain = _default_gain(response.channel)
-    gain = gain.to(gain_unit)  # a statement so add_history records the converted value
-    gain_dim = "channel" if "channel" in response.dims else "line"
-    gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
-    response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
+    if gain is None and "gain" in response.coords:
+        # A file that holds a gain per line, such as a saved set of responses, keeps it.
+        response = response.assign_coords(gain=coord_as_unit(response, "gain", gain_unit, "gain coordinate"))
+    else:
+        if gain is None:
+            if "gain" not in response.attrs:
+                msg = f"{response_file} states no gain, in a gain coordinate or attribute; pass gain"
+                raise ValueError(msg)
+            gain = u.Quantity(response.attrs["gain"])
+        else:
+            # The given gain replaces that of the file; add_history records a scalar one.
+            response.attrs.pop("gain", None)
+        gain = gain.to(gain_unit)  # a statement so add_history records the converted value
+        gain_dim = "channel" if "channel" in response.dims else "line"
+        gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
+        response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
     add_history(response, locals(), read_response, reading=True)
     return response
-
-
-def _default_gain(channel) -> u.Quantity:
-    """
-    The default camera gain of ``channel``, an SG or CI channel, from the instrument
-    defaults.
-
-    Parameters
-    ----------
-    channel : `int` or `xarray.DataArray`
-        One channel, or the per-line channel coordinate of a response.
-
-    Returns
-    -------
-    `astropy.units.Quantity`
-        Gain in electron/DN, one value per entry of ``channel``.
-
-    Raises
-    ------
-    ValueError
-        If a channel is neither an SG nor a CI channel of the instrument defaults.
-    """
-    for gains in (DEFAULTS_MUSE.gain_SG, DEFAULTS_MUSE.gain_CI):
-        try:
-            return u.Quantity(gains.sel(channel=channel).data)
-        except KeyError:
-            continue
-    channels = np.unique(np.atleast_1d(getattr(channel, "values", channel))).tolist()
-    msg = f"unsupported MUSE channel(s) {channels}; pass gain explicitly to read_response"
-    raise ValueError(msg)
 
 
 def _requested_axis(axis: u.Quantity | xr.DataArray | None, name: str) -> xr.DataArray | None:
@@ -478,12 +451,9 @@ def align_response_and_vdem(
     return matched_response, matched_vdem
 
 
-@u.quantity_input(channels=u.AA)
 def read_responses(
-    response_directory: str | Path,
-    response_files: Sequence[str],
+    response_files: Sequence[str | Path],
     *,
-    channels: u.Quantity,
     logT: u.Quantity | xr.DataArray | None = None,
     doppler_velocity: u.Quantity | xr.DataArray | None = None,
     number_of_slits: int | None = None,
@@ -492,18 +462,15 @@ def read_responses(
     chunked: bool = False,
 ) -> xr.Dataset:
     """
-    Load multiple response functions and concatenate them along ``line``.
+    Load several response functions and concatenate them along ``line``.
+
+    Each file gives its channel in its ``channel`` coordinate and its camera gain in
+    its ``gain`` coordinate or attribute, as the products of the generators do.
 
     Parameters
     ----------
-    response_directory : `str` or `pathlib.Path`
-        Directory containing the response files.
-    response_files : `Sequence` of `str`
-        Filenames of response functions to load, in order.
-    channels : `astropy.units.Quantity`
-        One MUSE SG or CI channel per response file, as wavelengths, e.g.
-        ``[108, 171, 284] * u.AA``. Selects the per-channel default gain and is
-        repeated for every line when a file contains multiple lines.
+    response_files : `Sequence` of `str` or `pathlib.Path`
+        Response files, in order.
     logT : `astropy.units.Quantity` or `xarray.DataArray`, optional
         Temperature axis to (re)sample onto, with units. Passed to
         `muse.instrument.read_response`.
@@ -526,19 +493,18 @@ def read_responses(
     Returns
     -------
     `xarray.Dataset`
-        Concatenated response dataset with a ``channel`` coordinate along ``line``,
-        named as the instrument defaults name the channels (e.g. ``171``).
+        Concatenated response dataset with the ``channel`` coordinate of the files
+        along ``line``.
 
     Raises
     ------
     ValueError
-        If the length of ``channels`` does not match ``response_files``, a channel is
-        not a MUSE SG or CI channel, or ``logT`` or ``doppler_velocity`` has no units.
+        If no file is given, a file has no ``channel`` coordinate or no gain, the files
+        are of different instrument defaults or units, or ``logT`` or
+        ``doppler_velocity`` has no units.
     """
-    known_channels = np.concatenate((DEFAULTS_MUSE.gain_SG.channel.values, DEFAULTS_MUSE.gain_CI.channel.values))
-    channel_labels = [_channel_as_angstrom(channel, known_channels, "sg/ci") for channel in np.atleast_1d(channels)]
-    if len(channel_labels) != len(response_files):
-        msg = f"channels ({len(channel_labels)}) must match the number of response_files ({len(response_files)})"
+    if not response_files:
+        msg = "pass at least one response file"
         raise ValueError(msg)
     # Rebound under their own names, so that the history names the axes instead of listing them.
     logT = _requested_axis(logT, "logT")
@@ -546,20 +512,30 @@ def read_responses(
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
-        for file_name, channel in zip(response_files, channel_labels, strict=True):
-            gain = _default_gain(channel)
+        for response_file in response_files:
             dataset = read_response(
-                Path(response_directory) / file_name,
+                Path(response_file),
                 logT=logT,
                 doppler_velocity=doppler_velocity,
                 number_of_slits=number_of_slits,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
-                gain=gain,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
+            if "channel" not in dataset.coords:
+                msg = f"{response_file} has no channel coordinate, which read_responses takes the channel from"
+                raise ValueError(msg)
+            # one channel per line, also from a file that states one for all
+            dataset = dataset.assign_coords(channel=dataset.channel.broadcast_like(dataset.line))
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
+    for what, value_of in (
+        ("instrument defaults", lambda dataset: dataset.attrs.get("instrument_defaults")),
+        ("units", lambda dataset: dataset.detector_response.attrs.get("units")),
+    ):
+        if len(values := {str(value_of(dataset)) for dataset in datasets}) > 1:
+            msg = f"the files are of different {what} ({', '.join(sorted(values))}); read those of one kind together"
+            raise ValueError(msg)
         response = xr.concat(
             datasets,
             dim="line",
@@ -569,13 +545,9 @@ def read_responses(
             join="exact",
             combine_attrs="drop_conflicts",
         )
-    line_channels = [
-        channel for dataset, channel in zip(datasets, channel_labels, strict=True) for _ in range(dataset.sizes["line"])
-    ]
     # combine_attrs="drop_conflicts" kept what every file agrees on, their dates included.
-    result = response.assign_coords(channel=("line", line_channels))
-    add_history(result, locals(), read_responses, sources=datasets, reading=True)
-    return result
+    add_history(response, locals(), read_responses, sources=datasets, reading=True)
+    return response
 
 
 def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> None:

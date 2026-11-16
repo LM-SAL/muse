@@ -413,6 +413,7 @@ def fake_response_file_contents():
             "abundance": ["sun_coronal_2021_chianti"],
             "line": ["Fe IX 171.073"],
         },
+        attrs={"gain": "10.0 electron / DN"},  # as the generators write it
     )
     return response.assign_coords(
         line_wavelength=("line", [171.073], {"units": "Angstrom"}),

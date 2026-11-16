@@ -217,6 +217,23 @@ def test_map_response_to_sg_detector_refuses_slits_without_their_spacing():
         )
 
 
+def test_a_mapped_response_states_how_far_apart_its_slits_fall():
+    response = _spectral_response()
+    for channel, separation in ((108, "390"), (171, "390"), (284, "780")):
+        mapped = map_response_to_sg_detector(response, channel=channel * u.AA)
+        assert mapped.attrs["spectral_slit_separation"] == f"{separation} mAngstrom"
+    # given a dispersion, the separation is that of its pixels between slits, without the noise of 0.01 * 41
+    explicit = map_response_to_sg_detector(
+        response,
+        number_of_slits=2,
+        dispersion=0.01 * u.AA / u.pix,
+        pixels_between_slits=41 * u.pix,
+        detector_x_pixels=4,
+        wavelength_start=170 * u.AA,
+    )
+    assert explicit.attrs["spectral_slit_separation"] == "410 mAngstrom"
+
+
 def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector_axis():
     response = _ci_spectral_response().chunk({"wavelength_bin": 2})
     original = response.copy(deep=True)
