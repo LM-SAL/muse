@@ -20,7 +20,7 @@ included).
 .. warning::
 
     This example requires the optional ``aiapy`` package. Install it with
-    ``pip install aiapy`` before running the script.
+    ``pip install "muse[aia]"`` before running the script.
 """
 
 import os
@@ -48,9 +48,7 @@ from muse.synthesis import vdem_synthesis
 from muse.transforms import match_fov
 
 ##############################################################################
-# We fetch the VDEM used by the MUSE synthesis tutorial. Its ``logT`` and
-# ``doppler_velocity`` grids will define the response axes below, so no
-# interpolation is needed before the synthesis.
+# We fetch the VDEM used by the MUSE synthesis tutorial.
 
 output_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
 vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
@@ -61,11 +59,9 @@ print(vdem)
 # We recreate the AIA 94 Å response instead of reusing the one from the
 # previous example.
 #
-# :func:`muse.synthesis.vdem_synthesis` pairs the VDEM and response grid
-# point by grid point without interpolating, so the response must be
-# evaluated on the VDEM's exact ``logT`` and ``doppler_velocity`` grids,
-# whereas the response example evaluated the aggregate spectrum at rest
-# wavelength on a wider display grid.
+# The response example evaluated the aggregate spectrum at rest wavelength on a
+# wide display grid; here the response takes the VDEM's ``doppler_velocity``
+# grid and the line list's own ``logT`` grid.
 
 # The effective area in cm2, with the pixel size, camera gain and silicon pair
 # energy of the channel in its attributes, as in the response example. With no
@@ -78,8 +74,7 @@ detector = {
 }
 
 line_list_file = fetch_example_data("aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc")
-line_list = xr.load_dataset(line_list_file, engine="h5netcdf").sel(logT=vdem.logT, method="nearest", tolerance=0.05)
-line_list = line_list.assign_coords(logT=vdem.logT)
+line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
 
 # The lines ranked by their peak brightness through the effective area.
 ranked = rank_line_list(line_list, effective_area)
@@ -89,7 +84,7 @@ print(f"Strongest contributors: {main_lines}")
 ##############################################################################
 # Now we will create the AIA response, and convert it with
 # :func:`muse.instrument.transform_response_units` to DN in one AIA pixel.
-# ``bin_method="average"`` integrates each line over its wavelength bin: an iron
+# Each line is integrated over its wavelength bin, the default ``bin_method``: an iron
 # line is narrower than the 0.05 Å bins, and sampled at the bin centers it
 # would be miscounted, which would make the image several times too faint.
 
@@ -97,7 +92,6 @@ response = create_spectral_response(
     line_list,
     np.arange(91.0, 97.0, 0.05) * u.AA,
     main_lines=main_lines,
-    bin_method="average",
     doppler_velocity=vdem.doppler_velocity.data * u.km / u.s,
     effective_area=effective_area,
 )
@@ -115,7 +109,9 @@ aia_response = map_response_to_ci_detector(response, channel)
 # view is not tied to the MUSE raster width, so ``extent="keep"`` matches
 # the resolution while leaving the x extent alone. Afterwards
 # :func:`muse.instrument.align_response_and_vdem` puts the response and the
-# VDEM on shared temperature and velocity grids.
+# VDEM on shared temperature and velocity grids:
+# :func:`muse.synthesis.vdem_synthesis` pairs them grid point by grid point
+# without interpolating.
 
 vdem_aia = match_fov(vdem, pixel_width=detector["pixel_width"], pixel_height=detector["pixel_height"], extent="keep")
 aia_response, vdem_aia = align_response_and_vdem(aia_response, vdem_aia)

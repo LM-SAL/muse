@@ -1,0 +1,1 @@
+``transform_response_units`` and ``transform_flux_units`` take ``instrument_defaults``, ``read_responses`` takes ``gain``, and ``calculate_moments`` applies ``peak_half_width`` on its own.

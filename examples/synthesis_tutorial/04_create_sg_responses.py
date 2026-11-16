@@ -17,6 +17,8 @@ We will use the default per-channel effective areas
     are applied uniformly across the band, so contaminant counts away from the
     main line are only approximate.
 
+:func:`muse.instrument.generate_sg_responses` runs these steps for every channel.
+
 To see how the response changes with other parameters — an electron-density
 grid instead of a fixed pressure, or nonthermal broadening from unresolved
 motions such as Alfven-wave turbulence — see
@@ -103,7 +105,7 @@ bands = {
 # ``1e-27 erg cm5 / (Angstrom s sr)``.
 #
 # :func:`muse.instrument.transform_response_units` then converts energy to
-# photons and the detector-pixel solid angle to steradians, giving
+# photons, and per steradian to per detector pixel, giving
 # ``1e-27 cm5 ph / (Angstrom s)``. Ask it for ``DN`` instead of ``ph`` if you
 # want a response in data numbers.
 #
@@ -122,10 +124,12 @@ for band, config in bands.items():
         )
     )
     line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
+    # The waveband and step of the channel, sampled by the number of steps: np.arange with
+    # a float step can gain or lose the last sample to round-off.
     spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item()
-    lower = band - 35 / spectral_order
-    upper = band + 35 / spectral_order
-    wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
+    half_width = (DEFAULTS_MUSE.waveband_half_width_SG / spectral_order).to_value(u.AA)
+    step = DEFAULTS_MUSE.wavelength_step_SG.to_value(u.AA)
+    wavelength_grid = (band - half_width + step * np.arange(round(2 * half_width / step) + 1)) * u.AA
     waveband_response = create_spectral_response(
         line_list,
         wavelength_grid,

@@ -156,6 +156,19 @@ Install ``muse`` into the activated environment and check the installed package:
     $ python -m pip install muse
     $ python -m pip show muse
 
+.. _muse-installing-extras:
+
+Optional extras
+===============
+
+``pip install "muse[<extra>]"`` adds:
+
+* ``fiasco``: CHIANTI line lists and continua with `fiasco <https://fiasco.readthedocs.io/>`__, the default backend.
+* ``chianti``: the same with ChiantiPy, which reads the database that ``XUVTOP`` points to.
+* ``aia``: SDO/AIA effective areas.
+* ``torch``: the Torch synthesis backend, see below.
+* ``all``: all of these.
+
 .. _muse-installing-torch:
 
 Installing Torch (optional)
@@ -196,4 +209,4 @@ The correct Torch build depends on your hardware (CPU-only, NVIDIA CUDA, or Appl
             $ uv pip install torch --torch-backend=auto
             $ uv pip install "muse[torch]"
 
-Now we've got a working installation of ``muse``, in the next few chapters we'll look at some of the basic data structures ``muse`` uses for representing SG and context imager data.
+With ``muse`` installed, the :doc:`example gallery <generated/gallery/index>` walks through the synthesis pipeline end to end.

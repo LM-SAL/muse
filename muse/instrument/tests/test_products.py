@@ -1067,6 +1067,8 @@ def test_custom_instrument_defaults_neither_fall_back_nor_mix(inputs, tmp_path):
     mixed = r"made with DEFAULTS_MUSE [0-9a-f]{12} instrument defaults and this call uses custom [0-9a-f]{12} ones"
     with pytest.raises(ValueError, match="gives the pixel_width"):
         _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, dx_pixel_SG=None))
+    with pytest.raises(ValueError, match="instrument_defaults has no spectral_slit_separation_SG"):
+        _sg(inputs, tmp_path / "lacking", instrument_defaults=evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=None))
 
     _sg(inputs, tmp_path / "mixed", maximum_contaminants=0)
     with pytest.raises(ValueError, match=mixed):

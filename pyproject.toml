@@ -29,7 +29,9 @@ dependencies = [
   "dask[array]>=2026.8.0",
   "loguru>=0.7.3",
   "netCDF4>=1.7.2",
+  "numexpr>=2.14",
   "numpy>=2.5.0",
+  "periodictable>=2.1.0",
   "scipy>=1.18.0",
   "threadpoolctl>=3.1",
   "tqdm>=4.70",
@@ -40,8 +42,6 @@ optional-dependencies.all = ["muse[aia,chianti,fiasco,torch]"]
 optional-dependencies.aia = ["aiapy>=0.12.0"]
 optional-dependencies.chianti = [
   "ChiantiPy>=0.16.0",
-  "numexpr>=2.14",
-  "periodictable>=2.1.0",
 ]
 optional-dependencies.fiasco = [
   "fiasco>=0.9.0", # the minimum _import_fiasco checks; muse/instrument/atomic/backends.py says why

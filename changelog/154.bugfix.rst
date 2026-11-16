@@ -1,0 +1,1 @@
+``pip install "muse[fiasco]"`` can build responses: numexpr and periodictable are core dependencies.

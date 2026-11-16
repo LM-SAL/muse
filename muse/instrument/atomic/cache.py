@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import UTC, datetime
 from collections.abc import Callable
 
+import numexpr
 import numpy as np
 import xarray as xr
 from threadpoolctl import threadpool_info, threadpool_limits
@@ -442,16 +443,11 @@ def _limited_threads(threads: int):
     limits = {}
     for pool in threadpool_info():
         limits[pool["user_api"]] = min(pool["num_threads"], limits.get(pool["user_api"], threads))
-    try:
-        import numexpr  # noqa: PLC0415
-    except ImportError:
-        numexpr = None
-    previous_numexpr_threads = None if numexpr is None else numexpr.set_num_threads(threads)
-    if previous_numexpr_threads is not None and previous_numexpr_threads < threads:
+    previous_numexpr_threads = numexpr.set_num_threads(threads)
+    if previous_numexpr_threads < threads:
         numexpr.set_num_threads(previous_numexpr_threads)
     try:
         with threadpool_limits(limits=limits):
             yield
     finally:
-        if previous_numexpr_threads is not None:
-            numexpr.set_num_threads(previous_numexpr_threads)
+        numexpr.set_num_threads(previous_numexpr_threads)

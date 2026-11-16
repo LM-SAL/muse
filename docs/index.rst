@@ -51,8 +51,8 @@ The package is pre-alpha and currently focuses on synthesizing MUSE observations
 
 * Build a Velocity-Differential Emission Measure (VDEM) from a simulation cube with :func:`muse.synthesis.create_simple_vdem`.
 * Match a VDEM to the MUSE field of view and raster geometry with :func:`muse.transforms.match_fov`, :func:`muse.transforms.reshape_x_to_slit_step`, and :func:`muse.transforms.reshape_slit_step_to_x`.
-* Create CHIANTI line lists (:func:`muse.instrument.create_chianti_line_list`) and build, save, and load spectrograph response functions (:func:`muse.instrument.create_spectral_response`, :func:`muse.instrument.save_response`, :func:`muse.instrument.read_response`, :func:`muse.instrument.read_responses`).
-* Synthesize detector spectra with :func:`muse.synthesis.vdem_synthesis` and analyze them with :func:`muse.synthesis.calculate_moments`.
+* Create CHIANTI line lists and continua with fiasco or ChiantiPy, and build, save and load spectrograph and context-imager responses (:func:`muse.instrument.create_spectral_response`, :func:`muse.instrument.read_response`), or all of them at once with :func:`muse.instrument.generate_sg_responses`.
+* Synthesize detector spectra with :func:`muse.synthesis.vdem_synthesis`, convert their units with :func:`muse.instrument.transform_flux_units`, and analyze them with :func:`muse.synthesis.calculate_moments`.
 
 The :doc:`example gallery <generated/gallery/index>` walks through this pipeline end to end.
 

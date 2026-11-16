@@ -135,8 +135,13 @@ def _sigma_of_an_iron_line_at_1_MK(**kwargs) -> float:
     The measured sigma, in Angstrom, of one Fe line at 171 Angstrom and 1 MK.
     """
     line_list = fake_line_list(1, wavelength=[171.0], logT=[6.0])
+    # sampled at the bin centers: a bin average would add the width of a bin to the line's
     response = create_spectral_response(
-        line_list, DEFAULT_WAVELENGTH_GRID, main_lines=line_list.full_name.values.tolist(), **kwargs
+        line_list,
+        DEFAULT_WAVELENGTH_GRID,
+        main_lines=line_list.full_name.values.tolist(),
+        bin_method="center",
+        **kwargs,
     )
     profile = response.spectral_response.squeeze().values
     offset = response.wavelength_grid.values - 171.0
@@ -661,8 +666,8 @@ def test_average_conserves_the_area_of_an_unresolved_line():
     line_list = fake_line_list(1)
     grid = np.arange(170.0, 172.02, 0.02) * u.AA
     kwargs = {"main_lines": [line_list.full_name[0].item()], "doppler_velocity": DOPPLER_VELOCITY}
-    averaged = create_spectral_response(line_list, grid, bin_method="average", **kwargs)
-    centered = create_spectral_response(line_list, grid, **kwargs)
+    averaged = create_spectral_response(line_list, grid, **kwargs)
+    centered = create_spectral_response(line_list, grid, bin_method="center", **kwargs)
     np.testing.assert_allclose(_integral_ratio(averaged, line_list), 1.0, rtol=1e-12)
     assert np.abs(_integral_ratio(centered, line_list) - 1.0).max() > 0.01
     assert averaged.spectral_response.attrs["bin_method"] == "average"
@@ -770,8 +775,8 @@ def test_methods_agree_on_the_fine_grid():
         "doppler_velocity": DOPPLER_VELOCITY,
         "effective_area": _stepped_effective_area(),
     }
-    centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
-    averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="average", **kwargs)
+    centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="center", **kwargs)
+    averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
     assert centered.spectral_response.attrs["effective_area_at"] == "bin center"
     assert averaged.spectral_response.attrs["effective_area_at"] == "line center"
     # the lines sit on the smooth 1 %/A slope: the area at the center and the area across

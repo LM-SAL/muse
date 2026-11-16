@@ -1,0 +1,1 @@
+``create_spectral_response`` averages each line over its bin by default (``bin_method="average"``), ``read_response`` resamples velocity linearly by default, and ``doppler_to_wavelength`` refuses a dataset that already has a ``detector_wavelength``.

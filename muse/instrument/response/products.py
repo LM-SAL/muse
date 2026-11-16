@@ -44,7 +44,7 @@ from muse.instrument.response.spectral import (
 from muse.log import logger
 from muse.utils.utils import _inherit_history, _instrument_defaults_label, _written_in_full, add_history
 from muse.variables import DEFAULTS_MUSE
-from muse.variables_schema import InstrumentDefaults
+from muse.variables_schema import InstrumentDefaults, _required
 
 __all__ = ["generate_ci_responses", "generate_sg_continuum_responses", "generate_sg_responses"]
 
@@ -1125,7 +1125,7 @@ def _line_tag(line: str) -> str:
 
 
 def _sg_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
-    return tuple(int(channel) for channel in instrument_defaults.channel_spectral_order_SG.channel.values)
+    return tuple(int(channel) for channel in _required(instrument_defaults, "channel_spectral_order_SG").channel.values)
 
 
 def _ci_channels(instrument_defaults: InstrumentDefaults) -> tuple[int, ...]:
@@ -1194,7 +1194,7 @@ def _main_lines_by_sg_channel(
     for channel, lines in _by_sg_channel(
         overrides,
         "main_lines_by_channel",
-        instrument_defaults.main_lines_by_channel_SG,
+        _required(instrument_defaults, "main_lines_by_channel_SG"),
         _sg_channels(instrument_defaults),
     ).items():
         # One name alone is one line, not its characters.
@@ -1216,7 +1216,7 @@ def _instrumental_fwhm_by_sg_channel(
     overrides: Mapping | None, instrument_defaults: InstrumentDefaults
 ) -> dict[int, u.Quantity]:
     widths = {}
-    defaults = instrument_defaults.instrumental_fwhm_SG.data
+    defaults = _required(instrument_defaults, "instrumental_fwhm_SG").data
     sg_channels = _sg_channels(instrument_defaults)
     for channel, width in _by_sg_channel(overrides, "instrumental_fwhm_by_channel", defaults, sg_channels).items():
         widths[channel] = u.Quantity(width)
@@ -1234,8 +1234,8 @@ def _sg_waveband(channel: int, instrument_defaults: InstrumentDefaults) -> u.Qua
     The two ends of what an SG channel covers: the half width divided by the spectral
     order, on either side of the channel wavelength.
     """
-    order = int(instrument_defaults.channel_spectral_order_SG.sel(channel=channel))
-    half_width = instrument_defaults.waveband_half_width_SG / order
+    order = int(_required(instrument_defaults, "channel_spectral_order_SG").sel(channel=channel))
+    half_width = _required(instrument_defaults, "waveband_half_width_SG") / order
     return u.Quantity([channel * u.AA - half_width, channel * u.AA + half_width])
 
 
@@ -1247,7 +1247,7 @@ def _sg_waveband_grid(
     the step of ``instrument_defaults``; the last sample is the one nearest its upper
     end, and may lie just beyond it.
     """
-    step = instrument_defaults.wavelength_step_SG if step is None else step
+    step = _required(instrument_defaults, "wavelength_step_SG") if step is None else step
     lower, upper = _sg_waveband(channel, instrument_defaults).to_value(u.AA)
     step = step.to_value(u.AA)
     # By the number of steps: np.arange up to the upper end gains or loses a sample to round-off.
