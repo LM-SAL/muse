@@ -94,7 +94,7 @@ Lineage
 
 Functions that return a dataset record the call that produced it via :func:`muse.utils.add_history`.
 This keeps a human-readable trail of the operations on the data itself.
-``add_history`` alone owns the provenance attributes (``HISTORY``, ``date created``, ``date modified``, ``version``); a multi-input result inherits its inputs' histories by passing them as ``add_history(..., sources=...)``.
+``add_history`` alone owns the provenance attributes (``history``, ``date_created``, ``date_modified``, ``muse_version``); a multi-input result inherits its inputs' histories by passing them as ``add_history(..., sources=...)``.
 :func:`muse.utils.update_attrs` copies the remaining (non-provenance) attributes from a source dataset.
 
 A newly constructed dataset needs both halves of this finalization.

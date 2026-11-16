@@ -2,6 +2,7 @@
 Functions whose scope is not limited to one part of the muse package.
 """
 
+import re
 import inspect
 import zipfile
 import datetime as dt
@@ -139,7 +140,28 @@ def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: boo
 
 
 # Provenance is owned by add_history alone; update_attrs never copies these keys.
-_PROVENANCE_ATTRS = ("HISTORY", "date created", "date modified", "version")
+_PROVENANCE_ATTRS = ("history", "date_created", "date_modified", "muse_version")
+# Keyword inputs that say how the code ran, not what the result is: the history entry records
+# them, the attributes do not, so that they neither crowd out the description of the data nor
+# overwrite one another from call to call.
+_EXECUTION_OPTIONS = frozenset(
+    {
+        "workers",
+        "threads",
+        "chunked",
+        "chunks",
+        "create_if_missing",
+        "skip_existing",
+        "logT_method",
+        "doppler_velocity_method",
+        "device",
+        "progress",
+    }
+)
+
+
+# The time and version that end a history entry.
+_STAMP = re.compile(r" \[[^\[\]]* muse [^\[\]]*\]$")
 
 
 def _history_entries(history: str | list[str] | None) -> list[str]:
@@ -156,16 +178,18 @@ def _inherit_history(ds: xr.Dataset | xr.DataArray, source: xr.Dataset | xr.Data
     merging sources with nested histories never duplicates entries, whatever their
     order.
     """
-    source_history = _history_entries(source.attrs.get("HISTORY"))
+    source_history = _history_entries(_current_attrs(source.attrs).get("history"))
     if not source_history:
         return
-    history = _history_entries(ds.attrs.get("HISTORY"))
+    history = _history_entries(ds.attrs.get("history"))
     shared = 0
+    # Without the stamps: the two outputs of one call, such as align_response_and_vdem, may be
+    # stamped a second apart and are still one step.
     for ours, theirs in zip(history, source_history, strict=False):
-        if ours != theirs:
+        if _STAMP.sub("", ours) != _STAMP.sub("", theirs):
             break
         shared += 1
-    ds.attrs["HISTORY"] = [*history, *source_history[shared:]]
+    ds.attrs["history"] = [*history, *source_history[shared:]]
 
 
 def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
@@ -180,10 +204,47 @@ def _instrument_defaults_label(instrument_defaults: InstrumentDefaults) -> str:
     return "DEFAULTS_MUSE" if instrument_defaults == DEFAULTS_MUSE else "custom"
 
 
-def _touch_attrs(ds: xr.Dataset | xr.DataArray) -> None:
-    today = dt.datetime.now(tz=dt.UTC).strftime("%d-%b-%Y")
-    ds.attrs["date modified" if "date created" in ds.attrs else "date created"] = today
-    ds.attrs["version"] = _version
+def _touch_attrs(ds: xr.Dataset | xr.DataArray, now: str) -> None:
+    """
+    Date ``ds``: its creation and the muse that made it the first time, a modification
+    after that.
+    """
+    if "date_created" in ds.attrs:
+        ds.attrs["date_modified"] = now
+    else:
+        ds.attrs["date_created"] = now
+        ds.attrs["muse_version"] = _version
+
+
+def _entry_value(value: object) -> str:
+    """
+    How a history entry writes one input: with its unit, and an array as its size and,
+    when it is one-dimensional and in memory, its range.
+
+    Nothing lazy is computed.
+    """
+    if isinstance(value, xr.DataArray) and isinstance(value.data, u.Quantity):
+        value = value.data  # a Quantity in a DataArray, as the line-list builders take a temperature
+    if isinstance(value, xr.Dataset):
+        return f"<Dataset of {', '.join(map(str, value.data_vars))}>" if value.data_vars else "<Dataset>"
+    if isinstance(value, u.Quantity):
+        return str(value) if value.isscalar else _array_summary(value.value, f" {value.unit}")
+    if isinstance(value, xr.DataArray):
+        unit = f" {value.attrs['units']}" if "units" in value.attrs else ""
+        if value.size == 1 and value.chunks is None:
+            return f"{value.values.item()}{unit}"
+        return _array_summary(value, unit)
+    if isinstance(value, np.ndarray | da.Array):
+        return str(value.item()) if isinstance(value, np.ndarray) and value.size == 1 else _array_summary(value, "")
+    return str(value)
+
+
+def _array_summary(array: np.ndarray | da.Array | xr.DataArray, unit: str) -> str:
+    lazy = isinstance(array, da.Array) or getattr(array, "chunks", None) is not None
+    if array.ndim == 1 and not lazy and np.issubdtype(array.dtype, np.number) and array.size:
+        values = np.asarray(array)
+        return f"<{array.size} values, {values.min()} to {values.max()}{unit}>"
+    return f"<array of shape {tuple(array.shape)}{unit}>"
 
 
 def _attr_safe(value: object) -> str | int | float | list | None:
@@ -215,19 +276,22 @@ def add_history(
     func: Callable | str,
     *,
     sources: Sequence[xr.Dataset | xr.DataArray] = (),
+    reading: bool = False,
 ) -> None:
     """
     Record a call in the dataset history and store its keyword inputs as attributes.
 
     This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
     constructed output that the calling function owns, never a caller-owned
-    input. It is the sole owner of the provenance attributes ``HISTORY``,
-    ``date created``, ``date modified``, and ``version``.
+    input. It is the sole owner of the provenance attributes ``history``,
+    ``date_created``, ``date_modified`` and ``muse_version``.
 
-    Every keyword input (a parameter of ``func`` that has a default) is stored on
-    ``ds.attrs`` after being coerced to a netCDF/zarr-serializable form (see
-    `_attr_safe`); required positional parameters such as the data itself are
-    skipped.
+    The entry reads ``name(inputs) [<UTC time> muse <version>]``, with units kept
+    and arrays summarised. Every keyword input (a parameter of ``func`` that has a
+    default) is also stored on ``ds.attrs`` after being coerced to a
+    netCDF/zarr-serializable form (see `_attr_safe`), except the options that only
+    say how the code ran, such as ``workers``; required positional parameters such
+    as the data itself are skipped.
 
     Parameters
     ----------
@@ -240,9 +304,14 @@ def add_history(
         Function being recorded. A plain string is used as the label as-is and
         records no inputs.
     sources : sequence of `xarray.Dataset` or `xarray.DataArray`, optional
-        Inputs whose ``HISTORY`` the result inherits, in order, before the new
+        Inputs whose ``history`` the result inherits, in order, before the new
         entry is appended. Omit it for a result that starts a new lineage.
+    reading : `bool`, optional
+        `True` for a call that reads a file: its entry is added, and the dates and
+        version stay as the file has them. By default `False`.
     """
+    # A dataset that took the attributes of a file of muse 0.3 by xarray keeps their lineage.
+    ds.attrs = _current_attrs(ds.attrs)
     # A string label has no signature to inspect, so it records no inputs.
     params = inspect.signature(func).parameters if callable(func) else {}
     formatted_args = []
@@ -251,18 +320,8 @@ def add_history(
             continue
         if isinstance(value, InstrumentDefaults):
             value = _instrument_defaults_label(value)  # NOQA: PLW2901
-        if isinstance(value, u.Quantity):
-            formatted_args.append(f"{arg}={value.value}")
-        elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):
-            if isinstance(value, np.ndarray) and value.shape in [(), (1,)]:
-                formatted_args.append(f"{arg}={value.tolist()}")
-            elif isinstance(value, xr.DataArray) and value.size == 1 and isinstance(value.data, np.ndarray):
-                formatted_args.append(f"{arg}={value.values.tolist()}")
-            else:
-                formatted_args.append(f"{arg}={arg}")
-        else:
-            formatted_args.append(f"{arg}={value}")
-        if params[arg].default is not inspect.Parameter.empty:  # keyword input
+        formatted_args.append(f"{arg}={_entry_value(value)}")
+        if params[arg].default is not inspect.Parameter.empty and arg not in _EXECUTION_OPTIONS:
             safe = _attr_safe(value)
             if safe is not None:
                 ds.attrs[arg] = safe
@@ -274,12 +333,15 @@ def add_history(
                 )
 
     name = func if isinstance(func, str) else func.__name__
-    history_entry = f"{name}({', '.join(formatted_args)})"
+    now = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    history_entry = f"{name}({', '.join(formatted_args)}) [{now} muse {_version}]"
 
     for source in sources:
         _inherit_history(ds, source)
-    ds.attrs["HISTORY"] = [*_history_entries(ds.attrs.get("HISTORY")), history_entry]
-    _touch_attrs(ds)
+    ds.attrs["history"] = [*_history_entries(ds.attrs.get("history")), history_entry]
+    # A reader returns the provenance of its file: dating the read would claim the product.
+    if not reading:
+        _touch_attrs(ds, now)
 
 
 def update_attrs(
@@ -292,8 +354,8 @@ def update_attrs(
 
     This is a finalizer: it mutates ``ds`` in place, so ``ds`` must be a newly
     constructed output that the calling function owns, never a caller-owned
-    input. The provenance attributes (``HISTORY``, ``date created``,
-    ``date modified``, ``version``) are owned by `add_history` and never copied
+    input. The provenance attributes (``history``, ``date_created``,
+    ``date_modified``, ``muse_version``) are owned by `add_history` and never copied
     here; passing one as an explicit update raises `ValueError`. Pass the
     inputs to ``add_history(..., sources=...)`` to inherit their lineage.
 
@@ -327,6 +389,10 @@ _OLD_ATTRS = {
     "continuum_Chianti": "continuum_chianti_version",
     "continuum_Chiantipy": "continuum_chiantipy_version",
     "continuum_fiasco": "continuum_fiasco_version",
+    "HISTORY": "history",
+    "date created": "date_created",
+    "date modified": "date_modified",
+    "version": "muse_version",
 }
 
 
@@ -334,15 +400,36 @@ def _current_attrs(attrs: dict) -> dict:
     """
     ``attrs`` under their current names; where both an old and a current name are there,
     the current one wins.
+
+    An old date takes the ISO form, and the options that only said how the code ran are
+    left out.
     """
-    renamed = {_OLD_ATTRS[name]: value for name, value in attrs.items() if name in _OLD_ATTRS}
-    return renamed | {name: value for name, value in attrs.items() if name not in _OLD_ATTRS}
+    # muse wrote "version" beside "HISTORY"; a "version" without it is another tool's own.
+    old_names = {old: new for old, new in _OLD_ATTRS.items() if old != "version" or "HISTORY" in attrs}
+    renamed = {
+        old_names[name]: _iso_date(value) if name in ("date created", "date modified") else value
+        for name, value in attrs.items()
+        if name in old_names
+    }
+    kept = {name: value for name, value in attrs.items() if name not in old_names and name not in _EXECUTION_OPTIONS}
+    return renamed | kept
+
+
+def _iso_date(value: object) -> object:
+    """
+    A date as muse 0.3 wrote it, such as ``01-Mar-2026``, in ISO 8601; anything else as
+    it is.
+    """
+    try:
+        return dt.datetime.strptime(value, "%d-%b-%Y").date().isoformat()  # NOQA: DTZ007
+    except (TypeError, ValueError):
+        return value
 
 
 def _with_current_names(dataset: xr.Dataset) -> xr.Dataset:
     """
-    ``dataset`` as read from a file, with the version attributes of earlier versions
-    under their current names.
+    ``dataset`` as read from a file, with the version and provenance attributes of
+    earlier versions under their current names.
     """
     dataset.attrs = _current_attrs(dataset.attrs)
     return dataset

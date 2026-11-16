@@ -36,7 +36,7 @@ def test_create_effective_area_layout():
     # One value of a component holds at every wavelength.
     np.testing.assert_array_equal(effective_area.contamination, 0.9)
     assert effective_area.attrs["coating"] == "test"
-    assert "create_effective_area(" in effective_area.attrs["HISTORY"][-1]
+    assert "create_effective_area(" in effective_area.attrs["history"][-1]
 
 
 def test_create_effective_area_accepts_dn_per_photon_and_rejects_other_units():
@@ -201,7 +201,7 @@ def test_create_aia_effective_area_defaults_are_solarsoft_dn_evenorm(tmp_path):
     assert u.allclose(u.Quantity(attrs["pixel_width"]), 0.6 * u.arcsec)
     assert u.allclose(u.Quantity(attrs["gain"]), 18 * u.electron / u.DN)
     assert u.Quantity(attrs["pair_energy"]) == 3.65 * u.eV / u.electron
-    assert "create_aia_effective_area(" in attrs["HISTORY"][-1]
+    assert "create_aia_effective_area(" in attrs["history"][-1]
     save_effective_area(effective_area, tmp_path / "aia.nc")
     assert read_effective_area(tmp_path / "aia.nc").attrs["gain"] == attrs["gain"]
 

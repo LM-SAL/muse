@@ -297,7 +297,7 @@ def read_response(
     gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
     response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
 
-    add_history(response, locals(), read_response)
+    add_history(response, locals(), read_response, reading=True)
     return response
 
 
@@ -572,9 +572,9 @@ def read_responses(
     line_channels = [
         channel for dataset, channel in zip(datasets, channel_labels, strict=True) for _ in range(dataset.sizes["line"])
     ]
-    result = response.assign_coords(channel=("line", line_channels)).drop_attrs(deep=False)
-    update_attrs(result, response)
-    add_history(result, locals(), read_responses, sources=datasets)
+    # combine_attrs="drop_conflicts" kept what every file agrees on, their dates included.
+    result = response.assign_coords(channel=("line", line_channels))
+    add_history(result, locals(), read_responses, sources=datasets, reading=True)
     return result
 
 

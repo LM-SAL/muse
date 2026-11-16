@@ -79,8 +79,12 @@ def test_continuum_response_total_matches_the_fine_integral():
     assert out.spectral_response.attrs["bin_method"] == "average"
     np.testing.assert_allclose(out.wavelength_grid.values, 0.5 * (edges[1:] + edges[:-1]).value)
     np.testing.assert_allclose(_bin_width(out).values, np.diff(edges.value))
-    assert "create_continuum_response(" in out.attrs["HISTORY"][-1]
+    assert "create_continuum_response(" in out.attrs["history"][-1]
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
+    # new data: not dated as the continuum it is made from
+    dated = _continuum_cube().assign_attrs(date_created="2026-01-01T00:00:00Z", muse_version="0.1")
+    made = create_continuum_response(dated, edges, effective_area=area).attrs
+    assert (made["date_created"], made["muse_version"]) != ("2026-01-01T00:00:00Z", "0.1")
     x = np.linspace(edges[0].value, edges[-1].value, 200001)
     for i_line, factor in enumerate([1.0, 0.5, 0.1]):
         for i_t, scale in enumerate([1.0, 2.0, 3.0]):
@@ -301,7 +305,7 @@ def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     assert np.isnan(continuum.line_wavelength.values).all()
     assert continuum.attrs["chianti_version"] == "fake 11"
     assert continuum.attrs["abundance"] == "sun_coronal_2021_chianti"
-    assert "create_chianti_continuum(" in continuum.attrs["HISTORY"][-1]
+    assert "create_chianti_continuum(" in continuum.attrs["history"][-1]
     temperatures, wavelengths = TEMPERATURE.values, GRID.value
     # the three charged ions of H and He contribute free-free, two of them free-bound (h_2
     # reports no data), on both pressures; the neutrals are skipped

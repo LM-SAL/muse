@@ -90,7 +90,7 @@ def test_map_response_to_sg_detector_geometry_and_units():
     assert "channel" not in mapped.coords
     assert "spectral_response" not in mapped
     assert "wavelength_bin" not in mapped.dims
-    assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_sg_detector(")
+    assert mapped.attrs["history"][-1].startswith("map_response_to_sg_detector(")
     xr.testing.assert_identical(response, original)
 
 
@@ -235,7 +235,7 @@ def test_map_response_to_ci_detector_integrates_nonuniform_grid_without_detector
     assert mapped.channel.item() == 195
     assert mapped.channel.attrs["units"] == "Angstrom"
     assert mapped.attrs["normalization"] == 1e-27
-    assert mapped.attrs["HISTORY"][-1].startswith("map_response_to_ci_detector(")
+    assert mapped.attrs["history"][-1].startswith("map_response_to_ci_detector(")
     assert u.Unit(mapped.detector_response.attrs["units"]) == u.Unit("1e-27 erg cm5 / (s sr)")
     np.testing.assert_allclose(mapped.detector_response.compute(), 10.5)
     xr.testing.assert_identical(response, original)
@@ -395,7 +395,7 @@ def test_public_response_workflow_composes_through_moment_analysis(tmp_path):
     for name in ("0th", "1st", "2nd"):
         assert np.isfinite(moments[name]).all()
     # Every step leaves its entry, in the order of the calls.
-    assert [entry.split("(")[0] for entry in moments.attrs["HISTORY"]] == [
+    assert [entry.split("(")[0] for entry in moments.attrs["history"]] == [
         "create_chianti_line_list",
         "create_spectral_response",
         "transform_response_units",

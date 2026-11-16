@@ -250,7 +250,7 @@ def test_create_simple_vdem_tiny_cube() -> None:
     np.testing.assert_allclose(result.vdem.values, _expected_tiny_vdem(), rtol=1e-12)
     units = {name: result[name].attrs["units"] for name in ("vdem", "logT", "doppler_velocity", "x", "y")}
     assert units == {"vdem": "1e27 / cm5", "logT": "dex(K)", "doppler_velocity": "km/s", "x": "cm", "y": "cm"}
-    assert result.attrs["HISTORY"][0].startswith("create_simple_vdem(")
+    assert result.attrs["history"][0].startswith("create_simple_vdem(")
 
 
 def test_create_simple_vdem_converts_its_inputs() -> None:
@@ -388,7 +388,7 @@ def test_create_simple_vdem_validates_inputs(key, value, match) -> None:
 
 def _rate_spectrum(units="ph / s"):
     flux = xr.DataArray(np.array([[1.0, 2.0], [3.0, 4.0]]), dims=("line", "detector_x_pixel"), attrs={"units": units})
-    return xr.Dataset({"flux": flux}, attrs={"HISTORY": ["vdem_synthesis()"]})
+    return xr.Dataset({"flux": flux}, attrs={"history": ["vdem_synthesis()"]})
 
 
 def test_apply_exposure_time_turns_a_rate_into_counts() -> None:
@@ -403,13 +403,13 @@ def test_apply_exposure_time_turns_a_rate_into_counts() -> None:
     assert u.Unit(out.flux.attrs["units"]) == u.DN
     assert float(out.exposure_time) == 30.0
     assert out.exposure_time.attrs["units"] == "s"
-    assert out.attrs["HISTORY"][-1].startswith("apply_exposure_time(")
-    assert "exposure_time=30.0" in out.attrs["HISTORY"][-1]
+    assert out.attrs["history"][-1].startswith("apply_exposure_time(")
+    assert "exposure_time=30.0" in out.attrs["history"][-1]
     # The input is left as it was.
     np.testing.assert_array_equal(spectrum.flux.values, rate)
     assert spectrum.flux.attrs["units"] == "DN / ms"
     assert "exposure_time" not in spectrum.coords
-    assert spectrum.attrs["HISTORY"] == ["vdem_synthesis()"]
+    assert spectrum.attrs["history"] == ["vdem_synthesis()"]
 
 
 def test_remove_exposure_time_undoes_apply_exposure_time() -> None:
@@ -452,7 +452,7 @@ def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
     # Without its first line, the first and the last line of a channel differ in wavelength.
     response = response.isel(line=slice(1, None))
     response = response.assign_coords(position=("line", np.arange(response.sizes["line"])))
-    history = list(response.attrs.get("HISTORY", []))
+    history = list(response.attrs.get("history", []))
 
     out = synthesis_utils.sum_lines_per_channel(response)
 
@@ -475,8 +475,8 @@ def test_sum_lines_per_channel_adds_the_lines_of_each_channel(response) -> None:
         np.testing.assert_equal(float(out.line_wavelength.sel(channel=channel)), expected_wavelength)
     assert bool(np.isnan(out.line_wavelength).any())  # the fixture has such a channel
     assert out.line_wavelength.attrs["units"] == response.line_wavelength.attrs["units"]
-    assert out.attrs["HISTORY"][-1].startswith("sum_lines_per_channel(")
-    assert response.attrs.get("HISTORY", []) == history  # the entry goes to the result alone
+    assert out.attrs["history"][-1].startswith("sum_lines_per_channel(")
+    assert response.attrs.get("history", []) == history  # the entry goes to the result alone
 
 
 def test_sum_lines_per_channel_keeps_the_order_in_which_channels_first_appear(response) -> None:
