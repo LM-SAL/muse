@@ -27,7 +27,6 @@ from muse.instrument import (
     save_effective_area,
 )
 from muse.instrument.atomic import cache
-from muse.instrument.response import detector as detector_module
 from muse.instrument.response import products as products_module
 from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
@@ -285,11 +284,11 @@ def test_the_sg_grid_has_one_length_whatever_the_round_off():
     sample, though both wavebands are 35 Angstrom wide.
     """
     step = 0.01 * u.AA
-    grids = [products_module._sg_waveband_grid(channel, step) for channel in (108, 171)]
+    grids = [products_module._sg_waveband_grid(channel, DEFAULTS_MUSE, step) for channel in (108, 171)]
     assert [grid.size for grid in grids] == [3501, 3501]
     np.testing.assert_allclose(grids[0][[0, -1]].value, [90.5, 125.5])
     # the last sample is the one nearest the upper end of the waveband
-    assert abs(products_module._sg_waveband_grid(171)[-1].value - 188.5) < 0.0049 / 2
+    assert abs(products_module._sg_waveband_grid(171, DEFAULTS_MUSE)[-1].value - 188.5) < 0.0049 / 2
 
 
 def test_the_line_products_of_a_channel_load_together(sg_products):
@@ -927,20 +926,19 @@ def test_the_generators_on_live_chianti(tmp_path):
     ]
 
 
-def test_the_detector_products_follow_the_slit_separation_of_their_channel(inputs, sg_products, tmp_path, monkeypatch):
+def test_the_detector_products_follow_the_instrument_defaults_they_are_given(inputs, sg_products, tmp_path):
     """
-    The separation is a setting per channel: the name of a detector product states that
-    of its channel, and its wavelengths are laid out with it.
+    The separation is a setting per channel, taken from ``instrument_defaults``: the
+    name of a detector product states that of its channel, its wavelengths are laid out
+    with it, and its history says the defaults were not the MUSE ones.
     """
     separation = xr.DataArray([380.0, 385.0, 400.0] * u.mAA, coords={"channel": [108, 171, 284]}, dims="channel")
     defaults = evolve(DEFAULTS_MUSE, spectral_slit_separation_SG=separation)
-    monkeypatch.setattr(products_module, "DEFAULTS_MUSE", defaults)
-    monkeypatch.setattr(detector_module, "DEFAULTS_MUSE", defaults)
 
-    lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0)
+    lines = _sg(inputs, tmp_path / "lines", maximum_contaminants=0, instrument_defaults=defaults)
     with pytest.MonkeyPatch.context() as continuum:
         continuum.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
-        continua = _sg_continuum(inputs, tmp_path / "continuum")
+        continua = _sg_continuum(inputs, tmp_path / "continuum", instrument_defaults=defaults)
 
     assert _prefixes(lines) == [
         f"respfunc_171_FeIX171.073_waveband_{TAIL}_TEST",
@@ -948,8 +946,11 @@ def test_the_detector_products_follow_the_slit_separation_of_their_channel(input
     ]
     assert _prefixes(continua) == [f"respfunc_171_continuum_fiasco_nslits35_sep385_{TAIL}_TEST"]
     for product in (lines[1], continua[0]):
-        slit_to_slit = read_response(product).detector_wavelength.isel(detector_x_pixel=0).diff("slit")
+        mapped = read_response(product)
+        slit_to_slit = mapped.detector_wavelength.isel(detector_x_pixel=0).diff("slit")
         np.testing.assert_allclose(-slit_to_slit, 0.385)
+        assert mapped.attrs["instrument_defaults"] == "custom"
+    assert read_response(sg_products[1]).attrs["instrument_defaults"] == "DEFAULTS_MUSE"
     # the cube does not depend on the detector: it is that of the default separation
     xr.testing.assert_identical(
         read_spectral_response(lines[0]).spectral_response,

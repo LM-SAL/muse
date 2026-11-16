@@ -11,6 +11,7 @@ import astropy.units as u
 
 from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit
 from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import InstrumentDefaults
 
 __all__ = ["map_response_to_ci_detector", "map_response_to_sg_detector"]
 
@@ -95,6 +96,7 @@ def map_response_to_sg_detector(
     pixels_between_slits: u.Quantity | None = None,
     detector_x_pixels: int | None = None,
     wavelength_start: u.Quantity | None = None,
+    instrument_defaults: InstrumentDefaults | None = None,
 ) -> xr.Dataset:
     """
     Map one wavelength-space response onto a multi-slit detector.
@@ -115,16 +117,16 @@ def map_response_to_sg_detector(
         Wavelength-space response containing ``spectral_response``,
         ``wavelength_grid``, and ``line_wavelength``.
     channel : `astropy.units.Quantity`, optional
-        Nominal MUSE SG channel wavelength: 108, 171, or 284 Angstrom. When
-        given, fills any omitted geometry parameters from
-        `~muse.variables.DEFAULTS_MUSE` and records the channel on the output.
+        Nominal MUSE SG channel wavelength, e.g. 171 Angstrom. When given, fills
+        any omitted geometry parameters from ``instrument_defaults`` and records
+        the channel on the output.
     number_of_slits : `int`, optional
         Number of simultaneous slits. Required when ``channel`` is omitted.
     dispersion : `astropy.units.Quantity`, optional
         Nominal wavelength width per detector pixel, also used for detector-bin
-        integration. When ``channel`` is given, derive it from the channel's
-        spectral order and the MUSE slit calibration by default. Otherwise it
-        is required. Adjacent detector-pixel centers are separated by exactly
+        integration. When ``channel`` is given, derive it from the slit separation
+        of the channel and the pixels between slits by default. Otherwise it is
+        required. Adjacent detector-pixel centers are separated by exactly
         ``dispersion``.
     pixels_between_slits : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits. Required for an explicit
@@ -135,6 +137,9 @@ def map_response_to_sg_detector(
     wavelength_start : `astropy.units.Quantity`, optional
         Wavelength at detector pixel zero for slit zero. Required when
         ``channel`` is omitted.
+    instrument_defaults : `~muse.variables_schema.InstrumentDefaults`, optional
+        Where a ``channel`` takes its geometry from, by default
+        `~muse.variables.DEFAULTS_MUSE`.
 
     Returns
     -------
@@ -145,22 +150,22 @@ def map_response_to_sg_detector(
         ``detector_wavelength`` and ``line_wavelength`` coordinates
         in Angstrom.
     """
+    instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(response)
     line_wavelength = np.asarray(line_wavelength)
     channel_value = None
-    spectral_order = None
     if channel is not None:
-        channel_value = _channel_as_angstrom(channel, DEFAULTS_MUSE.channel_spectral_order_SG.channel, "sg")
-        spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=channel_value).item()
-        number_of_slits = DEFAULTS_MUSE.number_of_slits_SG if number_of_slits is None else number_of_slits
+        defaults = instrument_defaults
+        channel_value = _channel_as_angstrom(channel, defaults.channel_spectral_order_SG.channel, "sg")
+        number_of_slits = defaults.number_of_slits_SG if number_of_slits is None else number_of_slits
         pixels_between_slits = (
-            DEFAULTS_MUSE.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
+            defaults.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
         )
         detector_x_pixels = (
-            int(DEFAULTS_MUSE.detector_x_pixels_SG.to_value(u.pix)) if detector_x_pixels is None else detector_x_pixels
+            int(defaults.detector_x_pixels_SG.to_value(u.pix)) if detector_x_pixels is None else detector_x_pixels
         )
         wavelength_start = (
-            u.Quantity(DEFAULTS_MUSE.wavelength_start_SG.sel(channel=channel_value).data)
+            u.Quantity(defaults.wavelength_start_SG.sel(channel=channel_value).data)
             if wavelength_start is None
             else wavelength_start
         )
@@ -196,8 +201,8 @@ def map_response_to_sg_detector(
             msg = f"{name} must be a finite, positive scalar"
             raise ValueError(msg)
     if dispersion is None:
-        slit_separation = u.Quantity(DEFAULTS_MUSE.spectral_slit_separation_SG.sel(channel=channel_value).data)
-        dispersion = 2 * slit_separation / pixels_between_slits / spectral_order
+        slit_separation = u.Quantity(instrument_defaults.spectral_slit_separation_SG.sel(channel=channel_value).data)
+        dispersion = slit_separation / pixels_between_slits
     if not dispersion.isscalar or not np.isfinite(dispersion.value) or dispersion.value <= 0:
         msg = "dispersion must be a finite, positive scalar"
         raise ValueError(msg)

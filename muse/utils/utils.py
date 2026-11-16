@@ -17,6 +17,8 @@ import xarray as xr
 import astropy.units as u
 
 from muse.log import logger
+from muse.variables import DEFAULTS_MUSE
+from muse.variables_schema import InstrumentDefaults
 from muse.version import version as _version
 
 __all__ = [
@@ -235,6 +237,9 @@ def add_history(
     for arg, value in local_vars.items():
         if arg not in params:
             continue
+        if isinstance(value, InstrumentDefaults):
+            # The whole object does not fit an attribute; it is enough to say whether it is the MUSE one.
+            value = "DEFAULTS_MUSE" if value == DEFAULTS_MUSE else "custom"  # NOQA: PLW2901
         if isinstance(value, u.Quantity):
             formatted_args.append(f"{arg}={value.value}")
         elif isinstance(value, xr.Dataset | xr.DataArray | np.ndarray | da.Array):

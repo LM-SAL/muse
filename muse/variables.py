@@ -25,9 +25,9 @@ _DEFAULTS_MUSE_VALUES = {
     "detector_x_pixels_SG": u.Quantity(1024, unit=u.pix, dtype=int),
     "number_of_slits_SG": 35,
     "pixels_between_slits_SG": 26.53 * u.pixel,
-    # One nominal value for every channel until a measured one exists for each.
+    # Nominal: 390 mAngstrom at second order, so twice that in the first-order 284 channel.
     "spectral_slit_separation_SG": xr.DataArray(
-        np.array([390.0, 390.0, 390.0]) * u.mAA,
+        np.array([390.0, 390.0, 780.0]) * u.mAA,
         coords={"channel": [108, 171, 284]},
         dims="channel",
     ),
