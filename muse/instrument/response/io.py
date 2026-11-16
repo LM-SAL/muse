@@ -177,7 +177,6 @@ def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coo
     return response
 
 
-@u.quantity_input(gain=u.electron / u.DN)
 def read_response(
     response_file: str | Path,
     *,
@@ -186,7 +185,6 @@ def read_response(
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
-    gain: u.Quantity | None = None,
     chunked: bool = False,
 ) -> xr.Dataset:
     """
@@ -210,9 +208,6 @@ def read_response(
         Interpolation method for logT, by default "nearest".
     doppler_velocity_method : `str`, optional
         Interpolation method for doppler_velocity, by default "linear".
-    gain : `astropy.units.Quantity`, optional
-        Camera gain, convertible to electron/DN. By default the ``gain`` attribute of
-        the file, which the generators write.
     chunked : `bool`, optional
         When `True`, open the file dask-backed using its on-disk chunking, so
         the response stays lazy through resampling and downstream synthesis and
@@ -222,8 +217,8 @@ def read_response(
     Returns
     -------
     `xarray.Dataset`
-        The response dataset, with a ``gain`` coordinate, and a ``pair_energy`` one when
-        the file states its pair energy, as the generators write it. Only the layout
+        The response dataset, with ``gain`` and ``pair_energy`` coordinates when the file
+        states them, as the generators write them. Only the layout
         `save_response` writes is read: ``detector_response`` and ``line_wavelength``, a ``line`` or ``channel``
         dimension, and units on ``logT``, ``doppler_velocity`` and the wavelengths.
 
@@ -233,9 +228,8 @@ def read_response(
         If ``logT`` or ``doppler_velocity`` is not a Quantity.
     ValueError
         If the requested ``logT`` or ``doppler_velocity`` axis is empty, not finite, in
-        units that do not convert to the response's or wholly outside its range; if the
-        file is not in the layout `save_response` writes; or if ``gain`` is not given and
-        the file states none, in a ``gain`` coordinate or attribute.
+        units that do not convert to the response's or wholly outside its range; or if the
+        file is not in the layout `save_response` writes.
     """
     response_file = Path(response_file)
 
@@ -273,31 +267,15 @@ def read_response(
         # Relabelled from 0, so that downstream exact joins see byte-identical axes.
         response = response.isel(slit=slice(number_of_slits)).assign_coords(slit=np.arange(number_of_slits))
 
-    gain_unit = u.electron / u.DN
-    if gain is None and "gain" in response.coords:
-        # A file that holds a gain per line, such as a saved set of responses, keeps it.
-        response = response.assign_coords(gain=coord_as_unit(response, "gain", gain_unit, "gain coordinate"))
-    else:
-        if gain is None:
-            if "gain" not in response.attrs:
-                msg = f"{response_file} states no gain, in a gain coordinate or attribute; pass gain"
-                raise ValueError(msg)
-            gain = u.Quantity(response.attrs["gain"])
-        else:
-            # The given gain replaces that of the file; add_history records a scalar one.
-            response.attrs.pop("gain", None)
-        gain = gain.to(gain_unit)  # a statement so add_history records the converted value
-        gain_dim = "channel" if "channel" in response.dims else "line"
-        gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
-        response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
-    # The pair energy of the file goes with its gain, so that a spectrum made from this response
-    # is converted to electrons with the detector the response was made for.
-    pair_energy_unit = u.eV / u.electron
-    if "pair_energy" in response.attrs and "pair_energy" not in response.coords:
-        pair_energy_dim = "channel" if "channel" in response.dims else "line"
-        value = u.Quantity(response.attrs["pair_energy"]).to_value(pair_energy_unit)
-        values = np.broadcast_to(np.atleast_1d(value), response.sizes[pair_energy_dim])
-        response = response.assign_coords(pair_energy=(pair_energy_dim, values, {"units": str(pair_energy_unit)}))
+    # The calibration the file states, per line, so that transform_flux_units converts a spectrum
+    # made from this response with the detector the response was made for.
+    dim = "channel" if "channel" in response.dims else "line"
+    for name, unit in (("gain", u.electron / u.DN), ("pair_energy", u.eV / u.electron)):
+        if name in response.coords:
+            response = response.assign_coords({name: coord_as_unit(response, name, unit, f"{name} coordinate")})
+        elif name in response.attrs:
+            values = np.broadcast_to(u.Quantity(response.attrs[name]).to_value(unit), response.sizes[dim])
+            response = response.assign_coords({name: (dim, values, {"units": str(unit)})})
 
     add_history(response, locals(), read_response, reading=True)
     return response
@@ -451,14 +429,13 @@ def read_responses(
     number_of_slits: int | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
-    gain: u.Quantity | None = None,
     chunked: bool = False,
 ) -> xr.Dataset:
     """
     Load several response functions and concatenate them along ``line``.
 
-    Each file gives its channel in its ``channel`` coordinate and its camera gain in
-    its ``gain`` coordinate or attribute, as the products of the generators do.
+    Each file gives its channel in its ``channel`` coordinate, as the products of the
+    generators do.
 
     Parameters
     ----------
@@ -474,8 +451,6 @@ def read_responses(
     doppler_velocity_method : `str`, optional
         Interpolation method for doppler_velocity, by default "linear".
         Passed to `muse.instrument.read_response`.
-    gain : `astropy.units.Quantity`, optional
-        Passed to `muse.instrument.read_response`.
     chunked : `bool`, optional
         When `True`, load each response dask-backed so the concatenated
         response stays lazy and synthesis peak memory stays bounded by the
@@ -490,7 +465,7 @@ def read_responses(
     Raises
     ------
     ValueError
-        If no file is given, a file has no ``channel`` coordinate or no gain, the files
+        If no file is given, a file has no ``channel`` coordinate, or the files
         are of different instrument defaults or units.
     TypeError
         If ``logT`` or ``doppler_velocity`` is not a Quantity.
@@ -509,7 +484,6 @@ def read_responses(
                 number_of_slits=number_of_slits,
                 logT_method=logT_method,
                 doppler_velocity_method=doppler_velocity_method,
-                gain=gain,
                 chunked=chunked,
             ).drop_vars("effective_area", errors="ignore")
             if "channel" not in dataset.coords:

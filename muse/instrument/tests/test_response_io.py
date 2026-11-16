@@ -290,15 +290,6 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
         read_response(path, doppler_velocity=[0.0])
 
 
-def test_read_response_without_a_gain_attribute_requires_gain(tmp_path) -> None:
-    source = fake_response_file_contents()
-    del source.attrs["gain"]
-    path = _write(source, tmp_path / "resp.zarr", "zarr")
-
-    with pytest.raises(ValueError, match="states no gain, in a gain coordinate or attribute; pass gain"):
-        read_response(path)
-
-
 def test_read_response_rejects_missing_line_wavelength(tmp_path) -> None:
     path = _write(fake_response_file_contents().drop_vars("line_wavelength"), tmp_path / "resp.zarr", "zarr")
 
@@ -312,6 +303,9 @@ def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> N
     response = read_response(_write(stated, tmp_path / "resp.zarr", "zarr"))
 
     assert (response.gain.values.tolist(), response.pair_energy.values.tolist()) == ([12.0], [7.3])
+    # a file that states none, such as one still in erg, gets none
+    stated.attrs.clear()
+    assert "gain" not in read_response(_write(stated, tmp_path / "none.zarr", "zarr")).coords
 
 
 @pytest.mark.parametrize(
@@ -401,19 +395,6 @@ def test_read_responses_rejects_misaligned_grids(tmp_path) -> None:
 
     with pytest.raises(ValueError, match=r"align|exact"):
         read_responses([tmp_path / "a.nc", tmp_path / "b.nc"])
-
-
-def test_read_response_keeps_a_gain_per_line_and_replaces_the_one_of_the_file_with_a_given_one(tmp_path) -> None:
-    per_line = fake_response_file_contents().assign_coords(gain=("line", [12.0], {"units": "electron / DN"}))
-    del per_line.attrs["gain"]
-    given = read_response(
-        _write(fake_response_file_contents(), tmp_path / "b.zarr", "zarr"), gain=[11.0] * u.electron / u.DN
-    )
-
-    assert read_response(_write(per_line, tmp_path / "a.zarr", "zarr")).gain.values.tolist() == [12.0]
-    assert given.gain.values.tolist() == [11.0]
-    assert given.gain.attrs["units"] == "electron / DN"
-    assert "gain" not in given.attrs  # not the 10 of the file
 
 
 def test_read_responses_reads_files_of_one_run_and_one_unit(tmp_path) -> None:
