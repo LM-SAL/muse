@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 import astropy.units as u
+from astropy.stats import gaussian_sigma_to_fwhm
 
 from muse.instrument.response.spectral import create_spectral_response
 from muse.tests.helpers import fake_line_list, figure_test
@@ -27,7 +28,9 @@ def test_spectral_response_broadening_profiles():
     kwargs = {"line_list": line_list, "wavelength_grid": WAVELENGTH_GRID, "main_lines": main_lines}
     responses = {
         "thermal only": create_spectral_response(**kwargs),
-        "instrumental sigma=0.05 A": create_spectral_response(**kwargs, instrumental_width=0.05 * u.AA),
+        "instrumental sigma=0.05 A": create_spectral_response(
+            **kwargs, instrumental_fwhm=0.05 * u.AA * gaussian_sigma_to_fwhm
+        ),
         "nonthermal=80 km/s": create_spectral_response(**kwargs, nonthermal_velocity=80 * u.km / u.s),
     }
 

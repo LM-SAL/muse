@@ -38,8 +38,6 @@ print(line_list)
 # Culhane et al. 2007, and EIS Software Note #7 for the calibrated,
 # CCD-position-dependent values).
 #
-# ``instrumental_width`` is a Gaussian sigma, so we convert from FWHM.
-#
 # For the effective area we use the pre-flight SW-band calibration curve
 # ``EIS_EffArea_B.005`` from SolarSoft (about 0.30 cm² near 195 Å;
 # Culhane et al. 2007), a plain two-column wavelength/area table. It carries
@@ -49,7 +47,6 @@ print(line_list)
 
 dispersion = 0.0223 * u.AA
 instrumental_fwhm = 0.056 * u.AA
-instrumental_width = instrumental_fwhm / (2 * np.sqrt(2 * np.log(2)))
 wavelength_grid = np.arange(194.5, 195.7, dispersion.to_value(u.AA)) * u.AA
 doppler_velocity = np.arange(-300, 310, 10) * u.km / u.s
 ea_table = np.loadtxt(fetch_example_data("EIS_EffArea_B.005"))
@@ -64,7 +61,7 @@ response = create_spectral_response(
     line_list,
     wavelength_grid,
     main_lines=["Fe XII 195.119", "Fe XII 195.179"],
-    instrumental_width=instrumental_width,
+    instrumental_fwhm=instrumental_fwhm,
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
@@ -124,7 +121,7 @@ density_response = create_spectral_response(
     density_line_list,
     np.arange(174.0, 175.6, dispersion.to_value(u.AA)) * u.AA,
     main_lines=["Fe X 174.531", "Fe X 175.263"],
-    instrumental_width=instrumental_width,
+    instrumental_fwhm=instrumental_fwhm,
 )
 
 ##############################################################################

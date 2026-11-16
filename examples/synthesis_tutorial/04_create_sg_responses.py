@@ -130,7 +130,7 @@ for band, config in bands.items():
         line_list,
         wavelength_grid,
         main_lines=config["main_lines"],
-        instrumental_width=u.Quantity(DEFAULTS_MUSE.instrumental_width_SG.sel(channel=band).data),
+        instrumental_fwhm=u.Quantity(DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data),
         doppler_velocity=np.arange(-1000, 1010, 10) * u.km / u.s,
         effective_area=DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band),
     )

@@ -85,7 +85,7 @@ spectral_order = DEFAULTS_MUSE.channel_spectral_order_SG.sel(channel=band).item(
 lower = band - 35 / spectral_order
 upper = band + 35 / spectral_order
 wavelength_grid = np.arange(lower, upper + 0.0049, 0.0049) * u.AA
-instrumental_width = u.Quantity(DEFAULTS_MUSE.instrumental_width_SG.sel(channel=band).data)
+instrumental_fwhm = u.Quantity(DEFAULTS_MUSE.instrumental_fwhm_SG.sel(channel=band).data)
 effective_area = DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=band)
 # Since we will only plot at ``doppler_velocity=0``, we pass a single
 # Doppler-velocity point. This makes the code faster and use less RAM.
@@ -101,7 +101,7 @@ waveband_response = create_spectral_response(
     line_lists["density"]["line_list"],
     wavelength_grid,
     main_lines=main_lines,
-    instrumental_width=instrumental_width,
+    instrumental_fwhm=instrumental_fwhm,
     doppler_velocity=doppler_velocity,
     effective_area=effective_area,
 )
@@ -126,7 +126,7 @@ waveband_response = create_spectral_response(
     line_lists["pressure"]["line_list"],
     wavelength_grid,
     main_lines=main_lines,
-    instrumental_width=instrumental_width,
+    instrumental_fwhm=instrumental_fwhm,
     doppler_velocity=doppler_velocity,
     nonthermal_velocity=np.arange(0, 100, 20) * u.km / u.s,
     effective_area=effective_area,
