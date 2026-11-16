@@ -157,9 +157,9 @@ def map_response_to_sg_detector(
     if channel is not None:
         defaults = instrument_defaults
         channel_value = _channel_as_angstrom(channel, _required(defaults, "channel_spectral_order_SG").channel, "sg")
-        number_of_slits = _required(defaults, "number_of_slits_SG") if number_of_slits is None else number_of_slits
+        number_of_slits = defaults.number_of_slits_SG if number_of_slits is None else number_of_slits
         pixels_between_slits = (
-            _required(defaults, "pixels_between_slits_SG") if pixels_between_slits is None else pixels_between_slits
+            defaults.pixels_between_slits_SG if pixels_between_slits is None else pixels_between_slits
         )
         detector_x_pixels = (
             int(_required(defaults, "detector_x_pixels_SG").to_value(u.pix))
