@@ -147,7 +147,11 @@ def create_spectral_response(
         bin_method=bin_method,
     )
     update_attrs(response, line_list, **response.attrs)
-    add_history(response, call_inputs, create_spectral_response, sources=(line_list,))
+    # The area keeps its own lineage, such as the calibration an AIA area was made with.
+    area = call_inputs["effective_area"]
+    add_history(
+        response, call_inputs, create_spectral_response, sources=(line_list,) if area is None else (line_list, area)
+    )
     return response
 
 
@@ -843,7 +847,10 @@ def create_continuum_response(
     result = xr.Dataset({"spectral_response": binned}).assign_coords(_wavelength_bin_coords(centers, edges))
     # New data: the attributes of the continuum, but not its dates or the muse that made it.
     update_attrs(result, continuum)
-    add_history(result, call_inputs, create_continuum_response, sources=(continuum,))
+    area = call_inputs["effective_area"]
+    add_history(
+        result, call_inputs, create_continuum_response, sources=(continuum,) if area is None else (continuum, area)
+    )
     return result
 
 

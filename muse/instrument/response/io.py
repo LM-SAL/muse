@@ -223,8 +223,9 @@ def read_response(
     Returns
     -------
     `xarray.Dataset`
-        The response dataset, with a ``gain`` coordinate. Only the layout `save_response`
-        writes is read: ``detector_response`` and ``line_wavelength``, a ``line`` or ``channel``
+        The response dataset, with a ``gain`` coordinate, and a ``pair_energy`` one when
+        the file states its pair energy, as the generators write it. Only the layout
+        `save_response` writes is read: ``detector_response`` and ``line_wavelength``, a ``line`` or ``channel``
         dimension, and units on ``logT``, ``doppler_velocity`` and the wavelengths.
 
     Raises
@@ -292,6 +293,14 @@ def read_response(
         gain_dim = "channel" if "channel" in response.dims else "line"
         gain_values = np.broadcast_to(np.atleast_1d(gain.value), response.sizes[gain_dim])
         response = response.assign_coords(gain=(gain_dim, gain_values, {"units": str(gain_unit)}))
+    # The pair energy of the file goes with its gain, so that a spectrum made from this response
+    # is converted to electrons with the detector the response was made for.
+    pair_energy_unit = u.eV / u.electron
+    if "pair_energy" in response.attrs and "pair_energy" not in response.coords:
+        pair_energy_dim = "channel" if "channel" in response.dims else "line"
+        value = u.Quantity(response.attrs["pair_energy"]).to_value(pair_energy_unit)
+        values = np.broadcast_to(np.atleast_1d(value), response.sizes[pair_energy_dim])
+        response = response.assign_coords(pair_energy=(pair_energy_dim, values, {"units": str(pair_energy_unit)}))
 
     add_history(response, locals(), read_response, reading=True)
     return response
@@ -522,13 +531,15 @@ def read_responses(
             dataset = dataset.assign_coords(channel=dataset.channel.broadcast_like(dataset.line))
             unused_dims = [dim for dim in dataset.dims if dim not in dataset.detector_response.dims]
             datasets.append(dataset.drop_dims(unused_dims))
-    for what, value_of in (
-        ("instrument defaults", lambda dataset: dataset.attrs.get("instrument_defaults")),
-        ("units", lambda dataset: dataset.detector_response.attrs.get("units")),
-    ):
-        if len(values := {str(value_of(dataset)) for dataset in datasets}) > 1:
-            msg = f"the files are of different {what} ({', '.join(sorted(values))}); read those of one kind together"
-            raise ValueError(msg)
+        for what, value_of in (
+            ("instrument defaults", lambda dataset: dataset.attrs.get("instrument_defaults")),
+            ("units", lambda dataset: dataset.detector_response.attrs.get("units")),
+        ):
+            if len(values := {str(value_of(dataset)) for dataset in datasets}) > 1:
+                msg = (
+                    f"the files are of different {what} ({', '.join(sorted(values))}); read those of one kind together"
+                )
+                raise ValueError(msg)
         response = xr.concat(
             datasets,
             dim="line",

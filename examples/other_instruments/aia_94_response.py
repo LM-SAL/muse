@@ -4,13 +4,17 @@ Create an AIA 94 Å response
 ===========================
 
 This example demonstrates how to create a broadband imaging response for the
-SDO/AIA 94 Å channel by combining a precomputed CHIANTI line list with the
-effective area and pixel size from `aiapy`.
+SDO/AIA 94 Å channel from a precomputed CHIANTI line list and the effective
+area, pixel size and camera of the channel from `aiapy`.
 
 Unlike a spectrograph, an imager integrates over its whole bandpass, so the
-main product is a temperature response rather than a line profile. We compute
-that response directly, then use :func:`muse.instrument.create_spectral_response`
-to combine every transition into one wavelength-space component.
+main product is a temperature response rather than a line profile. Three
+functions build it, as they do for the MUSE context imager:
+:func:`muse.instrument.create_spectral_response` folds the lines through the
+effective area into wavelength bins,
+:func:`muse.instrument.transform_response_units` converts them to DN in one
+detector pixel, and :func:`muse.instrument.map_response_to_ci_detector`
+integrates them over the band.
 
 .. warning::
 
@@ -22,39 +26,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
-import astropy.constants as const
 import astropy.units as u
 
 from muse.data import fetch_example_data
-from muse.instrument import create_aia_effective_area, create_spectral_response
+from muse.instrument import (
+    create_aia_effective_area,
+    create_spectral_response,
+    map_response_to_ci_detector,
+    transform_response_units,
+)
 
 ##############################################################################
 # :func:`muse.instrument.create_aia_effective_area` builds the effective area of
-# the channel from `aiapy`. By default the area includes the wavelength-dependent
-# conversion from photons to DN, so it is in cm2 DN / ph. The attributes of the
-# dataset give the size of a detector pixel. Dividing by the photon energy
-# converts CHIANTI's energy radiance to photons, and multiplying by the solid
-# angle of a pixel converts per-steradian radiance to the signal in one detector
-# pixel. We leave the EVE normalization out, which gives the baseline calibration
-# without any time-dependent correction.
+# the channel from `aiapy`. We ask for it in cm2 alone, without the conversion
+# from photons to DN, so that :func:`muse.instrument.transform_response_units`
+# makes that conversion from the camera gain and the silicon pair energy, which
+# the attributes of the area give along with the size of a detector pixel. We
+# leave the EVE normalization out, which gives the baseline calibration without
+# any time-dependent correction.
 
-effective_area = create_aia_effective_area(94 * u.AA, include_eve_correction=False)
-area = effective_area.effective_area.sel(wavelength=slice(84, 106))
-pixel_solid_angle = (
-    u.Quantity(effective_area.attrs["pixel_width"]) * u.Quantity(effective_area.attrs["pixel_height"])
-).to(u.sr) / u.pix
-photon_energy = (const.h * const.c / (area.wavelength.values * u.AA) / u.ph).to(u.erg / u.ph)
-radiometric_conversion_quantity = (area.values * u.Unit(area.attrs["units"]) * pixel_solid_angle / photon_energy).to(
-    u.cm**2 * u.DN * u.sr / (u.erg * u.pix)
-)
-radiometric_conversion = area.copy(data=radiometric_conversion_quantity.value).assign_attrs(
-    units=str(radiometric_conversion_quantity.unit)
-)
+channel = 94 * u.AA
+effective_area = create_aia_effective_area(channel, include_eve_correction=False, include_dn_per_photon=False)
+detector = {
+    name: u.Quantity(effective_area.attrs[name]) for name in ("pixel_width", "pixel_height", "gain", "pair_energy")
+}
+print(detector)
 
 plt.figure()
-radiometric_conversion.plot()
+effective_area.effective_area.sel(wavelength=slice(84, 106)).plot()
 plt.yscale("log")
-plt.title("AIA 94 Å radiometric conversion")
+plt.title("AIA 94 Å effective area")
 
 ##############################################################################
 # The 94 Å channel is dominated by iron lines (Fe XVIII in flares and
@@ -95,76 +96,88 @@ print(line_list)
 # But we will continue with our more focused line list.
 
 ##############################################################################
-# The temperature response of the channel is the sum over every line of its
-# contribution function weighted by the AIA radiometric conversion at that
-# line's wavelength. This direct integration avoids sampling narrow line
-# profiles on a wavelength grid.
-#
-# The result shows the familiar bimodal shape of the 94 Å channel, peaking
-# around logT of about 6.0 (Fe X) and about 6.8 (Fe XVIII). It is the line
+# The response of the channel to a set of lines takes the three steps.
+# ``main_lines=None`` with ``include_contaminants=True`` folds every line into
+# one component, which is how an imager sees them. ``bin_method="average"``
+# integrates each line over its wavelength bin: a cool iron line is about
+# 0.004 Å wide, five times narrower than the bins, and sampled at the bin centers
+# instead it would be counted too high or too low as it falls in its bin; on
+# this grid the cool lines would lose about half their signal. One Doppler
+# velocity is enough, as the band integral does not depend on it.
+
+wavelengths = np.arange(84.0, 106.01, 0.02) * u.AA
+
+
+def imager_response(lines):
+    """
+    The wavelength-space response of the channel to ``lines``, in DN per pixel, and its
+    integral over the band.
+    """
+    waveband = create_spectral_response(
+        lines,
+        wavelengths,
+        main_lines=None,
+        include_contaminants=True,
+        bin_method="average",
+        effective_area=effective_area,
+        doppler_velocity=[0.0] * u.km / u.s,
+    )
+    waveband = transform_response_units(waveband, "1e-27 cm5 DN / (Angstrom s)", channel, detector="CI", **detector)
+    band = map_response_to_ci_detector(waveband, channel)
+    return waveband, band.detector_response.isel(line=0, doppler_velocity=0, pressure=0)
+
+
+##############################################################################
+# Which lines make up the response? Building it ion by ion shows that its two
+# peaks have very different origins, and their sum is the response of the
+# channel. The hot peak, around logT of about 6.9, is almost entirely one
+# transition, Fe XVIII 93.932 Å, whereas the cool peak, around logT of about
+# 6.0, is the sum of thousands of weaker Fe VIII-Fe XII lines that no single
+# transition dominates. For an imager these are not "contaminants" to be
+# removed; they *are* the cool response of the channel. It is the line
 # contribution only: a quantitative full-passband calculation must also
 # include free-free, free-bound, and two-photon continuum emission.
 
-conversion_at_lines = radiometric_conversion.interp(wavelength=line_list.wavelength).fillna(0.0).drop_vars("wavelength")
-temperature_response = (line_list.gofnt * conversion_at_lines).sum(dim="transition")
-temperature_response.attrs["units"] = str(u.Unit(line_list.gofnt.attrs["units"]) * radiometric_conversion_quantity.unit)
+ions = np.unique(line_list.spectroscopic_name.values)
+by_ion = {
+    str(ion): imager_response(line_list.isel(transition=line_list.spectroscopic_name.values == ion)) for ion in ions
+}
+temperature_response = sum(response for _, response in by_ion.values())
+units = temperature_response.attrs["units"] = by_ion[str(ions[0])][1].attrs["units"]
+
 plt.figure()
-temperature_response.isel(pressure=0).plot()
+temperature_response.plot()
 plt.yscale("log")
 plt.ylim(temperature_response.max().item() / 1e4, None)
-plt.ylabel(f"Line-only response [{temperature_response.attrs['units']}]")
+plt.ylabel(f"Line-only response [{units}]")
 plt.title("AIA 94 Å temperature response (Fe lines only)")
 
-##############################################################################
-# Which lines make up that response? Grouping the per-transition contributions
-# by ion shows that the two peaks have very different origins. The hot peak is
-# almost entirely one transition, Fe XVIII 93.932 Å, whereas the cool peak is
-# the sum of thousands of weaker Fe VIII-Fe XII lines that no single transition
-# dominates. For an imager these are not "contaminants" to be removed; they
-# *are* the cool response of the channel.
-
-line_contribution = (line_list.gofnt * conversion_at_lines).isel(pressure=0)
-response_by_ion = line_contribution.groupby(line_list.spectroscopic_name).sum()
-response_by_ion.attrs["units"] = temperature_response.attrs["units"]
 # Name the ions that reach at least 2% of the peak response, ordered by where they peak.
-named_ions = response_by_ion.spectroscopic_name[response_by_ion.max(dim="logT") > temperature_response.max() / 50]
-named_ions = named_ions.sortby(response_by_ion.sel(spectroscopic_name=named_ions).idxmax(dim="logT"))
+named = [ion for ion, (_, response) in by_ion.items() if response.max() > temperature_response.max() / 50]
+named.sort(key=lambda ion: float(by_ion[ion][1].idxmax(dim="logT")))
 plt.figure()
-temperature_response.isel(pressure=0).plot(color="k", lw=2, label="all lines")
-for ion in named_ions.values:
-    response_by_ion.sel(spectroscopic_name=ion).plot(label=str(ion))
-response_by_ion.drop_sel(spectroscopic_name=named_ions.values).sum(dim="spectroscopic_name").plot(
+temperature_response.plot(color="k", lw=2, label="all lines")
+for ion in named:
+    by_ion[ion][1].plot(label=ion)
+sum(response for ion, (_, response) in by_ion.items() if ion not in named).plot(
     ls="--", color="gray", label="other ions"
 )
 plt.yscale("log")
 plt.ylim(temperature_response.max().item() / 1e4, None)
-plt.ylabel(f"Line-only response [{temperature_response.attrs['units']}]")
+plt.ylabel(f"Line-only response [{units}]")
 plt.legend(fontsize=8)
 plt.title("AIA 94 Å temperature response by ion")
 
 ##############################################################################
-# Passing ``main_lines=None`` requests no named lines. Together with
-# ``include_contaminants=True``, this accumulates every transition into one
-# ``contaminants`` component, which is the natural representation for an
-# imager that does not resolve individual spectral lines: all 26,000
-# transitions above collapse into a single wavelength-space profile that a
-# synthesis can sample, while the direct sum remains the quantitative
-# broadband temperature response.
+# Before the band integral, the response is a spectrum: the folded lines in DN
+# per Angstrom, which a synthesis can sample. At the temperature of the hot
+# peak it is the Fe XVIII line at 93.932 Å above a forest of weaker ones.
 
-response = create_spectral_response(
-    line_list,
-    np.arange(91.0, 97.02, 0.02) * u.AA,
-    main_lines=None,
-    include_contaminants=True,
-)
-conversion_on_grid = (
-    radiometric_conversion.interp(wavelength=response.wavelength_grid).fillna(0.0).drop_vars("wavelength")
-)
-response_unit = u.Unit(response.spectral_response.attrs["units"]) * radiometric_conversion_quantity.unit
-scaled_response = (response.spectral_response * conversion_on_grid).assign_attrs(
-    {**response.spectral_response.attrs, "units": str(response_unit)}
-)
-response = response.assign(spectral_response=scaled_response)
-print(response)
+spectrum = sum(waveband.spectral_response for waveband, _ in by_ion.values())
+plt.figure()
+spectrum.isel(line=0, doppler_velocity=0, pressure=0).sel(logT=6.9, method="nearest").plot(x="wavelength_grid")
+plt.yscale("log")
+plt.ylabel(f"Response [{by_ion[str(ions[0])][0].spectral_response.attrs['units']}]")
+plt.title("AIA 94 Å response at logT = 6.9")
 
 plt.show()

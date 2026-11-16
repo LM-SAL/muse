@@ -104,7 +104,7 @@ def inputs(tmp_path_factory):
 
 
 @pytest.fixture
-def _synthetic_continuum(monkeypatch):
+def _fake_continuum_backend(monkeypatch):
     monkeypatch.setitem(cache._CONTINUUM_BACKENDS, "fiasco", fake_continuum)
 
 
@@ -232,7 +232,9 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert all(stored(product, name) is None for name in ("workers", "threads", "skip_existing", "create_if_missing"))
     # the database and the software of the line list, and the whole chain of calls up to this read
     assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
+    # the effective area first: a product keeps how its area was made
     assert [entry.split("(")[0] for entry in response.attrs["history"]] == [
+        "create_effective_area",
         "create_spectral_response",
         "transform_response_units",
         "map_response_to_sg_detector",
@@ -248,6 +250,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert cube.attrs["minimum_abundance"] == 1e-21
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
+        "create_effective_area",
         "create_spectral_response",
         "create_continuum_response",
         "transform_response_units",
@@ -373,7 +376,7 @@ def test_an_area_in_dn_gives_dn_products_only(inputs, tmp_path):
     assert "minimum_abundance" not in summed.attrs
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_each_imager_file_is_converted_with_its_own_detector(inputs, ci_products, tmp_path):
     twice_the_gain = {"gain": "20.0 electron / DN", "pair_energy": "3.65 eV / electron"}
     twice_as_wide = {**DETECTOR, "pixel_width": str(2 * DEFAULTS_MUSE.dx_pixel_CI)}
@@ -475,7 +478,7 @@ def test_a_line_list_file_that_does_not_fit_stops_the_call(inputs, tmp_path):
     assert not (tmp_path / "run").exists()
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_a_pressure_one_bit_off_fills_no_cube_with_nan(inputs, tmp_path):
     """
     3e21 K / m3 is 3e15 K / cm3 to one bit: the lines and the continuum must still lie
@@ -499,7 +502,7 @@ def test_a_pressure_axis_of_another_name_works(inputs, sg_products, tmp_path):
     xr.testing.assert_allclose(_main_response(written), _main_response(sg_products))
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_a_density_grid_goes_into_one_product_whole(inputs, tmp_path):
     options = {"pressure": None, "density": xr.DataArray([1e9, 1e10] * u.cm**-3, dims="density")}
 
@@ -627,6 +630,24 @@ def test_products_that_exist_are_not_made_again(inputs, tmp_path, monkeypatch):
     monkeypatch.setattr(products_module, "create_spectral_response", not_called)
 
     assert _sg(inputs, tmp_path, skip_existing=True) == first
+
+
+def test_a_resumed_call_keeps_only_products_made_with_its_settings(inputs, tmp_path):
+    path = tmp_path / "two_pressures.nc"
+    _line_list(pressure=[3e15, 3.4e15], scale=[1, 2]).to_netcdf(path)
+    pressures = xr.DataArray([3e15, 3.4e15] * u.K / u.cm**3, dims="pressure")
+    options = {"line_list_file": path, "maximum_contaminants": 0, "skip_existing": True}
+    first = _sg(inputs, tmp_path / "run", pressure=pressures, **options)
+
+    # The pressure is in the name of a product and the author shapes none: both may differ.
+    assert _sg(inputs, tmp_path / "run", pressure=pressures.isel(pressure=[0]), author="OTHER", **options) == first[:2]
+    other = "made with other settings than this call's"
+    with pytest.raises(ValueError, match=other):
+        _sg(inputs, tmp_path / "run", pressure=pressures, temperature=TEMPERATURE.isel(logT=[0, 1]), **options)
+    # the same area under the same name, with another gain
+    twice = _area_file(tmp_path / "gain20", attrs={**DETECTOR, "gain": "20.0 electron / DN"})
+    with pytest.raises(ValueError, match=other):
+        _sg(inputs, tmp_path / "run", pressure=pressures, effective_area_files=[twice], **options)
 
 
 def test_products_of_an_earlier_muse_stop_the_call(inputs, tmp_path):
@@ -826,7 +847,7 @@ def test_files_a_generator_cannot_use_stop_the_call_before_any_work(inputs, tmp_
     assert not (tmp_path / "run").exists()
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     written = _sg_continuum(inputs, tmp_path)
 
@@ -839,7 +860,8 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     assert response.sizes["doppler_velocity"] == 3
     assert response.detector_response.attrs["units"] == "1e-27 cm5 ph / s"
     assert response.attrs["continuum_backend"] == "fiasco"
-    # the last entry is this read
+    # the first entry is how its effective area was made, the last this read
+    assert response.attrs["history"][0].startswith("create_effective_area(")
     assert response.attrs["history"][-2].startswith("generate_sg_continuum_responses(")
     assert float(response.detector_response.sel(line="free-free").max()) > 0
     assert (tmp_path / "cache" / f"continuum_fiasco_153.5-188.5A_n351_{ABUNDANCE}.zarr.zip").is_file()
@@ -850,7 +872,7 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     xr.testing.assert_allclose(read_response(twice[0]).detector_response, 2 * response.detector_response)
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
     """
     Every default abundance and pressure gets one product, as for the lines, on the
@@ -879,7 +901,7 @@ def test_the_defaults_of_the_continuum_generator(inputs, tmp_path):
     assert velocities.size < lines.size
 
 
-@pytest.mark.usefixtures("_synthetic_continuum")
+@pytest.mark.usefixtures("_fake_continuum_backend")
 def test_the_line_and_continuum_products_of_a_channel_load_together(inputs, sg_products, tmp_path):
     # coarser than the lines, with the same ends
     continuum = _sg_continuum(inputs, tmp_path, doppler_velocity=DOPPLER_VELOCITY[[0, -1]])

@@ -268,12 +268,15 @@ def test_transform_flux_units_photons_to_data_numbers_line_by_line():
     assert out.attrs["history"][-1].startswith("transform_flux_units(")
 
 
-def test_transform_flux_units_prefers_the_gain_coordinate_of_the_spectrum():
-    spectrum = _spectrum().assign_coords(gain=("line", [5.0, 20.0], {"units": "electron / DN"}))
+def test_transform_flux_units_prefers_the_calibration_coordinates_of_the_spectrum():
+    spectrum = _spectrum().assign_coords(
+        gain=("line", [5.0, 20.0], {"units": "electron / DN"}),
+        pair_energy=("line", [7.3, 7.3], {"units": "eV / electron"}),
+    )
 
     out = transform_flux_units(spectrum, "DN / s")
 
-    expected = _electrons_per_photon([171.073, 284.163]) / np.array([5.0, 20.0])
+    expected = _electrons_per_photon([171.073, 284.163], 7.3) / np.array([5.0, 20.0])
     np.testing.assert_allclose(out.flux.isel(detector_x_pixel=0).values, expected, rtol=1e-12)
     # the argument comes before the coordinate
     by_argument = transform_flux_units(spectrum, "DN / s", gain=8 * u.electron / u.DN)

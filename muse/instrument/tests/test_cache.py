@@ -33,7 +33,7 @@ def _density(values):
     return xr.DataArray(values * u.cm**-3, dims="density")
 
 
-def synthetic_line_list_backend(temperature, *, density=None, pressure=None, **_kwargs):
+def fake_line_list_backend(temperature, *, density=None, pressure=None, **_kwargs):
     """
     Three lines on the requested grids, the same at every plasma point.
     """
@@ -52,7 +52,7 @@ def line_list_calls(monkeypatch):
 
     def backend(temperature, **kwargs):
         calls.append(kwargs)
-        return synthetic_line_list_backend(temperature, **kwargs)
+        return fake_line_list_backend(temperature, **kwargs)
 
     monkeypatch.setitem(cache._LINE_LIST_BACKENDS, "fiasco", backend)
     return calls
@@ -268,7 +268,7 @@ def test_the_lock_says_which_process_holds_it(tmp_path, monkeypatch):
 
     def backend(temperature, **kwargs):
         seen.append((tmp_path / "line_list_fiasco_150-192A_a.zarr.zip.lock").read_text())
-        return synthetic_line_list_backend(temperature, **kwargs)
+        return fake_line_list_backend(temperature, **kwargs)
 
     monkeypatch.setitem(cache._LINE_LIST_BACKENDS, "fiasco", backend)
     monkeypatch.setenv("SLURM_JOB_ID", "4242")
