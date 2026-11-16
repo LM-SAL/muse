@@ -27,6 +27,8 @@ import pooch
 from matplotlib import colors
 from PlasmaCalcs.hookups.muram.muram_calculator import MuramCalculator
 
+import astropy.units as u
+
 from muse.synthesis import calculate_moments, create_simple_vdem
 
 ##############################################################################
@@ -53,29 +55,31 @@ pooch.retrieve(
     processor=pooch.Untar(extract_dir=simulation_path.parent),
 )
 
+# PlasmaCalcs returns the simulation in cgs units; each input of create_simple_vdem carries its
+# unit, and the function converts it to the one it works in.
 muram_calc = MuramCalculator(dir=simulation_path, snap="0297000", units="cgs")
 muram_calc.eos_mode = "aux"
-temperature = muram_calc("T")  # Temperature array in K
+temperature = muram_calc("T").values * u.K
 # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
 r_per_nH_tot = 2.383931923587366e-24
-ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure 1/cm^6
-ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0)  # Zero out non-finite voxels so they cannot poison the VDEM
-velocity = muram_calc("u", component="z") * 1e-5  # LOS velocity in km/s
-cell_length = muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0  # Grid spacing along the line of sight in cm
-x_coord = muram_calc("maindims_x_coord")
-y_coord = muram_calc("maindims_y_coord")
-velocity_axis = np.arange(-500, 510, 10)  # Velocity axis in km/s
-log_temperature_axis = np.arange(5.5, 7.6, 0.1)
+ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2  # Emission measure
+# Zero out non-finite voxels so they cannot poison the VDEM.
+ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0).values * u.cm**-6
+velocity = muram_calc("u", component="z").values * u.cm / u.s  # LOS velocity
+# Grid spacing along the line of sight.
+cell_length = (muram_calc("dz") + muram_calc("maindims_z_coord") * 0.0).values * u.cm
+x_coord = muram_calc("maindims_x_coord").values * u.cm
+y_coord = muram_calc("maindims_y_coord").values * u.cm
 
 vdem = create_simple_vdem(
-    temperature.values,
-    velocity.values,
-    ne_nh,
-    cell_length,
-    x_coord,
-    y_coord,
-    velocity_axis,
-    log_temperature_axis,
+    temperature=temperature,
+    velocity=velocity,
+    ne_nh=ne_nh,
+    cell_length=cell_length,
+    x=x_coord,
+    y=y_coord,
+    velocity_grid=np.arange(-500, 510, 10) * u.km / u.s,
+    logT_grid=np.arange(5.5, 7.6, 0.1) * u.dex(u.K),
     # This is the axis along which the integration is performed,
     # in this case along the line of sight (z-axis)
     integration_axis=2,

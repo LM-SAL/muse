@@ -9,6 +9,7 @@ from zarr.storage import ZipStore
 
 import astropy.units as u
 
+from muse.instrument.response.detector import _channel_as_angstrom
 from muse.log import logger
 from muse.utils.utils import _to_zarr, add_history, coord_as_unit, require_unit, update_attrs
 from muse.variables import DEFAULTS_MUSE
@@ -180,8 +181,8 @@ def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coo
 def read_response(
     response_file: str | Path,
     *,
-    logT: xr.DataArray | None = None,
-    doppler_velocity: xr.DataArray | None = None,
+    logT: u.Quantity | xr.DataArray | None = None,
+    doppler_velocity: u.Quantity | xr.DataArray | None = None,
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "nearest",
@@ -196,10 +197,12 @@ def read_response(
     ----------
     response_file : `str` | `pathlib.Path`
         Response function in Xarray readable format (netCDF file or Zarr store).
-    logT : `xarray.DataArray`, optional
-        Temperature axis to (re)sample onto.
-    doppler_velocity : `xarray.DataArray`, optional
-        Velocity axis to (re)sample onto.
+    logT : `astropy.units.Quantity` or `xarray.DataArray`, optional
+        Temperature axis to (re)sample onto, in a unit convertible to the response's,
+        e.g. ``np.arange(5.0, 7.0, 0.1) * u.dex(u.K)`` or the ``logT`` coordinate of a
+        VDEM. A `xarray.DataArray` must carry a ``units`` attribute.
+    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
+        Velocity axis to (re)sample onto, in the same way as ``logT``.
     slit : `xarray.DataArray`, optional
         Number of slits array of integers. The first ``slit.max() + 1`` entries
         are selected positionally and relabeled 0-based.
@@ -228,13 +231,17 @@ def read_response(
     Raises
     ------
     ValueError
-        If the requested ``logT`` or ``doppler_velocity`` axis is empty, not finite, in units
-        that do not convert to the response's or wholly outside its range; if the file is not
+        If the requested ``logT`` or ``doppler_velocity`` axis has no units, is empty, not
+        finite, in units that do not convert to the response's or wholly outside its range;
+        if the file is not
         in the layout `save_response` writes; or if ``gain`` is not given and the response has
         no MUSE ``channel`` to take it from.
     """
     response_file = Path(response_file)
 
+    # Rebound under their own names, so that the history names the axes instead of listing them.
+    logT = _requested_axis(logT, "logT")
+    doppler_velocity = _requested_axis(doppler_velocity, "doppler_velocity")
     for name, axis in (("logT", logT), ("doppler_velocity", doppler_velocity)):
         if axis is None:
             continue
@@ -305,6 +312,25 @@ def _default_gain(channel) -> u.Quantity:
     raise ValueError(msg)
 
 
+def _requested_axis(axis: u.Quantity | xr.DataArray | None, name: str) -> xr.DataArray | None:
+    """
+    ``axis`` as an `xarray.DataArray` along ``name`` with a ``units`` attribute.
+
+    Raises
+    ------
+    ValueError
+        If ``axis`` is neither a Quantity nor a DataArray that carries units.
+    """
+    if axis is None:
+        return None
+    if isinstance(axis, u.Quantity):
+        return xr.DataArray(np.atleast_1d(axis.value), dims=name, attrs={"units": str(axis.unit)})
+    if not isinstance(axis, xr.DataArray) or "units" not in axis.attrs:
+        msg = f"{name} must be an astropy Quantity or an xarray.DataArray with a units attribute"
+        raise ValueError(msg)
+    return axis
+
+
 def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, method: str) -> xr.Dataset:
     """
     Select or interpolate the response onto ``axis`` along ``name`` (``logT`` or
@@ -316,17 +342,16 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
     """
     if axis is None:
         return response
-    # The requested axis is taken in the response's units when it carries none and converted to
-    # them when it does, so the range check, the resampling and the result share one unit.
+    # The requested axis is converted to the response's units, so the range check, the
+    # resampling and the result share one unit.
     response_unit = require_unit(response, name, f"response.{name}", coord_only=True)
     axis_attrs = dict(response[name].attrs)
-    if "units" in axis.attrs:
-        try:
-            converted = u.Unit(axis.attrs["units"]).to(response_unit, np.asarray(axis.values, dtype=float))
-        except (TypeError, ValueError, u.UnitConversionError) as exc:
-            msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
-            raise ValueError(msg) from exc
-        axis = axis.copy(data=converted)
+    try:
+        converted = u.Unit(axis.attrs["units"]).to(response_unit, np.asarray(axis.values, dtype=float))
+    except (TypeError, ValueError, u.UnitConversionError) as exc:
+        msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
+        raise ValueError(msg) from exc
+    axis = axis.copy(data=converted)
     in_range = (axis >= response[name].min()) & (axis <= response[name].max())
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
@@ -434,13 +459,14 @@ def align_response_and_vdem(
     return matched_response, matched_vdem
 
 
+@u.quantity_input(channels=u.AA)
 def load_and_concat_responses(
     response_directory: str | Path,
     response_files: Sequence[str],
     *,
-    channels: Sequence[int],
-    logT: xr.DataArray | None = None,
-    doppler_velocity: xr.DataArray | None = None,
+    channels: u.Quantity,
+    logT: u.Quantity | xr.DataArray | None = None,
+    doppler_velocity: u.Quantity | xr.DataArray | None = None,
     slit: xr.DataArray | None = None,
     logT_method: str = "nearest",
     doppler_velocity_method: str = "linear",
@@ -455,13 +481,16 @@ def load_and_concat_responses(
         Directory containing the response files.
     response_files : `Sequence` of `str`
         Filenames of response functions to load, in order.
-    channels : `Sequence` of `int`
-        One MUSE SG or CI channel per response file. Selects the per-channel
-        default gain and is repeated for every line when a file contains multiple lines.
-    logT : `xarray.DataArray`, optional
-        Temperature axis to (re)sample onto. Passed to `muse.instrument.read_response`.
-    doppler_velocity : `xarray.DataArray`, optional
-        Velocity axis to (re)sample onto. Passed to `muse.instrument.read_response`.
+    channels : `astropy.units.Quantity`
+        One MUSE SG or CI channel per response file, as wavelengths, e.g.
+        ``[108, 171, 284] * u.AA``. Selects the per-channel default gain and is
+        repeated for every line when a file contains multiple lines.
+    logT : `astropy.units.Quantity` or `xarray.DataArray`, optional
+        Temperature axis to (re)sample onto, with units. Passed to
+        `muse.instrument.read_response`.
+    doppler_velocity : `astropy.units.Quantity` or `xarray.DataArray`, optional
+        Velocity axis to (re)sample onto, with units. Passed to
+        `muse.instrument.read_response`.
     slit : `xarray.DataArray`, optional
         Number of slits array of integers. Passed to `muse.instrument.read_response`.
     logT_method : `str`, optional
@@ -478,21 +507,27 @@ def load_and_concat_responses(
     Returns
     -------
     `xarray.Dataset`
-        Concatenated response dataset with assigned channel coordinates.
+        Concatenated response dataset with a ``channel`` coordinate along ``line``,
+        named as the instrument defaults name the channels (e.g. ``171``).
 
     Raises
     ------
     ValueError
-        If the length of ``channels`` does not match ``response_files`` or a
-        channel is unsupported.
+        If the length of ``channels`` does not match ``response_files``, a channel is
+        not a MUSE SG or CI channel, or ``logT`` or ``doppler_velocity`` has no units.
     """
-    if len(channels) != len(response_files):
-        msg = f"channels ({len(channels)}) must match the number of response_files ({len(response_files)})"
+    known_channels = np.concatenate((DEFAULTS_MUSE.gain_SG.channel.values, DEFAULTS_MUSE.gain_CI.channel.values))
+    channel_labels = [_channel_as_angstrom(channel, known_channels, "sg/ci") for channel in np.atleast_1d(channels)]
+    if len(channel_labels) != len(response_files):
+        msg = f"channels ({len(channel_labels)}) must match the number of response_files ({len(response_files)})"
         raise ValueError(msg)
+    # Rebound under their own names, so that the history names the axes instead of listing them.
+    logT = _requested_axis(logT, "logT")
+    doppler_velocity = _requested_axis(doppler_velocity, "doppler_velocity")
 
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         datasets = []
-        for file_name, channel in zip(response_files, channels, strict=True):
+        for file_name, channel in zip(response_files, channel_labels, strict=True):
             gain = _default_gain(channel)
             dataset = read_response(
                 Path(response_directory) / file_name,
@@ -516,7 +551,7 @@ def load_and_concat_responses(
             combine_attrs="drop_conflicts",
         )
     line_channels = [
-        channel for dataset, channel in zip(datasets, channels, strict=True) for _ in range(dataset.sizes["line"])
+        channel for dataset, channel in zip(datasets, channel_labels, strict=True) for _ in range(dataset.sizes["line"])
     ]
     result = response.assign_coords(channel=("line", line_channels)).drop_attrs(deep=False)
     update_attrs(result, response)

@@ -47,7 +47,7 @@ response_files = [
 response = load_and_concat_responses(
     response_directory=response_files[0].parent,
     response_files=[path.name for path in response_files],
-    channels=[108, 171, 284],
+    channels=[108, 171, 284] * u.AA,
     slit=vdem_raster.slit,
     # Keep the responses dask-backed so the synthesis below stays lazy and the
     # spectrum streams to disk instead of being materialized in memory at once.

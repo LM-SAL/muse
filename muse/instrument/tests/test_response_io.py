@@ -39,9 +39,9 @@ def _write(ds: xr.Dataset, path, fmt: str) -> str:
     return str(path)
 
 
-def _axis(values, name: str) -> xr.DataArray:
+def _axis(values, name: str, unit: str) -> xr.DataArray:
     values = np.asarray(values, dtype=float)
-    return xr.DataArray(values, dims=name, coords={name: values})
+    return xr.DataArray(values, dims=name, coords={name: values}, attrs={"units": unit})
 
 
 def _slit(n: int) -> xr.DataArray:
@@ -182,8 +182,8 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     path = _write(fake_response_file_contents(), tmp_path / f"resp.{fmt}", fmt)
-    logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
-    doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity")
+    logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
+    doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
 
     r = read_response(path, logT=logT, doppler_velocity=doppler_velocity, slit=_slit(3), logT_method="nearest")
 
@@ -221,8 +221,8 @@ def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped) ->
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path, fmt) -> None:
     path = _write(fake_response_file_contents(), tmp_path / f"resp.{fmt}", fmt)
-    logT = _axis(np.linspace(5.2, 6.6, 4), "logT")
-    doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity")
+    logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
+    doppler_velocity = _axis([-150.0, -50.0, 0.0, 50.0, 150.0], "doppler_velocity", "km / s")
     kwargs = {
         "logT": logT,
         "doppler_velocity": doppler_velocity,
@@ -242,7 +242,7 @@ def test_load_and_concat_responses_chunked_stays_lazy(tmp_path) -> None:
     for name in ("a.nc", "b.nc"):
         fake_response_file_contents().to_netcdf(tmp_path / name)
 
-    response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171], chunked=True)
+    response = load_and_concat_responses(tmp_path, ["a.nc", "b.nc"], channels=[108, 171] * u.AA, chunked=True)
 
     assert isinstance(response.detector_response.data, da.Array)
 
@@ -275,18 +275,20 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
     src.doppler_velocity.attrs["units"] = "m / s"
     path = _write(src, tmp_path / "resp.nc", "nc")
 
-    plain = read_response(path, doppler_velocity=xr.DataArray([-100e3, 0.0, 100e3], dims="doppler_velocity"))
-    np.testing.assert_array_equal(plain.doppler_velocity.values, [-100e3, 0.0, 100e3])
-    assert plain.doppler_velocity.attrs["units"] == "m / s"  # a plain axis is read in the response's units
+    in_m_s = read_response(path, doppler_velocity=[-100e3, 0.0, 100e3] * u.m / u.s)
+    np.testing.assert_array_equal(in_m_s.doppler_velocity.values, [-100e3, 0.0, 100e3])
 
     in_km_s = xr.DataArray([-100.0, 0.0, 100.0], dims="doppler_velocity", attrs={"units": "km / s", "long_name": "v"})
     converted = read_response(path, doppler_velocity=in_km_s)
     np.testing.assert_array_equal(converted.doppler_velocity.values, [-100e3, 0.0, 100e3])
     assert converted.doppler_velocity.attrs["units"] == "m / s"  # converted into the response's units
-    np.testing.assert_array_equal(converted.detector_response.values, plain.detector_response.values)
+    np.testing.assert_array_equal(converted.detector_response.values, in_m_s.detector_response.values)
 
     with pytest.raises(ValueError, match="not convertible"):
-        read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity", attrs={"units": "K"}))
+        read_response(path, doppler_velocity=[0.0] * u.K)
+    # The axes of a response always carry units, so a requested axis must too.
+    with pytest.raises(ValueError, match="units attribute"):
+        read_response(path, doppler_velocity=xr.DataArray([0.0], dims="doppler_velocity"))
 
 
 def test_read_response_without_channel_requires_explicit_gain(tmp_path) -> None:
@@ -351,7 +353,7 @@ def test_read_response_gain_rejects_wrong_units(response_path) -> None:
 )
 def test_read_response_validates_the_logT_axis(response_path, logT, match) -> None:
     with pytest.raises(ValueError, match=match):
-        read_response(response_path, logT=xr.DataArray(np.array(logT), dims="logT"))
+        read_response(response_path, logT=np.array(logT, dtype=float) * u.dex(u.K))
 
 
 def test_read_response_names_the_legacy_layout(tmp_path) -> None:
@@ -395,11 +397,11 @@ def test_load_and_concat_responses_concatenates_lines(tmp_path, monkeypatch) -> 
     resp = load_and_concat_responses(
         response_directory=tmp_path,
         response_files=["a.nc", "b.nc"],
-        logT=_axis(np.linspace(5.2, 6.6, 4), "logT"),
-        doppler_velocity=_axis([-100.0, 0.0, 100.0], "doppler_velocity"),
+        logT=np.linspace(5.2, 6.6, 4) * u.dex(u.K),
+        doppler_velocity=[-100.0, 0.0, 100.0] * u.km / u.s,
         slit=_slit(3),
         logT_method="nearest",
-        channels=[108, 284],
+        channels=[108, 284] * u.AA,
     )
 
     np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
@@ -427,7 +429,7 @@ def test_load_and_concat_responses_rejects_misaligned_grids(tmp_path) -> None:
         load_and_concat_responses(
             response_directory=tmp_path,
             response_files=["a.nc", "b.nc"],
-            channels=[108, 284],
+            channels=[108, 284] * u.AA,
         )
 
 
@@ -437,7 +439,7 @@ def test_load_and_concat_responses_channels_length_mismatch_raises(tmp_path) -> 
         load_and_concat_responses(
             response_directory=tmp_path,
             response_files=["a.zarr"],
-            channels=[171, 284],
+            channels=[171, 284] * u.AA,
         )
 
 
@@ -451,7 +453,8 @@ def test_read_response_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatc
 def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(response_io, "DEFAULTS_MUSE", attrs.evolve(DEFAULTS_MUSE, gain_CI=_CI_GAIN))
     _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
-    response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[195])
+    # given in nm, the channel is named as the instrument defaults name it
+    response = load_and_concat_responses(tmp_path, ["a.zarr"], channels=[19.5] * u.nm)
     np.testing.assert_allclose(response.gain.values, 7.0)
     assert response.channel.values.tolist() == [195]
 
@@ -459,8 +462,8 @@ def test_load_and_concat_responses_selects_the_ci_gain_for_a_ci_channel(tmp_path
 def test_load_and_concat_responses_rejects_unsupported_channel(tmp_path) -> None:
     _write(fake_response_file_contents(), tmp_path / "a.zarr", "zarr")
 
-    with pytest.raises(ValueError, match=r"unsupported MUSE channel\(s\) \[999\]"):
-        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[999])
+    with pytest.raises(ValueError, match=r"unsupported MUSE SG/CI channel 999"):
+        load_and_concat_responses(tmp_path, ["a.zarr"], channels=[999] * u.AA)
 
 
 def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:

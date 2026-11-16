@@ -1,7 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-import numpy.typing as npt
 import xarray as xr
 
 import astropy.units as u
@@ -26,43 +25,58 @@ __all__ = [
 _VDEM_MAX_WORKERS = 4
 
 
+@u.quantity_input(
+    temperature=u.K,
+    velocity=u.km / u.s,
+    ne_nh=u.cm**-6,
+    cell_length=u.cm,
+    x=u.cm,
+    y=u.cm,
+    velocity_grid=u.km / u.s,
+    logT_grid=u.dex(u.K),
+)
 def create_simple_vdem(
-    temperature: npt.ArrayLike,
-    velocity: npt.ArrayLike,
-    ne_nh: npt.ArrayLike,
-    cell_length: npt.ArrayLike,
-    x: npt.ArrayLike,
-    y: npt.ArrayLike,
-    velocity_axis: npt.ArrayLike,
-    log_temperature_axis: npt.ArrayLike,
+    *,
+    temperature: u.Quantity,
+    velocity: u.Quantity,
+    ne_nh: u.Quantity,
+    cell_length: u.Quantity,
+    x: u.Quantity,
+    y: u.Quantity,
+    velocity_grid: u.Quantity,
+    logT_grid: u.Quantity,
     integration_axis: int = 2,
 ) -> xr.Dataset:
     r"""
     Calculates DEM as a function of temperature and velocity,
     x (0) and y (1) axes are horizontal z (2) vertical.
     Right hand rule.
-    velocity is LOS velocity and positive is towards the observer [km/s].
+    velocity is LOS velocity and positive is towards the observer.
+
+    Every argument is keyword-only, and every physical one is an
+    `astropy.units.Quantity` in any unit convertible to the one given below.
 
     Parameters
     ----------
-    temperature : numpy.ndarray
-        3D array of gas temperature in K.
-    velocity : numpy.ndarray
-        3D array of the velocity component along ``integration_axis`` in km/s
+    temperature : `astropy.units.Quantity`
+        3D array of gas temperature, in K.
+    velocity : `astropy.units.Quantity`
+        3D array of the velocity component along ``integration_axis``, in km/s
         (positive towards the observer).
-    ne_nh : numpy.ndarray
-        3D array of ``n_e * n_H`` in 1/cm^6.
-    cell_length : numpy.ndarray
-        1D array of cell length along the line-of-sight (``integration_axis``) axis in cm
-        (may be non-uniform).
-    x : numpy.ndarray
-        1D array of the coordinate of the first non-LOS axis in cm.
-    y : numpy.ndarray
-        1D array of the coordinate of the second non-LOS axis in cm.
-    velocity_axis : numpy.ndarray
-        1D velocity bin centers in km/s.
-    log_temperature_axis : numpy.ndarray
-        1D temperature bin centers in log10(K).
+    ne_nh : `astropy.units.Quantity`
+        3D array of ``n_e * n_H``, in 1/cm^6.
+    cell_length : `astropy.units.Quantity`
+        1D array of cell length along the line-of-sight (``integration_axis``) axis,
+        in cm (may be non-uniform).
+    x : `astropy.units.Quantity`
+        1D array of the coordinate of the first non-LOS axis, in cm.
+    y : `astropy.units.Quantity`
+        1D array of the coordinate of the second non-LOS axis, in cm.
+    velocity_grid : `astropy.units.Quantity`
+        1D velocity bin centers, in km/s.
+    logT_grid : `astropy.units.Quantity`
+        1D temperature bin centers, in dex(K), as the ``logT`` coordinate of a VDEM
+        and of a response, e.g. ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
     integration_axis : int, optional
         Axis of ``temperature``/``velocity``/``ne_nh`` to integrate along, by default 2.
         ``x`` and ``y`` label the two remaining axes in their original order, and the
@@ -72,7 +86,8 @@ def create_simple_vdem(
     -------
     xarray.Dataset
         VDEM with dimensions of the 2D spatial axes from the simulation plus
-        temperature and velocity bins.
+        temperature and velocity bins. Its ``x`` and ``y`` coordinates are in cm,
+        ``logT`` in dex(K) and ``doppler_velocity`` in km/s.
 
     Raises
     ------
@@ -133,14 +148,16 @@ def create_simple_vdem(
     Working with VDEMs allows us to create a single one and synthesize any optically thin spectral
     line.
     """
-    temperature = np.asarray(temperature)
-    velocity = np.asarray(velocity)
-    ne_nh = np.asarray(ne_nh)
-    cell_length = np.asarray(cell_length)
-    velocity_axis = np.asarray(velocity_axis)
-    log_temperature_axis = np.asarray(log_temperature_axis)
-    x = np.asarray(x)
-    y = np.asarray(y)
+    # Plain arrays in the units the binning works in. Taken before call_inputs, so that the
+    # history names the arrays instead of listing their values.
+    temperature = temperature.to_value(u.K)
+    velocity = velocity.to_value(u.km / u.s)
+    ne_nh = ne_nh.to_value(u.cm**-6)
+    cell_length = cell_length.to_value(u.cm)
+    x = x.to_value(u.cm)
+    y = y.to_value(u.cm)
+    velocity_grid = velocity_grid.to_value(u.km / u.s)
+    logT_grid = logT_grid.to_value(u.dex(u.K))
     call_inputs = dict(locals())
 
     if temperature.ndim != 3:
@@ -168,17 +185,17 @@ def create_simple_vdem(
             msg = f"{name} contains non-finite values (NaN or inf), this will cause issues during synthesis"
             logger.warning(msg)
 
-    n_velocity_bins = len(velocity_axis)
-    n_temperature_bins = len(log_temperature_axis)
+    n_velocity_bins = len(velocity_grid)
+    n_temperature_bins = len(logT_grid)
     n_x = len(x)
     n_y = len(y)
-    log_temperature_bin_width = log_temperature_axis[1] - log_temperature_axis[0]
-    velocity_bin_width = velocity_axis[1] - velocity_axis[0]
+    log_temperature_bin_width = logT_grid[1] - logT_grid[0]
+    velocity_bin_width = velocity_grid[1] - velocity_grid[0]
     # Contiguous half-open velocity bins [center - dv/2, center + dv/2): a voxel sitting exactly
     # on an edge lands in the upper bin, matching the half-open temperature-bin convention below.
-    velocity_edges = np.append(velocity_axis - velocity_bin_width / 2.0, velocity_axis[-1] + velocity_bin_width / 2.0)
-    log_temperature_lower_edge = log_temperature_axis[0] - log_temperature_bin_width / 2.0
-    log_temperature_upper_edge = log_temperature_axis[-1] + log_temperature_bin_width / 2.0
+    velocity_edges = np.append(velocity_grid - velocity_bin_width / 2.0, velocity_grid[-1] + velocity_bin_width / 2.0)
+    log_temperature_lower_edge = logT_grid[0] - log_temperature_bin_width / 2.0
+    log_temperature_upper_edge = logT_grid[-1] + log_temperature_bin_width / 2.0
     cell_length_los = cell_length.reshape(1, -1)
 
     # Only the output scales with n_x; full-cube intermediates stay bounded by the
@@ -275,8 +292,8 @@ def create_simple_vdem(
         vdem[:, ::-1],
         dims=["logT", "doppler_velocity", "x", "y"],
         coords={
-            "logT": log_temperature_axis,
-            "doppler_velocity": -velocity_axis[::-1],
+            "logT": logT_grid,
+            "doppler_velocity": -velocity_grid[::-1],
             "x": x,
             "y": y,
         },
@@ -297,13 +314,14 @@ def create_simple_vdem(
     return vdem_ds
 
 
+@u.quantity_input(maximum_doppler_velocity=u.km / u.s)
 def calculate_moments(
     spectrum: xr.Dataset,
     *,
     moment_dim: str = "detector_x_pixel",
     integration_name: str = "flux",
     doppler_name: str = "detector_doppler_velocity",
-    maximum_doppler_velocity: float | None = None,
+    maximum_doppler_velocity: u.Quantity | None = None,
     peak_half_width: float | None = None,
 ) -> xr.Dataset:
     """
@@ -325,11 +343,12 @@ def calculate_moments(
         Name of the Doppler-velocity coordinate in ``spectrum``, by default
         ``"detector_doppler_velocity"``, which `wavelength_to_doppler` adds. Its
         dimensions must be a subset of the dimensions of ``integration_name``.
-    maximum_doppler_velocity : `float` or None, optional
-        Maximum absolute velocity (km/s) to include in the integration, by default None.
+    maximum_doppler_velocity : `astropy.units.Quantity` or None, optional
+        Maximum absolute Doppler velocity to include in the integration, convertible
+        to km/s, by default None.
     peak_half_width : `float` or None, optional
-        Half-width (in ``detector_x_pixel``) of the window kept around the line
-        peak, by default None.
+        Half-width of the window kept around the line peak, in the units of the
+        ``moment_dim`` coordinate (detector pixels by default), by default None.
         Only used together with ``maximum_doppler_velocity``.
 
     Returns
@@ -353,7 +372,8 @@ def calculate_moments(
 
     if maximum_doppler_velocity is not None:
         # NaN Doppler coordinates stay included, matching the old 0/1 mask.
-        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > maximum_doppler_velocity), 0)
+        maximum_speed = maximum_doppler_velocity.to_value(u.km / u.s)  # the coordinate is in km/s by now
+        masked_flux = spectrum[integration_name].where(~(np.abs(spectrum[doppler_name]) > maximum_speed), 0)
         masked_spectrum = spectrum.assign({integration_name: masked_flux})
         if peak_half_width is not None:
             peak_index = masked_spectrum[integration_name].argmax(dim=moment_dim)
