@@ -181,7 +181,8 @@ def test_save_response_validates_chunk_overrides(tmp_path, chunks, error, match)
 
 @pytest.mark.parametrize("fmt", ["nc", "zarr"])
 def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
-    path = _write(fake_response_file_contents(), tmp_path / f"resp.{fmt}", fmt)
+    source = fake_response_file_contents()
+    path = _write(source, tmp_path / f"resp.{fmt}", fmt)
     logT = _axis(np.linspace(5.2, 6.6, 4), "logT", "dex(K)")
     doppler_velocity = _axis([-200.0, -100.0, 0.0, 100.0, 200.0], "doppler_velocity", "km / s")
 
@@ -190,6 +191,13 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert r.sizes["slit"] == 3  # read_response selects np.arange(slit.max() + 1)
     np.testing.assert_allclose(r.logT.values, logT.values)
     np.testing.assert_allclose(r.doppler_velocity.values, doppler_velocity.values)
+    # The data are the samples nearest to the requested axes, not the file's samples relabelled.
+    expected = (
+        source.detector_response.sel(logT=logT.values, method="nearest")
+        .sel(doppler_velocity=doppler_velocity.values)
+        .isel(slit=slice(3))
+    )
+    np.testing.assert_allclose(r.detector_response.transpose(*expected.dims).values, expected.values)
     assert r.attrs["HISTORY"][-1].startswith("read_response(")
 
 
