@@ -34,6 +34,19 @@ _DEFAULTS_MUSE_VALUES = {
     "waveband_half_width_SG": 35.0 * u.AA,
     "wavelength_step_SG": 4.9 * u.mAA,
     "steps_per_raster_SG": 11,
+    # Effective areas
+    "main_line_effective_area_SG": xr.DataArray(
+        np.array([2.6, 4.3, 0.87]) * u.cm**2,
+        coords={"channel": [108, 171, 284]},
+        dims="channel",
+    ),
+    # Until the private wavelength-dependent throughput is available, both CI
+    # channels use the same provisional scalar area.
+    "main_line_effective_area_CI": xr.DataArray(
+        np.array([4.55, 4.55]) * u.cm**2,
+        coords={"channel": [195, 304]},
+        dims="channel",
+    ),
     # Other Properties
     "gain_SG": xr.DataArray(
         np.array([10.0, 10.0, 10.0]) * u.electron / u.DN,
@@ -68,6 +81,7 @@ _DEFAULTS_MUSE_VALUES = {
     "response_pressure": xr.DataArray([3e14, 3e15, 3e16] * u.K / u.cm**3, dims="pressure"),
     "response_doppler_velocity": np.arange(-1000, 1010, 10) * u.km / u.s,
     "continuum_response_doppler_velocity": np.arange(-1000, 1001, 200) * u.km / u.s,
+    # Response creation, continued
     "minimum_abundance": 1e-21,  # low enough to keep every element of a CHIANTI abundance file
     "wavelength_start_SG": xr.DataArray(
         np.array([107.68034, 170.62314, 283.01608]) * u.AA,
@@ -80,19 +94,6 @@ _DEFAULTS_MUSE_VALUES = {
     "instrumental_fwhm_SG": xr.DataArray(
         np.array([0.0815 / 2, 0.0815 / 2, 0.0815]) * u.AA,
         coords={"channel": [108, 171, 284]},
-        dims="channel",
-    ),
-    # Effective areas
-    "main_line_effective_area_SG": xr.DataArray(
-        np.array([2.6, 4.3, 0.87]) * u.cm**2,
-        coords={"channel": [108, 171, 284]},
-        dims="channel",
-    ),
-    # Until the private wavelength-dependent throughput is available, both CI
-    # channels use the same provisional scalar area.
-    "main_line_effective_area_CI": xr.DataArray(
-        np.array([4.55, 4.55]) * u.cm**2,
-        coords={"channel": [195, 304]},
         dims="channel",
     ),
 }

@@ -9,7 +9,7 @@ import zipfile
 import datetime as dt
 import tempfile
 from pathlib import Path
-from collections.abc import Callable, Sequence
+from collections.abc import Mapping, Callable, Sequence
 
 import attrs
 import dask.array as da
@@ -223,11 +223,18 @@ def _written_in_full(value: object) -> str:
         return f"{_written_in_full(value.data)} {coords}"
     if isinstance(value, u.Quantity):
         return f"{_written_in_full(value.value)} {value.unit}"
-    if isinstance(value, np.ndarray | np.number | int | float) and np.issubdtype(np.asarray(value).dtype, np.number):
-        return str(np.asarray(value, dtype=float).tolist())
-    if isinstance(value, np.ndarray):
-        return str(value.tolist())
-    return repr(value)
+    if isinstance(value, np.ndarray | np.number | int | float):
+        array = np.asarray(value)
+        return str((array.astype(float) if np.issubdtype(array.dtype, np.number) else array).tolist())
+    if isinstance(value, Mapping):
+        items = sorted(value.items(), key=lambda item: str(item[0]))
+        return "{" + ", ".join(f"{_written_in_full(key)}: {_written_in_full(item)}" for key, item in items) + "}"
+    if isinstance(value, list | tuple | set | frozenset):
+        # a set in sorted order: its own order changes with the hash seed of the process
+        items = sorted(value, key=_written_in_full) if isinstance(value, set | frozenset) else value
+        return "[" + ", ".join(map(_written_in_full, items)) + "]"
+    # what an InstrumentDefaults holds is in its label; anything else as Python writes it
+    return repr(_instrument_defaults_label(value) if isinstance(value, InstrumentDefaults) else value)
 
 
 def _touch_attrs(ds: xr.Dataset | xr.DataArray, now: str) -> None:

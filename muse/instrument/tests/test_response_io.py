@@ -191,6 +191,19 @@ def test_read_response_roundtrip_selects_axes(tmp_path, fmt) -> None:
     assert "date_modified" not in r.attrs
 
 
+def test_read_response_clamps_what_it_resamples_to_finite_and_non_negative(tmp_path) -> None:
+    source = fake_response_file_contents()
+    values = source.detector_response.values.copy()
+    values[0, 0, 0, 0, 0, 0, 0], values[0, 1, 0, 0, 0, 0, 0] = np.nan, -1.0
+    source["detector_response"] = source.detector_response.copy(data=values)
+    path = _write(source, tmp_path / "resp.nc", "nc")
+
+    resampled = read_response(path, logT=source.logT.values * u.dex(u.K)).detector_response.values
+
+    assert np.isfinite(resampled).all()
+    assert (resampled >= 0).all()
+
+
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # Files with non-0-based slit numbering must come back 0-based so downstream
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
@@ -329,10 +342,12 @@ def test_read_response_gain_accepts_quantity(response_path) -> None:
     assert r.gain.attrs["units"] == str(u.electron / u.DN)
 
 
-def test_read_response_takes_the_gain_of_the_file(tmp_path) -> None:
-    path = _write(fake_response_file_contents().assign_attrs(gain="12.0 electron / DN"), tmp_path / "resp.zarr", "zarr")
+def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> None:
+    stated = fake_response_file_contents().assign_attrs(gain="12.0 electron / DN", pair_energy="7.3 eV / electron")
 
-    np.testing.assert_array_equal(read_response(path).gain.values, [12.0])
+    response = read_response(_write(stated, tmp_path / "resp.zarr", "zarr"))
+
+    assert (response.gain.values.tolist(), response.pair_energy.values.tolist()) == ([12.0], [7.3])
 
 
 def test_read_response_gain_rejects_wrong_units(response_path) -> None:

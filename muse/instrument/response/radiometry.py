@@ -244,9 +244,11 @@ def transform_flux_units(
         DN.
     pair_energy : `astropy.units.Quantity`, optional
         Mean energy that frees one electron-hole pair in silicon: one value, or
-        one per line. If `None`, use the value of each line's channel from
-        `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion between
-        photons and electrons or DN.
+        one per line. If `None`, use the ``pair_energy`` coordinate of
+        ``spectrum`` when it has one, as a spectrum made from a response of
+        `muse.instrument.read_response` does, otherwise the value of each line's
+        channel from `~muse.variables.DEFAULTS_MUSE`. Read only for a conversion
+        between photons and electrons or DN.
 
     Returns
     -------
@@ -286,6 +288,13 @@ def transform_flux_units(
         gain = u.Quantity(
             coord_as_unit(spectrum, "gain", u.electron / u.DN, "spectrum.gain").broadcast_like(wavelength).values,
             u.electron / u.DN,
+        )
+    if electron_steps and pair_energy is None and "pair_energy" in spectrum.coords:
+        pair_energy = u.Quantity(
+            coord_as_unit(spectrum, "pair_energy", u.eV / u.electron, "spectrum.pair_energy")
+            .broadcast_like(wavelength)
+            .values,
+            u.eV / u.electron,
         )
     needs_gain, needs_pair_energy = bool(dn_steps) and gain is None, bool(electron_steps) and pair_energy is None
     if needs_gain or needs_pair_energy:

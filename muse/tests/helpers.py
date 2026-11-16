@@ -138,10 +138,10 @@ def figure_test(test_function):
     )
     @wraps(test_function)
     def test_wrapper(*args, **kwargs):
-        ret = test_function(*args, **kwargs)
-        if ret is None:
-            ret = plt.gcf()
-        return ret
+        figure = test_function(*args, **kwargs)
+        if figure is None:
+            figure = plt.gcf()
+        return figure
 
     return test_wrapper
 
@@ -256,10 +256,10 @@ def fake_vdem():
     transition_region = (
         0.05 * np.exp(-(((logT_grid - 5.4) / 0.35) ** 2)) * (1.0 + 0.2 * np.sin(2 * np.pi * x_grid / X_AXIS[-1]))
     )
-    table = flare_core + warm_arcade + transition_region
-    table = np.where(table < 1e-6, 0.0, table)
+    vdem = flare_core + warm_arcade + transition_region
+    vdem = np.where(vdem < 1e-6, 0.0, vdem)
     ds = xr.Dataset(
-        data_vars={"vdem": (["logT", "doppler_velocity", "y", "x"], table)},
+        data_vars={"vdem": (["logT", "doppler_velocity", "y", "x"], vdem)},
         coords={"logT": LOGT_AXIS, "doppler_velocity": DOPPLER_VELOCITY_AXIS, "y": Y_AXIS, "x": X_AXIS},
         attrs={
             "description": "DEM(T,vel,x,y)",
@@ -373,12 +373,12 @@ def fake_response_file_contents():
     the files' dimension order (pressure, logT, line, doppler_velocity, abundance, slit,
     detector_x_pixel).
     """
-    n_logT, n_doppler_velocity, n_slit, n_pixel, n_wave = 5, 7, 4, 8, 6
+    n_logT, n_doppler_velocity, n_slit, n_pixel, n_wavelength = 5, 7, 4, 8, 6
     logT_axis = np.linspace(5.0, 7.0, n_logT)
     doppler_velocity_axis = np.linspace(-300.0, 300.0, n_doppler_velocity)
     slit_axis = np.arange(n_slit)
     detector_x_pixel = np.arange(n_pixel)
-    wavelength = np.linspace(160.0, 180.0, n_wave)
+    wavelength = np.linspace(160.0, 180.0, n_wavelength)
 
     # Smooth, non-negative response: Gaussian in logT x velocity, gently modulated by slit/pixel.
     logT_profile = np.exp(-(((logT_axis - 6.0) / 0.4) ** 2))
@@ -392,7 +392,7 @@ def fake_response_file_contents():
         * pixel_profile[None, None, None, None, None, None, :]
     )
     detector_wavelength = 170.62314 + 0.014714709 * detector_x_pixel[:, np.newaxis] - 0.39 * slit_axis[np.newaxis, :]
-    effective_area = np.linspace(0.1, 1.0, n_wave)[np.newaxis, :]
+    effective_area = np.linspace(0.1, 1.0, n_wavelength)[np.newaxis, :]
 
     response = xr.Dataset(
         data_vars={

@@ -2,10 +2,11 @@
 The response products of a set of effective-area files: named, generated and written.
 """
 
+import hashlib
 from numbers import Integral
 from pathlib import Path
 from collections import Counter
-from collections.abc import Mapping, Callable, Iterable, Sequence
+from collections.abc import Mapping, Callable, Iterable, Sequence, Collection
 
 import numpy as np
 import xarray as xr
@@ -41,7 +42,7 @@ from muse.instrument.response.spectral import (
     create_spectral_response,
 )
 from muse.log import logger
-from muse.utils.utils import _inherit_history, _instrument_defaults_label, add_history
+from muse.utils.utils import _inherit_history, _instrument_defaults_label, _written_in_full, add_history
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults
 
@@ -215,6 +216,9 @@ def generate_sg_responses(
         `muse.instrument.load_or_create_line_list`.
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
+    if transition_selection is not None and not isinstance(transition_selection, Collection):
+        # a generator, read once and written as its address: a list is recorded and digested alike
+        transition_selection = list(transition_selection)
     call_inputs = dict(locals())
     settings = {
         "instrument_defaults": instrument_defaults,
@@ -255,7 +259,14 @@ def generate_sg_responses(
                 (tag, kind): (f"sg_{channel}_{tag}_{kind}", "") for tag in tags for kind in ("waveband", "detector")
             }
 
-        for abundance, tasks in run.plan(names_of).items():
+        def settings_of(area: xr.Dataset) -> dict:
+            channel = _channel(area)
+            return {
+                "main_lines": main_lines_by_sg_channel[channel],
+                "instrumental_fwhm": instrumental_fwhm_by_sg_channel[channel],
+            }
+
+        for abundance, tasks in run.plan(names_of, settings_of).items():
             line_list = load_line_list(abundance) if tasks else None
             for area, plasma_point, names in tasks:
                 _write_sg_products(
@@ -370,7 +381,7 @@ def generate_sg_continuum_responses(
                 folded = create_continuum_response(
                     load_continuum(abundance, grid).isel({run.request.plasma_dim: plasma_point}),
                     _centers_to_edges(grid.value) * u.AA,
-                    effective_area=_curve(area),
+                    effective_area=area,
                     doppler_velocity=doppler_velocity,
                 )
                 photons = transform_response_units(
@@ -495,6 +506,9 @@ def generate_ci_responses(
         As for `generate_sg_responses`, for the line list and the continuum alike.
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
+    if transition_selection is not None and not isinstance(transition_selection, Collection):
+        # a generator, read once and written as its address: a list is recorded and digested alike
+        transition_selection = list(transition_selection)
     call_inputs = dict(locals())
     settings = {
         "instrument_defaults": instrument_defaults,
@@ -623,8 +637,22 @@ class _Run:
         if not self.effective_areas:
             msg = "pass at least one effective-area file"
             raise ValueError(msg)
+        # What shapes every product of the call; the effective area and the settings of its
+        # channel are added per product, and a given line-list file once the names are checked.
+        self._line_list_file = call_inputs.get("line_list_file")
+        self._shaping = {
+            **settings,
+            **{name: call_inputs[name] for name in _SHAPING_INPUTS if name in call_inputs},
+            # Without a file, the range selects the lines of the cache.
+            **(
+                {"line_list_wavelength_range": call_inputs.get("line_list_wavelength_range")}
+                if self._line_list_file is None
+                else {}
+            ),
+        }
         self._paths = {}
         self._done = {}
+        self._settings_digests = {}
 
     def cached(self, load: Callable[..., xr.Dataset], **kwargs) -> xr.Dataset:
         """
@@ -633,7 +661,9 @@ class _Run:
         """
         return load(self.cache_directory, **self._cache_options, **kwargs)
 
-    def plan(self, names_of: Callable[[xr.Dataset], dict]) -> dict[str, list[tuple]]:
+    def plan(
+        self, names_of: Callable[[xr.Dataset], dict], settings_of: Callable[[xr.Dataset], dict] | None = None
+    ) -> dict[str, list[tuple]]:
         """
         Name every product of the call, and return what is still to make: per abundance,
         the ``(effective area, plasma point, names)`` of every group with a product
@@ -642,6 +672,8 @@ class _Run:
         For one effective area, ``names_of(effective_area)`` maps a key of the caller's
         choice to the ``(prefix, units tag)`` of each product. A name is the path of a
         product below the output directory, without its suffix.
+        ``settings_of(effective_area)`` gives what else shapes the products of an area,
+        such as the main lines of its channel.
         """
         tasks = {
             abundance: [
@@ -671,6 +703,12 @@ class _Run:
                 "for two effective-area files of one channel, or pressures that agree to six significant digits"
             )
             raise ValueError(msg)
+        if self._line_list_file is not None:
+            self._shaping["line_list"] = _line_list_identity(self._line_list_file)
+        for group in tasks.values():
+            for area, _, names in group:
+                digest = self._settings_digest(area, settings_of(area) if settings_of else {})
+                self._settings_digests.update(dict.fromkeys(names.values(), digest))
         for name in every_name:
             kept = self._paths[name] = self.output_directory / f"{name}.zarr.zip"
             if not kept.exists():
@@ -689,11 +727,33 @@ class _Run:
                     f"this call uses {wanted} ones: use another output directory"
                 )
                 raise ValueError(msg)
+            if _attribute_of_product(kept, "settings_digest") != self._settings_digests[name]:
+                msg = (
+                    f"the product {kept} was made with other settings than this call's, such as another grid, "
+                    "effective area, main line or line list: use another output directory"
+                )
+                raise ValueError(msg)
             self._done[name] = kept
         return {
             abundance: [task for task in group if not all(name in self._done for name in task[2].values())]
             for abundance, group in tasks.items()
         }
+
+    def _settings_digest(self, area: xr.Dataset, per_area: dict) -> str:
+        """
+        A digest of all that shapes a product of ``area``: the shaping settings of the
+        call, ``per_area``, and the values, units and detector of the area.
+        """
+        detector = {name: area.attrs.get(name) for name in _DETECTOR_ATTRS}
+        values = {
+            **self._shaping,
+            **per_area,
+            "effective_area": [area.effective_area, area.effective_area.attrs.get("units"), detector],
+        }
+        digest = hashlib.sha256()
+        for name in sorted(values):
+            digest.update(f"{name}={_written_in_full(values[name])};".encode())
+        return digest.hexdigest()[:12]
 
     def write(self, dataset: xr.Dataset, name: str, save: Callable, **attrs) -> None:
         """
@@ -708,7 +768,12 @@ class _Run:
         # One order of the dimensions for every product, whatever order its parts came in.
         dataset = dataset.transpose(
             "line", "doppler_velocity", "logT", self.request.plasma_dim, ..., missing_dims="ignore"
-        ).assign_attrs(author=self.author, effective_area_label=self.effective_area_label, **attrs)
+        ).assign_attrs(
+            author=self.author,
+            effective_area_label=self.effective_area_label,
+            settings_digest=self._settings_digests[name],
+            **attrs,
+        )
         add_history(dataset, self.settings, self.generator)
         _replace_atomically(self._paths[name], lambda staging: save(dataset, staging))
         self._done[name] = self._paths[name]
@@ -719,6 +784,21 @@ class _Run:
         The products of the call that exist, made or kept, in the order they were named.
         """
         return [self._done[name] for name in self._paths if name in self._done]
+
+
+# Inputs of a generator that shape its products besides those its settings record. The others
+# say where the products go, who made them or how the code ran, or are in the path of a product:
+# its abundance, label, pressure and units.
+_SHAPING_INPUTS = ("temperature", "density", "doppler_velocity", "transition_boosts", "transition_selection")
+
+
+def _line_list_identity(line_list_file: str | Path) -> dict:
+    """
+    What tells a given line-list file from another of its name without reading it: its
+    size and the time it was last written, which any rewrite changes.
+    """
+    status = Path(line_list_file).stat()
+    return {"name": Path(line_list_file).name, "size": status.st_size, "written": status.st_mtime_ns}
 
 
 def _write_sg_products(
@@ -748,7 +828,7 @@ def _write_sg_products(
             grid,
             instrumental_fwhm=instrumental_fwhm,
             doppler_velocity=doppler_velocity,
-            effective_area=curve,
+            effective_area=area,  # the Dataset, so that the product inherits its history
             **kwargs,
         )
         detector_kwargs = _detector_kwargs(area, "SG", instrument_defaults)
@@ -817,11 +897,13 @@ def _write_ci_products(
     """
     channel = _channel(area) * u.AA
     curve = _curve(area)
-    response_area = curve
+    response_area = area  # the Dataset, so that the products inherit its history
     if _carries_gain(area):
         # The gain is in the area already: the response is built from it as a plain cm2 area,
         # and what comes out per photon is DN. The products keep the area as it was given.
-        response_area = curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
+        response_area = area.assign(
+            effective_area=curve.assign_attrs(units=str(u.Unit(curve.attrs["units"]) / (u.DN / u.ph)))
+        )
     edges = create_log_wavelength_edges(curve.wavelength.values[[0, -1]] * u.AA, bin_fractional_width)
     ranked = rank_line_list(line_list, response_area).isel(transition=slice(maximum_lines))
     line_label = f"{_channel(area)} lines"
@@ -835,8 +917,9 @@ def _write_ci_products(
     ).assign_coords(line=[line_label], line_wavelength=("line", [float(ranked.wavelength[0])], _ANGSTROM))
     cube.attrs["number_of_lines"] = ranked.sizes["transition"]
     if continuum is not None:
+        # The area without its history: the lines bring it into the cube already.
         folded = create_continuum_response(
-            continuum, edges, effective_area=response_area, doppler_velocity=doppler_velocity
+            continuum, edges, effective_area=response_area.drop_attrs(deep=False), doppler_velocity=doppler_velocity
         )
         folded = folded.assign_coords(
             line=[f"{_channel(area)} continuum {component}" for component in folded.line.values]
