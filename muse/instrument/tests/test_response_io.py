@@ -351,7 +351,8 @@ def test_read_response_keeps_an_end_point_rounded_to_float32(tmp_path, stored, r
 
     response = read_response(path, logT=axis.astype(requested) * u.dex(u.K))
 
-    assert response.sizes["logT"] == axis.size
+    # The axis asked for, not the stored one a response left as it is would keep.
+    np.testing.assert_array_equal(response.logT.values, axis.astype(requested).astype(float))
     np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
 
 
