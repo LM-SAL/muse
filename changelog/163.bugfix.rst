@@ -1,0 +1,1 @@
+`muse.instrument.read_response` and `muse.instrument.align_response_and_vdem` keep a requested point that the response's axis reaches only up to float rounding, such as logT 7.9 on a file whose axis ends at 7.8999999999999995, where they dropped that last bin.
