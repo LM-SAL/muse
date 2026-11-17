@@ -294,10 +294,15 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
     except (TypeError, ValueError, u.UnitConversionError) as exc:
         msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
         raise ValueError(msg) from exc
+    # An end a few rounding steps from the one asked for still counts: a grid made with arange ends at
+    # 7.8999999999999995 for 7.9, and float32 stores 7.1 as 7.0999999, so the steps are those of the coarser dtype.
+    eps = max(
+        np.finfo(d).eps if np.issubdtype(d, np.floating) else np.finfo(float).eps
+        for d in (axis.dtype, response[name].dtype)
+    )
     axis = axis.copy(data=converted)
-    # A grid made with arange can end a rounding step short (7.8999999999999995 for 7.9): that end still counts.
     low, high = float(response[name].min()), float(response[name].max())
-    tolerance = 1e-9 * max(abs(low), abs(high), 1.0)
+    tolerance = 16 * eps * max(abs(low), abs(high), 1.0)
     in_range = (axis >= low - tolerance) & (axis <= high + tolerance)
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")

@@ -336,6 +336,40 @@ def test_read_response_keeps_an_end_point_the_file_holds_up_to_rounding(tmp_path
     np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
 
 
+@pytest.mark.parametrize(
+    ("stored", "requested", "end"),
+    [
+        (np.float32, np.float64, 7.1),  # stored as 7.0999999, short of the 7.1 asked for
+        (np.float64, np.float32, 6.9),  # asked for as 6.9000001, past the 6.9 stored
+    ],
+)
+def test_read_response_keeps_an_end_point_rounded_to_float32(tmp_path, stored, requested, end) -> None:
+    stated = fake_response_file_contents()
+    axis = stated.logT.values.copy()
+    axis[-1] = end
+    path = _write(stated.assign_coords(logT=stated.logT.copy(data=axis.astype(stored))), tmp_path / "resp.zarr", "zarr")
+
+    response = read_response(path, logT=axis.astype(requested) * u.dex(u.K))
+
+    assert response.sizes["logT"] == axis.size
+    np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
+
+
+def test_read_response_clips_an_end_point_it_interpolates_to(tmp_path) -> None:
+    # A point between grid bins sends the whole request to interpolation, where an end a rounding step past the grid
+    # gave NaN, then zero.
+    stated = fake_response_file_contents()
+    short = stated.logT.values.copy()
+    short[-1] = np.nextafter(short[-1], 0)
+    path = _write(stated.assign_coords(logT=stated.logT.copy(data=short)), tmp_path / "resp.zarr", "zarr")
+    wanted = np.array([5.25, stated.logT.values[-1]])
+
+    response = read_response(path, logT=wanted * u.dex(u.K), logT_method="linear")
+
+    np.testing.assert_array_equal(response.logT.values, wanted)
+    np.testing.assert_allclose(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
+
+
 def test_read_response_names_the_legacy_layout(tmp_path) -> None:
     legacy = fake_response_file_contents().rename({"detector_response": "SG_resp"})
     path = _write(legacy, tmp_path / "resp.nc", "nc")
