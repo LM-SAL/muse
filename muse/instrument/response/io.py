@@ -295,7 +295,10 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
         msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
         raise ValueError(msg) from exc
     axis = axis.copy(data=converted)
-    in_range = (axis >= response[name].min()) & (axis <= response[name].max())
+    # A grid made with arange can end a rounding step short (7.8999999999999995 for 7.9): that end still counts.
+    low, high = float(response[name].min()), float(response[name].max())
+    tolerance = 1e-9 * max(abs(low), abs(high), 1.0)
+    in_range = (axis >= low - tolerance) & (axis <= high + tolerance)
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
         axis = axis.where(in_range, drop=True)
@@ -310,7 +313,8 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
             # On the grid, selection equals interpolation and reads only the needed dask slabs.
             response = response.sel({name: axis}, drop=True, method="nearest")
         else:
-            response = response.interp({name: axis}, method=method)
+            # Clipped to the grid, as interpolating a rounding step past its end gives NaN, which becomes zero below.
+            response = response.interp({name: axis.clip(low, high)}, method=method)
     response["detector_response"] = (
         response.detector_response.fillna(0).clip(min=0).assign_attrs(response.detector_response.attrs)
     )

@@ -321,6 +321,21 @@ def test_read_response_validates_the_logT_axis(response_path, logT, match) -> No
         read_response(response_path, logT=np.array(logT, dtype=float) * u.dex(u.K))
 
 
+@pytest.mark.parametrize("method", ["nearest", "linear"])
+def test_read_response_keeps_an_end_point_the_file_holds_up_to_rounding(tmp_path, method) -> None:
+    # A grid made with arange ends a rounding step short, 7.3999999999999995 for 7.4: the 7.4 asked for was dropped.
+    stated = fake_response_file_contents()
+    short = stated.logT.values.copy()
+    short[-1] = np.nextafter(short[-1], 0)
+    path = _write(stated.assign_coords(logT=stated.logT.copy(data=short)), tmp_path / "resp.zarr", "zarr")
+    wanted = stated.logT.values
+
+    response = read_response(path, logT=wanted * u.dex(u.K), logT_method=method)
+
+    np.testing.assert_array_equal(response.logT.values, wanted)
+    np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
+
+
 def test_read_response_names_the_legacy_layout(tmp_path) -> None:
     legacy = fake_response_file_contents().rename({"detector_response": "SG_resp"})
     path = _write(legacy, tmp_path / "resp.nc", "nc")
