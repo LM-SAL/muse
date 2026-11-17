@@ -96,13 +96,12 @@ def test_a_reader_adds_its_entry_but_keeps_the_provenance_of_the_file() -> None:
     assert "date_modified" not in ds.attrs
 
 
-def test_add_history_stores_serializable_keyword_inputs(caplog) -> None:
+def test_add_history_stores_serializable_keyword_inputs() -> None:
     ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), weights=np.ones(20))
     assert "ds" not in ds.attrs  # Keyword inputs with defaults are stored, the required positional `ds` is not
     assert ds.attrs["gain"] == 2.0
     assert ds.attrs["label"] == "muse"
     assert "weights" not in ds.attrs  # Large array dropped, not serializable as an attr
-    assert "weights" not in caplog.text  # and silently, unlike an object of another type
 
 
 @pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
@@ -118,15 +117,15 @@ def test_add_history_stored_attrs_round_trip(tmp_path) -> None:
     assert loaded.attrs["label"] == "muse"
 
 
-def test_add_history_warns_on_unserializable_keyword_input(caplog) -> None:
+def test_add_history_keeps_an_unserializable_keyword_input_in_its_entry_alone(caplog) -> None:
     ds = _record(xr.Dataset(), weights=object())
 
     assert "weights" not in ds.attrs
-    assert "weights" in caplog.text
-    assert "serializable" in caplog.text
+    assert "weights=" in _calls(ds)[0]
+    assert "weights" not in caplog.text  # the entry holds it, so nothing is lost and nothing is logged
 
 
-def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
+def test_add_history_does_not_compute_dask_arrays() -> None:
     def explode():
         msg = "dask array was computed"
         raise AssertionError(msg)
@@ -143,7 +142,6 @@ def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
     assert _calls(ds) == ["demo(ds=<Dataset>, lazy_array=<array of shape (5,)>, lazy_dataarray=<array of shape (5,)>)"]
     assert "lazy_array" not in ds.attrs
     assert "lazy_dataarray" not in ds.attrs
-    assert "serializable" not in caplog.text
 
 
 def test_add_history_records_bare_name_without_inputs() -> None:

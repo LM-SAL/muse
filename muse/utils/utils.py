@@ -19,7 +19,6 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.log import logger
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults
 from muse.version import version as _version
@@ -343,11 +342,6 @@ def add_history(
             safe = _attr_safe(value)
             if safe is not None:
                 ds.attrs[arg] = safe
-            elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
-                logger.warning(
-                    f"Not storing keyword input {arg!r} as an attribute: a "
-                    f"{type(value).__name__} is not netCDF/zarr serializable.",
-                )
 
     name = func if isinstance(func, str) else func.__name__
     now = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
