@@ -19,6 +19,7 @@ import xarray as xr
 
 import astropy.units as u
 
+from muse.log import logger
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults
 from muse.version import version as _version
@@ -281,8 +282,15 @@ def _attr_safe(value: object) -> str | int | float | list | None:
     ``value`` in a form both netCDF4 and Zarr v3 store, or `None` to skip it.
 
     ``str``, ``int``, ``float`` and lists of them pass; a scalar ``Quantity`` becomes
-    ``"<value> <unit>"``, a ``bool`` an ``int``, an array of up to 8 elements a list.
+    ``"<value> <unit>"``, a ``bool`` an ``int``, an array of up to 8 elements a list and
+    a mapping one text of ``key=value`` pairs, written as in the history entry.
     """
+    if isinstance(value, Mapping):  # netCDF and Zarr store no mapping, so it becomes the text returned below
+        texts = (
+            " ".join(map(_entry_value, item)) if isinstance(item, tuple) else _entry_value(item)
+            for item in value.values()
+        )
+        value = ", ".join(f"{key}={text}" for key, text in zip(value, texts, strict=True))
     if isinstance(value, u.Quantity):
         return f"{value.value} {value.unit}" if value.isscalar else None
     if isinstance(value, np.ndarray | da.Array):
@@ -342,6 +350,11 @@ def add_history(
             safe = _attr_safe(value)
             if safe is not None:
                 ds.attrs[arg] = safe
+            elif value is not None and not isinstance(value, np.ndarray | xr.DataArray | xr.Dataset | da.Array):
+                logger.warning(
+                    f"Not storing keyword input {arg!r} as an attribute: a "
+                    f"{type(value).__name__} is not netCDF/zarr serializable.",
+                )
 
     name = func if isinstance(func, str) else func.__name__
     now = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
