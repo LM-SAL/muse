@@ -1,0 +1,1 @@
+`muse.instrument.read_response` and `muse.instrument.align_response_and_vdem` keep the end bin of a response axis stored or requested in float32, such as logT 7.1 stored as 7.0999999, and no longer keep a float64 point more than a few rounding steps beyond the grid.
