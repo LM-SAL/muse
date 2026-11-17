@@ -1,1 +1,1 @@
-``map_response_to_sg_detector`` maps a response that is in memory one slit at a time, which lowers its peak memory to about a third and gives the same numbers. A chunked response is mapped lazily, as before.
+``map_response_to_sg_detector`` needs about a third of its former peak memory for a response held in memory.

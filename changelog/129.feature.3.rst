@@ -1,1 +1,0 @@
-``save_response``, ``save_spectral_response`` and ``save_effective_area`` also write a zarr store as one file: a destination that ends in ``.zarr.zip`` is the store packed into a zip, which the readers open like a directory store.

@@ -1,1 +1,0 @@
-Added ``transform_flux_units``, which converts the flux of a spectrum between photons, electrons and data numbers along the detector chain, line by line. It takes the gain from its argument, from the ``gain`` coordinate of the spectrum or from the default of each line's channel.

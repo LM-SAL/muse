@@ -1,1 +1,0 @@
-Removed tests that could not fail or repeated another test, and code that only tests reached: ``map_response_to_sg_detector`` no longer reads a ``component_kind`` coordinate, which ``create_spectral_response`` has not returned since 0.2.0.

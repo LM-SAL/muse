@@ -1,1 +1,1 @@
-``fetch_example_data`` downloads the example data of the latest release, or of main for a development version, and holds every file of the tutorials.
+``fetch_example_data`` downloads from the ``stable`` release of muse-data, or ``dev`` for a development version of muse, and serves every file the tutorials use. muse 0.3 can no longer download its example data.

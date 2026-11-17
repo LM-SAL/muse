@@ -1,1 +1,1 @@
-``match_fov`` takes ``y_pixels``, the number of pixels along y in the output: an input with more is cropped to the first ``y_pixels``, and one with fewer is extended with ``pad_mode`` when ``extent="extend"``.
+``match_fov`` takes ``y_pixels``, the output height in pixels: a taller field is cropped, and a shorter one padded with ``pad_mode`` when ``extent="extend"``.

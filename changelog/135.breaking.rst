@@ -1,1 +1,0 @@
-``match_fov`` takes the pixel size as ``pixel_width`` and ``pixel_height``, the names ``transform_response_units`` has for the same quantity, in place of ``dx_pix`` and ``dy_pix``. ``align_response_and_vdem`` takes ``coordinate_methods`` in place of ``coord_methods``. The provenance attributes that record these arguments on the results carry the new names too.

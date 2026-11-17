@@ -1,1 +1,0 @@
-``create_spectral_response``, ``create_continuum_response`` and ``rank_line_list`` also take the Dataset that ``create_effective_area`` returns, not only its ``effective_area`` variable.

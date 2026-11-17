@@ -1,0 +1,1 @@
+``match_fov`` takes ``rotation``, a multiple of 90 degrees counter-clockwise, instead of ``rotate``, which swapped x and y and so mirrored the field: pass ``rotation=90 * u.deg`` for a quarter turn.

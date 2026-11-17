@@ -1,1 +1,0 @@
-Removed ``slit_sep_SG``, ``slit_sep_CI`` and ``num_lines_keep`` from ``DEFAULTS_MUSE`` and ``InstrumentDefaults``: no code in the library read them.

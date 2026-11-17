@@ -1,1 +1,1 @@
-``vdem_synthesis`` accepts an imager response, as ``map_response_to_ci_detector`` returns it, with a raster that has slits: each slit position is imaged on its own and ``slit`` stays in the output.
+``vdem_synthesis`` accepts an imager response with a raster that has slits, and images each slit position on its own.

@@ -1,1 +1,1 @@
-``save_response`` passes the Blosc codec names as strings, which silences zarr's warning about deprecated enums.
+``save_response`` no longer triggers the zarr warning about deprecated Blosc codec enums.

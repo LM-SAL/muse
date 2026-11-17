@@ -1,1 +1,0 @@
-Shorter docstrings, comments and tutorial text, with the facts kept.
