@@ -1,1 +1,1 @@
-Added ``load_or_create_line_list`` and ``load_or_create_continuum``, which store a line list or a continuum in a file and read it on every later call. A file that does not hold what is asked for is refused and left as it is, and a lock file that names its owner stops a second process from creating the same file.
+Added ``save_spectral_response`` and ``read_spectral_response`` for responses in wavelength space. ``save_response`` and the other savers write a zarr store as one zip file when the path ends in ``.zip``, such as ``.zarr.zip``, and the readers open it.

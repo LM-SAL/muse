@@ -1,1 +1,0 @@
-Removed the versions of other software, the timings and the memory figures of single runs from the docstrings of the response and atomic-data functions, and corrected the Returns and Raises of ``read_response`` and the ``line_list_file`` entry of the response generators.

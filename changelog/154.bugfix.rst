@@ -1,1 +1,1 @@
-``pip install "muse[fiasco]"`` can build responses: numexpr and periodictable are core dependencies.
+``numexpr`` and ``periodictable`` are required dependencies, so ``create_spectral_response`` works without the ``chianti`` extra.

@@ -1,1 +1,1 @@
-The modules of ``muse.instrument`` moved into the subfolders ``atomic`` and ``response``. Import the public names from ``muse.instrument``, as before; importing a module by its old path, such as ``muse.instrument.response_io``, no longer works.
+The modules of ``muse.instrument`` moved into the subpackages ``atomic`` and ``response``: import from ``muse.instrument`` itself, as in ``from muse.instrument import read_response``.

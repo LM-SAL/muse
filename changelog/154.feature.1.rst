@@ -1,0 +1,1 @@
+``map_response_to_sg_detector``, ``transform_response_units``, ``transform_flux_units`` and the response generators take ``instrument_defaults`` to use in place of ``DEFAULTS_MUSE``, such as ``attrs.evolve(DEFAULTS_MUSE, number_of_slits_SG=5)``.

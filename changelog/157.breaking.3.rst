@@ -1,0 +1,1 @@
+``read_response`` no longer takes ``gain``, and neither it nor ``read_responses`` falls back on the gain of ``DEFAULTS_MUSE``: they add ``gain`` and ``pair_energy`` coordinates only when the file states them. Pass ``gain`` to ``transform_flux_units`` or ``transform_response_units`` instead.

@@ -1,1 +1,0 @@
-``create_effective_area`` takes ``pixel_width``, ``pixel_height``, ``gain`` and ``pair_energy`` as Quantities.

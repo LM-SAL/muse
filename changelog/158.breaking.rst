@@ -1,1 +1,0 @@
-``generate_ci_responses`` no longer takes ``units``: its imager response is written in DN alone, since one in photons, converted to DN at one wavelength, was wrong over a broad band. ``create_aia_effective_area`` no longer takes ``include_dn_per_photon`` and returns the area in cm2 (SolarSoft's ``/dn`` area is it times ``dn_per_photon``); an area in cm2 DN / ph is refused.
