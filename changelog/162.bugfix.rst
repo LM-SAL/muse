@@ -1,0 +1,1 @@
+A keyword input given as a mapping, such as the default ``coordinate_methods`` of ``align_response_and_vdem``, is stored as one text attribute, ``"logT=nearest dex(K), doppler_velocity=linear km / s"``, instead of logging "Not storing keyword input" twice on every call.

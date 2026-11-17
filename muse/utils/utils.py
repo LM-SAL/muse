@@ -282,8 +282,15 @@ def _attr_safe(value: object) -> str | int | float | list | None:
     ``value`` in a form both netCDF4 and Zarr v3 store, or `None` to skip it.
 
     ``str``, ``int``, ``float`` and lists of them pass; a scalar ``Quantity`` becomes
-    ``"<value> <unit>"``, a ``bool`` an ``int``, an array of up to 8 elements a list.
+    ``"<value> <unit>"``, a ``bool`` an ``int``, an array of up to 8 elements a list and
+    a mapping one text of ``key=value`` pairs, written as in the history entry.
     """
+    if isinstance(value, Mapping):  # netCDF and Zarr store no mapping, so it becomes the text returned below
+        texts = (
+            " ".join(map(_entry_value, item)) if isinstance(item, tuple) else _entry_value(item)
+            for item in value.values()
+        )
+        value = ", ".join(f"{key}={text}" for key, text in zip(value, texts, strict=True))
     if isinstance(value, u.Quantity):
         return f"{value.value} {value.unit}" if value.isscalar else None
     if isinstance(value, np.ndarray | da.Array):

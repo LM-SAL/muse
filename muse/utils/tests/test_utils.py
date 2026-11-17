@@ -126,6 +126,15 @@ def test_add_history_warns_on_unserializable_keyword_input(caplog) -> None:
     assert "serializable" in caplog.text
 
 
+def test_add_history_stores_a_mapping_as_text(caplog) -> None:
+    ds = _record(xr.Dataset(), weights={"logT": ("nearest", u.dex(u.K)), "doppler_velocity": ("linear", u.km / u.s)})
+    lines = _record(xr.Dataset(), weights={171: ["Fe IX 171.073", "Fe X 174.531"], 284: np.arange(5.0) * u.AA})
+
+    assert ds.attrs["weights"] == "logT=nearest dex(K), doppler_velocity=linear km / s"
+    assert lines.attrs["weights"] == "171=['Fe IX 171.073', 'Fe X 174.531'], 284=<5 values, 0.0 to 4.0 Angstrom>"
+    assert "weights" not in caplog.text
+
+
 def test_add_history_does_not_compute_dask_arrays(caplog) -> None:
     def explode():
         msg = "dask array was computed"
