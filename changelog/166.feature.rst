@@ -1,0 +1,1 @@
+``read_response``, ``read_responses`` and ``align_response_and_vdem`` log a warning with the number of values of a response that are not finite or are negative, which resampling sets to zero, when the response is in memory. Positive infinity is now set to zero as well, where it was left as it was.
