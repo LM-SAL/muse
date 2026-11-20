@@ -1,0 +1,1 @@
+``read_response`` and ``read_responses`` log a warning with the number of NaN or negative values of a response that resampling sets to zero, when the response is in memory.
