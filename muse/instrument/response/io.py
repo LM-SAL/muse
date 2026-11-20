@@ -182,6 +182,9 @@ def read_response(
     """
     Read a response file, resampled onto ``logT`` and ``doppler_velocity`` if given.
 
+    Resampling sets NaN and negative values of ``detector_response`` to zero, and logs how many when the
+    response is in memory (``chunked=False``).
+
     Parameters
     ----------
     response_file : `str` | `pathlib.Path`
@@ -283,7 +286,8 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
     Resample onto ``axis`` along ``name``, dropping points beyond the response range.
 
     ``"nearest"`` selects samples, any other method interpolates; either way the result
-    is clamped to finite, non-negative values.
+    is clamped to finite, non-negative values, and a response in memory logs how many
+    values that changed.
     """
     if axis is None:
         return response
@@ -320,9 +324,16 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
         else:
             # Clipped to the grid, as interpolating a rounding step past its end gives NaN, which becomes zero below.
             response = response.interp({name: axis.clip(low, high)}, method=method)
-    response["detector_response"] = (
-        response.detector_response.fillna(0).clip(min=0).assign_attrs(response.detector_response.attrs)
-    )
+    values = response.detector_response
+    if values.chunks is None:
+        # Counted where the response is in memory, at the cost of one pass; a dask-backed one stays lazy.
+        clamped = int((~(values >= 0)).sum())
+        if clamped:
+            logger.warning(
+                f"{clamped} of the {values.size} values of detector_response are NaN or negative after resampling "
+                f"{name}: they are set to zero"
+            )
+    response["detector_response"] = values.fillna(0).clip(min=0).assign_attrs(values.attrs)
     if response.detector_response.chunks is not None:
         # Point selection leaves one dask chunk per point, which shatters downstream graphs.
         response = response.chunk({name: -1})

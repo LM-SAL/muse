@@ -190,6 +190,26 @@ def test_read_response_clamps_what_it_resamples_to_finite_and_non_negative(tmp_p
     assert (resampled >= 0).all()
 
 
+def test_read_response_says_how_many_values_it_clamps(tmp_path, caplog) -> None:
+    source = fake_response_file_contents()
+    logT = source.logT.values * u.dex(u.K)
+    clean = _write(source, tmp_path / "clean.nc", "nc")
+    values = source.detector_response.values.copy()
+    values[0, 0, 0, 0, 0, 0, 0], values[0, 1, 0, 0, 0, 0, 0] = np.nan, -1.0
+    source["detector_response"] = source.detector_response.copy(data=values)
+    path = _write(source, tmp_path / "resp.nc", "nc")
+
+    read_response(clean, logT=logT)
+    assert "NaN or negative" not in caplog.text
+    read_response(path, logT=logT)
+    assert f"2 of the {values.size} values of detector_response are NaN or negative" in caplog.text
+    caplog.clear()
+    # A dask-backed response is clamped all the same, and not counted: a count would read it.
+    lazy = read_response(path, logT=logT, chunked=True)
+    assert isinstance(lazy.detector_response.data, da.Array)
+    assert "NaN or negative" not in caplog.text
+
+
 def test_read_response_normalizes_slit_labels(tmp_path) -> None:
     # Files with non-0-based slit numbering must come back 0-based so downstream
     # exact joins against reshape_x_to_slit_step output (slit = 0..n-1) align.
