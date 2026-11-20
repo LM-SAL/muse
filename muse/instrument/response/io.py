@@ -182,8 +182,7 @@ def read_response(
     """
     Read a response file, resampled onto ``logT`` and ``doppler_velocity`` if given.
 
-    Resampling sets NaN and negative values of ``detector_response`` to zero, and logs how many when the
-    response is in memory (``chunked=False``).
+    Resampling sets the values of ``detector_response`` that are not finite or are negative to zero, and logs how many when the response is in memory (``chunked=False``).
 
     Parameters
     ----------
@@ -325,15 +324,17 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
             # Clipped to the grid, as interpolating a rounding step past its end gives NaN, which becomes zero below.
             response = response.interp({name: axis.clip(low, high)}, method=method)
     values = response.detector_response
+    usable = np.isfinite(values) & (values >= 0)
     if values.chunks is None:
         # Counted where the response is in memory, at the cost of one pass; a dask-backed one stays lazy.
-        clamped = int((~(values >= 0)).sum())
+        clamped = int((~usable).sum())
         if clamped:
             logger.warning(
-                f"{clamped} of the {values.size} values of detector_response are NaN or negative after resampling "
-                f"{name}: they are set to zero"
+                f"{clamped} of the {values.size} values of detector_response are not finite or are negative after "
+                f"resampling {name}: they are set to zero"
             )
-    response["detector_response"] = values.fillna(0).clip(min=0).assign_attrs(values.attrs)
+    # Not fillna and clip: they leave positive infinity as it is.
+    response["detector_response"] = values.where(usable, 0).assign_attrs(values.attrs)
     if response.detector_response.chunks is not None:
         # Point selection leaves one dask chunk per point, which shatters downstream graphs.
         response = response.chunk({name: -1})
