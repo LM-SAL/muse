@@ -13,7 +13,14 @@ import astropy.units as u
 from astropy.time import Time
 
 from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination, _open_dataset_file
-from muse.utils.utils import _require_increasing_axis, _to_zarr, add_history, coord_as_unit, require_unit
+from muse.utils.utils import (
+    _replace_atomically,
+    _require_increasing_axis,
+    _to_zarr,
+    add_history,
+    coord_as_unit,
+    require_unit,
+)
 
 __all__ = [
     "create_aia_effective_area",
@@ -264,10 +271,8 @@ def save_effective_area(effective_area: xr.Dataset, effective_area_file: str | P
     """
     validated = _validate_effective_area(effective_area, "effective_area").drop_encoding()
     destination = _check_destination(effective_area_file, what="effective area", argument="effective_area_file")
-    if destination.suffix.lower() in _ZARR_SUFFIXES:
-        _to_zarr(validated, destination)
-    else:
-        validated.to_netcdf(destination)
+    write = _to_zarr if destination.suffix.lower() in _ZARR_SUFFIXES else xr.Dataset.to_netcdf
+    _replace_atomically(destination, lambda staging: write(validated, staging))
 
 
 def read_effective_area(effective_area_file: str | Path) -> xr.Dataset:

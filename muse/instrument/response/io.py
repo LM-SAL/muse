@@ -11,7 +11,14 @@ from zarr.storage import ZipStore
 import astropy.units as u
 
 from muse.log import logger
-from muse.utils.utils import _to_zarr, add_history, coord_as_unit, require_unit, update_attrs
+from muse.utils.utils import (
+    _replace_atomically,
+    _to_zarr,
+    add_history,
+    coord_as_unit,
+    require_unit,
+    update_attrs,
+)
 from muse.variables_schema import FrozenDict
 
 __all__ = [
@@ -61,7 +68,7 @@ def save_response(
     _validate_response(response, "response")
     response_file = _check_destination(response_file)
     chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
-    _write_chunked(chunked, response_file, "detector_response")
+    _replace_atomically(response_file, lambda staging: _write_chunked(chunked, staging, "detector_response"))
 
 
 def _check_destination(destination: str | Path, *, what: str = "response", argument: str = "response_file") -> Path:
@@ -528,7 +535,8 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
         raise ValueError(msg)
     response_file = _check_destination(response_file)
     chunks = {name: 1 for name in ("line", "logT", "pressure", "logD", "abundance") if name in response.dims}
-    _write_chunked(response.drop_encoding().chunk(chunks), response_file, "spectral_response")
+    chunked = response.drop_encoding().chunk(chunks)
+    _replace_atomically(response_file, lambda staging: _write_chunked(chunked, staging, "spectral_response"))
 
 
 def read_spectral_response(response_file: str | Path) -> xr.Dataset:

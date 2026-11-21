@@ -1,5 +1,7 @@
+import sys
 import shutil
 
+import dask
 import dask.array as da
 import numpy as np
 import pytest
@@ -94,6 +96,42 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     assert loaded.detector_response.dims == response.detector_response.dims
     np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        pytest.param(
+            "nc",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="Windows cannot delete a staging file a late chunk holds open"
+            ),
+        ),
+        "zarr",
+        "zarr.zip",
+    ],
+)
+def test_a_failed_save_response_leaves_nothing_behind(tmp_path, fmt) -> None:
+    def fail():
+        msg = "chunk failed"
+        raise RuntimeError(msg)
+
+    response = _small_response()
+    data = response.detector_response
+    # The second line raises when computed, while dask threads still write the first.
+    failing = da.from_delayed(dask.delayed(fail)(), shape=data[1:].shape, dtype=data.dtype)
+    broken = response.assign(
+        detector_response=(data.dims, da.concatenate([da.from_array(data.values[:1]), failing]), data.attrs)
+    )
+    path = tmp_path / f"response.{fmt}"
+
+    with pytest.raises(RuntimeError, match="chunk failed"):
+        save_response(broken, path)
+
+    # Neither a partial product nor a staging path, so the same call can be made again.
+    assert not list(tmp_path.iterdir())
+    save_response(response, path)
+    np.testing.assert_allclose(read_response(path).detector_response.values, data.values)
 
 
 def test_save_response_accepts_chunk_overrides(tmp_path) -> None:

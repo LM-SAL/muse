@@ -84,6 +84,27 @@ def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
         save_effective_area(effective_area, path)
 
 
+@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
+def test_a_failed_save_effective_area_leaves_nothing_behind(tmp_path, monkeypatch, suffix):
+    method = "to_zarr" if suffix == ".zarr" else "to_netcdf"
+    write = getattr(xr.Dataset, method)
+
+    def half_written(dataset, path, *args, **kwargs):
+        write(dataset, path, *args, **kwargs)
+        msg = "disk full"
+        raise OSError(msg)
+
+    path = tmp_path / f"area{suffix}"
+    with monkeypatch.context() as patch:
+        patch.setattr(xr.Dataset, method, half_written)
+        with pytest.raises(OSError, match="disk full"):
+            save_effective_area(_area(), path)
+
+    assert not list(tmp_path.iterdir())
+    save_effective_area(_area(), path)
+    xr.testing.assert_allclose(read_effective_area(path).effective_area, _area().effective_area)
+
+
 def test_save_effective_area_rejects_a_wrong_layout(tmp_path):
     with pytest.raises(ValueError, match="channel coordinate"):
         save_effective_area(_area().drop_vars("channel"), tmp_path / "area.nc")

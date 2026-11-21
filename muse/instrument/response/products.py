@@ -21,7 +21,6 @@ from muse.instrument.atomic.cache import (
     _LINE_LIST_BACKENDS,
     _limited_threads,
     _PlasmaRequest,
-    _replace_atomically,
     _require_name_part,
     load_or_create_continuum,
     load_or_create_line_list,
@@ -42,7 +41,13 @@ from muse.instrument.response.spectral import (
     create_spectral_response,
 )
 from muse.log import logger
-from muse.utils.utils import _inherit_history, _instrument_defaults_label, _written_in_full, add_history
+from muse.utils.utils import (
+    _inherit_history,
+    _instrument_defaults_label,
+    _replace_atomically,
+    _written_in_full,
+    add_history,
+)
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults, _required
 

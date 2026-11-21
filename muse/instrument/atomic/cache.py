@@ -4,8 +4,6 @@ Line lists and continua cached as zipped zarr stores, created once and then read
 
 import os
 import re
-import uuid
-import shutil
 import platform
 import contextlib
 from pathlib import Path
@@ -24,7 +22,7 @@ from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
 from muse.instrument.atomic.linelist import create_chianti_line_list, create_fiasco_line_list
 from muse.log import logger
-from muse.utils.utils import _to_zarr
+from muse.utils.utils import _replace_atomically, _to_zarr
 
 __all__ = ["load_or_create_continuum", "load_or_create_line_list"]
 
@@ -384,24 +382,6 @@ def _creation_lock(path: Path, what: str):
         yield
     finally:
         lock.unlink(missing_ok=True)
-
-
-def _replace_atomically(path: Path, write: Callable[[Path], None]) -> None:
-    """
-    Call ``write`` on a staging path beside ``path`` and rename the result into place: a
-    reader never finds a half-written file, and a failed write leaves nothing behind.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staging = path.with_name(f".{path.stem}.{uuid.uuid4().hex}{path.suffix}")
-    try:
-        write(staging)
-        staging.replace(path)
-    finally:
-        # Still there only if the write or the rename failed; a zarr store that is not packed is a directory.
-        if staging.is_dir():
-            shutil.rmtree(staging)
-        else:
-            staging.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
