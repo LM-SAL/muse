@@ -295,7 +295,9 @@ def calculate_moments(
     Returns
     -------
     `xarray.Dataset`
-        The moments ``0th``, ``1st`` and ``2nd``, the last two in km/s.
+        The moments ``0th``, ``1st`` and ``2nd``, the last two in km/s. Velocity and
+        width use only pixels with a finite Doppler velocity and are NaN when there are
+        none.
     """
     require_unit(spectrum, variable_name, f"spectrum.{variable_name}")
     if doppler_name not in spectrum.coords:
@@ -332,11 +334,13 @@ def calculate_moments(
     )
     zeroth = masked_spectrum[variable_name].sum(dim=moment_dim)
     velocity = masked_spectrum[doppler_name]
-    # No flux (e.g. fully masked) gives NaN, not inf.
-    safe_zeroth = zeroth.where(zeroth > 0)
-    first = (masked_spectrum[variable_name] * velocity).sum(dim=moment_dim) / safe_zeroth
+    # Flux without a velocity counts in the 0th moment only; none left (or no flux) gives NaN, not inf.
+    weight = masked_spectrum[variable_name].where(np.isfinite(velocity), 0)
+    weight_sum = weight.sum(dim=moment_dim)
+    safe_weight_sum = weight_sum.where(weight_sum > 0)
+    first = (weight * velocity).sum(dim=moment_dim) / safe_weight_sum
     # int(I (u-I1)^2 du)/I0 = (int(I u^2 du))/I0 - I1^2
-    variance = (masked_spectrum[variable_name] * velocity**2).sum(dim=moment_dim) / safe_zeroth - first**2
+    variance = (weight * velocity**2).sum(dim=moment_dim) / safe_weight_sum - first**2
     second = np.sqrt(variance.clip(min=0))
     moments = xr.Dataset({"0th": zeroth, "1st": first, "2nd": second})
     update_attrs(moments, spectrum)

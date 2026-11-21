@@ -149,10 +149,18 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
         },
     )
 
+    # Flux without a velocity counts in the 0th moment only.
+    moments = synthesis_utils.calculate_moments(spectrum)
+    assert moments["0th"].item() == 8.0
+    assert moments["1st"].item() == 100.0
+    assert moments["2nd"].item() == 0.0
+
     # 50 km/s given in m/s: the 100 km/s pixel is cut, the one without a velocity is kept.
     moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=5e4 * u.m / u.s)
 
     assert moments["0th"].item() == 5.0
+    assert np.isnan(moments["1st"].item())
+    assert np.isnan(moments["2nd"].item())
 
 
 def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
