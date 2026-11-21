@@ -262,6 +262,18 @@ def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
     assert emission_per_vdop[0] == 0  # doppler_velocity == -1 bin stays empty
 
 
+def test_create_simple_vdem_flow_towards_observer_is_blueshifted() -> None:
+    # +1 km/s is towards the observer, so all emission must sit at doppler_velocity == -1. The
+    # grid is asymmetric so that a missing reversal of the data or the axis also moves it.
+    inputs = _tiny_vdem_inputs()
+    inputs["velocity"] = np.full((2, 3, 2), 1.0) * u.km / u.s
+    inputs["velocity_grid"] = np.array([-1.0, 0.0, 1.0, 2.0]) * u.km / u.s
+
+    emission = synthesis_utils.create_simple_vdem(**inputs).vdem.sum(dim=("logT", "x", "y"))
+    assert emission.sel(doppler_velocity=-1.0).item() > 0
+    assert emission.sel(doppler_velocity=-1.0).item() == emission.sum().item()
+
+
 def test_create_simple_vdem_internal_x_slices_are_exact() -> None:
     # Multiple x indices exercise the per-slice worker tasks; each must be exact.
     inputs = _tiny_vdem_inputs()
