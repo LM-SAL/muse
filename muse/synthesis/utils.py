@@ -78,8 +78,8 @@ def create_simple_vdem(
     Returns
     -------
     xarray.Dataset
-        VDEM over ``logT`` (dex(K)), ``doppler_velocity`` (km/s), ``x`` and ``y`` (cm).
-        Plasma moving towards the observer gets a negative ``doppler_velocity``.
+        VDEM over ``logT`` (dex(K)), ``doppler_velocity`` (km/s), ``x`` and ``y`` (cm), in
+        1e27 cm^-5 per bin. Plasma moving towards the observer gets a negative ``doppler_velocity``.
 
     Raises
     ------
@@ -92,22 +92,25 @@ def create_simple_vdem(
     Remove any convection zone from the box first. Each x slice is binned on a worker
     thread, so temporaries scale with one (y, z) slice; the VDEM is allocated in full.
 
-    A line intensity is :math:`I = \int n_e^2\, G(T) dl = \int DEM\, G(T) dT`, with
-    :math:`G(T)` the contribution function and :math:`DEM(T) = n_e^2\, dl / dT`. Splitting
-    the emission measure by line-of-sight velocity as well gives
+    A line intensity is :math:`I = \int n_e n_H\, G(T)\, dl`, with :math:`G(T)` the
+    contribution function. Each bin holds the column emission measure of its log T and
+    velocity range, in 1e27 cm^-5 and not divided by the bin widths:
 
     .. math::
 
-        VDEM = \sum_l n_e(T, v_{los})^2 \Delta l / (\Delta T\, \Delta v_{los})
+        VDEM = \sum_l n_e n_H\, \Delta l\, f_l
 
-    so that, with a response :math:`G(T, v_{los})_\lambda` that includes the Doppler shift,
+    with :math:`f_l` the fraction of cell :math:`l`'s log T span, from the previous cell's
+    log T to its own, that lies in the bin. A cell with no span, such as the first one,
+    puts all its emission in its own bin, and plasma outside the bins contributes nothing.
+    With a response :math:`G(T, v_{los})_\lambda` per unit emission measure that includes
+    the Doppler shift,
 
     .. math::
 
-        I(\lambda) = \sum_T \sum_{v_{los}} VDEM\, G(T,v_{los})_\lambda \Delta T\, \Delta v_{los}
+        I(\lambda) = \sum_T \sum_{v_{los}} VDEM\, G(T, v_{los})_\lambda
 
-    and :math:`\sum_\lambda I(\lambda) \Delta\lambda = \sum_T DEM\, G(T) \Delta T`. One VDEM
-    synthesizes any optically thin line.
+    so one VDEM synthesizes any optically thin line.
     """
     # Before call_inputs, so the history names the arrays instead of listing their values.
     temperature = temperature.to_value(u.K)
@@ -163,10 +166,11 @@ def create_simple_vdem(
     def process_slice(ix: int) -> None:
         ne_nh_slice = ne_nh[ix] / 1e27  # normalize to the 1e27 / cm^5 output units
         emission_slice = ne_nh_slice * cell_length_los
-        # Each cell spans the log T between it and its neighbour, and spreads its emission by overlap.
+        # Cell i spans the log T from cell i-1 to its own, and the first cell is isothermal. Cell i's
+        # density and velocity stand for that whole interval, a second-order simplification.
         log_temperature_slice = np.log10(temperature[ix])
         log_temperature_previous = np.roll(log_temperature_slice, 1, axis=1)
-        log_temperature_previous[:, 0] = 2.0  # boundary cell is entered from 100 K
+        log_temperature_previous[:, 0] = log_temperature_slice[:, 0]
         max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
         min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
         # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
@@ -194,7 +198,8 @@ def create_simple_vdem(
             0,
             n_temperature_bins - 1,
         )
-        # Weight is overlap / bin width: partial at the two end bins, full on the (rare) interior ones.
+        # A bin gets the cell's emission times overlap / cell span: partial at the two end bins,
+        # a bin width on the (rare) interior ones, so the shares sum to the emission inside the grid.
         single = bin_lo == bin_hi
         multi = ~single
         upper_edge_of_bin_lo = log_temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
@@ -214,12 +219,19 @@ def create_simple_vdem(
                 np.repeat(velocity_y_index[multi], interior_counts),
             )
         )
+        span = max_log_temperature[voxel_mask] - min_log_temperature[voxel_mask]
+        emission_per_dex = np.divide(emission, span, out=np.zeros_like(emission), where=span > 0)
         point_weights = np.concatenate(
             (
-                emission[single] * (segment_hi[single] - segment_lo[single]) / log_temperature_bin_width,
-                emission[multi] * (upper_edge_of_bin_lo - segment_lo[multi]) / log_temperature_bin_width,
-                emission[multi] * (segment_hi[multi] - lower_edge_of_bin_hi) / log_temperature_bin_width,
-                np.repeat(emission[multi], interior_counts),
+                # An isothermal cell (no span) puts all its emission in its own bin.
+                np.where(
+                    span[single] > 0,
+                    emission_per_dex[single] * (segment_hi[single] - segment_lo[single]),
+                    emission[single],
+                ),
+                emission_per_dex[multi] * (upper_edge_of_bin_lo - segment_lo[multi]),
+                emission_per_dex[multi] * (segment_hi[multi] - lower_edge_of_bin_hi),
+                np.repeat(emission_per_dex[multi] * log_temperature_bin_width, interior_counts),
             )
         )
         binned = np.bincount(
