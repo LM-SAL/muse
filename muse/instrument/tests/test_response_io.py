@@ -98,6 +98,17 @@ def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
     np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows limits the whole path, not the name, to 260 characters")
+@pytest.mark.parametrize("suffix", ["nc", "zarr.zip"])
+def test_save_response_takes_a_name_near_the_length_limit(tmp_path, suffix) -> None:
+    # 233 characters is within the 255 a file name may have, so the staging name must fit too.
+    path = tmp_path / f"{'r' * (232 - len(suffix))}.{suffix}"
+
+    save_response(_small_response(), path)
+
+    assert [child.name for child in tmp_path.iterdir()] == [path.name]
+
+
 @pytest.mark.parametrize(
     "fmt",
     [

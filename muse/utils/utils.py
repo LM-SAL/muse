@@ -407,7 +407,8 @@ def _replace_atomically(path: Path, write: Callable[[Path], None]) -> None:
     reader never finds a half-written file, and a failed write leaves nothing behind.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    staging = path.with_name(f".{path.stem}.{uuid.uuid4().hex}{path.suffix}")
+    # Not named after path, whose name may already be near the 255-character limit; the suffix picks the writer.
+    staging = path.with_name(f".{uuid.uuid4().hex}{path.suffix}")
     try:
         write(staging)
         staging.replace(path)
@@ -433,7 +434,8 @@ def _remove(path: Path) -> None:
             with contextlib.suppress(OSError):
                 path.unlink()
         time.sleep(0.05)
-    logger.warning(f"Could not remove {path}, left by a failed write; delete it")
+    if path.exists():
+        logger.warning(f"Could not remove {path}, left by a failed write; delete it")
 
 
 def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
