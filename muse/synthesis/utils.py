@@ -246,6 +246,16 @@ def create_simple_vdem(
         for done in [executor.submit(process_slice, ix) for ix in range(n_x)]:
             done.result()
 
+    # einsum sums without a cube-sized temporary; float32 sums round at ~1e-7, hence the 1e-6.
+    total = np.einsum("xyz,z->", ne_nh, cell_length, dtype=np.float64) / 1e27
+    inside = vdem.sum(dtype=np.float64)
+    if total > 0 and inside < total * (1 - 1e-6):
+        logger.info(
+            f"{100 * (1 - inside / total):.3g} % of the emission measure lies outside logT "
+            f"{log_temperature_lower_edge:.2f} to {log_temperature_upper_edge:.2f} or velocity_grid "
+            f"{velocity_edges[0]:.1f} to {velocity_edges[-1]:.1f} km/s, and is left out of the VDEM"
+        )
+
     vdem_ds = xr.Dataset()
     vdem_ds["vdem"] = xr.DataArray(
         vdem[:, ::-1],

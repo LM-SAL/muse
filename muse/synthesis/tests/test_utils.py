@@ -331,11 +331,12 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input() -> None:
 
 
 @pytest.mark.parametrize("temperature", [10.0, 1e9])  # logT 1 and 9, outside the bin edges 4.25 and 5.75
-def test_create_simple_vdem_temperature_outside_axis_range(temperature) -> None:
+def test_create_simple_vdem_temperature_outside_axis_range(temperature, caplog) -> None:
     inputs = _tiny_vdem_inputs()
     inputs["temperature"] = np.full((2, 3, 2), temperature) * u.K
 
     assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
+    assert "100 % of the emission measure lies outside logT 4.25 to 5.75" in caplog.text
 
 
 def test_create_simple_vdem_temperature_on_bin_edge_lands_in_upper_bin() -> None:
@@ -367,7 +368,7 @@ def test_create_simple_vdem_splits_a_cell_by_its_log_temperature_span(log_temper
 
 
 @pytest.mark.parametrize("n_cells", [2, 9])
-def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells) -> None:
+def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells, caplog) -> None:
     # A logT 4.3 -> 5.7 ramp over 10 cm with ne_nh 1: each column holds 10 / 1e27 at any sampling.
     inputs = _tiny_vdem_inputs()
     shape = (2, 3, n_cells)
@@ -378,6 +379,7 @@ def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells) -> Non
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     np.testing.assert_allclose(result.vdem.values.sum(axis=(0, 1)), np.full((2, 3), 1e-26), rtol=1e-12)
+    assert "of the emission measure lies outside" not in caplog.text
 
 
 def test_create_simple_vdem_warns_on_non_finite_input(caplog: pytest.LogCaptureFixture) -> None:
