@@ -17,8 +17,8 @@ _EXAMPLE_DATA_URL = (
 #: File name -> (download URL, SHA-256 hash, cache subdirectory).
 _REGISTRY = {
     "muse_example_vdem.zarr": (
-        f"{_EXAMPLE_DATA_URL}muse_example_vdem.zarr.tar.gz",
-        "sha256:3a7fbd748edfded16be710724fbf274a4f5d54e29db9a7e277c864792ec06223",
+        f"{_EXAMPLE_DATA_URL}muse_example_vdem_20261121.zarr.tar.gz",
+        "sha256:b9b607375d7390fa6b31b16910ffd9ce84540a91920cef8fb2328ad8f4483d4d",
         "muse_example_vdem",
     ),
     "aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.nc": (
@@ -62,18 +62,18 @@ _REGISTRY = {
         "flare_nature_astro",
     ),
     "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr": (
-        f"{_EXAMPLE_DATA_URL}muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:196ed29e403360e5f51308911ef25dc976dfb2806c960806a20673bbd198fde3",
+        f"{_EXAMPLE_DATA_URL}muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea_20261121.zarr.tar.gz",
+        "sha256:49a8a88f5e0e9bbf36a524b29904fd6de47efcf151ea0ec34f53612046d46c82",
         "synthesis_tutorial",
     ),
     "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr": (
-        f"{_EXAMPLE_DATA_URL}muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:de2b5ec2383cadab8311c358c7af59a19d27d8d5805ee45858e2062264fb3d4e",
+        f"{_EXAMPLE_DATA_URL}muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea_20261121.zarr.tar.gz",
+        "sha256:7325af4a88a2e4acbbf4d61afd1bc2a840d0740de9b3d7f99a15c8a945d4aa8b",
         "synthesis_tutorial",
     ),
     "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr": (
-        f"{_EXAMPLE_DATA_URL}muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.tar.gz",
-        "sha256:fb3a9f5c6c23320a18fab69b20bd008bf714b5e1a2d42eb2a0bcc927d9c7032b",
+        f"{_EXAMPLE_DATA_URL}muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea_20261121.zarr.tar.gz",
+        "sha256:948b8d0deedab97ac621472f2bc4779e6957bdc649da048ec4efc1526c2286b4",
         "synthesis_tutorial",
     ),
     "EIS_EffArea_B.005": (
@@ -82,8 +82,8 @@ _REGISTRY = {
         "eis_calibration",
     ),
     "muse_synthetic_spectra.nc": (
-        f"{_EXAMPLE_DATA_URL}muse_synthetic_spectra.nc",
-        "sha256:a34d4cd82288435f7d3df56d8069a34915eb9057998b57b4684d2796ff6e5c27",
+        f"{_EXAMPLE_DATA_URL}muse_synthetic_spectra_20261121.nc",
+        "sha256:02eba6538e604fcc991837b360fd7db7a8af9554dc81ee632e54e3851df1eec8",
         "synthesis_tutorial",
     ),
 }
