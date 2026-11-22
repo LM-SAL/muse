@@ -18,7 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Physics",
 ]
-urls.Documentation = "https://muse-lmsal.readthedocs.io/en/latest/"
+urls.Documentation = "https://muse.readthedocs.io/en/latest/"
 urls.Download = "https://pypi.org/project/muse"
 urls.Homepage = "https://muse.lmsal.com"
 urls."Issue Tracker" = "https://github.com/LM-SAL/muse/issues/"

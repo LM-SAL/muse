@@ -8,7 +8,7 @@ A Python library for real and synthetic data of NASA's Multi-slit Solar Explorer
 
 * `Homepage <https://muse.lmsal.com/>`__
 * `NASA Homepage <https://science.nasa.gov/mission/muse/>`__
-* `Documentation <https://muse-lmsal.readthedocs.io/>`__
+* `Documentation <https://muse.readthedocs.io/>`__
 
 """
 
