@@ -124,7 +124,7 @@ def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: boo
     Raise `ValueError` unless ``values`` are one-dimensional, non-empty, finite,
     strictly increasing and, when ``positive``, above zero.
 
-    ``ndim`` is checked first because ``numpy.diff`` rejects a scalar.
+    ``ndim`` is checked first because a scalar cannot be sliced.
     """
     values = np.asarray(values)
     if (
@@ -132,7 +132,8 @@ def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: boo
         or values.size == 0
         or not np.all(np.isfinite(values))
         or (positive and np.any(values <= 0))
-        or np.any(np.diff(values) <= 0)
+        # Neighbours are compared, not subtracted, as differences of unsigned integers wrap around.
+        or np.any(values[1:] <= values[:-1])
     ):
         qualifier = "positive, " if positive else ""
         msg = f"{label} must be one-dimensional, finite, {qualifier}and strictly increasing"
