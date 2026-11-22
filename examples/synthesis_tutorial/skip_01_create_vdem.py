@@ -46,7 +46,8 @@ muram_calc.eos_mode = "aux"
 temperature = muram_calc("T").values * u.K
 # Mass per hydrogen nucleus in g, hardcoded to avoid depending on the Bifrost abundance tables.
 r_per_nH_tot = 2.383931923587366e-24
-ne_nh = (muram_calc("r") / r_per_nH_tot) ** 2
+# The contribution functions are per n_e n_H, and n_e comes from the same aux EOS output as T.
+ne_nh = muram_calc("ne") * muram_calc("r") / r_per_nH_tot
 # Zero out non-finite voxels so they cannot poison the VDEM.
 ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0).values * u.cm**-6
 velocity = muram_calc("u", component="z").values * u.cm / u.s  # LOS velocity
