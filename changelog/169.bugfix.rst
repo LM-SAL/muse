@@ -1,0 +1,1 @@
+`muse.synthesis.calculate_moments` now computes the velocity and width only from flux at pixels with a finite Doppler velocity, and returns NaN for them where there is no such flux. Before, such flux pulled both towards 0 km/s, so a channel whose lines differ reported 0 km/s at every pixel after `muse.synthesis.sum_lines_per_channel`.
