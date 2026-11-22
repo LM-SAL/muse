@@ -66,7 +66,8 @@ def create_simple_vdem(
     y : `astropy.units.Quantity`
         1D coordinate of the second non-LOS axis, in cm.
     velocity_grid : `astropy.units.Quantity`
-        1D velocity bin centers, in km/s.
+        1D velocity bin centers, in km/s, in the frame of ``velocity`` (positive towards the observer);
+        the output ``doppler_velocity`` axis is ``-velocity_grid[::-1]``.
     logT_grid : `astropy.units.Quantity`
         1D temperature bin centers, in dex(K) like the ``logT`` of a response, e.g.
         ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
