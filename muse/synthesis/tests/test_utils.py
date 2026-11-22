@@ -299,6 +299,31 @@ def test_create_simple_vdem_flow_towards_observer_is_blueshifted() -> None:
     assert emission.sel(doppler_velocity=-1.0).item() == emission.sum().item()
 
 
+@pytest.mark.parametrize(
+    ("name", "grid"),
+    [
+        # Binned with its first spacing, this grid put a 30 km/s flow towards the observer at -10 km/s.
+        ("velocity_grid", np.array([0.0, 10.0, 40.0]) * u.km / u.s),
+        ("logT_grid", np.array([4.5, 5.0, 6.0]) * u.dex(u.K)),
+        ("logT_grid", np.array([5.0]) * u.dex(u.K)),
+    ],
+)
+def test_create_simple_vdem_refuses_a_grid_it_cannot_bin(name, grid) -> None:
+    inputs = _tiny_vdem_inputs()
+    inputs[name] = grid
+
+    with pytest.raises(ValueError, match=name):
+        synthesis_utils.create_simple_vdem(**inputs)
+
+
+def test_create_simple_vdem_accepts_an_even_grid_rounded_to_float32() -> None:
+    inputs = _tiny_vdem_inputs()
+    inputs["velocity_grid"] = np.linspace(-1.0, 1.0, 21, dtype=np.float32) * u.km / u.s
+    inputs["logT_grid"] = np.arange(4.3, 5.75, 0.1, dtype=np.float32) * u.dex(u.K)
+
+    assert synthesis_utils.create_simple_vdem(**inputs).vdem.sum() > 0
+
+
 def test_create_simple_vdem_internal_x_slices_are_exact() -> None:
     # Multiple x indices exercise the per-slice worker tasks; each must be exact.
     inputs = _tiny_vdem_inputs()
