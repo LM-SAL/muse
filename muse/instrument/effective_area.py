@@ -179,9 +179,9 @@ def create_aia_effective_area(
     """
     call_inputs = dict(locals())
     try:
-        import aiapy  # noqa: PLC0415
-        from aiapy.calibrate import degradation  # noqa: PLC0415
-        from aiapy.response import Channel  # noqa: PLC0415
+        import aiapy
+        from aiapy.calibrate import degradation
+        from aiapy.response import Channel
     except ImportError:
         msg = "aiapy is required for this function, install it with `pip install muse[aia]`"
         raise ImportError(msg) from None

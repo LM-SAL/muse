@@ -69,7 +69,7 @@ def _resolve_device(device: "str | torch.device | None" = None) -> "torch.device
     `torch.device`
         The resolved device.
     """
-    import torch  # NOQA: PLC0415
+    import torch
 
     if device is None:
         return torch.device("cpu")
@@ -91,7 +91,7 @@ def _empty_device_cache(device: "torch.device") -> None:
     device : `torch.device`
         The device whose allocator cache to empty; the CPU has none.
     """
-    import torch  # NOQA: PLC0415
+    import torch
 
     if device.type == "mps":
         torch.mps.empty_cache()  # pragma: no cover
@@ -114,8 +114,8 @@ def _available_memory_bytes(device: "torch.device") -> int:
         The free device memory on CUDA, the smaller of the host's available memory and
         what MPS may still allocate, or the host's available memory on the CPU.
     """
-    import psutil  # NOQA: PLC0415
-    import torch  # NOQA: PLC0415
+    import psutil
+    import torch
 
     if device.type == "cuda":  # pragma: no cover
         free, _ = torch.cuda.mem_get_info(device)
@@ -183,7 +183,7 @@ def torch_einsum(
     RuntimeError
         If MPS returned an all-zero product, which it does when memory runs out.
     """
-    import torch  # NOQA: PLC0415
+    import torch
 
     torch_device = _resolve_device(device)
     vdem_indices, response_indices, output_indices = list(vdem_indices), list(response_indices), list(output_indices)

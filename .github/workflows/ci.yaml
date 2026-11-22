@@ -153,6 +153,21 @@ jobs:
           enable-cache: false
       - run: uv build --sdist
       - run: uvx twine check dist/*
+      # The test jobs install every extra, so only here does muse meet a plain `pip install muse`
+      - name: Import every package of the sdist installed without extras
+        run: |
+          uv venv --python 3.13 "${RUNNER_TEMP}/bare"
+          VIRTUAL_ENV="${RUNNER_TEMP}/bare" uv pip install dist/*.tar.gz
+          "${RUNNER_TEMP}/bare/bin/python" - <<'PY'
+          import importlib
+          import pkgutil
+
+          import muse
+
+          for module in pkgutil.walk_packages(muse.__path__, "muse."):
+              if module.ispkg and ".tests" not in module.name and "._dev" not in module.name:
+                  importlib.import_module(module.name)
+          PY
 
   test:
     needs: [core, sdist_verify]

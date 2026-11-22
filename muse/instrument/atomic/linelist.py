@@ -143,7 +143,7 @@ def _chianti_bunch_to_dataset(
         msg = "CHIANTI returned no lines; check wavelength_range and the species selection"
         raise ValueError(msg)
 
-    import ChiantiPy.tools.io as chio  # noqa: PLC0415
+    import ChiantiPy.tools.io as chio
 
     ion_names = bunch.Intensity["ionS"]
     name_info = {
@@ -429,7 +429,7 @@ def _fiasco_line_table(ions: list, density: u.Quantity, **kwargs):
     """
     The line table of the ions given, or `None` when fiasco finds no lines in them.
     """
-    from fiasco import IonCollection  # noqa: PLC0415
+    from fiasco import IonCollection
 
     try:
         return IonCollection(*ions).build_line_list(density, couple_density_to_temperature=True, **kwargs)

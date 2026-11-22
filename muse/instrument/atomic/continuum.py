@@ -85,9 +85,9 @@ def create_chianti_continuum(
         temperature, density, pressure, wavelength_grid
     )
     chiantipy_version, ch = _initialize_chianti()
-    import ChiantiPy.tools.constants as chconst  # noqa: PLC0415
-    import ChiantiPy.tools.data as chdata  # noqa: PLC0415
-    import ChiantiPy.tools.io as chio  # noqa: PLC0415
+    import ChiantiPy.tools.constants as chconst
+    import ChiantiPy.tools.data as chdata
+    import ChiantiPy.tools.io as chio
 
     temperature_broadcast, density_broadcast, plasma_coords = _broadcast_plasma_grid(
         temperature, plasma_grid, by_density=density is not None
@@ -223,7 +223,7 @@ def create_fiasco_continuum(
     densities = _densities_by_plasma_point(density_broadcast, temperature_broadcast)
     ion_kwargs = _fiasco_ion_kwargs(abundance, hdf5_dbase_root)
 
-    from fiasco.util.exceptions import MissingDatasetException, MissingIonError  # noqa: PLC0415
+    from fiasco.util.exceptions import MissingDatasetException, MissingIonError
 
     # Once for all elements; each Element would otherwise compute it again.
     proton_electron_ratio = fiasco.proton_electron_ratio(temperatures, **ion_kwargs)
@@ -324,7 +324,7 @@ def _chianti_component(
 
 
 def _fiasco_component(ions: list, method: str, wavelengths: u.Quantity, *args, **kwargs) -> np.ndarray:
-    from fiasco import IonCollection  # noqa: PLC0415
+    from fiasco import IonCollection
 
     # Per steradian, as ChiantiPy reports its continua.
     emission = getattr(IonCollection(*ions), method)(wavelengths, *args, **kwargs)
