@@ -14,6 +14,7 @@ from muse.utils import utils as utils_module
 from muse.utils.utils import (
     _instrument_defaults_label,
     _replace_atomically,
+    _require_increasing_axis,
     add_history,
     coord_as_unit,
     update_attrs,
@@ -287,3 +288,9 @@ def test_a_staging_file_still_open_does_not_hide_the_error_of_the_write(tmp_path
 
     assert refused
     assert not list(tmp_path.iterdir())
+
+
+def test_a_descending_unsigned_axis_is_not_increasing() -> None:
+    # Differences of unsigned integers wrap around, so 3, 2, 1 has steps of 255.
+    with pytest.raises(ValueError, match="strictly increasing"):
+        _require_increasing_axis(np.array([3, 2, 1], dtype=np.uint8), "grid")

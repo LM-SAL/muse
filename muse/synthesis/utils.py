@@ -7,7 +7,7 @@ import astropy.units as u
 from astropy.constants import c as speed_of_light
 
 from muse.log import logger
-from muse.utils.utils import add_history, coord_as_unit, require_unit, update_attrs
+from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
 
 __all__ = [
     "apply_exposure_time",
@@ -66,10 +66,10 @@ def create_simple_vdem(
     y : `astropy.units.Quantity`
         1D coordinate of the second non-LOS axis, in cm.
     velocity_grid : `astropy.units.Quantity`
-        1D velocity bin centers, in km/s, in the frame of ``velocity`` (positive towards the observer);
-        the output ``doppler_velocity`` axis is ``-velocity_grid[::-1]``.
+        1D velocity bin centers, in km/s, increasing and evenly spaced, in the frame of ``velocity``
+        (positive towards the observer); the output ``doppler_velocity`` axis is ``-velocity_grid[::-1]``.
     logT_grid : `astropy.units.Quantity`
-        1D temperature bin centers, in dex(K) like the ``logT`` of a response, e.g.
+        1D temperature bin centers, increasing and evenly spaced, in dex(K) like the ``logT`` of a response, e.g.
         ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
     integration_axis : int, optional
         Axis of the 3D arrays to integrate along, by default 2, entered at index 0.
@@ -84,7 +84,8 @@ def create_simple_vdem(
     Raises
     ------
     ValueError
-        If ``temperature`` is not 3D, or another input does not match its shape or axes. Non-finite
+        If ``temperature`` is not 3D, a grid is not increasing and evenly spaced, or another input
+        does not match its shape or axes. Non-finite
         values only log a warning, and can propagate NaN into the output.
 
     Notes
@@ -148,6 +149,14 @@ def create_simple_vdem(
             msg = f"{name} contains non-finite values (NaN or inf), this will cause issues during synthesis"
             logger.warning(msg)
 
+    for name, grid in (("velocity_grid", velocity_grid), ("logT_grid", logT_grid)):
+        _require_increasing_axis(grid, name)
+        # The bins take the first spacing for the whole grid. Allow the rounding of arange or float32, as in _resample_axis.
+        eps = np.finfo(grid.dtype if np.issubdtype(grid.dtype, np.floating) else float).eps
+        tolerance = 16 * eps * max(np.abs(grid).max(), 1.0)
+        if grid.size < 2 or np.abs(grid - np.linspace(grid[0], grid[-1], grid.size)).max() > tolerance:
+            msg = f"{name} must hold at least two evenly spaced values"
+            raise ValueError(msg)
     n_velocity_bins = len(velocity_grid)
     n_temperature_bins = len(logT_grid)
     n_x = len(x)
