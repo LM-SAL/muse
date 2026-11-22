@@ -1,0 +1,1 @@
+`muse.instrument.save_response`, `muse.instrument.save_spectral_response` and `muse.instrument.save_effective_area` now write to a hidden staging path and rename it into place, so a failed or interrupted save no longer leaves a partial file that blocks the next save or reads back with missing values. They also create a destination folder that does not exist.
