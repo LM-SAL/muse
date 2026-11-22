@@ -231,11 +231,10 @@ def _tiny_vdem_inputs():
 
 
 def _expected_tiny_vdem():
-    # Uniform column: only the boundary cell (prev=100) has a temperature gradient, so it
-    # spreads over the low-T bins; every (x, y) column is identical.
+    # Every column is isothermal at logT 5, so both cells land whole in the 5.0 bin at v = 0:
+    # ne_nh 1 * (2 + 3) cm / 1e27 = 5e-27.
     expected = np.zeros((3, 3, 2, 3))
-    expected[0, 1] = 2e-27
-    expected[1, 1] = 1e-27
+    expected[1, 1] = 5e-27
     return expected
 
 
@@ -331,29 +330,66 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input() -> None:
     np.testing.assert_array_equal(result.vdem.values, default.vdem.values)
 
 
-def test_create_simple_vdem_temperature_outside_axis_range() -> None:
-    # A cube entirely below the temperature axis contributes nothing; one entirely
-    # above spans every bin through the boundary-cell gradient (prev = 100 K), so
-    # each bin integrates the full log-T overlap of its column.
+@pytest.mark.parametrize(
+    ("temperature", "velocity", "message"),
+    [
+        (10.0, 0.0, None),  # cooler than the bin edges 4.25 to 5.75, as a chromosphere: expected, so not reported
+        (1e9, 0.0, "100 % is hotter than logT 5.75 and 0 % moves faster"),
+        (1e5, 1e4, "0 % is hotter than logT 5.75 and 100 % moves faster"),
+    ],
+)
+def test_create_simple_vdem_leaves_out_plasma_outside_the_grids(temperature, velocity, message, caplog) -> None:
     inputs = _tiny_vdem_inputs()
-    inputs["temperature"] = np.full((2, 3, 2), 10.0) * u.K  # logT = 1, below the lowest bin edge
+    inputs["temperature"] = np.full((2, 3, 2), temperature) * u.K
+    inputs["velocity"] = np.full((2, 3, 2), velocity) * u.km / u.s
+
     assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
-
-    inputs["temperature"] = np.full((2, 3, 2), 1e9) * u.K  # logT = 9, above the highest bin edge
-    result = synthesis_utils.create_simple_vdem(**inputs)
-    # Six (x, y) columns whose boundary cell (cell_length 2, ne_nh 1) fully overlaps each bin.
-    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), np.full(3, 1.2e-26), rtol=1e-12)
+    assert ("left out of the VDEM" in caplog.text) == (message is not None)
+    if message is not None:
+        assert message in caplog.text
 
 
-def test_create_simple_vdem_temperature_on_bin_edge_lands_in_lower_bin() -> None:
-    # Bin centers [4.5, 5.0, 5.5] have edges at 4.75/5.25; an isothermal cube exactly on
-    # the 4.5|5.0 edge is reached from below (boundary prev = 100 K), so the whole
-    # log-T overlap sits in the lower bin and the upper bins stay empty.
+def test_create_simple_vdem_temperature_on_bin_edge_lands_in_upper_bin() -> None:
+    # Bins are half-open like the velocity bins: an isothermal cube exactly on the 4.5|5.0
+    # edge (4.75) lands in the 5.0 bin. Six columns of 5e-27 each give 3e-26.
     inputs = _tiny_vdem_inputs()
     inputs["temperature"] = np.full((2, 3, 2), 10**4.75) * u.K
 
     result = synthesis_utils.create_simple_vdem(**inputs)
-    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), [1.2e-26, 0.0, 0.0], rtol=1e-12)
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(1, 2, 3)), [0.0, 3e-26, 0.0], rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("log_temperature", "expected"),
+    [
+        # Cell 1 spans logT 4.5 -> 5.5, which the bin edges 4.75 and 5.25 cut 0.25 : 0.5 : 0.25,
+        # so its 3e-27 splits 0.75e-27 : 1.5e-27 : 0.75e-27; cell 0 (2e-27) sits at 4.5.
+        ([4.5, 5.5], [2.75e-27, 1.5e-27, 0.75e-27]),
+        # Cell 0 at 3.75 is below the grid; 0.25 of cell 1's 0.75 dex span is above the 4.25 edge: 3e-27 / 3.
+        ([3.75, 4.5], [1e-27, 0.0, 0.0]),
+    ],
+)
+def test_create_simple_vdem_splits_a_cell_by_its_log_temperature_span(log_temperature, expected) -> None:
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.broadcast_to(10 ** np.array(log_temperature), (2, 3, 2)) * u.K
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    np.testing.assert_allclose(result.vdem.values[:, 1, 0, 0], expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize("n_cells", [2, 9])
+def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells, caplog) -> None:
+    # A logT 4.3 -> 5.7 ramp over 10 cm with ne_nh 1: each column holds 10 / 1e27 at any sampling.
+    inputs = _tiny_vdem_inputs()
+    shape = (2, 3, n_cells)
+    inputs["temperature"] = np.broadcast_to(np.logspace(4.3, 5.7, n_cells), shape) * u.K
+    inputs["velocity"] = np.zeros(shape) * u.km / u.s
+    inputs["ne_nh"] = np.ones(shape) * u.cm**-6
+    inputs["cell_length"] = np.full(n_cells, 10.0 / n_cells) * u.cm
+
+    result = synthesis_utils.create_simple_vdem(**inputs)
+    np.testing.assert_allclose(result.vdem.values.sum(axis=(0, 1)), np.full((2, 3), 1e-26), rtol=1e-12)
+    assert "left out of the VDEM" not in caplog.text
 
 
 def test_create_simple_vdem_warns_on_non_finite_input(caplog: pytest.LogCaptureFixture) -> None:
