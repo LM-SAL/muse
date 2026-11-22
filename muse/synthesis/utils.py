@@ -21,6 +21,26 @@ __all__ = [
 
 # Fixed, not os.cpu_count(): bounds peak memory and does not oversubscribe nested CI runs.
 _VDEM_MAX_WORKERS = 4
+_TEMPERATURE_BIN_METHODS = ("span", "linear")
+
+
+def _lower_bin_and_upper_share(values: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    # The fractional index of each value on centers, held at the end centers out to the outer edges.
+    # Capping the lower bin at the next to last keeps the upper one on the grid.
+    position = np.interp(values, centers, np.arange(centers.size))
+    lower_bin = np.minimum(position.astype(np.intp), centers.size - 2)
+    return lower_bin, position - lower_bin
+
+
+def _split_between_bins(weights: np.ndarray, upper_share: np.ndarray) -> np.ndarray:
+    # The lower bin's weights, then the upper bin's. Multiplied only where a share is above zero, so a NaN
+    # or inf weight never reaches a bin it has no share of.
+    return np.concatenate(
+        (
+            np.multiply(weights, 1 - upper_share, out=np.zeros_like(weights), where=upper_share < 1),
+            np.multiply(weights, upper_share, out=np.zeros_like(weights), where=upper_share > 0),
+        )
+    )
 
 
 @u.quantity_input(
@@ -43,6 +63,7 @@ def create_simple_vdem(
     y: u.Quantity,
     velocity_grid: u.Quantity,
     logT_grid: u.Quantity,
+    temperature_bin_method: str = "span",
     integration_axis: int = 2,
 ) -> xr.Dataset:
     r"""
@@ -71,6 +92,10 @@ def create_simple_vdem(
     logT_grid : `astropy.units.Quantity`
         1D temperature bin centers, increasing and evenly spaced, in dex(K) like the ``logT`` of a response, e.g.
         ``np.arange(5.5, 7.6, 0.1) * u.dex(u.K)``.
+    temperature_bin_method : {"span", "linear"}, optional
+        How each cell's emission spreads over the ``logT`` bins, by default ``"span"``: over the log T
+        interval from the previous cell along the line of sight to its own, or with ``"linear"``
+        between the two centers nearest its own log T, as for its velocity. See Notes.
     integration_axis : int, optional
         Axis of the 3D arrays to integrate along, by default 2, entered at index 0.
         ``x`` and ``y`` label the other two axes in their order.
@@ -84,8 +109,8 @@ def create_simple_vdem(
     Raises
     ------
     ValueError
-        If ``temperature`` is not 3D, a grid is not increasing and evenly spaced, or another input
-        does not match its shape or axes. Non-finite
+        If ``temperature`` is not 3D, a grid is not increasing and evenly spaced, another input
+        does not match its shape or axes, or ``temperature_bin_method`` is unknown. Non-finite
         values only log a warning, and can propagate NaN into the output.
 
     Notes
@@ -101,15 +126,18 @@ def create_simple_vdem(
 
         VDEM = \sum_l n_e n_H\, \Delta l\, f_l\, g_l
 
-    with :math:`f_l` the fraction of cell :math:`l`'s log T span, from the previous cell's
-    log T to its own, that lies in the bin, and :math:`g_l = \max(0, 1 - |v_l - v| / \Delta v)`
-    the share of its velocity :math:`v_l` in the bin centered on :math:`v`, with
-    :math:`\Delta v` the spacing of ``velocity_grid``. So each cell's emission is shared
-    between the two velocity centers nearest its velocity and keeps its mean velocity,
-    except that a velocity between an end center and the outer edge, half a spacing beyond,
-    puts it all in the end bin. A cell with no span, such as the first one, puts all its
-    emission in its own log T bin, and plasma outside the bins, such as faster than the
-    outer velocity edges, contributes nothing.
+    with :math:`g_l = \max(0, 1 - |v_l - v| / \Delta v)` the share of cell :math:`l`'s velocity
+    :math:`v_l` in the bin centered on :math:`v`, with :math:`\Delta v` the spacing of
+    ``velocity_grid``. So each cell's emission is shared between the two velocity centers
+    nearest its velocity and keeps its mean velocity, except that a velocity between an end
+    center and the outer edge, half a spacing beyond, puts it all in the end bin.
+    With ``temperature_bin_method="span"``, :math:`f_l` is the fraction of the cell's log T
+    span, from the previous cell's log T to its own, that lies in the bin, and a cell with no
+    span, such as the first one, puts all its emission in its own log T bin. With
+    ``"linear"``, :math:`f_l` shares the cell's own log T between the two nearest centers as
+    :math:`g_l` does its velocity, as ECLIPSE does, so a cell reaches up to four bins and keeps
+    its mean log T. Plasma outside the bins, such as faster than the outer velocity edges,
+    contributes nothing.
     With a response :math:`G(T, v_{los})_\lambda` per unit emission measure that includes
     the Doppler shift,
 
@@ -130,6 +158,9 @@ def create_simple_vdem(
     logT_grid = logT_grid.to_value(u.dex(u.K))
     call_inputs = dict(locals())
 
+    if temperature_bin_method not in _TEMPERATURE_BIN_METHODS:
+        msg = f"temperature_bin_method must be one of {_TEMPERATURE_BIN_METHODS}, got {temperature_bin_method!r}"
+        raise ValueError(msg)
     if temperature.ndim != 3:
         msg = f"temperature must be a 3D array, got {temperature.ndim}D"
         raise ValueError(msg)
@@ -183,98 +214,94 @@ def create_simple_vdem(
     def process_slice(ix: int) -> None:
         ne_nh_slice = ne_nh[ix] / 1e27  # normalize to the 1e27 / cm^5 output units
         emission_slice = ne_nh_slice * cell_length_los
-        # Cell i spans the log T from cell i-1 to its own, and the first cell is isothermal. Cell i's
-        # density and velocity stand for that whole interval, a second-order simplification.
         log_temperature_slice = np.log10(temperature[ix])
-        log_temperature_previous = np.roll(log_temperature_slice, 1, axis=1)
-        log_temperature_previous[:, 0] = log_temperature_slice[:, 0]
-        max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
-        min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
         velocity_slice = velocity[ix]
         in_velocity_grid = (velocity_slice >= velocity_lower_edge) & (velocity_slice < velocity_upper_edge)
         warm = log_temperature_slice >= log_temperature_lower_edge
         hot = log_temperature_slice >= log_temperature_upper_edge
         fast = warm & ~hot & ~in_velocity_grid
         left_out[ix] = [np.nansum(emission_slice[mask], dtype=np.float64) for mask in (warm, hot, fast)]
-        voxel_mask = (
-            in_velocity_grid
-            & (max_log_temperature >= log_temperature_lower_edge)
-            & (min_log_temperature < log_temperature_upper_edge)
-        )
-        # The fractional index of each velocity on velocity_grid, held at the end centers out to the
-        # outer edges. Capping the lower bin at the next to last keeps the upper one on the grid.
-        velocity_position = np.interp(velocity_slice[voxel_mask], velocity_grid, np.arange(n_velocity_bins))
-        velocity_bin = np.minimum(velocity_position.astype(np.intp), n_velocity_bins - 2)
-        upper_velocity_share = velocity_position - velocity_bin
-
+        if temperature_bin_method == "linear":
+            voxel_mask = in_velocity_grid & warm & ~hot
+            emission = emission_slice[voxel_mask]
+            # Each cell is a point at its own log T, shared between the two nearest centers like its velocity.
+            temperature_bin, upper_temperature_share = _lower_bin_and_upper_share(
+                log_temperature_slice[voxel_mask], logT_grid
+            )
+            point_bins = np.concatenate((temperature_bin, temperature_bin + 1))
+            point_voxel = np.tile(np.arange(emission.size), 2)
+            point_weights = _split_between_bins(emission, upper_temperature_share)
+        else:
+            # Cell i spans the log T from cell i-1 to its own, and the first cell is isothermal. Cell i's
+            # density and velocity stand for that whole interval, a second-order simplification.
+            log_temperature_previous = np.roll(log_temperature_slice, 1, axis=1)
+            log_temperature_previous[:, 0] = log_temperature_slice[:, 0]
+            max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
+            min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
+            voxel_mask = (
+                in_velocity_grid
+                & (max_log_temperature >= log_temperature_lower_edge)
+                & (min_log_temperature < log_temperature_upper_edge)
+            )
+            emission = emission_slice[voxel_mask]
+            segment_lo = np.clip(
+                min_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge
+            )
+            segment_hi = np.clip(
+                max_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge
+            )
+            bin_lo = np.clip(
+                ((segment_lo - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
+                0,
+                n_temperature_bins - 1,
+            )
+            bin_hi = np.clip(
+                ((segment_hi - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
+                0,
+                n_temperature_bins - 1,
+            )
+            # A bin gets the cell's emission times overlap / cell span: partial at the two end bins,
+            # a bin width on the (rare) interior ones, so the shares sum to the emission inside the grid.
+            single = bin_lo == bin_hi
+            multi = ~single
+            upper_edge_of_bin_lo = log_temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
+            lower_edge_of_bin_hi = log_temperature_lower_edge + bin_hi[multi] * log_temperature_bin_width
+            interior_counts = bin_hi[multi] - bin_lo[multi] - 1
+            first_interior_bin = np.repeat(bin_lo[multi] + 1, interior_counts)
+            total_interior = first_interior_bin.size
+            # Within-group offsets 0..count-1 turn the repeated first bin into every interior bin.
+            group_starts = np.cumsum(interior_counts) - interior_counts
+            interior_bins = first_interior_bin + np.arange(total_interior) - np.repeat(group_starts, interior_counts)
+            point_bins = np.concatenate((bin_lo[single], bin_lo[multi], bin_hi[multi], interior_bins))
+            voxels = np.arange(single.size)
+            point_voxel = np.concatenate(
+                (voxels[single], voxels[multi], voxels[multi], np.repeat(voxels[multi], interior_counts))
+            )
+            span = max_log_temperature[voxel_mask] - min_log_temperature[voxel_mask]
+            emission_per_dex = np.divide(emission, span, out=np.zeros_like(emission), where=span > 0)
+            point_weights = np.concatenate(
+                (
+                    # An isothermal cell (no span) puts all its emission in its own bin.
+                    np.where(
+                        span[single] > 0,
+                        emission_per_dex[single] * (segment_hi[single] - segment_lo[single]),
+                        emission[single],
+                    ),
+                    emission_per_dex[multi] * (upper_edge_of_bin_lo - segment_lo[multi]),
+                    emission_per_dex[multi] * (segment_hi[multi] - lower_edge_of_bin_hi),
+                    np.repeat(emission_per_dex[multi] * log_temperature_bin_width, interior_counts),
+                )
+            )
+        velocity_bin, upper_velocity_share = _lower_bin_and_upper_share(velocity_slice[voxel_mask], velocity_grid)
         # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
         n_velocity_y = n_velocity_bins * n_y
         velocity_y_index = velocity_bin * n_y + np.nonzero(voxel_mask)[0]
-        emission = emission_slice[voxel_mask]
-        segment_lo = np.clip(min_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
-        segment_hi = np.clip(max_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
-        bin_lo = np.clip(
-            ((segment_lo - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
-            0,
-            n_temperature_bins - 1,
-        )
-        bin_hi = np.clip(
-            ((segment_hi - log_temperature_lower_edge) // log_temperature_bin_width).astype(np.intp),
-            0,
-            n_temperature_bins - 1,
-        )
-        # A bin gets the cell's emission times overlap / cell span: partial at the two end bins,
-        # a bin width on the (rare) interior ones, so the shares sum to the emission inside the grid.
-        single = bin_lo == bin_hi
-        multi = ~single
-        upper_edge_of_bin_lo = log_temperature_lower_edge + (bin_lo[multi] + 1) * log_temperature_bin_width
-        lower_edge_of_bin_hi = log_temperature_lower_edge + bin_hi[multi] * log_temperature_bin_width
-        interior_counts = bin_hi[multi] - bin_lo[multi] - 1
-        first_interior_bin = np.repeat(bin_lo[multi] + 1, interior_counts)
-        total_interior = first_interior_bin.size
-        # Within-group offsets 0..count-1 turn the repeated first bin into every interior bin.
-        group_starts = np.cumsum(interior_counts) - interior_counts
-        interior_bins = first_interior_bin + np.arange(total_interior) - np.repeat(group_starts, interior_counts)
-        point_bins = np.concatenate((bin_lo[single], bin_lo[multi], bin_hi[multi], interior_bins))
-        voxels = np.arange(single.size)
-        point_voxel = np.concatenate(
-            (voxels[single], voxels[multi], voxels[multi], np.repeat(voxels[multi], interior_counts))
-        )
-        span = max_log_temperature[voxel_mask] - min_log_temperature[voxel_mask]
-        emission_per_dex = np.divide(emission, span, out=np.zeros_like(emission), where=span > 0)
-        point_weights = np.concatenate(
-            (
-                # An isothermal cell (no span) puts all its emission in its own bin.
-                np.where(
-                    span[single] > 0,
-                    emission_per_dex[single] * (segment_hi[single] - segment_lo[single]),
-                    emission[single],
-                ),
-                emission_per_dex[multi] * (upper_edge_of_bin_lo - segment_lo[multi]),
-                emission_per_dex[multi] * (segment_hi[multi] - lower_edge_of_bin_hi),
-                np.repeat(emission_per_dex[multi] * log_temperature_bin_width, interior_counts),
-            )
-        )
         # Each point also goes to the next velocity bin up, n_y further on in the flat index, in
         # proportion to how far the velocity is past its own bin center.
         point_index = point_bins * n_velocity_y + velocity_y_index[point_voxel]
-        point_upper_share = upper_velocity_share[point_voxel]
         binned = np.bincount(
             np.concatenate((point_index, point_index + n_y)),
-            # Only where a share is above zero, so a NaN or inf weight never reaches a bin it has no share of.
-            weights=np.concatenate(
-                (
-                    np.multiply(
-                        point_weights,
-                        1 - point_upper_share,
-                        out=np.zeros_like(point_weights),
-                        where=point_upper_share < 1,
-                    ),
-                    np.multiply(
-                        point_weights, point_upper_share, out=np.zeros_like(point_weights), where=point_upper_share > 0
-                    ),
-                )
-            ),
+            weights=_split_between_bins(point_weights, upper_velocity_share[point_voxel]),
             minlength=n_temperature_bins * n_velocity_y,
         )
         vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)
@@ -287,7 +314,7 @@ def create_simple_vdem(
     warm, hot, fast = left_out.sum(axis=0)
     # Plasma cooler than the grid is expected, such as a chromosphere; hotter or faster plasma means the grid is too narrow.
     if hot + fast > 1e-6 * warm:
-        logger.info(
+        logger.warning(
             f"Of the emission measure from logT {log_temperature_lower_edge:.2f} up, {100 * hot / warm:.3g} % is "
             f"hotter than logT {log_temperature_upper_edge:.2f} and {100 * fast / warm:.3g} % moves faster than "
             f"velocity_grid ({velocity_lower_edge:.1f} to {velocity_upper_edge:.1f} km/s); both are left out of the VDEM"
