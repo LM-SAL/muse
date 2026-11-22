@@ -1,0 +1,1 @@
+``muse.synthesis.create_simple_vdem`` now shares each cell's emission between the two velocity bin centers either side of its velocity, in proportion to how close it is to each, so the VDEM keeps each cell's mean velocity instead of moving it by up to half a bin. VDEMs built before this change, including the hosted example VDEM, differ slightly.
