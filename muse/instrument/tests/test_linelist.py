@@ -396,7 +396,9 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     temperature = 10 ** np.array([5.8, 6.0]) * u.K
 
     serial = create_fiasco_line_list(temperature, workers=1, **kwargs)
-    parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
+    # The module's fixture makes joblib run in this process; here the groups must run in worker processes.
+    with joblib.parallel_config(backend="loky"):
+        parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
 
     assert parallel.full_name.values.tolist() == serial.full_name.values.tolist()
     np.testing.assert_array_equal(parallel.gofnt.values, serial.gofnt.values)
