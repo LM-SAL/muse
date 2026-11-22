@@ -497,6 +497,7 @@ def test_chianti_continuum_live_hydrogen_and_helium():
     assert continuum.attrs["chianti_version"]
 
 
+@pytest.mark.chianti
 def test_fiasco_continuum_live_hydrogen_and_helium():
     fiasco = pytest.importorskip("fiasco")
     from pathlib import Path  # noqa: PLC0415

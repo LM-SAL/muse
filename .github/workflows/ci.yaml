@@ -15,6 +15,13 @@ on:
   pull_request:
   # Allow manual runs through the web UI
   workflow_dispatch:
+  schedule:
+    #        ┌───────── minute (0 - 59)
+    #        │ ┌───────── hour (0 - 23)
+    #        │ │ ┌───────── day of the month (1 - 31)
+    #        │ │ │ ┌───────── month (1 - 12 or JAN-DEC)
+    #        │ │ │ │ ┌───────── day of the week (0 - 6 or SUN-SAT)
+    - cron: "0 7 1 * *" # The 1st of each month at 07:00 UTC
 
 concurrency:
   # event_name keeps a push to main from cancelling the scheduled performance-regression run.
@@ -75,18 +82,43 @@ jobs:
           curl --fail --location --retry 3 \
             --output "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
             https://download.chiantidatabase.org/CHIANTI_11.0.2_database.tar.gz
+          # The release whose files all match the hashes fiasco keeps for 11.0.2
+          echo "abbb8c418b0092439d692b72d92ead22a01c3d89bf2f3659d46a2cb81682cd79  ${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
+            | sha256sum --check -
           tar --extract --gzip \
             --file "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz" \
             --directory "${XUVTOP}"
+          rm "${RUNNER_TEMP}/CHIANTI_11.0.2_database.tar.gz"
           test -f "${XUVTOP}/ip/chianti.ip"
       - name: Install integration dependencies
+        id: install
         run: |
           sudo apt-get update && sudo apt-get install --yes graphviz
-          uv pip install --system --editable '.[chianti]' \
+          uv pip install --system --editable '.[chianti,fiasco]' \
             pytest pytest-doctestplus pytest-loguru pytest-mpl pytest-remotedata \
             tox tox-uv tox-pypi-filter
+          python -c "import fiasco; print(f'fiasco={fiasco.__version__}')" >> "${GITHUB_OUTPUT}"
+      # fiasco reads its own HDF5 database, built by its version from the CHIANTI files
+      - name: Restore fiasco's database
+        id: cache-fiasco
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.fiasco/chianti_dbase.h5
+          key: fiasco-database-${{ runner.os }}-11.0.2-fiasco-${{ steps.install.outputs.fiasco }}
+      - name: Build fiasco's database
+        if: steps.cache-fiasco.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.fiasco
+          python -c "import fiasco; from fiasco.util.setup_db import build_hdf5_dbase; \
+            build_hdf5_dbase('${XUVTOP}', fiasco.defaults['hdf5_dbase_root'], check_hash=True, show_progress=False)"
+      # A skipped test passes, so fail here when a backend or a database is missing
+      - name: Check that both backends and their databases are there
+        run: |
+          python -c "import ChiantiPy, fiasco"
+          test -f "${XUVTOP}/ip/chianti.ip"
+          test -f ~/.fiasco/chianti_dbase.h5
       - name: Test live CHIANTI workflows
-        run: python -m pytest muse -m chianti
+        run: python -m pytest muse -m chianti -rs
       - name: Build docs with the full synthesis tutorial gallery
         run: tox -e build_docs-fullgallery
       - name: Save CHIANTI 11.0.2 database
@@ -99,6 +131,16 @@ jobs:
         with:
           path: .chianti/CHIANTI_11.0.2_database
           key: ${{ steps.cache-chianti.outputs.cache-primary-key }}
+      - name: Save fiasco's database
+        if: |
+          steps.cache-fiasco.outputs.cache-hit != 'true' &&
+          (github.ref == 'refs/heads/main' ||
+           github.event_name == 'schedule' ||
+           github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.fiasco/chianti_dbase.h5
+          key: ${{ steps.cache-fiasco.outputs.cache-primary-key }}
 
   sdist_verify:
     runs-on: ubuntu-latest

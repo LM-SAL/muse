@@ -382,6 +382,7 @@ def test_map_ion_groups_hands_out_single_ions_with_the_most_levels_first():
     assert linelist._map_ion_groups(_levels_of, ions, 2, single_ions=True) == [[40], [7], [3], [0]]
 
 
+@pytest.mark.chianti
 def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     fiasco = pytest.importorskip("fiasco")
     pytest.importorskip("joblib")
