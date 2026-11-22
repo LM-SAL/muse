@@ -3,11 +3,15 @@ Functions shared across the muse package.
 """
 
 import re
+import time
+import uuid
+import shutil
 import hashlib
 import inspect
 import zipfile
 import datetime as dt
 import tempfile
+import contextlib
 from pathlib import Path
 from collections.abc import Mapping, Callable, Sequence
 
@@ -397,6 +401,43 @@ def update_attrs(
     ds.attrs.update(attrs)
 
 
+def _replace_atomically(path: Path, write: Callable[[Path], None]) -> None:
+    """
+    Call ``write`` on a staging path beside ``path`` and rename the result into place: a
+    reader never finds a half-written file, and a failed write leaves nothing behind.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Not named after path, whose name may already be near the 255-character limit; the suffix picks the writer.
+    staging = path.with_name(f".{uuid.uuid4().hex}{path.suffix}")
+    try:
+        write(staging)
+        staging.replace(path)
+    finally:
+        # Still there only if the write or the rename failed.
+        _remove(staging)
+
+
+def _remove(path: Path) -> None:
+    """
+    Remove the file or directory ``path`` left by a failed write, if there, without
+    raising over the error of the write.
+    """
+    # A failed dask write raises while its threads still finish their chunks, which recreate what was removed:
+    # remove until the path stays gone. shortcut: gives up after 1 s; wait on dask's threads if a path is left.
+    for _ in range(20):
+        if not path.exists():
+            return
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            # Windows refuses to delete a file still open.
+            with contextlib.suppress(OSError):
+                path.unlink()
+        time.sleep(0.05)
+    if path.exists():
+        logger.warning(f"Could not remove {path}, left by a failed write; delete it")
+
+
 def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
     """
     Write ``dataset`` as a zarr v3 store: a directory, or one file for a ``.zip``
@@ -409,8 +450,9 @@ def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
         dataset.to_zarr(destination, **options)
         return
     # zarr rewrites its metadata and a zip would keep every version: write a directory, then pack it.
-    with tempfile.TemporaryDirectory(dir=destination.parent, prefix=f".{destination.name}.") as staging:
-        store = Path(staging) / "store.zarr"
+    staging = Path(tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}."))
+    try:
+        store = staging / "store.zarr"
         dataset.to_zarr(store, **options)
         try:
             # Stored, not deflated: the chunks are compressed already.
@@ -421,3 +463,7 @@ def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
         except BaseException:
             destination.unlink(missing_ok=True)
             raise
+        # Written in full, so no thread is still writing: no need for the wait of _remove.
+        shutil.rmtree(staging)
+    finally:
+        _remove(staging)

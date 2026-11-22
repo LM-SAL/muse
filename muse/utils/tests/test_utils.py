@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import dask
 import dask.array as da
@@ -10,7 +11,13 @@ from attrs import evolve
 import astropy.units as u
 
 from muse.utils import utils as utils_module
-from muse.utils.utils import _instrument_defaults_label, add_history, coord_as_unit, update_attrs
+from muse.utils.utils import (
+    _instrument_defaults_label,
+    _replace_atomically,
+    add_history,
+    coord_as_unit,
+    update_attrs,
+)
 from muse.variables import DEFAULTS_MUSE
 from muse.version import version
 
@@ -255,3 +262,28 @@ def test_add_history_nested_source_histories_merge_in_any_order() -> None:
 def test_update_attrs_rejects_provenance_updates() -> None:
     with pytest.raises(ValueError, match="owned by add_history"):
         update_attrs(xr.Dataset(), history=["fake"])
+
+
+def test_a_staging_file_still_open_does_not_hide_the_error_of_the_write(tmp_path, monkeypatch) -> None:
+    # Windows refuses to delete an open file, as a netCDF file a late dask thread reopened.
+    unlink = Path.unlink
+    refused = []
+
+    def in_use_once(path, *args, **kwargs):
+        if not refused:
+            refused.append(path)
+            raise PermissionError(path)
+        unlink(path, *args, **kwargs)
+
+    def write(staging):
+        staging.write_text("partial")
+        msg = "write failed"
+        raise RuntimeError(msg)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", in_use_once)
+        with pytest.raises(RuntimeError, match="write failed"):
+            _replace_atomically(tmp_path / "out.nc", write)
+
+    assert refused
+    assert not list(tmp_path.iterdir())
