@@ -51,4 +51,3 @@ Help is always welcome so let us know what you like to work on, or check out the
 
 .. _Developers Guide: https://docs.sunpy.org/en/latest/dev_guide/index.html
 .. _issues page: https://github.com/LM-SAL/muse/issues/
-.. _Newcomers' guide: https://docs.sunpy.org/en/latest/dev_guide/contents/newcomers.html

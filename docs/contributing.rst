@@ -45,7 +45,7 @@ On Linux without an NVIDIA GPU, first install the CPU Torch build (:ref:`muse-in
 Continuous integration
 ======================
 
-* **GitHub Actions** (``.github/workflows/ci.yaml``) runs the ``py313``/``py314`` tox tests, packaging, the documentation build (``tox -e build_docs``), and the ``chianti``-marked tests against a downloaded and cached CHIANTI database.
+* **GitHub Actions** (``.github/workflows/ci.yaml``) runs the ``py313``/``py314`` tox tests, packaging (including an import of every package from an install without extras), the documentation build (``tox -e build_docs``), and the ``chianti``-marked tests against a downloaded CHIANTI database and the fiasco database built from it, both cached; that job fails if either backend or database is missing, and the workflow also runs on the 1st of each month.
 * **CircleCI** (``.circleci/config.yml``) runs the figure-comparison tests and publishes their baseline images.
 
 .. _issue tracker: https://github.com/LM-SAL/muse/issues

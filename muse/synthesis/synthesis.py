@@ -100,8 +100,11 @@ def vdem_synthesis(
     Parameters
     ----------
     vdem : `xarray.Dataset`
-        VDEM, as it is or reshaped onto slits and raster steps. Its ``vdem`` variable must
-        define units in the attrs.
+        VDEM, as it is or reshaped onto slits and raster steps, laid out as
+        `muse.synthesis.create_simple_vdem` returns it: a ``vdem`` variable over ``logT``
+        (dex(K)) and ``doppler_velocity`` (km/s, negative towards the observer), with its
+        units in the attrs, each bin holding the column emission measure of n_e n_H, not
+        divided by the bin widths (see that function's Notes).
     response : `xarray.Dataset`
         Response functions. ``detector_response`` and ``line_wavelength`` must define
         units, and ``detector_wavelength`` too when its slit dimension stays in the output.
@@ -128,8 +131,11 @@ def vdem_synthesis(
     Returns
     -------
     `xarray.Dataset`
-        The spectrum on the detector, or the image for an imager response, as ``flux``.
-        With NumPy, dask-backed inputs give a lazy ``flux``; Torch computes eagerly.
+        The spectrum on the detector, or the image for an imager response, as ``flux``,
+        over the dimensions of ``vdem`` and ``response`` not in ``sum_over``, in the product
+        of their units (ph/s for a VDEM from `muse.synthesis.create_simple_vdem` and a
+        detector response). With NumPy, dask-backed inputs give a lazy ``flux``; Torch
+        computes eagerly.
 
     Raises
     ------

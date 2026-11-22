@@ -37,7 +37,7 @@ def log_gpu_status() -> None:
 
     found_gpu = False
     if importlib.util.find_spec("torch") is not None:
-        import torch  # NOQA: PLC0415
+        import torch
 
         found_gpu = torch.cuda.is_available()
         if found_gpu:

@@ -58,7 +58,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 - **Immutable config:** instrument parameters live on frozen attrs class `InstrumentDefaults`; create variants with `attrs.evolve`, never by mutation.
 - **mixedCase allowed for science names** (`logT`, `SG_resp`, `pixel_width_CI`, `doppler_velocity`) — ruff `N8xx` intentionally relaxed. Follow existing names; don't "fix" to snake_case.
 - **Line length 120**, double quotes, ruff-format owns formatting (don't hand-format).
-- Keep module import cheap: **lazy-import heavy optional deps** (`torch`, `ChiantiPy`) inside functions where module imported at package init (see `log.py:log_gpu_status`). Leaf submodule not imported by `muse/__init__` may import them at top level. On `ImportError`, point at the extra (e.g. `pip install muse[chianti]`).
+- Keep module import cheap: **lazy-import heavy optional deps** (`torch`, `ChiantiPy`) inside functions where module imported at package init (see `log.py:log_gpu_status`). Ruff's `TID253` enforces this for `torch`, `ChiantiPy`, `fiasco`, `matplotlib`, `aiapy`, `joblib` and `psutil` (tests, examples and docs are exempt); a leaf submodule not imported by any package `__init__` may import one at top level with `# noqa: TID253` and the reason. The `sdist_verify` CI job imports every package from an install without extras. On `ImportError`, point at the extra (e.g. `pip install muse[chianti]`).
 
 ## Units & data model
 
@@ -91,7 +91,7 @@ examples/              sphinx-gallery scripts (looser lint rules)
 
 ## Gotchas
 
-- CHIANTI (`muse/instrument/atomic/`): the ChiantiPy backend needs the `[chianti]` extra + `XUVTOP` env var pointing at a local CHIANTI database; the fiasco backend needs the `[fiasco]` extra + fiasco's own HDF5 database. Live ChiantiPy tests are `chianti`-marked and run in a dedicated CI job (`chianti` in `ci.yaml`) that downloads/caches the database; live fiasco tests skip when its database is absent; validation tests run offline without either.
+- CHIANTI (`muse/instrument/atomic/`): the ChiantiPy backend needs the `[chianti]` extra + `XUVTOP` env var pointing at a local CHIANTI database; the fiasco backend needs the `[fiasco]` extra + fiasco's own HDF5 database. Live ChiantiPy and fiasco tests are `chianti`-marked and run in a dedicated CI job (`chianti` in `ci.yaml`) that downloads/caches both databases and fails if either backend or database is missing; locally they skip without them; validation tests run offline without either.
 - Gallery examples named `skip_*` (such as `examples/synthesis_tutorial/skip_01_create_vdem.py`) are left out of the default docs build and Read the Docs, but the `chianti` CI job runs them (`tox -e build_docs-fullgallery`). Run a changed `skip_` example in full before pushing; tutorial 01 needs the MURaM snapshot from `fetch_example_data("flare_nature_astro")` (1.4 GB).
 - `.history/` = editor backup noise — ignore; excluded from pytest.
 - Legacy `.isort.cfg` exists but ruff is source of truth for lint (isort rules `I` delegated to isort pre-commit hook).

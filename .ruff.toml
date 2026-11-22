@@ -61,6 +61,7 @@ lint.ignore = [
   "ERA001",  # Commented out code
   "N816",  # Variable `times_SG` in global scope should not be mixedCase"
   "T201", # allow use of print in examples
+  "TID253", # examples may import an optional package at the top
   "INP001", # File is part of an implicit namespace package.
 ]
 "docs/*.py" = [
@@ -71,13 +72,21 @@ lint.ignore = [
   "F403",  # from {name} import * used; unable to detect undefined names
   "F405",  # {name} may be undefined, or defined from star imports
   "I",  # isort
+  "TID253",  # docs may import an optional package at the top
 ]
 "test_*.py" = [
   "S101",  # Use of `assert` detected
 ]
+"**/tests/**" = [
+  "TID253",  # tests may import an optional package at the top
+]
 "muse/variables_schema.py" = [
   "N815",  # science/default field names such as pixel_width_SG are public attrs
 ]
+
+# Optional packages are imported where they are used, so `import muse` works and stays cheap without the extras
+[lint.flake8-tidy-imports]
+banned-module-level-imports = ["torch", "ChiantiPy", "fiasco", "matplotlib", "aiapy", "joblib", "psutil"]
 
 [lint.pydocstyle]
 convention = "numpy"

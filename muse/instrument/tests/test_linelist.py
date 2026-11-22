@@ -382,6 +382,7 @@ def test_map_ion_groups_hands_out_single_ions_with_the_most_levels_first():
     assert linelist._map_ion_groups(_levels_of, ions, 2, single_ions=True) == [[40], [7], [3], [0]]
 
 
+@pytest.mark.chianti
 def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     fiasco = pytest.importorskip("fiasco")
     pytest.importorskip("joblib")
@@ -395,10 +396,14 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
     temperature = 10 ** np.array([5.8, 6.0]) * u.K
 
     serial = create_fiasco_line_list(temperature, workers=1, **kwargs)
-    parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
+    # The module's fixture makes joblib run in this process; here the groups must run in worker processes.
+    with joblib.parallel_config(backend="loky"):
+        parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
 
     assert parallel.full_name.values.tolist() == serial.full_name.values.tolist()
-    np.testing.assert_array_equal(parallel.gofnt.values, serial.gofnt.values)
+    # Worker processes can run BLAS with other thread counts than this one, which moves the last digits
+    # (up to 1.1e-12 relative on GitHub's Linux runners); a lost or misplaced ion group moves far more.
+    np.testing.assert_allclose(parallel.gofnt.values, serial.gofnt.values, rtol=1e-10, atol=0)
 
 
 def test_map_ion_groups_rejects_a_worker_count_below_one():

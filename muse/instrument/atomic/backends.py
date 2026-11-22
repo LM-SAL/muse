@@ -85,7 +85,7 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         try:
-            import ChiantiPy  # noqa: PLC0415
+            import ChiantiPy
         except ImportError:
             msg = "ChiantiPy is required for this function, install it with `pip install muse[chianti]`"
             raise ImportError(msg) from None
@@ -109,11 +109,11 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
             category=UserWarning,
             module=r"ChiantiPy\.core\.IpyMspectrum",
         )
-        import ChiantiPy.tools.data as chdata  # noqa: PLC0415
+        import ChiantiPy.tools.data as chdata
 
         if not hasattr(chdata, "Defaults") or getattr(chdata, "Xuvtop", None) != xuvtop:
             chdata = reload(chdata)
-        import ChiantiPy.core as ch  # noqa: PLC0415
+        import ChiantiPy.core as ch
 
     if not hasattr(chdata, "Defaults"):
         msg = f"ChiantiPy could not initialize the CHIANTI database at {xuvtop}"
@@ -125,7 +125,7 @@ def _initialize_chianti() -> tuple[str, ModuleType]:
 
 def _import_fiasco():
     try:
-        import fiasco  # noqa: PLC0415
+        import fiasco
     except ImportError:
         msg = "fiasco is required for this function, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
@@ -161,7 +161,7 @@ def _map_ion_groups(function, ions: list, workers: int, *args, single_ions: bool
     if workers == 1 or len(ions) <= 1:
         return [function(list(ions), *args, **kwargs)]
     try:
-        from joblib import Parallel, delayed  # noqa: PLC0415
+        from joblib import Parallel, delayed
     except ImportError:
         msg = "joblib is required for workers != 1, install it with `pip install muse[fiasco]`"
         raise ImportError(msg) from None
