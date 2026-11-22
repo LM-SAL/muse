@@ -430,6 +430,61 @@ def test_create_simple_vdem_splits_a_cell_by_its_log_temperature_span(log_temper
     np.testing.assert_allclose(result.vdem.values[:, 1, 0, 0], expected, rtol=1e-12)
 
 
+def test_create_simple_vdem_linear_shares_a_cell_between_four_bins() -> None:
+    # logT 4.6 is 0.2 of the way from the 4.5 to the 5.0 center, and 2.4 km/s towards the observer 0.48 of
+    # the way from 0 to 5 km/s, so the 6 columns * 5e-27 = 3e-26 go to four bins with product weights.
+    inputs = _tiny_vdem_inputs()
+    inputs["temperature"] = np.full((2, 3, 2), 10**4.6) * u.K
+    inputs["velocity"] = np.full((2, 3, 2), 2.4) * u.km / u.s
+    inputs["velocity_grid"] = np.array([-5.0, 0.0, 5.0]) * u.km / u.s
+
+    vdem = synthesis_utils.create_simple_vdem(**inputs, temperature_bin_method="linear").vdem.sum(dim=("x", "y"))
+
+    # Rows are logT [4.5, 5.0, 5.5], columns doppler_velocity [-5, 0, 5], the velocities negated.
+    expected = 3e-26 * np.array([[0.8 * 0.48, 0.8 * 0.52, 0], [0.2 * 0.48, 0.2 * 0.52, 0], [0, 0, 0]])
+    np.testing.assert_allclose(vdem.values, expected, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(vdem.sum().item(), 3e-26, rtol=1e-12)
+    np.testing.assert_allclose(((vdem * vdem.logT).sum() / vdem.sum()).item(), 4.6, rtol=1e-12)
+    np.testing.assert_allclose(((vdem * vdem.doppler_velocity).sum() / vdem.sum()).item(), -2.4, rtol=1e-12)
+
+
+def test_create_simple_vdem_linear_log_temperature_on_and_past_the_outer_edges(caplog) -> None:
+    # Centers [4.5, 5.0, 5.5] have outer edges at 4.25 and 5.75. Each (x, y) column has one log T:
+    # between an end center and its edge goes wholly to the end bin, and past an edge adds nothing.
+    inputs = _tiny_vdem_inputs()
+    column_log_temperature = np.array([[4.3, 5.7, 4.75], [4.2, 5.8, 5.25]])
+    inputs["temperature"] = np.repeat(10 ** column_log_temperature[:, :, np.newaxis], 2, axis=2) * u.K
+    shares = np.array([[[1, 0, 0], [0, 0, 1], [0.5, 0.5, 0]], [[0, 0, 0], [0, 0, 0], [0, 0.5, 0.5]]])
+
+    vdem = synthesis_utils.create_simple_vdem(**inputs, temperature_bin_method="linear").vdem.sum(
+        dim="doppler_velocity"
+    )
+
+    np.testing.assert_allclose(vdem.transpose("x", "y", "logT").values, 5e-27 * shares, rtol=1e-12, atol=0)
+    # 1 of the 5 columns from the 4.25 edge up is hotter than the grid; the one at 4.2 is cooler, so not counted.
+    assert [record.levelname for record in caplog.records if "left out" in record.getMessage()] == ["WARNING"]
+    assert "20 % is hotter than logT 5.75 and 0 % moves faster" in caplog.text
+
+
+def test_create_simple_vdem_linear_non_finite_emission_stays_in_its_own_log_temperature_bin() -> None:
+    # Every cell sits exactly on the 5.0 center, so it has no share of its neighbours, and NaN times 0 is NaN.
+    inputs = _tiny_vdem_inputs()
+    ne_nh = np.ones((2, 3, 2))
+    ne_nh[0, 0, 1] = np.nan
+    inputs["ne_nh"] = ne_nh * u.cm**-6
+
+    vdem = synthesis_utils.create_simple_vdem(**inputs, temperature_bin_method="linear").vdem
+    column = vdem.isel(x=0, y=0).sum(dim="doppler_velocity", skipna=False)
+
+    assert np.isnan(column.sel(logT=5.0))
+    assert column.sel(logT=[4.5, 5.5]).values.tolist() == [0.0, 0.0]
+
+
+def test_create_simple_vdem_refuses_an_unknown_temperature_bin_method() -> None:
+    with pytest.raises(ValueError, match=r"temperature_bin_method must be one of \('span', 'linear'\), got 'nearest'"):
+        synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), temperature_bin_method="nearest")
+
+
 @pytest.mark.parametrize("n_cells", [2, 9])
 def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells, caplog) -> None:
     # A logT 4.3 -> 5.7 ramp over 10 cm with ne_nh 1: each column holds 10 / 1e27 at any sampling.
