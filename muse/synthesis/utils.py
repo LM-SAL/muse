@@ -334,8 +334,11 @@ def calculate_moments(
     )
     zeroth = masked_spectrum[variable_name].sum(dim=moment_dim)
     velocity = masked_spectrum[doppler_name]
+    finite = np.isfinite(velocity)
     # Flux without a velocity counts in the 0th moment only; none left (or no flux) gives NaN, not inf.
-    weight = masked_spectrum[variable_name].where(np.isfinite(velocity), 0)
+    weight = masked_spectrum[variable_name].where(finite, 0)
+    # A zero weight times an infinite velocity is NaN and warns on dask arrays, so zero the velocity there too.
+    velocity = velocity.where(finite, 0)
     weight_sum = weight.sum(dim=moment_dim)
     safe_weight_sum = weight_sum.where(weight_sum > 0)
     first = (weight * velocity).sum(dim=moment_dim) / safe_weight_sum

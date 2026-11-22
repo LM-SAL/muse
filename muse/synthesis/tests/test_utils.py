@@ -163,6 +163,24 @@ def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
     assert np.isnan(moments["2nd"].item())
 
 
+def test_calculate_moments_leaves_out_an_infinite_doppler_velocity_of_a_lazy_spectrum() -> None:
+    # On dask arrays the zero weight times an infinite velocity warned, and warnings are errors.
+    flux = dask_array.from_array(np.array([5.0, 3.0]), chunks=1)
+    spectrum = xr.Dataset(
+        data_vars={"flux": (("detector_x_pixel",), flux, {"units": "ph / s"})},
+        coords={
+            "detector_x_pixel": [0, 1],
+            "detector_doppler_velocity": (("detector_x_pixel",), [np.inf, 100.0], {"units": "km/s"}),
+        },
+    )
+
+    moments = synthesis_utils.calculate_moments(spectrum).compute()
+
+    assert moments["0th"].item() == 8.0
+    assert moments["1st"].item() == 100.0
+    assert moments["2nd"].item() == 0.0
+
+
 def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
     spectrum = xr.Dataset(
         data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
