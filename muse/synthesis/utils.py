@@ -261,7 +261,20 @@ def create_simple_vdem(
         point_upper_share = upper_velocity_share[point_voxel]
         binned = np.bincount(
             np.concatenate((point_index, point_index + n_y)),
-            weights=np.concatenate((point_weights * (1 - point_upper_share), point_weights * point_upper_share)),
+            # Only where a share is above zero, so a NaN or inf weight never reaches a bin it has no share of.
+            weights=np.concatenate(
+                (
+                    np.multiply(
+                        point_weights,
+                        1 - point_upper_share,
+                        out=np.zeros_like(point_weights),
+                        where=point_upper_share < 1,
+                    ),
+                    np.multiply(
+                        point_weights, point_upper_share, out=np.zeros_like(point_weights), where=point_upper_share > 0
+                    ),
+                )
+            ),
             minlength=n_temperature_bins * n_velocity_y,
         )
         vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)

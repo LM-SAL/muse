@@ -287,6 +287,19 @@ def test_create_simple_vdem_shares_velocity_between_the_nearest_centers() -> Non
     np.testing.assert_allclose(mean.item(), -2.4, rtol=1e-12)
 
 
+def test_create_simple_vdem_non_finite_emission_stays_in_its_own_velocity_bin() -> None:
+    # A cell exactly at the 0 km/s center has no share of its neighbours, and NaN times 0 is NaN.
+    inputs = _tiny_vdem_inputs()
+    ne_nh = np.ones((2, 3, 2))
+    ne_nh[0, 0, 1] = np.nan
+    inputs["ne_nh"] = ne_nh * u.cm**-6
+
+    column = synthesis_utils.create_simple_vdem(**inputs).vdem.isel(x=0, y=0).sum(dim="logT", skipna=False)
+
+    assert np.isnan(column.sel(doppler_velocity=0.0))
+    assert column.sel(doppler_velocity=[-1.0, 1.0]).values.tolist() == [0.0, 0.0]
+
+
 def test_create_simple_vdem_velocity_on_and_past_the_outer_edges(caplog) -> None:
     # Centers [-1, 0, 1] km/s have outer edges at -1.5 and 1.5. Each (x, y) column has one velocity:
     # midway between centers splits 50/50, between an end center and its edge goes wholly to the end
