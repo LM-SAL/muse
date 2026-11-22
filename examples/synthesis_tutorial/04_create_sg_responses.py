@@ -72,8 +72,9 @@ bands = {
 # - :func:`muse.instrument.transform_response_units` converts energy to photons
 #   and per steradian to per detector pixel: ``1e-27 cm5 ph / (Angstrom s)``.
 #   Ask for ``DN`` instead of ``ph`` for data numbers.
-# - :func:`muse.instrument.map_response_to_sg_detector` integrates over the
-#   wavelength width of each detector pixel: ``1e-27 cm5 ph / s``.
+# - :func:`muse.instrument.map_response_to_sg_detector` samples it at each
+#   detector pixel center and multiplies by the wavelength width of a pixel:
+#   ``1e-27 cm5 ph / s``.
 
 for band, config in bands.items():
     line_list_file = fetch_example_data(f"muse_chianti_line_list_{band}_{config['output_label']}_{abundance}.nc")

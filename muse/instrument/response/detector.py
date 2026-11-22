@@ -103,6 +103,9 @@ def map_response_to_sg_detector(
     Pass ``channel`` for the MUSE SG geometry, or give the geometry explicitly. Apply the
     effective area first, in `muse.instrument.create_spectral_response`.
 
+    The response is sampled at each pixel center, not integrated over the pixel, so
+    lines narrower than about a pixel are not resolved accurately.
+
     .. warning::
 
         Radiometric units pass through, so convert them first
@@ -118,9 +121,8 @@ def map_response_to_sg_detector(
     number_of_slits : `int`, optional
         Number of simultaneous slits. Required when ``channel`` is omitted.
     dispersion : `astropy.units.Quantity`, optional
-        Wavelength step between adjacent detector pixels, and the width each pixel
-        integrates over. If `None`, the channel's slit separation over
-        ``pixels_between_slits``; required without ``channel``.
+        Wavelength step between adjacent detector pixels. If `None`, the channel's slit
+        separation over ``pixels_between_slits``; required without ``channel``.
     pixels_between_slits : `astropy.units.Quantity`, optional
         Detector pixels between adjacent slits. Required for an explicit
         multi-slit geometry; unused for a single slit.
@@ -137,9 +139,9 @@ def map_response_to_sg_detector(
     Returns
     -------
     `xarray.Dataset`
-        ``detector_response``, ``response.spectral_response`` integrated over each
-        pixel's width so per Angstrom becomes per pixel, with ``detector_wavelength``
-        and ``line_wavelength`` coordinates in Angstrom.
+        ``detector_response``, ``response.spectral_response`` at each pixel center
+        times ``dispersion``, so per Angstrom becomes per pixel, with
+        ``detector_wavelength`` and ``line_wavelength`` coordinates in Angstrom.
     """
     instrument_defaults = DEFAULTS_MUSE if instrument_defaults is None else instrument_defaults
     response_unit, wavelength_grid, line_wavelength = _validate_spectral_response(response)

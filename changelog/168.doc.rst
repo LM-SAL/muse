@@ -1,0 +1,1 @@
+The documentation of ``map_response_to_sg_detector`` now says that it samples the spectral response at each detector pixel center and multiplies by the dispersion rather than integrating over each pixel, so lines narrower than about a pixel are not resolved accurately.

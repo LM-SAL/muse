@@ -109,7 +109,7 @@ def vdem_synthesis(
         on only one input is rejected. The names of
         `muse.instrument.create_spectral_response` (``spectral_response``,
         ``wavelength_grid``) are renamed to the detector names; such a response is still
-        per Å per steradian, with no pixel integration or photon conversion. An imager
+        per Å per steradian, with no detector mapping or photon conversion. An imager
         response, from `muse.instrument.map_response_to_ci_detector`, has no slit
         dimension and no spectral axis; it images each slit of the VDEM on its own, and
         ``slit`` stays in the output.
