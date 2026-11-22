@@ -401,7 +401,9 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
         parallel = create_fiasco_line_list(temperature, workers=2, **kwargs)
 
     assert parallel.full_name.values.tolist() == serial.full_name.values.tolist()
-    np.testing.assert_array_equal(parallel.gofnt.values, serial.gofnt.values)
+    # Worker processes can run BLAS with other thread counts than this one, which moves the last digits
+    # (up to 1.1e-12 relative on GitHub's Linux runners); a lost or misplaced ion group moves far more.
+    np.testing.assert_allclose(parallel.gofnt.values, serial.gofnt.values, rtol=1e-10, atol=0)
 
 
 def test_map_ion_groups_rejects_a_worker_count_below_one():
