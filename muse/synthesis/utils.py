@@ -94,16 +94,22 @@ def create_simple_vdem(
     thread, so temporaries scale with one (y, z) slice; the VDEM is allocated in full.
 
     A line intensity is :math:`I = \int n_e n_H\, G(T)\, dl`, with :math:`G(T)` the
-    contribution function. Each bin holds the column emission measure of its log T and
-    velocity range, in 1e27 cm^-5 and not divided by the bin widths:
+    contribution function. Each bin holds the column emission measure of its log T range
+    and velocity, in 1e27 cm^-5 and not divided by the bin widths:
 
     .. math::
 
-        VDEM = \sum_l n_e n_H\, \Delta l\, f_l
+        VDEM = \sum_l n_e n_H\, \Delta l\, f_l\, g_l
 
     with :math:`f_l` the fraction of cell :math:`l`'s log T span, from the previous cell's
-    log T to its own, that lies in the bin. A cell with no span, such as the first one,
-    puts all its emission in its own bin, and plasma outside the bins contributes nothing.
+    log T to its own, that lies in the bin, and :math:`g_l = \max(0, 1 - |v_l - v| / \Delta v)`
+    the share of its velocity :math:`v_l` in the bin centered on :math:`v`, with
+    :math:`\Delta v` the spacing of ``velocity_grid``. So each cell's emission is shared
+    between the two velocity centers nearest its velocity and keeps its mean velocity,
+    except that a velocity between an end center and the outer edge, half a spacing beyond,
+    puts it all in the end bin. A cell with no span, such as the first one, puts all its
+    emission in its own log T bin, and plasma outside the bins, such as faster than the
+    outer velocity edges, contributes nothing.
     With a response :math:`G(T, v_{los})_\lambda` per unit emission measure that includes
     the Doppler shift,
 
@@ -163,8 +169,8 @@ def create_simple_vdem(
     n_y = len(y)
     log_temperature_bin_width = logT_grid[1] - logT_grid[0]
     velocity_bin_width = velocity_grid[1] - velocity_grid[0]
-    # Half-open bins, as for temperature below: a voxel on an edge lands in the upper bin.
-    velocity_edges = np.append(velocity_grid - velocity_bin_width / 2.0, velocity_grid[-1] + velocity_bin_width / 2.0)
+    velocity_lower_edge = velocity_grid[0] - velocity_bin_width / 2.0
+    velocity_upper_edge = velocity_grid[-1] + velocity_bin_width / 2.0
     log_temperature_lower_edge = logT_grid[0] - log_temperature_bin_width / 2.0
     log_temperature_upper_edge = logT_grid[-1] + log_temperature_bin_width / 2.0
     cell_length_los = cell_length.reshape(1, -1)
@@ -184,22 +190,26 @@ def create_simple_vdem(
         log_temperature_previous[:, 0] = log_temperature_slice[:, 0]
         max_log_temperature = np.maximum(log_temperature_slice, log_temperature_previous)
         min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
-        # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
-        velocity_bin = np.searchsorted(velocity_edges, velocity[ix], side="right") - 1
+        velocity_slice = velocity[ix]
+        in_velocity_grid = (velocity_slice >= velocity_lower_edge) & (velocity_slice < velocity_upper_edge)
         warm = log_temperature_slice >= log_temperature_lower_edge
         hot = log_temperature_slice >= log_temperature_upper_edge
-        fast = warm & ~hot & ((velocity_bin < 0) | (velocity_bin >= n_velocity_bins))
+        fast = warm & ~hot & ~in_velocity_grid
         left_out[ix] = [np.nansum(emission_slice[mask], dtype=np.float64) for mask in (warm, hot, fast)]
         voxel_mask = (
-            (velocity_bin >= 0)
-            & (velocity_bin < n_velocity_bins)
+            in_velocity_grid
             & (max_log_temperature >= log_temperature_lower_edge)
             & (min_log_temperature < log_temperature_upper_edge)
         )
-        scatter_index = velocity_bin * n_y + np.arange(n_y).reshape(n_y, 1)
+        # The fractional index of each velocity on velocity_grid, held at the end centers out to the
+        # outer edges. Capping the lower bin at the next to last keeps the upper one on the grid.
+        velocity_position = np.interp(velocity_slice[voxel_mask], velocity_grid, np.arange(n_velocity_bins))
+        velocity_bin = np.minimum(velocity_position.astype(np.intp), n_velocity_bins - 2)
+        upper_velocity_share = velocity_position - velocity_bin
 
+        # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
         n_velocity_y = n_velocity_bins * n_y
-        velocity_y_index = scatter_index[voxel_mask]
+        velocity_y_index = velocity_bin * n_y + np.nonzero(voxel_mask)[0]
         emission = emission_slice[voxel_mask]
         segment_lo = np.clip(min_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
         segment_hi = np.clip(max_log_temperature[voxel_mask], log_temperature_lower_edge, log_temperature_upper_edge)
@@ -226,13 +236,9 @@ def create_simple_vdem(
         group_starts = np.cumsum(interior_counts) - interior_counts
         interior_bins = first_interior_bin + np.arange(total_interior) - np.repeat(group_starts, interior_counts)
         point_bins = np.concatenate((bin_lo[single], bin_lo[multi], bin_hi[multi], interior_bins))
-        point_index = np.concatenate(
-            (
-                velocity_y_index[single],
-                velocity_y_index[multi],
-                velocity_y_index[multi],
-                np.repeat(velocity_y_index[multi], interior_counts),
-            )
+        voxels = np.arange(single.size)
+        point_voxel = np.concatenate(
+            (voxels[single], voxels[multi], voxels[multi], np.repeat(voxels[multi], interior_counts))
         )
         span = max_log_temperature[voxel_mask] - min_log_temperature[voxel_mask]
         emission_per_dex = np.divide(emission, span, out=np.zeros_like(emission), where=span > 0)
@@ -249,14 +255,18 @@ def create_simple_vdem(
                 np.repeat(emission_per_dex[multi] * log_temperature_bin_width, interior_counts),
             )
         )
+        # Each point also goes to the next velocity bin up, n_y further on in the flat index, in
+        # proportion to how far the velocity is past its own bin center.
+        point_index = point_bins * n_velocity_y + velocity_y_index[point_voxel]
+        point_upper_share = upper_velocity_share[point_voxel]
         binned = np.bincount(
-            point_bins * n_velocity_y + point_index,
-            weights=point_weights,
+            np.concatenate((point_index, point_index + n_y)),
+            weights=np.concatenate((point_weights * (1 - point_upper_share), point_weights * point_upper_share)),
             minlength=n_temperature_bins * n_velocity_y,
         )
         vdem[:, :, ix, :] = binned.reshape(n_temperature_bins, n_velocity_bins, n_y)
 
-    # Slices write disjoint x; numpy releases the GIL in log10, searchsorted and bincount.
+    # Slices write disjoint x; numpy releases the GIL in log10, interp and bincount.
     with ThreadPoolExecutor(max_workers=_VDEM_MAX_WORKERS) as executor:
         for done in [executor.submit(process_slice, ix) for ix in range(n_x)]:
             done.result()
@@ -267,7 +277,7 @@ def create_simple_vdem(
         logger.info(
             f"Of the emission measure from logT {log_temperature_lower_edge:.2f} up, {100 * hot / warm:.3g} % is "
             f"hotter than logT {log_temperature_upper_edge:.2f} and {100 * fast / warm:.3g} % moves faster than "
-            f"velocity_grid ({velocity_edges[0]:.1f} to {velocity_edges[-1]:.1f} km/s); both are left out of the VDEM"
+            f"velocity_grid ({velocity_lower_edge:.1f} to {velocity_upper_edge:.1f} km/s); both are left out of the VDEM"
         )
 
     vdem_ds = xr.Dataset()

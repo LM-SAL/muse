@@ -274,17 +274,32 @@ def test_create_simple_vdem_converts_its_inputs() -> None:
     xr.testing.assert_allclose(result.vdem, expected.vdem, rtol=1e-12, atol=0)
 
 
-def test_create_simple_vdem_velocity_bin_edges_are_half_open() -> None:
-    # Velocity exactly on a bin edge must land in the upper bin ([edge_lo, edge_hi) convention).
+def test_create_simple_vdem_shares_velocity_between_the_nearest_centers() -> None:
+    # 2.4 km/s towards the observer is 0.48 of the way from the 0 to the 5 km/s center, so of the
+    # 6 columns * 5e-27 = 3e-26, 0.48 goes to doppler_velocity -5 and 0.52 to 0: mean -2.4 km/s.
     inputs = _tiny_vdem_inputs()
-    # Bin centers [-1, 0, 1] with dv=1 give edges [-1.5, -0.5, 0.5, 1.5]; -0.5 is the -1|0 edge.
-    inputs["velocity"] = np.full((2, 3, 2), -0.5) * u.km / u.s
+    inputs["velocity"] = np.full((2, 3, 2), 2.4) * u.km / u.s
+    inputs["velocity_grid"] = np.array([-5.0, 0.0, 5.0]) * u.km / u.s
 
-    result = synthesis_utils.create_simple_vdem(**inputs)
-    # doppler_velocity axis is -velocity_grid[::-1] = [-1, 0, 1]; emission must sit in doppler_velocity=0, not doppler_velocity=-1.
-    emission_per_vdop = result.vdem.sum(dim=("logT", "x", "y")).values
-    assert emission_per_vdop[1] > 0  # doppler_velocity == 0 bin
-    assert emission_per_vdop[0] == 0  # doppler_velocity == -1 bin stays empty
+    emission = synthesis_utils.create_simple_vdem(**inputs).vdem.sum(dim=("logT", "x", "y"))
+    np.testing.assert_allclose(emission.values, [0.48 * 3e-26, 0.52 * 3e-26, 0.0], rtol=1e-12, atol=0)
+    mean = (emission * emission.doppler_velocity).sum() / emission.sum()
+    np.testing.assert_allclose(mean.item(), -2.4, rtol=1e-12)
+
+
+def test_create_simple_vdem_velocity_on_and_past_the_outer_edges(caplog) -> None:
+    # Centers [-1, 0, 1] km/s have outer edges at -1.5 and 1.5. Each (x, y) column has one velocity:
+    # midway between centers splits 50/50, between an end center and its edge goes wholly to the end
+    # bin, and past an edge adds nothing. doppler_velocity is [-1, 0, 1], the velocities negated.
+    inputs = _tiny_vdem_inputs()
+    column_velocity = np.array([[-0.5, 0.5, 1.25], [-1.25, 1.6, -1.6]])
+    inputs["velocity"] = np.repeat(column_velocity[:, :, np.newaxis], 2, axis=2) * u.km / u.s
+    shares = np.array([[[0, 0.5, 0.5], [0.5, 0.5, 0], [1, 0, 0]], [[0, 0, 1], [0, 0, 0], [0, 0, 0]]])
+
+    vdem = synthesis_utils.create_simple_vdem(**inputs).vdem.sum(dim="logT")
+    # Each column holds 5e-27 (see _expected_tiny_vdem); the 2 of 6 past an edge are 33.3 %.
+    np.testing.assert_allclose(vdem.transpose("x", "y", "doppler_velocity").values, 5e-27 * shares, rtol=1e-12, atol=0)
+    assert "0 % is hotter than logT 5.75 and 33.3 % moves faster" in caplog.text
 
 
 def test_create_simple_vdem_flow_towards_observer_is_blueshifted() -> None:
@@ -375,8 +390,8 @@ def test_create_simple_vdem_leaves_out_plasma_outside_the_grids(temperature, vel
 
 
 def test_create_simple_vdem_temperature_on_bin_edge_lands_in_upper_bin() -> None:
-    # Bins are half-open like the velocity bins: an isothermal cube exactly on the 4.5|5.0
-    # edge (4.75) lands in the 5.0 bin. Six columns of 5e-27 each give 3e-26.
+    # log T bins are half-open: an isothermal cube exactly on the 4.5|5.0 edge (4.75) lands
+    # in the 5.0 bin. Six columns of 5e-27 each give 3e-26.
     inputs = _tiny_vdem_inputs()
     inputs["temperature"] = np.full((2, 3, 2), 10**4.75) * u.K
 
