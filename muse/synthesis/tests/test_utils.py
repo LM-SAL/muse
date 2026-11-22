@@ -330,13 +330,23 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input() -> None:
     np.testing.assert_array_equal(result.vdem.values, default.vdem.values)
 
 
-@pytest.mark.parametrize("temperature", [10.0, 1e9])  # logT 1 and 9, outside the bin edges 4.25 and 5.75
-def test_create_simple_vdem_temperature_outside_axis_range(temperature, caplog) -> None:
+@pytest.mark.parametrize(
+    ("temperature", "velocity", "message"),
+    [
+        (10.0, 0.0, None),  # cooler than the bin edges 4.25 to 5.75, as a chromosphere: expected, so not reported
+        (1e9, 0.0, "100 % is hotter than logT 5.75 and 0 % moves faster"),
+        (1e5, 1e4, "0 % is hotter than logT 5.75 and 100 % moves faster"),
+    ],
+)
+def test_create_simple_vdem_leaves_out_plasma_outside_the_grids(temperature, velocity, message, caplog) -> None:
     inputs = _tiny_vdem_inputs()
     inputs["temperature"] = np.full((2, 3, 2), temperature) * u.K
+    inputs["velocity"] = np.full((2, 3, 2), velocity) * u.km / u.s
 
     assert synthesis_utils.create_simple_vdem(**inputs).vdem.values.sum() == 0.0
-    assert "100 % of the emission measure lies outside logT 4.25 to 5.75" in caplog.text
+    assert ("left out of the VDEM" in caplog.text) == (message is not None)
+    if message is not None:
+        assert message in caplog.text
 
 
 def test_create_simple_vdem_temperature_on_bin_edge_lands_in_upper_bin() -> None:
@@ -379,7 +389,7 @@ def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells, caplog
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     np.testing.assert_allclose(result.vdem.values.sum(axis=(0, 1)), np.full((2, 3), 1e-26), rtol=1e-12)
-    assert "of the emission measure lies outside" not in caplog.text
+    assert "left out of the VDEM" not in caplog.text
 
 
 def test_create_simple_vdem_warns_on_non_finite_input(caplog: pytest.LogCaptureFixture) -> None:

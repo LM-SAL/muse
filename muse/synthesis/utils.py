@@ -162,6 +162,8 @@ def create_simple_vdem(
 
     vdem_dtype = (np.empty(0, dtype=ne_nh.dtype) / 1e27).dtype
     vdem = np.zeros((n_temperature_bins, n_velocity_bins, n_x, n_y), dtype=vdem_dtype)
+    # Per x slice: the emission measure from the lowest logT edge up, its part hotter than the grid, its part faster.
+    left_out = np.zeros((n_x, 3))
 
     def process_slice(ix: int) -> None:
         ne_nh_slice = ne_nh[ix] / 1e27  # normalize to the 1e27 / cm^5 output units
@@ -175,6 +177,10 @@ def create_simple_vdem(
         min_log_temperature = np.minimum(log_temperature_slice, log_temperature_previous)
         # The flat (velocity_bin, y) index has no z axis, so np.bincount sums the line of sight.
         velocity_bin = np.searchsorted(velocity_edges, velocity[ix], side="right") - 1
+        warm = log_temperature_slice >= log_temperature_lower_edge
+        hot = log_temperature_slice >= log_temperature_upper_edge
+        fast = warm & ~hot & ((velocity_bin < 0) | (velocity_bin >= n_velocity_bins))
+        left_out[ix] = [np.nansum(emission_slice[mask], dtype=np.float64) for mask in (warm, hot, fast)]
         voxel_mask = (
             (velocity_bin >= 0)
             & (velocity_bin < n_velocity_bins)
@@ -246,14 +252,13 @@ def create_simple_vdem(
         for done in [executor.submit(process_slice, ix) for ix in range(n_x)]:
             done.result()
 
-    # einsum sums without a cube-sized temporary; float32 sums round at ~1e-7, hence the 1e-6.
-    total = np.einsum("xyz,z->", ne_nh, cell_length, dtype=np.float64) / 1e27
-    inside = vdem.sum(dtype=np.float64)
-    if total > 0 and inside < total * (1 - 1e-6):
+    warm, hot, fast = left_out.sum(axis=0)
+    # Plasma cooler than the grid is expected, such as a chromosphere; hotter or faster plasma means the grid is too narrow.
+    if hot + fast > 1e-6 * warm:
         logger.info(
-            f"{100 * (1 - inside / total):.3g} % of the emission measure lies outside logT "
-            f"{log_temperature_lower_edge:.2f} to {log_temperature_upper_edge:.2f} or velocity_grid "
-            f"{velocity_edges[0]:.1f} to {velocity_edges[-1]:.1f} km/s, and is left out of the VDEM"
+            f"Of the emission measure from logT {log_temperature_lower_edge:.2f} up, {100 * hot / warm:.3g} % is "
+            f"hotter than logT {log_temperature_upper_edge:.2f} and {100 * fast / warm:.3g} % moves faster than "
+            f"velocity_grid ({velocity_edges[0]:.1f} to {velocity_edges[-1]:.1f} km/s); both are left out of the VDEM"
         )
 
     vdem_ds = xr.Dataset()
