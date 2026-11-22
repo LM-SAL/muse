@@ -45,7 +45,6 @@ telescope = Telescope_EUVST()
 detector = Detector_SWC()
 slit_width = 0.4 * u.arcsec
 dispersion = (1 * u.pix * detector.wvl_res).to(u.AA)
-# spectral_psf_fwhm gives the width in detector pixels.
 instrumental_fwhm = (spectral_psf_fwhm(telescope, detector, slit_width) * u.pix * detector.wvl_res).to(u.AA)
 area_wavelength = np.linspace(170, 212, 421) * u.AA
 effective_area = xr.DataArray(
@@ -117,7 +116,7 @@ plt.legend()
 temperature_sensitivity = (
     response.spectral_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="wavelength_bin", keep_attrs=True)
 )
-plt.figure()
+plt.figure(layout="constrained")
 for line in temperature_sensitivity.line.values:
     temperature_sensitivity.sel(line=line).plot(label=str(line))
 plt.title("EUVST Fe XII temperature sensitivity")

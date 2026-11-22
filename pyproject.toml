@@ -67,7 +67,7 @@ optional-dependencies.docs = [
   "sphinxext-opengraph>=0.13.0",
   "tabulate>=0.10.0",
   "aiapy>=0.12.0",
-  "eclipse>=0.16.2", # the EUVST instrument model for the EUVST examples
+  "eclipse>=0.16.2",
 ]
 optional-dependencies.tests = [
   "muse[all]",
