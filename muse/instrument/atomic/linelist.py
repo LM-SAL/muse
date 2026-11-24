@@ -111,9 +111,7 @@ def create_chianti_line_list(
     chianti_temperature = temperature_flat.item() if temperature_flat.size == 1 else temperature_flat
     chianti_density = density_flat.item() if density_flat.size == 1 else density_flat
     bunch = ch.bunch(chianti_temperature, chianti_density, wavelength_range, **chianti_kwargs)
-    abundance = getattr(bunch, "AbundanceName", abundance)
-    if abundance is not None:
-        abundance = Path(abundance).stem
+    abundance = Path(bunch.AbundanceName).stem
 
     line_list = _chianti_bunch_to_dataset(
         bunch,
@@ -417,9 +415,6 @@ def create_fiasco_line_list(
         wavelength_range=wavelength_range,
         attrs={"fiasco_version": table.meta["fiasco_version"], "chianti_version": table.meta["chianti_version"]},
     )
-    if line_list.sizes["transition"] == 0:
-        msg = "fiasco found no lines; check wavelength_range and the ion selection"
-        raise ValueError(msg)
     abundance = getattr(ions[0], "_dset_names", {}).get("abundance", abundance)
     add_history(line_list, {**call_inputs, "abundance": abundance}, create_fiasco_line_list)
     return line_list

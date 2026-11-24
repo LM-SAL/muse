@@ -785,19 +785,16 @@ def _bin_average(values: xr.DataArray, x: np.ndarray, edges: np.ndarray) -> xr.D
     Average ``values``, sampled at ``x`` along ``wavelength_bin``, over the bins between
     ``edges``.
 
-    The piecewise-linear curve through the samples is integrated exactly; it is zero
-    outside ``x``.
+    The piecewise-linear curve through the samples is integrated exactly; ``x`` spans
+    ``edges``.
     """
-    if x.size < 2:
-        msg = "at least two samples are needed to average over bins"
-        raise ValueError(msg)
     y = np.moveaxis(np.asarray(values.data, dtype=float), values.get_axis_num("wavelength_bin"), -1)
     dx = np.diff(x)
     cumulative = np.zeros(y.shape)
     cumulative[..., 1:] = np.cumsum(0.5 * (y[..., 1:] + y[..., :-1]) * dx, axis=-1)
     # The integral to each edge: the cumulative one at the sample before it plus the partial segment.
     index = np.clip(np.searchsorted(x, edges, side="right") - 1, 0, x.size - 2)
-    t = np.clip(edges - x[index], 0.0, dx[index])
+    t = edges - x[index]
     slope = (y[..., index + 1] - y[..., index]) / dx[index]
     at_edges = cumulative[..., index] + y[..., index] * t + 0.5 * slope * t**2
     averaged = np.diff(at_edges, axis=-1) / np.diff(edges)

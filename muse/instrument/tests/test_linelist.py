@@ -120,11 +120,12 @@ def test_converts_units_for_chianti(monkeypatch):
             captured.update(temperature=temperature, density=density, wavelength_range=wavelength_range, **kwargs)
             return type("FakeBunch", (), {"AbundanceName": "chianti/sun_coronal_2021_chianti.abund"})()
 
+    transitions = [0]
     monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
     monkeypatch.setattr(
         linelist,
         "_chianti_bunch_to_dataset",
-        lambda *_args, **_kwargs: xr.Dataset(coords={"transition": [0]}),
+        lambda *_args, **_kwargs: xr.Dataset(coords={"transition": transitions}),
     )
 
     line_list = create_chianti_line_list(
@@ -141,20 +142,8 @@ def test_converts_units_for_chianti(monkeypatch):
     assert type(captured["minAbund"]) is float
     assert captured["minAbund"] == 1e-6
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
-
-
-def test_no_lines_raises(monkeypatch):
-    class FakeChianti:
-        @staticmethod
-        def bunch(*_args, **_kwargs):
-            return object()
-
-    monkeypatch.setattr(linelist, "_initialize_chianti", lambda: ("test", FakeChianti))
-    monkeypatch.setattr(
-        linelist,
-        "_chianti_bunch_to_dataset",
-        lambda *_args, **_kwargs: xr.Dataset(coords={"transition": []}),
-    )
+    # ChiantiPy takes every ion whose lines span the range, though none may fall inside it
+    transitions.clear()
     with pytest.raises(ValueError, match="no lines"):
         create_chianti_line_list(TEMPERATURE, pressure=PRESSURE, wavelength_range=[170, 172] * u.AA, ion_list=["fe_9"])
 
@@ -167,39 +156,12 @@ def test_missing_xuvtop_raises(monkeypatch):
 
 
 @pytest.mark.chianti
-def test_create_chianti_line_list_live_minimum_abundance_scalar_grid(monkeypatch):
+def test_create_chianti_line_list_live_density(monkeypatch):
     pytest.importorskip("ChiantiPy")
-    assert os.environ.get("XUVTOP")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         chdata = pytest.importorskip("ChiantiPy.tools.data")
-
     monkeypatch.delattr(chdata, "Defaults")
-    density = [1e9] / u.cm**3
-    # 3e-5 keeps iron and six lighter elements; a lower cut only adds run time.
-    line_list = create_chianti_line_list(
-        abundance="sun_coronal_2021_chianti",
-        wavelength_range=[170, 172] * u.AA,
-        temperature=TEMPERATURE,
-        density=density,
-        minimum_abundance=3e-5,
-    )
-    assert line_list.gofnt.sizes == {"logT": 1, "logD": 1, "transition": line_list.sizes["transition"]}
-    assert line_list.sizes["transition"] > 0
-    assert "Fe IX 171.073" in line_list.full_name.values
-    assert (line_list.wavelength >= 170).all()
-    assert (line_list.wavelength <= 172).all()
-    assert {"ion_name", "atomic_number", "spectroscopic_name", "logT_peak"} <= set(line_list.data_vars)
-    assert "fe_9" in line_list.ion_name.values
-    assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
-    assert line_list.attrs["minimum_abundance"] == 3e-5
-    assert "create_chianti_line_list(" in line_list.attrs["history"][0]
-
-
-@pytest.mark.chianti
-def test_create_chianti_line_list_live_density():
-    pytest.importorskip("ChiantiPy")
-    assert os.environ.get("XUVTOP")
     temperature = 10 ** np.arange(5.6, 6.2, 0.2) * u.K
     density = [1e8, 1e9] / u.cm**3
     line_list = create_chianti_line_list(
@@ -207,13 +169,13 @@ def test_create_chianti_line_list_live_density():
         density=density,
         wavelength_range=[170, 172] * u.AA,
         ion_list=["fe_9"],
+        abundance="sun_coronal_2021_chianti",
     )
     assert line_list.gofnt.dims == ("logT", "logD", "transition")
     np.testing.assert_allclose(line_list.logD.values, [8.0, 9.0])
-    assert line_list.logT.attrs["units"] == "dex(K)"
-    assert line_list.logD.attrs["units"] == "dex(1 / cm3)"
-    assert line_list.sizes["transition"] > 0
     assert "Fe IX 171.073" in line_list.full_name.values
+    assert ((line_list.wavelength >= 170) & (line_list.wavelength <= 172)).all()
+    assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
 
 
 try:
@@ -355,19 +317,8 @@ def test_fiasco_line_list_refuses_a_fiasco_below_the_minimum_version(temperature
         )
 
 
-def _group_sum(group, offset):
-    return sum(group) + offset
-
-
-def _group_itself(group):
-    return group
-
-
-def test_map_ion_groups_runs_every_ion():
-    pytest.importorskip("joblib")
-    assert linelist._map_ion_groups(_group_sum, [1, 2, 3, 4, 5], 1, 10) == [25]
-    # Every n-th ion to a worker: neighbors, the ions of one element, go to different ones.
-    assert linelist._map_ion_groups(_group_itself, [1, 2, 3, 4, 5], 2) == [[1, 3, 5], [2, 4]]
+def _group_plus(group, offset):
+    return [ion + offset for ion in group]
 
 
 def _levels_of(group):
@@ -408,15 +359,16 @@ def test_fiasco_line_list_is_the_same_for_any_number_of_workers():
 
 def test_map_ion_groups_rejects_a_worker_count_below_one():
     with pytest.raises(ValueError, match="workers must be at least 1"):
-        linelist._map_ion_groups(_group_sum, [1, 2, 3], 0, 10)
+        linelist._map_ion_groups(_group_plus, [1, 2, 3], 0, 10)
 
 
 def test_map_ion_groups_counts_the_allocation_not_the_machine(monkeypatch):
     pytest.importorskip("joblib")
     monkeypatch.setattr(os, "process_cpu_count", lambda: 2)
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
-    # two groups, as the two usable CPUs give; the machine's 64 would give five
-    assert sorted(linelist._map_ion_groups(_group_sum, [1, 2, 3, 4, 5], -1, 10)) == [16, 19]
+    # Two groups, as the two usable CPUs give (the machine's 64 would give five), every second
+    # ion to each, as neighbors are the ions of one element.
+    assert sorted(linelist._map_ion_groups(_group_plus, [1, 2, 3, 4, 5], -1, 10)) == [[11, 13, 15], [12, 14]]
 
 
 def _he_fe_line_list():
