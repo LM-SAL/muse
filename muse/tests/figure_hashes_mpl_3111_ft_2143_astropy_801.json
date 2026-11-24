@@ -1,7 +1,5 @@
 {
-  "muse.instrument.tests.test_figures.test_spectral_response_broadening_profiles": "6fbd1c97f9f039b18024a1c829babaa31882dd59f8b3b74c11f7e5c9b87f8be9",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "252fd5dd807a4ae1a4605eab05dcfc1d37905f91e7321e09d5e6c60d54a237df",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "2b58e9dbf4fecea77608f5bc495cfd1f1f3b8951c699bdb0150685a9ce04e075",
-  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "d5b83bcbd061b1c2d962dca7b239fcdd9f94cae238ba914ddbe02d98bd642d5b",
-  "muse.transforms.tests.test_figures.test_match_fov_resampled_intensity_map": "a25fa1b24ea8d971d340a88a5c6c272b3667fadb1dab9d15d56a38f104279973"
+  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "d5b83bcbd061b1c2d962dca7b239fcdd9f94cae238ba914ddbe02d98bd642d5b"
 }

@@ -2,6 +2,7 @@ import pytest
 
 from muse.transforms import reshape_x_to_slit_step
 from muse.utils.documentation import format_docstring
+from muse.variables import DEFAULTS_MUSE
 
 
 def test_format_docstring_rejects_unknown_field():
@@ -14,5 +15,5 @@ def test_format_docstring_links_to_the_defaults_class():
     # no documentation target of its own and Sphinx cannot resolve a reference to it.
     assert (
         ":attr:`DEFAULTS_MUSE.number_of_slits_SG <muse.variables_schema.InstrumentDefaults.number_of_slits_SG>`"
-        " = ``35``" in reshape_x_to_slit_step.__doc__
+        f" = ``{DEFAULTS_MUSE.number_of_slits_SG}``" in reshape_x_to_slit_step.__doc__
     )

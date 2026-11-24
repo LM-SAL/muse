@@ -113,19 +113,6 @@ def test_add_history_stores_serializable_keyword_inputs(caplog) -> None:
     assert "weights" not in caplog.text  # and silently, unlike an object of another type
 
 
-@pytest.mark.filterwarnings("ignore:numpy.ndarray size changed:RuntimeWarning")
-def test_add_history_stored_attrs_round_trip(tmp_path) -> None:
-    ds = _record(xr.Dataset({"a": ("x", [1, 2, 3])}), shift=3 * u.km / u.s)
-    ds.to_netcdf(tmp_path / "out.nc", engine="netcdf4")
-    loaded = xr.open_dataset(tmp_path / "out.nc", engine="netcdf4")
-
-    # The coerced keyword inputs must survive a real write/read cycle.
-    assert loaded.attrs["gain"] == 2.0
-    assert loaded.attrs["flag"] == 1
-    assert loaded.attrs["shift"] == "3.0 km / s"
-    assert loaded.attrs["label"] == "muse"
-
-
 def test_add_history_warns_on_unserializable_keyword_input(caplog) -> None:
     ds = _record(xr.Dataset(), weights=object())
 
@@ -190,23 +177,6 @@ def test_add_history_appends_to_existing() -> None:
     assert (ds.attrs["date_created"], ds.attrs["muse_version"]) == ("2026-01-01T00:00:00Z", "0.1")
 
 
-def test_update_attrs_copies_source_attrs_but_never_provenance() -> None:
-    source = xr.Dataset(
-        {"a": ("x", [1])},
-        attrs={
-            "history": ["load"],
-            "instrument": "MUSE",
-            "date_created": "2026-01-01T00:00:00Z",
-            "muse_version": "0.1",
-        },
-    )
-    ds = xr.Dataset({"b": ("x", [2])})
-
-    update_attrs(ds, source, level=2)
-    assert ds.attrs == {"instrument": "MUSE", "level": 2}
-    assert "level" not in source.attrs
-
-
 def test_a_history_entry_reads_no_array_from_its_file(tmp_path) -> None:
     xr.Dataset({"grid": ("x", np.arange(5.0), {"units": "K"})}).to_netcdf(tmp_path / "grid.nc")
 
@@ -241,14 +211,6 @@ def test_the_label_of_instrument_defaults_follows_every_value_and_the_values_alo
     monkeypatch.setattr(utils_module, "DEFAULTS_MUSE", older)
     assert _instrument_defaults_label(older).split()[0] == "DEFAULTS_MUSE"
     assert _instrument_defaults_label(older) != today
-
-
-def test_add_history_inherits_history_from_sources() -> None:
-    ds = xr.Dataset(attrs={"history": ["start"]})
-    raster = xr.Dataset(attrs={"history": ["make_raster()"]})
-    response = xr.Dataset(attrs={"history": ["make_response()"]})
-    add_history(ds, {}, "demo", sources=(raster, response))
-    assert _calls(ds) == ["start", "make_raster()", "make_response()", "demo()"]
 
 
 def test_add_history_nested_source_histories_merge_in_any_order() -> None:

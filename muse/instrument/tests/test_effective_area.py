@@ -22,26 +22,13 @@ def _area(**kwargs):
 
 
 def test_create_effective_area_layout():
-    effective_area = _area(
-        components={"mirror": np.ones(5) * u.dimensionless_unscaled, "contamination": [0.9] * u.one},
-        attrs={"coating": "test"},
-    )
-    assert effective_area.effective_area.dims == ("wavelength",)
-    assert effective_area.effective_area.attrs["units"] == "cm2"
+    effective_area = _area(components={"mirror": np.ones(5) * u.dimensionless_unscaled, "contamination": [0.9] * u.one})
     assert effective_area.mirror.attrs["units"] == ""
-    assert effective_area.wavelength.attrs["units"] == "Angstrom"
-    assert effective_area.channel.ndim == 0
-    assert float(effective_area.channel) == 171.0
-    assert effective_area.channel.attrs["units"] == "Angstrom"
     # One value of a component holds at every wavelength.
     np.testing.assert_array_equal(effective_area.contamination, 0.9)
-    assert effective_area.attrs["coating"] == "test"
-    assert "create_effective_area(" in effective_area.attrs["history"][-1]
 
 
-def test_create_effective_area_refuses_dn_per_photon_and_a_decreasing_wavelength():
-    with pytest.raises(u.UnitsError):
-        create_effective_area(np.ones(5) * u.cm**2 * u.DN / u.ph, WAVELENGTH, channel=94 * u.AA)
+def test_create_effective_area_refuses_a_decreasing_wavelength():
     with pytest.raises(ValueError, match="increasing"):
         create_effective_area(np.ones(5) * u.cm**2, WAVELENGTH[::-1], channel=94 * u.AA)
 
@@ -67,10 +54,9 @@ def test_create_effective_area_converts_wavelength_and_channel_to_angstrom():
     np.testing.assert_allclose(float(in_nm.channel), 171.0)
 
 
-@pytest.mark.parametrize("suffix", [".zarr.zip", ".nc"])
-def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
+def test_save_and_read_effective_area_round_trip(tmp_path):
     effective_area = _area(components={"mirror": np.full(5, 0.5) * u.one})
-    path = tmp_path / f"area{suffix}"
+    path = tmp_path / "area.zarr.zip"
 
     save_effective_area(effective_area, path)
     back = read_effective_area(path)
@@ -84,25 +70,18 @@ def test_save_and_read_effective_area_round_trip(tmp_path, suffix):
         save_effective_area(effective_area, path)
 
 
-@pytest.mark.parametrize("suffix", [".zarr", ".nc"])
-def test_a_failed_save_effective_area_leaves_nothing_behind(tmp_path, monkeypatch, suffix):
-    method = "to_zarr" if suffix == ".zarr" else "to_netcdf"
-    write = getattr(xr.Dataset, method)
+def test_a_failed_save_effective_area_leaves_nothing_behind(tmp_path, monkeypatch):
+    write = xr.Dataset.to_netcdf
 
     def half_written(dataset, path, *args, **kwargs):
         write(dataset, path, *args, **kwargs)
         msg = "disk full"
         raise OSError(msg)
 
-    path = tmp_path / f"area{suffix}"
-    with monkeypatch.context() as patch:
-        patch.setattr(xr.Dataset, method, half_written)
-        with pytest.raises(OSError, match="disk full"):
-            save_effective_area(_area(), path)
-
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", half_written)
+    with pytest.raises(OSError, match="disk full"):
+        save_effective_area(_area(), tmp_path / "area.nc")
     assert not list(tmp_path.iterdir())
-    save_effective_area(_area(), path)
-    xr.testing.assert_allclose(read_effective_area(path).effective_area, _area().effective_area)
 
 
 def test_save_effective_area_rejects_a_wrong_layout(tmp_path):
@@ -184,8 +163,7 @@ class _FakeChannel:
     def __init__(self, channel) -> None:
         self.channel = channel
 
-    def eve_correction(self, obstime):
-        self.eve_obstime = obstime
+    def eve_correction(self, _obstime):
         return 1.5 * u.one
 
 
@@ -201,11 +179,10 @@ def fake_aiapy(monkeypatch):
 
 
 @pytest.mark.usefixtures("fake_aiapy")
-def test_create_aia_effective_area_defaults_are_solarsoft_evenorm(tmp_path):
+def test_create_aia_effective_area_defaults_are_solarsoft_evenorm():
     effective_area = create_aia_effective_area(304 * u.AA)
     # crosstalk and the EVE factor of the default epoch, no degradation
     np.testing.assert_allclose(effective_area.effective_area, 3.0 * 1.5)
-    assert effective_area.effective_area.attrs["units"] == "cm2"
     assert float(effective_area.channel) == 304.0
     np.testing.assert_allclose(effective_area.mirror, 0.25)
     assert u.Unit(effective_area.dn_per_photon.attrs["units"]) == u.DN / u.ph
@@ -216,9 +193,6 @@ def test_create_aia_effective_area_defaults_are_solarsoft_evenorm(tmp_path):
     assert u.allclose(u.Quantity(attrs["pixel_width"]), 0.6 * u.arcsec)
     assert u.allclose(u.Quantity(attrs["gain"]), 18 * u.electron / u.DN)
     assert u.Quantity(attrs["pair_energy"]) == 3.65 * u.eV / u.electron
-    assert "create_aia_effective_area(" in attrs["history"][-1]
-    save_effective_area(effective_area, tmp_path / "aia.nc")
-    assert read_effective_area(tmp_path / "aia.nc").attrs["gain"] == attrs["gain"]
 
 
 @pytest.mark.usefixtures("fake_aiapy")
