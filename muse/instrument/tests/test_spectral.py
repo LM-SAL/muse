@@ -84,7 +84,8 @@ def _sigma_of_an_iron_line_at_1_MK(**kwargs) -> float:
     """
     The measured sigma, in Angstrom, of one Fe line at 171 Angstrom and 1 MK.
     """
-    line_list = fake_line_list(1, wavelength=[171.0], logT=[6.0])
+    # on three temperatures, so each width must take its own one
+    line_list = fake_line_list(1, wavelength=[171.0])
     # sampled at the bin centers: a bin average would add the width of a bin to the line's
     response = create_spectral_response(
         line_list,
@@ -93,8 +94,9 @@ def _sigma_of_an_iron_line_at_1_MK(**kwargs) -> float:
         bin_method="center",
         **kwargs,
     )
-    profile = response.spectral_response.squeeze().values
+    profile = response.spectral_response.sel(logT=6.0).squeeze().values
     offset = response.wavelength_grid.values - 171.0
+    assert abs(np.sum(profile * offset) / np.sum(profile)) < 1e-6  # centered on the rest wavelength
     return float(np.sqrt(np.sum(profile * offset**2) / np.sum(profile)))
 
 
@@ -113,10 +115,11 @@ def test_instrumental_fwhm_adds_its_sigma_in_quadrature():
 
 
 def test_nonthermal_velocity_is_the_1e_velocity():
-    # xi is the 1/e velocity of the EIS/IRIS literature: it adds (lambda xi / c)^2 / 2 to sigma^2.
-    thermal = _sigma_of_an_iron_line_at_1_MK()
-    broadened = _sigma_of_an_iron_line_at_1_MK(nonthermal_velocity=20 * u.km / u.s)
-    np.testing.assert_allclose(broadened**2 - thermal**2, (171.0 * 20 / 299792.458) ** 2 / 2, rtol=1e-3)
+    # xi is the 1/e velocity of the EIS/IRIS literature: it adds (lambda xi / c)^2 / 2 to sigma^2, on top of the
+    # instrumental width.
+    instrumental = _sigma_of_an_iron_line_at_1_MK(instrumental_fwhm=0.05 * u.AA)
+    broadened = _sigma_of_an_iron_line_at_1_MK(instrumental_fwhm=0.05 * u.AA, nonthermal_velocity=20 * u.km / u.s)
+    np.testing.assert_allclose(broadened**2 - instrumental**2, (171.0 * 20 / 299792.458) ** 2 / 2, rtol=1e-3)
 
 
 def test_peak_follows_doppler_shift():
