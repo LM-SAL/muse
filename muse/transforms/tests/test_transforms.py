@@ -65,11 +65,14 @@ def test_match_fov_resamples_offgrid_to_muse_grid(vdem_offgrid) -> None:
     # Output spatial axes are remapped onto the MUSE pixel grid.
     assert out.x.attrs["units"] == "arcsec"
     assert out.y.attrs["units"] == "arcsec"
-    assert float(out.x[0]) == 0.0
+    assert float(out.x[0]) == float(out.y[0]) == 0.0
     assert float(out.x[1] - out.x[0]) == pytest.approx(DEFAULTS_MUSE.pixel_width_SG.value)
     assert float(out.y[1] - out.y[0]) == pytest.approx(DEFAULTS_MUSE.pixel_height_SG.value)
     # The resampling moves the resampled axis last; the caller's order keeps 2D plots in their orientation.
     assert out.vdem.dims == vdem_offgrid.vdem.dims
+    assert out.vdem.attrs == vdem_offgrid.vdem.attrs
+    # The first and last rows land on the input's first and last samples, so the field is not flipped.
+    np.testing.assert_allclose(out.vdem.isel(x=0, y=[0, -1]).values, vdem_offgrid.vdem.isel(x=0, y=[0, -1]).values)
     # "keep" matches the resolution alone: the field, sampled at twice the pixel width, keeps all its columns.
     assert match_fov(vdem_offgrid, extent="keep").x.size == 2 * vdem_offgrid.x.size
 
