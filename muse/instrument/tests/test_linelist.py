@@ -139,9 +139,10 @@ def test_converts_units_for_chianti(monkeypatch):
     np.testing.assert_allclose(captured["temperature"], [1e6])
     np.testing.assert_allclose(captured["density"], [3e9])
     np.testing.assert_allclose(captured["wavelength_range"], [170, 172])
-    assert type(captured["minAbund"]) is float
+    assert type(captured["temperature"]) is type(captured["density"]) is type(captured["minAbund"]) is float
     assert captured["minAbund"] == 1e-6
     assert line_list.attrs["abundance"] == "sun_coronal_2021_chianti"
+    assert "create_chianti_line_list(" in line_list.attrs["history"][-1]
     # ChiantiPy takes every ion whose lines span the range, though none may fall inside it
     transitions.clear()
     with pytest.raises(ValueError, match="no lines"):

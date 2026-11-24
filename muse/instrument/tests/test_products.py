@@ -683,6 +683,8 @@ def test_generate_sg_continuum_responses(inputs, sg_products, tmp_path):
     wide = _area_file(tmp_path, attrs={"pixel_width": str(2 * DEFAULTS_MUSE.pixel_width_SG)})
     twice = _sg_continuum(inputs, tmp_path / "wide", effective_area_files=[wide], doppler_velocity=velocities)
     xr.testing.assert_allclose(read_response(twice[0]).detector_response, 2 * response.detector_response)
+    lines = _sg(inputs, tmp_path / "wide_lines", effective_area_files=[wide], maximum_contaminants=0)
+    xr.testing.assert_allclose(_main_response(lines), 2 * _main_response(sg_products))
 
 
 @pytest.mark.usefixtures("_fake_continuum_backend")

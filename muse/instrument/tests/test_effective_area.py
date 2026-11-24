@@ -163,8 +163,8 @@ class _FakeChannel:
     def __init__(self, channel) -> None:
         self.channel = channel
 
-    def eve_correction(self, _obstime):
-        return 1.5 * u.one
+    def eve_correction(self, obstime):
+        return (1.5 if obstime.isot.startswith("2010") else 1.25) * u.one
 
 
 @pytest.fixture
@@ -200,7 +200,7 @@ def test_create_aia_effective_area_switches():
     effective_area = create_aia_effective_area(
         304 * u.AA, obstime="2014-01-01", include_crosstalk=False, include_degradation=True
     )
-    np.testing.assert_allclose(effective_area.effective_area, 2.0 * 0.8 * 1.5)
+    np.testing.assert_allclose(effective_area.effective_area, 2.0 * 0.8 * 1.25)
     np.testing.assert_array_equal(effective_area.crosstalk, 0.0)
     assert effective_area.attrs["obstime"] == "2014-01-01T00:00:00.000"
 

@@ -173,6 +173,7 @@ def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
     continuum = load_or_create_continuum(tmp_path, **CONTINUUM, pressure=in_si)
 
     assert continuum.pressure.values.tolist() == requested
+    assert continuum.pressure.attrs["units"] == "K / cm3"
     assert len(continuum_calls) == 1
 
 
