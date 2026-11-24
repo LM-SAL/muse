@@ -41,13 +41,7 @@ from muse.instrument.response.spectral import (
     create_spectral_response,
 )
 from muse.log import logger
-from muse.utils.utils import (
-    _inherit_history,
-    _instrument_defaults_label,
-    _replace_atomically,
-    _written_in_full,
-    add_history,
-)
+from muse.utils.utils import _inherit_history, _instrument_defaults_label, _written_in_full, add_history
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults, _required
 
@@ -741,7 +735,7 @@ class _Run:
             **attrs,
         )
         add_history(dataset, self.settings, self.generator)
-        _replace_atomically(self._paths[name], lambda staging: save(dataset, staging))
+        save(dataset, self._paths[name])
         self._done[name] = self._paths[name]
         logger.info(f"Wrote {self._paths[name].name} {dict(dataset.sizes)}")
 
