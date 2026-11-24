@@ -317,10 +317,7 @@ def _chianti_component(
     result = getattr(method.__self__, result_name)
     if "errorMessage" in result:
         return None
-    intensity = np.atleast_2d(result["intensity"])
-    if intensity.shape[0] != max(number_of_temperatures, 2):
-        intensity = intensity.T
-    return intensity[:number_of_temperatures]
+    return result["intensity"][:number_of_temperatures]
 
 
 def _fiasco_component(ions: list, method: str, wavelengths: u.Quantity, *args, **kwargs) -> np.ndarray:

@@ -70,7 +70,8 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
 
     The pipeline is one linear map applied per block, so dask inputs stay lazy and
     chained x/y resampling streams. Only data variables along ``axis`` are resampled;
-    other coordinates along it are dropped (`match_fov` rebuilds ``x`` and ``y``).
+    the ``axis`` coordinate and the other coordinates along it are dropped (`match_fov`
+    rebuilds ``x`` and ``y``).
     """
     coord = ds[axis]
     if coord.size <= 1:
@@ -90,7 +91,6 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
         samples_per_pixel = max(1, int(coord.size / n_pixels * oversampling))
     # No coords on the weights array: alignment must be by dimension only.
     weights = xr.DataArray(_resample_weights(coord.values, n_pixels, samples_per_pixel), dims=("_center", axis))
-    centers = np.linspace(coord[0].values, coord[-1].values, n_pixels)
 
     def apply_weights(block: np.ndarray, weight_block: np.ndarray, dtype=None) -> np.ndarray:
         return (block @ weight_block.T).astype(dtype)
@@ -111,7 +111,7 @@ def _resample_axis_to_pixel(ds: xr.Dataset, axis: str, pixel_arcsec: float, over
         for name, var in ds.data_vars.items()
         if axis in var.dims
     }
-    return ds.drop_dims(axis).assign(resampled).assign_coords({axis: centers})
+    return ds.drop_dims(axis).assign(resampled)
 
 
 def _fit_axis(ds: xr.Dataset, axis: str, target_size: int, pad_mode: str, *, extend: bool) -> xr.Dataset:

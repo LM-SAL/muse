@@ -53,7 +53,7 @@ def test_transform_response_units_energy_to_photons():
 
 def test_transform_response_units_photons_to_data_numbers():
     response = _spectral_response()
-    gain = 10 * u.electron / u.DN
+    gain = 8 * u.electron / u.DN
     photons = transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
 
     data_numbers = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", channel=171 * u.AA, gain=gain)
@@ -66,40 +66,24 @@ def test_transform_response_units_photons_to_data_numbers():
     assert u.Unit(data_numbers.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
 
 
-def test_transform_response_units_accepts_explicit_calibration_without_channel():
-    # A non-MUSE instrument supplies its own calibration; the MUSE channel list
-    # is only consulted when a gain or pair_energy default is needed.
-    response = _spectral_response()
-    gain = 2.5 * u.electron / u.DN
-
-    converted = transform_response_units(
-        response,
-        "1e-27 cm5 DN / (Angstrom s)",
-        gain=gain,
-        pair_energy=3.65 * u.eV / u.electron,
-        pixel_width=0.6 * u.arcsec,
-        pixel_height=0.6 * u.arcsec,
-    )
-
-    assert u.Unit(converted.spectral_response.attrs["units"]) == u.Unit("1e-27 cm5 DN / (Angstrom s)")
+def test_transform_response_units_needs_a_channel_for_a_default_calibration():
     with pytest.raises(ValueError, match="channel is required"):
-        transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", gain=gain)
+        transform_response_units(_spectral_response(), "1e-27 cm5 DN / (Angstrom s)", gain=2.5 * u.electron / u.DN)
 
 
-def test_transform_response_units_uses_channel_gain(monkeypatch):
-    monkeypatch.setattr(
-        DEFAULTS_MUSE.gain_SG,
-        "data",
-        np.array([8.0, 10.0, 12.0]) * u.electron / u.DN,
+def test_transform_response_units_takes_the_calibration_of_its_channel():
+    channels = {"coords": {"channel": [108, 171, 284]}, "dims": "channel"}
+    defaults = attrs.evolve(
+        DEFAULTS_MUSE,
+        gain_SG=xr.DataArray([8.0, 10.0, 12.0] * u.electron / u.DN, **channels),
+        pair_energy_SG=xr.DataArray([3.0, 3.65, 4.0] * u.eV / u.electron, **channels),
     )
-    photons = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=284 * u.AA)
+    target = "1e-27 cm5 DN / (Angstrom s)"
 
-    default = transform_response_units(photons, "1e-27 cm5 DN / (Angstrom s)", channel=284 * u.AA)
+    # the channel in nm picks the 284 values from the tables
+    default = transform_response_units(_spectral_response(), target, channel=28.4 * u.nm, instrument_defaults=defaults)
     explicit = transform_response_units(
-        photons,
-        "1e-27 cm5 DN / (Angstrom s)",
-        channel=284 * u.AA,
-        gain=12 * u.electron / u.DN,
+        _spectral_response(), target, gain=12 * u.electron / u.DN, pair_energy=4.0 * u.eV / u.electron
     )
 
     np.testing.assert_allclose(default.spectral_response, explicit.spectral_response)
@@ -176,19 +160,6 @@ def test_transform_response_units_rejects_invalid_inputs(case, error, match):
         transform_response_units(response, "1e-27 cm5 ph / (Angstrom s)", channel=171 * u.AA)
 
 
-def test_transform_response_units_uses_the_channel_pair_energy():
-    channel = 17.1 * u.nm
-    pair_energy = DEFAULTS_MUSE.pair_energy_SG.sel(channel=171).data
-    response = transform_response_units(_spectral_response(), "1e-27 cm5 ph / (Angstrom s)", channel=channel)
-
-    default = transform_response_units(response, "1e-27 cm5 DN / (Angstrom s)", channel=channel)
-    doubled = transform_response_units(
-        response, "1e-27 cm5 DN / (Angstrom s)", channel=channel, pair_energy=2 * pair_energy
-    )
-
-    np.testing.assert_allclose(doubled.spectral_response, default.spectral_response / 2)
-
-
 def test_transform_response_units_selects_detector_calibration():
     ci_gain = xr.DataArray(
         np.array([20.0, 20.0]) * u.electron / u.DN,
@@ -229,14 +200,10 @@ def test_transform_response_units_selects_detector_calibration():
         * (sg_gain / (20.0 * u.electron / u.DN)).to_value(u.dimensionless_unscaled)
     )
     np.testing.assert_allclose(ci.spectral_response / sg.spectral_response, expected_ratio)
-    # the CI tables may hold different channels: one the gain table lacks is refused too
+    # without a pair energy given, the channel the pair-energy table lacks is refused
     with pytest.raises(ValueError, match="unsupported MUSE CI channel"):
         transform_response_units(
-            _spectral_response(),
-            target_unit,
-            channel=304 * u.AA,
-            detector="ci",
-            instrument_defaults=attrs.evolve(defaults, gain_CI=ci_gain.sel(channel=[195])),
+            _spectral_response(), target_unit, channel=304 * u.AA, detector="ci", instrument_defaults=lacking
         )
 
 

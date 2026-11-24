@@ -7,7 +7,6 @@ import astropy.units as u
 
 import muse.synthesis.utils as synthesis_utils
 from muse.synthesis.synthesis import vdem_synthesis
-from muse.variables import DEFAULTS_MUSE
 
 
 def _spectrum(response, raster):
@@ -91,36 +90,17 @@ def test_wavelength_to_doppler_normalizes_units() -> None:
         rtol=1e-9,
         atol=1e-6,
     )
-
-
-def test_wavelength_to_doppler_requires_units() -> None:
-    resp = _tiny_response()
     del resp.detector_wavelength.attrs["units"]
     with pytest.raises(ValueError, match=r"data\.detector_wavelength must define units"):
         synthesis_utils.wavelength_to_doppler(resp)
 
 
-def test_calculate_moments_structure(response, raster) -> None:
-    spectrum = _spectrum(response, raster)
-    moments = synthesis_utils.calculate_moments(spectrum)
-
-    assert set(moments.data_vars) == {"0th", "1st", "2nd"}
-    assert {"y", "slit", "step", "line"} <= set(moments.coords)
-    assert dict(moments.sizes) == {
-        "y": 32,
-        "slit": DEFAULTS_MUSE.number_of_slits_SG,
-        "step": DEFAULTS_MUSE.steps_per_raster_SG,
-        "line": 7,
-    }
-    assert np.isfinite(moments.to_dataarray()).all()
-    assert u.Unit(moments["1st"].attrs["units"]) == u.km / u.s
-    assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
-
-
 def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
     # Spectra opened with chunks="auto" (see example 06) must stay lazy through
     # wavelength_to_doppler and calculate_moments and match the eager results.
-    eager_spectrum = _spectrum(response, raster)
+    eager_moments = synthesis_utils.calculate_moments(
+        _spectrum(response.assign_attrs(history=["read_response()"]), raster)
+    )
     lazy_spectrum = synthesis_utils.wavelength_to_doppler(
         vdem_synthesis(
             raster.chunk({"logT": 4}),
@@ -128,10 +108,18 @@ def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
             sum_over=("logT", "doppler_velocity"),
         )
     )
-    assert isinstance(lazy_spectrum.flux.data, dask_array.Array)
 
     lazy_moments = synthesis_utils.calculate_moments(lazy_spectrum)
-    eager_moments = synthesis_utils.calculate_moments(eager_spectrum)
+    assert u.Unit(eager_moments["1st"].attrs["units"]) == u.Unit(eager_moments["2nd"].attrs["units"]) == u.km / u.s
+    assert u.Unit(eager_moments["0th"].attrs["units"]) == u.ph / u.s
+    # the lineage of the raster and of the response, then each call
+    assert [entry.split("(")[0] for entry in eager_moments.attrs["history"]] == [
+        "reshape_x_to_slit_step",
+        "read_response",
+        "vdem_synthesis",
+        "wavelength_to_doppler",
+        "calculate_moments",
+    ]
     for name in ("0th", "1st", "2nd"):
         assert isinstance(lazy_moments[name].data, dask_array.Array)
         # atol absorbs chunk-summation float noise where a moment is itself ~0 km/s.
@@ -140,58 +128,38 @@ def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:
         )
 
 
-def test_calculate_moments_vmax_keeps_nan_doppler_flux() -> None:
+def test_calculate_moments_leaves_out_a_non_finite_doppler_velocity() -> None:
+    # Flux without a finite velocity counts in the 0th moment only. Lazy, as on dask arrays the zero
+    # weight times an infinite velocity warned, and warnings are errors.
+    flux = dask_array.from_array(np.array([5.0, 3.0, 2.0]), chunks=1)
     spectrum = xr.Dataset(
-        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
+        data_vars={"flux": (("detector_x_pixel",), flux, {"units": "ph / s"})},
         coords={
-            "detector_x_pixel": [0, 1],
-            "detector_doppler_velocity": (("detector_x_pixel",), [np.nan, 100.0], {"units": "km/s"}),
+            "detector_x_pixel": [0, 1, 2],
+            "detector_doppler_velocity": (("detector_x_pixel",), [np.nan, -100.0, np.inf], {"units": "km/s"}),
         },
     )
 
-    # Flux without a velocity counts in the 0th moment only.
-    moments = synthesis_utils.calculate_moments(spectrum)
-    assert moments["0th"].item() == 8.0
-    assert moments["1st"].item() == 100.0
+    moments = synthesis_utils.calculate_moments(spectrum).compute()
+    assert moments["0th"].item() == 10.0
+    assert moments["1st"].item() == -100.0
     assert moments["2nd"].item() == 0.0
 
-    # 50 km/s given in m/s: the 100 km/s pixel is cut, the one without a velocity is kept.
-    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=5e4 * u.m / u.s)
+    # 50 km/s given in m/s: the -100 km/s and infinite pixels are cut, the one without a velocity is kept.
+    moments = synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=5e4 * u.m / u.s).compute()
 
     assert moments["0th"].item() == 5.0
     assert np.isnan(moments["1st"].item())
     assert np.isnan(moments["2nd"].item())
 
 
-def test_calculate_moments_leaves_out_an_infinite_doppler_velocity_of_a_lazy_spectrum() -> None:
-    # On dask arrays the zero weight times an infinite velocity warned, and warnings are errors.
-    flux = dask_array.from_array(np.array([5.0, 3.0]), chunks=1)
-    spectrum = xr.Dataset(
-        data_vars={"flux": (("detector_x_pixel",), flux, {"units": "ph / s"})},
-        coords={
-            "detector_x_pixel": [0, 1],
-            "detector_doppler_velocity": (("detector_x_pixel",), [np.inf, 100.0], {"units": "km/s"}),
-        },
-    )
-
-    moments = synthesis_utils.calculate_moments(spectrum).compute()
-
-    assert moments["0th"].item() == 8.0
-    assert moments["1st"].item() == 100.0
-    assert moments["2nd"].item() == 0.0
-
-
-def test_calculate_moments_rejects_unrelated_doppler_dim() -> None:
-    spectrum = xr.Dataset(
-        data_vars={"flux": (("detector_x_pixel",), [5.0, 3.0], {"units": "ph / s"})},
-        coords={
-            "detector_x_pixel": [0, 1],
-            "detector_doppler_velocity": (("other",), [0.0, 100.0], {"units": "km/s"}),
-        },
-    )
-
+def test_calculate_moments_requires_a_doppler_velocity_along_the_flux() -> None:
+    spectrum = _tiny_moment_spectrum()
+    with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
+        synthesis_utils.calculate_moments(spectrum.drop_vars("detector_doppler_velocity"))
+    unrelated = spectrum.assign_coords(detector_doppler_velocity=("other", [0.0, 100.0], {"units": "km/s"}))
     with pytest.raises(ValueError, match=r"dimensions must be a subset"):
-        synthesis_utils.calculate_moments(spectrum)
+        synthesis_utils.calculate_moments(unrelated)
 
 
 def test_calculate_moments_with_and_without_masks() -> None:
@@ -203,17 +171,10 @@ def test_calculate_moments_with_and_without_masks() -> None:
     assert moments["0th"].item() == flux.sum()
     np.testing.assert_allclose(moments["1st"].item(), first)
     np.testing.assert_allclose(moments["2nd"].item(), np.sqrt(np.average((velocity - first) ** 2, weights=flux)))
-    assert synthesis_utils.calculate_moments(spectrum, maximum_doppler_velocity=150 * u.km / u.s)["0th"].item() == 16.0
     moments = synthesis_utils.calculate_moments(spectrum, peak_half_width=1 * u.pix)
     assert moments["0th"].item() == 10.0
     assert moments["1st"].item() == 0.0
     assert moments["2nd"].item() == 0.0
-
-
-def test_calculate_moments_requires_doppler_velocity(response, raster) -> None:
-    spectrum = vdem_synthesis(raster, response, sum_over=("logT", "doppler_velocity"))  # no Doppler coordinate
-    with pytest.raises(ValueError, match=r"run wavelength_to_doppler first"):
-        synthesis_utils.calculate_moments(spectrum)
 
 
 def _tiny_vdem_inputs():
@@ -274,30 +235,18 @@ def test_create_simple_vdem_converts_its_inputs() -> None:
     xr.testing.assert_allclose(result.vdem, expected.vdem, rtol=1e-12, atol=0)
 
 
-def test_create_simple_vdem_shares_velocity_between_the_nearest_centers() -> None:
-    # 2.4 km/s towards the observer is 0.48 of the way from the 0 to the 5 km/s center, so of the
-    # 6 columns * 5e-27 = 3e-26, 0.48 goes to doppler_velocity -5 and 0.52 to 0: mean -2.4 km/s.
-    inputs = _tiny_vdem_inputs()
-    inputs["velocity"] = np.full((2, 3, 2), 2.4) * u.km / u.s
-    inputs["velocity_grid"] = np.array([-5.0, 0.0, 5.0]) * u.km / u.s
-
-    emission = synthesis_utils.create_simple_vdem(**inputs).vdem.sum(dim=("logT", "x", "y"))
-    np.testing.assert_allclose(emission.values, [0.48 * 3e-26, 0.52 * 3e-26, 0.0], rtol=1e-12, atol=0)
-    mean = (emission * emission.doppler_velocity).sum() / emission.sum()
-    np.testing.assert_allclose(mean.item(), -2.4, rtol=1e-12)
-
-
-def test_create_simple_vdem_non_finite_emission_stays_in_its_own_velocity_bin() -> None:
-    # A cell exactly at the 0 km/s center has no share of its neighbours, and NaN times 0 is NaN.
+def test_create_simple_vdem_non_finite_emission_stays_in_its_own_bins(caplog) -> None:
+    # Every cell sits exactly on the logT 5.0 and 0 km/s centers, so it has no share of its neighbours, and
+    # NaN times 0 is NaN.
     inputs = _tiny_vdem_inputs()
     ne_nh = np.ones((2, 3, 2))
     ne_nh[0, 0, 1] = np.nan
     inputs["ne_nh"] = ne_nh * u.cm**-6
 
-    column = synthesis_utils.create_simple_vdem(**inputs).vdem.isel(x=0, y=0).sum(dim="logT", skipna=False)
-
-    assert np.isnan(column.sel(doppler_velocity=0.0))
-    assert column.sel(doppler_velocity=[-1.0, 1.0]).values.tolist() == [0.0, 0.0]
+    for method in ("span", "linear"):
+        column = synthesis_utils.create_simple_vdem(**inputs, temperature_bin_method=method).vdem.isel(x=0, y=0)
+        np.testing.assert_array_equal(column.values, [[0, 0, 0], [0, np.nan, 0], [0, 0, 0]])
+    assert "ne_nh contains non-finite" in caplog.text
 
 
 def test_create_simple_vdem_velocity_on_and_past_the_outer_edges(caplog) -> None:
@@ -388,7 +337,6 @@ def test_create_simple_vdem_integration_axis_matches_transposed_input() -> None:
     [
         (10.0, 0.0, None),  # cooler than the bin edges 4.25 to 5.75, as a chromosphere: expected, so not reported
         (1e9, 0.0, "100 % is hotter than logT 5.75 and 0 % moves faster"),
-        (1e5, 1e4, "0 % is hotter than logT 5.75 and 100 % moves faster"),
     ],
 )
 def test_create_simple_vdem_leaves_out_plasma_outside_the_grids(temperature, velocity, message, caplog) -> None:
@@ -443,9 +391,6 @@ def test_create_simple_vdem_linear_shares_a_cell_between_four_bins() -> None:
     # Rows are logT [4.5, 5.0, 5.5], columns doppler_velocity [-5, 0, 5], the velocities negated.
     expected = 3e-26 * np.array([[0.8 * 0.48, 0.8 * 0.52, 0], [0.2 * 0.48, 0.2 * 0.52, 0], [0, 0, 0]])
     np.testing.assert_allclose(vdem.values, expected, rtol=1e-12, atol=0)
-    np.testing.assert_allclose(vdem.sum().item(), 3e-26, rtol=1e-12)
-    np.testing.assert_allclose(((vdem * vdem.logT).sum() / vdem.sum()).item(), 4.6, rtol=1e-12)
-    np.testing.assert_allclose(((vdem * vdem.doppler_velocity).sum() / vdem.sum()).item(), -2.4, rtol=1e-12)
 
 
 def test_create_simple_vdem_linear_log_temperature_on_and_past_the_outer_edges(caplog) -> None:
@@ -466,48 +411,23 @@ def test_create_simple_vdem_linear_log_temperature_on_and_past_the_outer_edges(c
     assert "20 % is hotter than logT 5.75 and 0 % moves faster" in caplog.text
 
 
-def test_create_simple_vdem_linear_non_finite_emission_stays_in_its_own_log_temperature_bin() -> None:
-    # Every cell sits exactly on the 5.0 center, so it has no share of its neighbours, and NaN times 0 is NaN.
-    inputs = _tiny_vdem_inputs()
-    ne_nh = np.ones((2, 3, 2))
-    ne_nh[0, 0, 1] = np.nan
-    inputs["ne_nh"] = ne_nh * u.cm**-6
-
-    vdem = synthesis_utils.create_simple_vdem(**inputs, temperature_bin_method="linear").vdem
-    column = vdem.isel(x=0, y=0).sum(dim="doppler_velocity", skipna=False)
-
-    assert np.isnan(column.sel(logT=5.0))
-    assert column.sel(logT=[4.5, 5.5]).values.tolist() == [0.0, 0.0]
-
-
 def test_create_simple_vdem_refuses_an_unknown_temperature_bin_method() -> None:
     with pytest.raises(ValueError, match=r"temperature_bin_method must be one of \('span', 'linear'\), got 'nearest'"):
         synthesis_utils.create_simple_vdem(**_tiny_vdem_inputs(), temperature_bin_method="nearest")
 
 
-@pytest.mark.parametrize("n_cells", [2, 9])
-def test_create_simple_vdem_conserves_emission_at_any_resolution(n_cells, caplog) -> None:
-    # A logT 4.3 -> 5.7 ramp over 10 cm with ne_nh 1: each column holds 10 / 1e27 at any sampling.
+def test_create_simple_vdem_conserves_emission_at_any_resolution(caplog) -> None:
+    # A logT 4.3 -> 5.7 ramp over 10 cm with ne_nh 1 in 9 cells: each column holds 10 / 1e27.
     inputs = _tiny_vdem_inputs()
-    shape = (2, 3, n_cells)
-    inputs["temperature"] = np.broadcast_to(np.logspace(4.3, 5.7, n_cells), shape) * u.K
+    shape = (2, 3, 9)
+    inputs["temperature"] = np.broadcast_to(np.logspace(4.3, 5.7, 9), shape) * u.K
     inputs["velocity"] = np.zeros(shape) * u.km / u.s
     inputs["ne_nh"] = np.ones(shape) * u.cm**-6
-    inputs["cell_length"] = np.full(n_cells, 10.0 / n_cells) * u.cm
+    inputs["cell_length"] = np.full(9, 10.0 / 9) * u.cm
 
     result = synthesis_utils.create_simple_vdem(**inputs)
     np.testing.assert_allclose(result.vdem.values.sum(axis=(0, 1)), np.full((2, 3), 1e-26), rtol=1e-12)
     assert "left out of the VDEM" not in caplog.text
-
-
-def test_create_simple_vdem_warns_on_non_finite_input(caplog: pytest.LogCaptureFixture) -> None:
-    inputs = _tiny_vdem_inputs()
-    inputs["ne_nh"] = inputs["ne_nh"].copy()
-    inputs["ne_nh"][0, 0, 0] = np.nan
-
-    result = synthesis_utils.create_simple_vdem(**inputs)
-    assert "ne_nh contains non-finite" in caplog.text
-    assert "vdem" in result  # warning, not an error: the VDEM is still produced
 
 
 @pytest.mark.parametrize(

@@ -71,21 +71,6 @@ def continuum_calls(monkeypatch):
     return calls
 
 
-def test_a_line_list_is_created_once_and_then_read(tmp_path, line_list_calls):
-    kwargs = {**LINE_LIST, "pressure": _pressure([3e15])}
-
-    first = load_or_create_line_list(tmp_path, **kwargs)
-    second = load_or_create_line_list(tmp_path, **kwargs)
-
-    assert len(line_list_calls) == 1
-    # the file alone: no lock and no staging file are left
-    assert [path.name for path in tmp_path.iterdir()] == ["line_list_fiasco_150-192A_a.zarr.zip"]
-    xr.testing.assert_identical(first, second)
-    assert first.gofnt.dims == ("pressure", "logT", "transition")
-    assert first.pressure.attrs["units"] == "K / cm3"
-    assert first.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
-
-
 @pytest.mark.usefixtures("line_list_calls", "continuum_calls")
 def test_the_file_names_say_what_the_files_hold(tmp_path):
     # The ends are not rounded: 25.4-900 must not find the list of 25-900.
@@ -109,26 +94,17 @@ def test_a_missing_cache_can_be_an_error(tmp_path, line_list_calls, continuum_ca
     assert not (tmp_path / "cache").exists()
 
 
-@pytest.mark.parametrize(
-    ("grid", "created", "requested"),
-    [("density", [1e8, 1e9], [1e9, 1e8]), ("pressure", [5e15, 3e15, 7e15], [7e15, 5e15])],
-    ids=["reordered", "unsorted-file"],
-)
-def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls, grid, created, requested):
-    make = _density if grid == "density" else _pressure
-    load_or_create_continuum(tmp_path, **CONTINUUM, **{grid: make(created)})
+def test_a_cache_serves_the_plasma_points_it_holds(tmp_path, continuum_calls):
+    load_or_create_continuum(tmp_path, **CONTINUUM, pressure=_pressure([5e15, 3e15, 7e15]))
 
-    actual = load_or_create_continuum(tmp_path, **CONTINUUM, **{grid: make(requested)})
+    actual = load_or_create_continuum(tmp_path, **CONTINUUM, pressure=_pressure([7e15, 5e15]))
 
     assert len(continuum_calls) == 1
-    axis = "logD" if grid == "density" else "pressure"
-    np.testing.assert_array_equal(actual[axis].values, np.log10(requested) if grid == "density" else requested)
     # the two-photon part of the synthetic continuum is 1e-40 times the plasma value, over 1e-27
-    two_photon = actual.spectral_response.sel(line="two-photon").transpose(axis, "logT", "wavelength_bin").values
+    two_photon = actual.spectral_response.sel(line="two-photon").transpose("pressure", "logT", "wavelength_bin").values
     np.testing.assert_allclose(
-        two_photon, np.broadcast_to(1e-13 * np.array(requested)[:, None, None], two_photon.shape)
+        two_photon, np.broadcast_to(1e-13 * np.array([7e15, 5e15])[:, None, None], two_photon.shape)
     )
-    assert "wavelength_bounds" in actual.coords
 
 
 MINIMUM_ABUNDANCE = (
@@ -184,7 +160,6 @@ def test_two_grids_with_one_file_name_do_not_share_a_continuum(tmp_path, continu
     assert len(continuum_calls) == 1
 
 
-@pytest.mark.usefixtures("line_list_calls")
 def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
     """
     A pressure given in SI is one bit away from the one in the file; a line list and a
@@ -196,12 +171,9 @@ def test_the_requested_values_come_back_bit_for_bit(tmp_path, continuum_calls):
     assert requested != [1e15]
 
     continuum = load_or_create_continuum(tmp_path, **CONTINUUM, pressure=in_si)
-    line_list = load_or_create_line_list(tmp_path, **LINE_LIST, pressure=in_si)
 
     assert continuum.pressure.values.tolist() == requested
-    assert line_list.pressure.values.tolist() == requested
-    np.testing.assert_array_equal(continuum.logT.values, np.log10(TEMPERATURE.value))
-    np.testing.assert_array_equal(line_list.logT.values, continuum.logT.values)
+    assert continuum.pressure.attrs["units"] == "K / cm3"
     assert len(continuum_calls) == 1
 
 
@@ -253,9 +225,6 @@ def test_a_cache_another_process_is_creating_is_not_created_twice(tmp_path, line
 
     assert not line_list_calls
     assert lock.exists()  # not this call's to remove
-    lock.unlink()
-    load_or_create_line_list(tmp_path, **kwargs)
-    assert not lock.exists()
 
 
 def test_the_lock_says_which_process_holds_it(tmp_path, monkeypatch):

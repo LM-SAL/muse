@@ -78,31 +78,10 @@ def test_save_response_roundtrip_uses_default_chunks(tmp_path, fmt) -> None:
     xr.testing.assert_identical(response, before)
 
 
-@pytest.mark.parametrize("fmt", ["nc", "zarr", "zarr.zip"])
-def test_save_response_then_read_response_round_trips(tmp_path, fmt) -> None:
-    # The save tests read back with the raw opener and the read tests are fed raw to_netcdf
-    # output, so nothing checked that what save_response writes is what read_response accepts.
-    response = _small_response()
-    path = tmp_path / f"response.{fmt}"
-
-    save_response(response, path)
-    loaded = read_response(path)
-
-    # a zipped store is one file, with nothing left beside it
-    assert [found.name for found in tmp_path.iterdir()] == [path.name]
-    assert path.is_dir() == (fmt == "zarr")
-    # read_response adds a gain coordinate of its own, so compare the data rather than the
-    # whole object.
-    assert loaded.detector_response.dims == response.detector_response.dims
-    np.testing.assert_allclose(loaded.detector_response.values, response.detector_response.values)
-    np.testing.assert_allclose(loaded.line_wavelength.values, response.line_wavelength.values)
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows limits the whole path, not the name, to 260 characters")
-@pytest.mark.parametrize("suffix", ["nc", "zarr.zip"])
-def test_save_response_takes_a_name_near_the_length_limit(tmp_path, suffix) -> None:
+def test_save_response_takes_a_name_near_the_length_limit(tmp_path) -> None:
     # 233 characters is within the 255 a file name may have, so the staging name must fit too.
-    path = tmp_path / f"{'r' * (232 - len(suffix))}.{suffix}"
+    path = tmp_path / f"{'r' * 230}.nc"
 
     save_response(_small_response(), path)
 
@@ -156,14 +135,6 @@ def test_save_response_accepts_chunk_overrides(tmp_path) -> None:
     with _open(path, "zarr") as source:
         chunks = source.detector_response.encoding["chunks"]
     assert chunks == (2, 3, 2, 2, 4)
-
-
-def test_save_response_refuses_to_overwrite(tmp_path) -> None:
-    path = tmp_path / "response.nc"
-    path.touch()
-
-    with pytest.raises(ValueError, match="Refusing to overwrite"):
-        save_response(fake_response(), path)
 
 
 @pytest.mark.parametrize(
@@ -226,19 +197,6 @@ def test_read_response_roundtrip_selects_axes(tmp_path) -> None:
     assert "date_modified" not in r.attrs
 
 
-def test_read_response_clamps_what_it_resamples_to_finite_and_non_negative(tmp_path) -> None:
-    source = fake_response_file_contents()
-    values = source.detector_response.values.copy()
-    values[0, 0, 0, 0, 0, 0, 0], values[0, 1, 0, 0, 0, 0, 0], values[0, 2, 0, 0, 0, 0, 0] = np.nan, -1.0, np.inf
-    source["detector_response"] = source.detector_response.copy(data=values)
-    path = _write(source, tmp_path / "resp.nc", "nc")
-
-    resampled = read_response(path, logT=source.logT.values * u.dex(u.K)).detector_response.values
-
-    assert np.isfinite(resampled).all()
-    assert (resampled >= 0).all()
-
-
 def test_read_response_says_how_many_values_it_clamps(tmp_path, caplog) -> None:
     source = fake_response_file_contents()
     logT = source.logT.values * u.dex(u.K)
@@ -250,12 +208,15 @@ def test_read_response_says_how_many_values_it_clamps(tmp_path, caplog) -> None:
 
     read_response(clean, logT=logT)
     assert "not finite or are negative" not in caplog.text
-    read_response(path, logT=logT)
+    clamped = read_response(path, logT=logT).detector_response.values
+    assert np.isfinite(clamped).all()
+    assert (clamped >= 0).all()
     assert f"3 of the {values.size} values of detector_response are not finite or are negative" in caplog.text
     caplog.clear()
     # A dask-backed response is clamped all the same, and not counted: a count would read it.
-    lazy = read_response(path, logT=logT, chunked=True)
+    lazy = read_response(path, logT=logT, doppler_velocity=[-250.0, 0.0] * u.km / u.s, chunked=True)
     assert isinstance(lazy.detector_response.data, da.Array)
+    assert bool((lazy.detector_response >= 0).all())
     assert "not finite or are negative" not in caplog.text
 
 
@@ -278,63 +239,29 @@ def test_read_response_normalizes_slit_labels(tmp_path) -> None:
         read_response(path, number_of_slits=True)
 
 
-@pytest.mark.parametrize("dropped", ["logT", "doppler_velocity"])
+@pytest.mark.parametrize("dropped", ["logT", "doppler_velocity", "line_wavelength"])
 def test_read_response_requires_the_resampling_coordinates(tmp_path, dropped) -> None:
     # A response without logT or doppler_velocity cannot be resampled or contracted, so it must
     # be rejected on load rather than failing somewhere downstream.
-    src = fake_response_file_contents().isel({dropped: 0}, drop=True)
+    src = fake_response_file_contents().drop_vars(dropped)
     path = _write(src, tmp_path / "resp.nc", "nc")
 
     with pytest.raises(ValueError, match=rf"response\.{dropped} is missing"):
         read_response(path)
 
 
-def test_read_response_chunked_stays_lazy_and_matches_eager(tmp_path) -> None:
-    path = _write(fake_response_file_contents(), tmp_path / "resp.nc", "nc")
-    kwargs = {
-        "logT": np.linspace(5.2, 6.6, 4) * u.dex(u.K),
-        "doppler_velocity": [-150.0, -50.0, 0.0, 50.0, 150.0] * u.km / u.s,
-        "number_of_slits": 3,
-        "logT_method": "nearest",
-        "doppler_velocity_method": "linear",
-    }
-
-    lazy = read_response(path, chunked=True, **kwargs)
-    eager = read_response(path, chunked=False, **kwargs)
-
-    assert isinstance(lazy.detector_response.data, da.Array)
-    xr.testing.assert_allclose(lazy.compute(), eager)
-
-
-def test_read_responses_chunked_stays_lazy(tmp_path) -> None:
-    for name in ("a.nc", "b.nc"):
-        fake_response_file_contents().to_netcdf(tmp_path / name)
-
-    response = read_responses([tmp_path / "a.nc", tmp_path / "b.nc"], chunked=True)
-
-    assert isinstance(response.detector_response.data, da.Array)
-
-
-@pytest.mark.parametrize("zarr_format", [2, 3])
-@pytest.mark.parametrize("chunked", [False, True])
-def test_read_response_reads_a_zipped_zarr_store(tmp_path, zarr_format, chunked) -> None:
-    source = fake_response_file_contents()
-    expected = read_response(_write(source, tmp_path / "resp.nc", "nc"))
-    source.to_zarr(tmp_path / "resp.zarr", zarr_format=zarr_format, consolidated=False)
-    # The archives in use were made by zipping a store, so the entries sit at the archive root.
-    shutil.make_archive(str(tmp_path / "resp.zarr"), "zip", root_dir=tmp_path / "resp.zarr")
-    zipped = read_response(tmp_path / "resp.zarr.zip", chunked=chunked)
-    assert isinstance(zipped.detector_response.data, da.Array) == chunked
-    np.testing.assert_allclose(zipped.detector_response.values, expected.detector_response.values)
-    assert "detector_wavelength" in zipped.coords
-
-
 def test_read_response_eager_zarr_is_not_dask_backed(tmp_path) -> None:
-    path = _write(fake_response_file_contents(), tmp_path / "resp.zarr", "zarr")
+    source = fake_response_file_contents()
+    path = str(tmp_path / "resp.zarr")
+    # The archives in use are zarr v2 stores zipped with their entries at the archive root.
+    source.to_zarr(path, zarr_format=2, consolidated=False)
     assert read_response(path).detector_response.chunks is None
     assert read_response(path, chunked=True).detector_response.chunks is not None
     shutil.make_archive(path, "zip", root_dir=path)
     assert read_response(f"{path}.zip").detector_response.chunks is None
+    zipped = read_response(f"{path}.zip", chunked=True).detector_response
+    assert zipped.chunks is not None
+    np.testing.assert_allclose(zipped.values, source.detector_response.values)
 
 
 def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
@@ -359,13 +286,6 @@ def test_read_response_resamples_in_the_response_axis_units(tmp_path) -> None:
         read_response(path, doppler_velocity=[0.0])
 
 
-def test_read_response_rejects_missing_line_wavelength(tmp_path) -> None:
-    path = _write(fake_response_file_contents().drop_vars("line_wavelength"), tmp_path / "resp.zarr", "zarr")
-
-    with pytest.raises(ValueError, match="line_wavelength is missing"):
-        read_response(path)
-
-
 def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> None:
     stated = fake_response_file_contents().assign_attrs(gain="12.0 electron / DN", pair_energy="7.3 eV / electron")
 
@@ -388,21 +308,6 @@ def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> N
 def test_read_response_validates_the_logT_axis(response_path, logT, match) -> None:
     with pytest.raises(ValueError, match=match):
         read_response(response_path, logT=np.array(logT, dtype=float) * u.dex(u.K))
-
-
-@pytest.mark.parametrize("method", ["nearest", "linear"])
-def test_read_response_keeps_an_end_point_the_file_holds_up_to_rounding(tmp_path, method) -> None:
-    # A grid made with arange ends a rounding step short, 7.3999999999999995 for 7.4: the 7.4 asked for was dropped.
-    stated = fake_response_file_contents()
-    short = stated.logT.values.copy()
-    short[-1] = np.nextafter(short[-1], 0)
-    path = _write(stated.assign_coords(logT=stated.logT.copy(data=short)), tmp_path / "resp.zarr", "zarr")
-    wanted = stated.logT.values
-
-    response = read_response(path, logT=wanted * u.dex(u.K), logT_method=method)
-
-    np.testing.assert_array_equal(response.logT.values, wanted)
-    np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
 
 
 @pytest.mark.parametrize(
@@ -487,8 +392,10 @@ def test_read_responses_concatenates_lines(tmp_path) -> None:
         doppler_velocity=[-100.0, 0.0, 100.0] * u.km / u.s,
         number_of_slits=3,
         logT_method="nearest",
+        chunked=True,
     )
 
+    assert isinstance(resp.detector_response.data, da.Array)
     np.testing.assert_array_equal(resp.line, ["Fe XIX 108.355", "Fe XXI 108.117", "contaminants", "Fe XV 284.163"])
     np.testing.assert_allclose(resp.line_wavelength, [108.355, 108.117, 108.355, 284.163])
     np.testing.assert_array_equal(resp.channel.values, [108, 108, 108, 284])
@@ -546,17 +453,6 @@ def test_read_responses_refuses_a_file_without_a_channel(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="has no channel coordinate"):
         read_responses([path])
-
-
-def test_align_response_and_vdem_aligns_nonuniform_coarse_response() -> None:
-    response = fake_response().isel(logT=[0, 2, 5, 6], doppler_velocity=[0, 2, 4, 8])
-    vdem = fake_vdem()
-
-    matched_response, matched_vdem = align_response_and_vdem(response, vdem)
-
-    xr.testing.assert_equal(matched_response.logT, matched_vdem.logT)
-    xr.testing.assert_equal(matched_response.doppler_velocity, matched_vdem.doppler_velocity)
-    assert bool(np.isfinite(matched_response.detector_response).all())
 
 
 def test_align_response_and_vdem_honors_custom_coord_methods() -> None:

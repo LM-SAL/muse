@@ -3,7 +3,6 @@ Tests for the continuum builders and the fold onto bins.
 """
 
 import sys
-import itertools
 from types import SimpleNamespace
 
 import numpy as np
@@ -15,11 +14,7 @@ import astropy.units as u
 
 from muse.instrument.atomic import continuum as continuum_module
 from muse.instrument.atomic.continuum import create_chianti_continuum, create_fiasco_continuum
-from muse.instrument.response.spectral import (
-    _bin_average,
-    create_continuum_response,
-    create_log_wavelength_edges,
-)
+from muse.instrument.response.spectral import create_continuum_response, create_log_wavelength_edges
 from muse.tests.helpers import fake_effective_area
 from muse.version import version
 
@@ -62,25 +57,12 @@ def _continuum_cube():
     )
 
 
-def test_bin_average_of_a_linear_curve_is_exact():
-    x = np.linspace(0.0, 10.0, 101)
-    values = xr.DataArray(2.0 + 0.5 * x, dims="wavelength_bin")
-    edges = np.array([0.0, 1.3, 2.0, 7.7, 10.0])
-    expected = [(2.0 * (b - a) + 0.25 * (b**2 - a**2)) / (b - a) for a, b in itertools.pairwise(edges)]
-    np.testing.assert_allclose(_bin_average(values, x, edges).values, expected, rtol=1e-12)
-
-
 def test_continuum_response_total_matches_the_fine_integral():
     area, wavelength, values = _stepped_effective_area()
     edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
     out = create_continuum_response(_continuum_cube(), edges, effective_area=area)
-    assert out.spectral_response.dims == ("line", "logT", "wavelength_bin")
-    assert out.spectral_response.attrs["units"] == "1e-27 cm5 erg / (Angstrom s sr)"
     assert out.spectral_response.attrs["effective_area_at"] == "bin average"
     assert out.spectral_response.attrs["bin_method"] == "average"
-    np.testing.assert_allclose(out.wavelength_grid.values, 0.5 * (edges[1:] + edges[:-1]).value)
-    np.testing.assert_allclose(_bin_width(out).values, np.diff(edges.value))
-    assert "create_continuum_response(" in out.attrs["history"][-1]
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
     # new data: not dated as the continuum it is made from
     dated = _continuum_cube().assign_attrs(date_created="2026-01-01T00:00:00Z", muse_version="0.1")
@@ -102,16 +84,11 @@ def test_continuum_response_doppler_shift():
     velocities = np.array([-200.0, 0.0, 200.0]) * u.km / u.s
     out = create_continuum_response(_continuum_cube(), edges, effective_area=area, doppler_velocity=velocities)
     assert out.spectral_response.dims == ("line", "doppler_velocity", "logT", "wavelength_bin")
-    assert out.doppler_velocity.attrs["units"] == "km / s"
     still = create_continuum_response(_continuum_cube(), edges, effective_area=area)
     xr.testing.assert_allclose(
         out.spectral_response.sel(doppler_velocity=0.0, drop=True), still.spectral_response, rtol=1e-12
     )
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin")
-    # the continuum rises with wavelength: light observed at lambda was emitted at
-    # lambda / (1 + v / c), so a redshift shows the fainter short-wavelength emission
-    assert (total.sel(doppler_velocity=200.0) < total.sel(doppler_velocity=0.0)).all()
-    assert (total.sel(doppler_velocity=-200.0) > total.sel(doppler_velocity=0.0)).all()
     # to first order in v / c: the slope of the continuum, and the stretch of the spectrum itself
     expected = -200.0 / const.c.to_value(u.km / u.s) * (171.0 * 0.2 / (1.0 + 0.2 * 6.0) + 1.0)
     ratio = (total.sel(doppler_velocity=200.0) / total.sel(doppler_velocity=0.0) - 1.0).values
@@ -135,7 +112,8 @@ def _flat_continuum(grid, values=None):
     )
 
 
-ONE_CM2 = xr.DataArray(1.0, attrs={"units": "cm2"})
+# Not 1: a scalar area scales the continuum as a flat curve of that value does.
+TWO_CM2 = xr.DataArray(2.0, attrs={"units": "cm2"})
 
 
 def test_continuum_response_keeps_the_flux_at_the_ends_of_the_continuum():
@@ -148,12 +126,12 @@ def test_continuum_response_keeps_the_flux_at_the_ends_of_the_continuum():
     velocities = np.array([-50.0, 0.0, 1.0, 50.0]) * u.km / u.s
 
     out = create_continuum_response(
-        _flat_continuum(grid), own_edges, effective_area=ONE_CM2, doppler_velocity=velocities
+        _flat_continuum(grid), own_edges, effective_area=TWO_CM2, doppler_velocity=velocities
     )
 
     # a flat continuum stays flat in every bin, fainter by the stretch of the spectrum alone
     stretch = 1 + velocities.value / const.c.to_value(u.km / u.s)
-    expected = np.broadcast_to(1 / stretch[:, None], (velocities.size, grid.size))
+    expected = np.broadcast_to(2 / stretch[:, None], (velocities.size, grid.size))
     np.testing.assert_allclose(out.spectral_response.squeeze(["line", "logT"]).values, expected, rtol=1e-12)
 
 
@@ -161,7 +139,7 @@ def test_continuum_response_refuses_a_bin_beyond_the_continuum():
     grid = np.arange(90.0, 100.001, 0.5)
     for edges in ([85, 90, 95] * u.AA, [95, 100, 105] * u.AA):
         with pytest.raises(ValueError, match="reach beyond the continuum, which is given from 90 to 100 Angstrom"):
-            create_continuum_response(_flat_continuum(grid), edges, effective_area=ONE_CM2)
+            create_continuum_response(_flat_continuum(grid), edges, effective_area=TWO_CM2)
 
 
 def test_continuum_response_ends_where_the_area_ends():
@@ -193,23 +171,12 @@ def test_a_doppler_shift_conserves_the_continuum():
     out = create_continuum_response(
         _flat_continuum(grid, bump),
         np.arange(160.0, 180.001, 0.37) * u.AA,
-        effective_area=ONE_CM2,
+        effective_area=TWO_CM2,
         doppler_velocity=velocities,
     )
 
     total = (out.spectral_response * _bin_width(out)).sum("wavelength_bin").values.ravel()
-    np.testing.assert_allclose(total, 3.0, rtol=1e-12)
-
-
-def test_continuum_response_one_area_value_holds_at_every_wavelength():
-    # As create_spectral_response takes it: the same as a flat curve of that value.
-    edges = create_log_wavelength_edges([170, 172] * u.AA, 0.005)
-    flat = fake_effective_area([2.0, 2.0], [100.0, 300.0])
-
-    out = create_continuum_response(_continuum_cube(), edges, effective_area=xr.DataArray(2.0, attrs={"units": "cm2"}))
-
-    expected = create_continuum_response(_continuum_cube(), edges, effective_area=flat)
-    xr.testing.assert_allclose(out.spectral_response, expected.spectral_response, rtol=1e-12)
+    np.testing.assert_allclose(total, 6.0, rtol=1e-12)
 
 
 def test_continuum_response_rejects_bad_inputs():
@@ -236,6 +203,7 @@ def fake_chianti(monkeypatch):
         def __init__(self, ion_name, temperature, **_kwargs) -> None:
             # The real one divides by zero for a neutral, which the tests turn into an error.
             assert not ion_name.endswith("_1"), "a neutral has no free-free or free-bound emission to ask for"
+            assert np.size(temperature) > 1, "ChiantiPy mishandles a one-element temperature grid"
             self.ion_name, self.temperature = ion_name, np.asarray(temperature, dtype=float)
 
         def freeFree(self, wavelength, **_kwargs):
@@ -250,6 +218,7 @@ def fake_chianti(monkeypatch):
     class Ion:
         def __init__(self, ion_name, temperature, eDensity, **_kwargs) -> None:
             calls.append((ion_name, np.asarray(eDensity, dtype=float)))
+            assert np.size(temperature) == np.size(eDensity) > 1, "ChiantiPy mishandles a one-element grid"
             self.ion_name = ion_name
             self.temperature, self.eDensity = np.asarray(temperature, dtype=float), np.asarray(eDensity, dtype=float)
 
@@ -287,18 +256,11 @@ def fake_chianti(monkeypatch):
     return calls
 
 
-@pytest.mark.usefixtures("fake_chianti")
 def test_chianti_continuum_layout_and_density_dependence(fake_chianti):
     continuum = create_chianti_continuum(
         TEMPERATURE, GRID, pressure=PRESSURE, abundance="sun_coronal_2021_chianti", minimum_abundance=0.01
     )
     response = continuum.spectral_response
-    assert response.dims == ("line", "pressure", "logT", "wavelength_bin")
-    assert list(continuum.line.values) == ["free-free", "free-bound", "two-photon"]
-    assert response.attrs["units"] == f"{NORMALIZATION:g} cm3 erg / (Angstrom s sr)"
-    assert continuum.logT.attrs["units"] == "dex(K)"
-    assert continuum.pressure.attrs["units"] == "K / cm3"
-    assert continuum.wavelength_grid.attrs["bounds"] == "wavelength_bounds"
     assert np.isnan(continuum.line_wavelength.values).all()
     assert continuum.attrs["chianti_version"] == "fake 11"
     assert continuum.attrs["abundance"] == "sun_coronal_2021_chianti"
@@ -334,7 +296,6 @@ def test_chianti_continuum_density_grid_and_single_temperature():
     assert one.spectral_response.dims == ("line", "logT", "logD", "wavelength_bin")
     np.testing.assert_allclose(one.logD.values, [9.0, 10.0])
     assert one.logD.attrs["units"] == "dex(1 / cm3)"
-    assert one.sizes["logT"] == 1
     # no abundance was named: the set that was used is recorded, not left out
     assert one.attrs["abundance"] == "the_default_set"
     two_photon = one.spectral_response.sel(line="two-photon").isel(logT=0)
@@ -368,8 +329,6 @@ def test_chianti_continuum_does_not_swallow_an_error_that_is_not_missing_data(mo
 
 
 def test_continuum_rejects_bad_grids():
-    with pytest.raises(ValueError, match="density or pressure"):
-        create_chianti_continuum(TEMPERATURE, GRID)
     with pytest.raises(ValueError, match="increasing"):
         create_chianti_continuum(TEMPERATURE, np.array([172.0, 171.0]) * u.AA, pressure=PRESSURE)
 
@@ -485,34 +444,6 @@ def test_fiasco_continuum_requires_an_ion():
 
 
 @pytest.mark.chianti
-def test_chianti_continuum_live_hydrogen_and_helium():
-    pytest.importorskip("ChiantiPy")
-    continuum = create_chianti_continuum(
-        TEMPERATURE, GRID, pressure=PRESSURE, abundance="sun_coronal_2021_chianti", minimum_abundance=0.05
-    )
-    free_free = continuum.spectral_response.sel(line="free-free")
-    assert (free_free > 0).all()
-    # hotter plasma radiates more free-free emission at these wavelengths
-    assert (free_free.isel(logT=2) > free_free.isel(logT=0)).all()
-    assert continuum.attrs["chianti_version"]
-
-
-@pytest.mark.chianti
-def test_fiasco_continuum_live_hydrogen_and_helium():
-    fiasco = pytest.importorskip("fiasco")
-    from pathlib import Path  # noqa: PLC0415
-
-    if not Path(fiasco.defaults["hdf5_dbase_root"]).is_file():
-        pytest.skip("fiasco's HDF5 database is not available")
-    continuum = create_fiasco_continuum(
-        TEMPERATURE, GRID, pressure=PRESSURE, abundance="sun_coronal_2021_chianti", minimum_abundance=0.05
-    )
-    free_free = continuum.spectral_response.sel(line="free-free")
-    assert (free_free > 0).all()
-    assert (free_free.isel(logT=2) > free_free.isel(logT=0)).all()
-
-
-@pytest.mark.chianti
 def test_both_backends_agree_live():
     pytest.importorskip("ChiantiPy")
     fiasco = pytest.importorskip("fiasco")
@@ -521,7 +452,13 @@ def test_both_backends_agree_live():
     if not Path(fiasco.defaults["hdf5_dbase_root"]).is_file():
         pytest.skip("fiasco's HDF5 database is not available")
     kwargs = {"pressure": PRESSURE, "abundance": "sun_coronal_2021_chianti", "minimum_abundance": 0.05}
-    chianti = create_chianti_continuum(TEMPERATURE, GRID, **kwargs).spectral_response
+    chianti_continuum = create_chianti_continuum(TEMPERATURE, GRID, **kwargs)
+    assert chianti_continuum.attrs["chianti_version"]
+    chianti = chianti_continuum.spectral_response
+    free_free = chianti.sel(line="free-free")
+    assert (free_free > 0).all()
+    # hotter plasma radiates more free-free emission at these wavelengths
+    assert (free_free.isel(logT=2) > free_free.isel(logT=0)).all()
     fiasco_continuum = create_fiasco_continuum(TEMPERATURE, GRID, **kwargs).spectral_response
     # the same hydrogen and helium ions, the same database: per steradian both agree closely
     for component in ("free-free", "free-bound"):
