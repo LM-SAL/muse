@@ -31,7 +31,6 @@ def test_resolve_backend_without_psutil_points_at_the_extra(monkeypatch) -> None
 
 def test_resolve_device_resolves_a_name_and_auto() -> None:
     torch = pytest.importorskip("torch")
-    # Can fail only where CUDA or MPS exists, which "auto" would pick instead.
-    assert _resolve_device("cpu") == torch.device("cpu")
+    assert _resolve_device("meta") == torch.device("meta")
     # "auto" gives a device on every machine; which one depends on the hardware.
     assert isinstance(_resolve_device("auto"), torch.device)

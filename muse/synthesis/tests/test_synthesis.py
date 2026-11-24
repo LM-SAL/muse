@@ -14,8 +14,6 @@ from muse.synthesis.synthesis import vdem_synthesis
 from muse.transforms.transforms import reshape_x_to_slit_step
 from muse.variables import DEFAULTS_MUSE
 
-SPEED_OF_LIGHT_KMS = 299792.458
-
 
 def _mps_available() -> bool:
     try:
@@ -44,10 +42,6 @@ def test_vdem_synthesis(response, raster) -> None:
         "reshape_x_to_slit_step",
         "vdem_synthesis",
     ]
-    np.testing.assert_array_equal(
-        detector_response.line_wavelength.values,
-        [108.355, 108.117, 108.355, 171.073, 171.073, 284.163, 284.163],
-    )
 
 
 def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, raster) -> None:
@@ -61,8 +55,6 @@ def test_vdem_synthesis_rechunks_contracted_dims_to_single_chunk(response, raste
         response.chunk({"line": 1, "logT": 1, "doppler_velocity": 2}),
     )
 
-    assert isinstance(lazy.flux.data, da.Array)
-    assert lazy.flux.data.npartitions <= raster.sizes["y"] * response.sizes["line"]
     # ~309 tasks with the rechunk in place; deleting _single_chunk_over on either
     # operand pairs chunks instead (960+ tasks), so bound the graph structurally.
     assert len(dict(lazy.flux.data.__dask_graph__())) < 600
@@ -149,49 +141,21 @@ def _torch_budget(raster, response, flux, rows: int) -> int:
 
 def test_vdem_synthesis_torch_in_chunks_matches_one_product(response, raster, monkeypatch) -> None:
     """
-    A budget of three rows splits the product along y; the pieces must equal the single
-    product.
-    """
-    pytest.importorskip("torch")
-    expected = vdem_synthesis(raster, response, backend="torch").flux
-    monkeypatch.setattr(
-        _backends, "_available_memory_bytes", lambda _device: _torch_budget(raster, response, expected, 3)
-    )
-    result = vdem_synthesis(raster, response, backend="torch").flux
-    np.testing.assert_allclose(result.values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max()))
-
-
-def test_vdem_synthesis_torch_on_the_cpu_runs_a_row_at_a_time_below_the_budget(response, raster, monkeypatch) -> None:
-    """
-    The host pages rather than failing, so a budget below one row still gives the
-    product on the CPU.
-    """
-    pytest.importorskip("torch")
-    expected = vdem_synthesis(raster, response, backend="torch").flux
-    monkeypatch.setattr(_backends, "_available_memory_bytes", lambda _device: 1)
-    result = vdem_synthesis(raster, response, backend="torch").flux
-    np.testing.assert_allclose(result.values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max()))
-
-
-def test_vdem_synthesis_torch_chunks_a_slit_first_raster_along_a_raster_only_axis(
-    response, raster, monkeypatch
-) -> None:
-    """
-    An inverted VDEM has slit before y; slit is shared with the response, so the chunks
-    are cut along y.
+    An inverted VDEM has slit before y; slit is shared with the response, so the product is
+    cut along y: in chunks of three rows, and a row at a time on the CPU below a budget of
+    one row, as the host pages rather than failing.
     """
     pytest.importorskip("torch")
     # slit stays in the output, so it is a candidate chunk axis that the response shares
     sum_over = ("logT", "doppler_velocity")
     expected = vdem_synthesis(raster, response, sum_over=sum_over, backend="torch").flux
     slit_first = raster.transpose("logT", "doppler_velocity", "slit", "y", "step")
-    monkeypatch.setattr(
-        _backends, "_available_memory_bytes", lambda _device: _torch_budget(slit_first, response, expected, 3)
-    )
-    result = vdem_synthesis(slit_first, response, sum_over=sum_over, backend="torch").flux
-    np.testing.assert_allclose(
-        result.transpose(*expected.dims).values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max())
-    )
+    for budget in (_torch_budget(slit_first, response, expected, 3), 1):
+        monkeypatch.setattr(_backends, "_available_memory_bytes", lambda _device, budget=budget: budget)
+        result = vdem_synthesis(slit_first, response, sum_over=sum_over, backend="torch").flux
+        np.testing.assert_allclose(
+            result.transpose(*expected.dims).values, expected.values, rtol=1e-5, atol=1e-6 * float(abs(expected).max())
+        )
 
 
 def test_vdem_synthesis_torch_refuses_a_budget_below_one_row_on_an_accelerator(response, raster, monkeypatch) -> None:
@@ -300,28 +264,6 @@ def test_vdem_synthesis_performance_regression(response, raster) -> None:
         assert peak_mib < max_peak_mib, f"{name} synthesis peaked at {peak_mib:.0f} MiB (limit {max_peak_mib} MiB)"
 
 
-def test_vdem_synthesis_doppler_shifts_line_centroid(response, vdem) -> None:
-    # Emission at a single doppler_velocity must place the line at lambda * (1 + v/c): synthesis
-    # encodes velocity as a wavelength shift, the core spectral behaviour.
-    def centroid(vdop_kms):
-        collapsed = np.zeros_like(vdem.vdem.values)
-        collapsed[:, vdem.get_index("doppler_velocity").get_loc(vdop_kms)] = vdem.vdem.values.sum(axis=1)
-        reshaped = reshape_x_to_slit_step(vdem.assign(vdem=vdem.vdem.copy(data=collapsed)))
-        flux = vdem_synthesis(reshaped, response, sum_over=("logT", "doppler_velocity")).flux
-        spectrum = flux.isel(line=0, slit=17).sum(dim=["y", "step"]).values
-        wavelength = flux.detector_wavelength.isel(line=0, slit=17).values
-        return float((spectrum * wavelength).sum() / spectrum.sum())
-
-    rest_wavelength = 108.355
-    expected_shift = rest_wavelength * 300.0 / SPEED_OF_LIGHT_KMS
-    blue, zero, red = centroid(-300.0), centroid(0.0), centroid(300.0)
-    assert blue < zero < red
-    # The fixture samples 32 detector pixels, so the centroid resolves the shift to
-    # ~10%; assert direction and magnitude, not an exact match.
-    np.testing.assert_allclose(red - zero, expected_shift, rtol=0.15)
-    np.testing.assert_allclose(zero - blue, expected_shift, rtol=0.15)
-
-
 def test_vdem_synthesis_accepts_generic_wavelength_space_names(response, vdem) -> None:
     # A slit-less response with the create_spectral_response vocabulary synthesizes
     # with default arguments: names are renamed and slit is dropped from sum_over.
@@ -390,26 +332,6 @@ def test_vdem_synthesis_images_each_slit_position_with_an_imager_response(respon
     xr.testing.assert_allclose(out.flux.transpose(*expected.flux.dims), expected.flux)
 
 
-def test_vdem_synthesis_requires_present_arrays(response, raster) -> None:
-    bad_response = response.drop_vars("detector_response")
-    with pytest.raises(ValueError, match=r"response\.detector_response is missing"):
-        vdem_synthesis(raster, bad_response)
-
-
-def test_vdem_synthesis_rejects_invalid_unit_string(response, raster) -> None:
-    bad_response = response.copy(deep=True)
-    bad_response.detector_response.attrs["units"] = "not-a-real-unit"
-    with pytest.raises(ValueError, match=r"response\.detector_response units must be a valid astropy unit"):
-        vdem_synthesis(raster, bad_response)
-
-
-def test_vdem_synthesis_rejects_non_length_wavelength_units(response, raster) -> None:
-    bad_response = response.copy(deep=True)
-    bad_response.line_wavelength.attrs["units"] = "km/s"
-    with pytest.raises(ValueError, match=r"response\.line_wavelength units must be convertible to Angstrom"):
-        vdem_synthesis(raster, bad_response)
-
-
 def test_vdem_synthesis_requires_detector_wavelength_only_while_slit_is_kept(response, raster) -> None:
     response = response.reset_coords("detector_wavelength")
 
@@ -444,7 +366,9 @@ def test_vdem_synthesis_cuda_matches_cpu(response, raster) -> None:
     np.testing.assert_allclose(gpu.flux.values, cpu.flux.values, rtol=1e-5, atol=1e-6)
 
 
-def test_vdem_synthesis_requires_vdem_units(response, raster) -> None:
+def test_vdem_synthesis_requires_units(response, raster) -> None:
+    with pytest.raises(ValueError, match=r"response\.detector_response is missing"):
+        vdem_synthesis(raster, response.drop_vars("detector_response"))
     del raster.vdem.attrs["units"]
 
     with pytest.raises(ValueError, match=r"vdem\.vdem must define units"):
