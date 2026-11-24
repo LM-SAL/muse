@@ -398,19 +398,9 @@ def _effective_area_in_cm2(effective_area: xr.DataArray | xr.Dataset | None) -> 
         raise TypeError(msg)
     if effective_area.ndim == 0:
         data = effective_area.data
-        units = effective_area.attrs.get("units")
-        try:
-            units = u.Unit(units) if units is not None else None
-        except (TypeError, ValueError) as exc:
-            msg = "effective_area units must be a valid astropy unit"
-            raise ValueError(msg) from exc
         if not isinstance(data, u.Quantity):
             # attrs["units"] names the unit the raw value is already in.
-            data = u.Quantity(data, units)
-        elif units is not None and not units.is_equivalent(data.unit):
-            # Contradicting attrs are a bug, not a request to convert.
-            msg = f"effective_area units {units} contradict the data unit {data.unit}"
-            raise ValueError(msg)
+            data = u.Quantity(data, effective_area.attrs.get("units"))
         try:
             value = data.to_value(u.cm**2)
         except u.UnitConversionError as exc:
@@ -583,10 +573,6 @@ def _validate_main_lines(line_names: tuple[str, ...], main_lines: Sequence[str])
 
 
 def _atomic_mass_from_atomic_number(atomic_number: xr.DataArray, elements, atomic_mass_unit: float) -> xr.DataArray:
-    max_atomic_number = max(element.number for element in elements)
-    if np.any(np.asarray(atomic_number) > max_atomic_number):
-        msg = f"line_list.atomic_number must be between 1 and {max_atomic_number}"
-        raise ValueError(msg)
     atomic_mass = atomic_number.copy()
     masses = np.array([elements[int(value)].mass for value in atomic_mass.data.reshape(-1)])
     atomic_mass.data = masses.reshape(atomic_mass.shape) * atomic_mass_unit

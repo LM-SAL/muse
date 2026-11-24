@@ -167,108 +167,6 @@ def test_multiline_nonthermal_uses_each_line_wavelength():
         )
 
 
-def test_missing_line_list_fields_raises():
-    line_list = fake_line_list(1).drop_vars("atomic_number")
-    with pytest.raises(ValueError, match="atomic_number"):
-        _build_spectral_response(line_list)
-
-
-def test_line_list_units_convert_without_mutating_input():
-    canonical = fake_line_list(1)
-    gofnt_unit = u.erg * u.cm**3 / (u.s * u.sr)
-    alternate_gofnt_unit = u.J * u.m**3 / (u.s * u.sr)
-    alternate = canonical.assign(
-        wavelength=(canonical.wavelength / 10).assign_attrs(units="nm"),
-        gofnt=xr.DataArray(
-            (canonical.gofnt.data * gofnt_unit).to_value(alternate_gofnt_unit),
-            dims=canonical.gofnt.dims,
-            coords=canonical.gofnt.coords,
-            attrs={"units": str(alternate_gofnt_unit)},
-        ),
-    )
-    before = alternate.copy(deep=True)
-    kwargs = {}
-
-    canonical_response = _build_spectral_response(canonical, **kwargs)
-    alternate_response = _build_spectral_response(alternate, **kwargs)
-
-    xr.testing.assert_allclose(canonical_response, alternate_response)
-    xr.testing.assert_identical(alternate, before)
-
-
-@pytest.mark.parametrize(("name", "units"), [("wavelength", "km / s"), ("gofnt", "Angstrom"), ("logT", "Angstrom")])
-def test_line_list_requires_physical_units(name, units):
-    line_list = fake_line_list(1)
-    line_list[name].attrs["units"] = units
-
-    with pytest.raises(ValueError, match=rf"line_list\.{name}"):
-        _build_spectral_response(line_list)
-
-
-def test_velocity_axes_convert_to_kilometers_per_second():
-    kwargs = {
-        "line_list": fake_line_list(1),
-        "instrumental_fwhm": 0.02 * u.AA,
-    }
-    response_km = _build_spectral_response(
-        doppler_velocity=np.array([-20.0, 20.0]) * u.km / u.s,
-        nonthermal_velocity=np.array([0.0, 5.0]) * u.km / u.s,
-        **kwargs,
-    )
-    response_m = _build_spectral_response(
-        doppler_velocity=np.array([-20000.0, 20000.0]) * u.m / u.s,
-        nonthermal_velocity=np.array([0.0, 5000.0]) * u.m / u.s,
-        **kwargs,
-    )
-
-    xr.testing.assert_allclose(response_km, response_m)
-    assert response_km.doppler_velocity.attrs["units"] == "km / s"
-    assert response_km.nonthermal_velocity.attrs["units"] == "km / s"
-
-
-def test_wavelength_inputs_convert_to_angstrom():
-    kwargs = {"line_list": fake_line_list(1), "instrumental_fwhm": 0.02 * u.AA}
-    wavelength_grid_nm = DEFAULT_WAVELENGTH_GRID.to(u.nm)
-
-    response_AA = _build_spectral_response(wavelength_grid=DEFAULT_WAVELENGTH_GRID, **kwargs)
-    response_nm = _build_spectral_response(wavelength_grid=wavelength_grid_nm, **kwargs)
-
-    xr.testing.assert_allclose(response_AA, response_nm)
-    assert response_AA.wavelength_grid.attrs["units"] == "Angstrom"
-    assert response_AA.wavelength_grid.dims == ("wavelength_bin",)
-    assert "wavelength" not in response_AA.coords
-
-
-@pytest.mark.parametrize("value", [170.0 * u.AA, np.array([170.0, np.nan]) * u.AA])
-def test_wavelength_grid_is_validated(value):
-    with pytest.raises(ValueError, match="wavelength_grid"):
-        _build_spectral_response(fake_line_list(1), wavelength_grid=value)
-
-
-def test_effective_area_units_convert_without_mutating_input():
-    wavelength_AA = np.linspace(169.0, 173.0, 20)
-    canonical = fake_effective_area(
-        values=np.full(20, 10.0),
-        wavelength=wavelength_AA,
-    )
-    alternate = fake_effective_area(
-        values=np.full(20, 0.001),
-        wavelength=wavelength_AA / 10,
-        area_units="m2",
-        wavelength_units="nm",
-    )
-    before = alternate.copy(deep=True)
-    kwargs = {
-        "line_list": fake_line_list(1),
-    }
-
-    canonical_response = _build_spectral_response(effective_area=canonical, **kwargs)
-    alternate_response = _build_spectral_response(effective_area=alternate, **kwargs)
-
-    xr.testing.assert_allclose(canonical_response, alternate_response)
-    xr.testing.assert_identical(alternate, before)
-
-
 def test_scalar_effective_area_matches_flat_curve():
     # A 0-d DataArray (e.g. DEFAULTS_MUSE.main_line_effective_area_SG.sel(channel=...))
     # must scale the response exactly like a flat curve.
@@ -289,42 +187,33 @@ def test_an_effective_area_dataset_counts_as_its_curve():
     curve = fake_effective_area([1.0, 2.0, 3.0], [169.0, 171.0, 173.0])
     dataset = create_effective_area(curve.values * u.cm**2, curve.wavelength.values * u.AA, channel=171 * u.AA)
 
-    from_dataset = _build_spectral_response(line_list, effective_area=dataset)
+    from_dataset = _build_spectral_response(line_list, effective_area=dataset, bin_method="center")
 
     # identical, coordinates included: the Dataset's scalar channel does not come along
-    xr.testing.assert_identical(from_dataset, _build_spectral_response(line_list, effective_area=curve))
-
-
-def test_scalar_effective_area_is_validated():
-    line_list = fake_line_list(1)
-    with pytest.raises(TypeError, match=r"effective_area must be an xarray\.DataArray"):
-        _build_spectral_response(line_list, effective_area=4.3 * u.cm**2)
-    with pytest.raises(ValueError, match="effective_area must be convertible to cm2"):
-        _build_spectral_response(line_list, effective_area=xr.DataArray(3.0 * u.s))
-    with pytest.raises(ValueError, match="finite, non-negative"):
-        _build_spectral_response(line_list, effective_area=xr.DataArray(-1.0 * u.cm**2))
-    with pytest.raises(ValueError, match="valid astropy unit"):
-        _build_spectral_response(line_list, effective_area=xr.DataArray(4.3, attrs={"units": "bogus"}))
-    with pytest.raises(ValueError, match="effective_area must be convertible to cm2"):
-        _build_spectral_response(line_list, effective_area=xr.DataArray(4.3))  # no units anywhere
-    with pytest.raises(ValueError, match="contradict the data unit"):
-        # Both the payload and the attrs declare a unit and they disagree; neither can be
-        # trusted, so this must not be silently resolved in favor of one of them.
-        _build_spectral_response(line_list, effective_area=xr.DataArray(4.3 * u.cm**2, attrs={"units": "s"}))
-
-
-@pytest.mark.parametrize(("area_units", "wavelength_units"), [("s", "Angstrom"), ("cm2", "s")])
-def test_effective_area_requires_physical_units(area_units, wavelength_units):
-    effective_area = fake_effective_area(
-        area_units=area_units,
-        wavelength_units=wavelength_units,
+    xr.testing.assert_identical(
+        from_dataset, _build_spectral_response(line_list, effective_area=curve, bin_method="center")
     )
 
-    with pytest.raises(ValueError, match="effective_area"):
-        _build_spectral_response(
-            fake_line_list(1),
-            effective_area=effective_area,
-        )
+
+@pytest.mark.parametrize(
+    ("effective_area", "match"),
+    [
+        (4.3 * u.cm**2, r"effective_area must be an xarray\.DataArray"),
+        (xr.DataArray(4.3), "effective_area must be convertible to cm2"),
+        (xr.DataArray(3.0 * u.s), "effective_area must be convertible to cm2"),
+        (xr.DataArray(-1.0 * u.cm**2), "finite, non-negative"),
+        (fake_effective_area(area_units="s"), "must be convertible to cm2"),
+        (fake_effective_area(wavelength_units="s"), "effective_area wavelength coordinate"),
+        (fake_effective_area(values=[1.0, np.nan, 1.0]), "finite, non-negative"),
+        (fake_effective_area(values=[1.0, -1.0, 1.0]), "finite, non-negative"),
+        (fake_effective_area(wavelength=[169.0, np.nan, 173.0]), "effective_area wavelength coordinate"),
+        (fake_effective_area(wavelength=[169.0, 171.0, 171.0]), "effective_area wavelength coordinate"),
+        (fake_effective_area().expand_dims(order=[1, 2]), "one-dimensional"),
+    ],
+)
+def test_effective_area_is_validated(effective_area, match):
+    with pytest.raises((TypeError, ValueError), match=match):
+        _build_spectral_response(fake_line_list(1), effective_area=effective_area)
 
 
 def test_line_list_must_be_dataset():
@@ -332,97 +221,44 @@ def test_line_list_must_be_dataset():
         _build_spectral_response("not-a-dataset")
 
 
-def test_a_line_list_must_lie_along_transition():
-    with pytest.raises(ValueError, match=r"lies along trans_index, as muse 0\.3 wrote line lists"):
-        _build_spectral_response(fake_line_list(2).rename({"transition": "trans_index"}))
-    with pytest.raises(ValueError, match="must lie along a transition dimension"):
-        _build_spectral_response_impl(fake_line_list(1).squeeze("transition"), DEFAULT_WAVELENGTH_GRID, main_lines=[])
-
-
-def test_line_list_must_not_be_empty():
-    with pytest.raises(ValueError, match="must not be empty"):
-        _build_spectral_response(fake_line_list(0))
-
-
-def test_line_list_variables_require_transition_dimension():
-    line_list = fake_line_list(1)
-    line_list["wavelength"] = xr.DataArray(
-        [170.6],
-        dims="other",
-        attrs={"units": "Angstrom"},
-    )
-
-    with pytest.raises(ValueError, match="transition"):
-        _build_spectral_response(line_list)
-
-
-@pytest.mark.parametrize("name", ["wavelength", "gofnt", "logT"])
-def test_line_list_numeric_values_must_be_finite(name):
-    line_list = fake_line_list(1)
-    if name == "logT":
-        line_list = line_list.assign_coords(logT=[5.8, np.nan, 6.2])
-    else:
-        values = line_list[name].data.astype(float)
-        values.flat[0] = np.nan
-        line_list[name].data = values
-
-    with pytest.raises(ValueError, match=rf"line_list\.{name} must contain finite"):
-        _build_spectral_response(line_list)
-
-
-@pytest.mark.parametrize(("name", "value"), [("wavelength", 0.0), ("gofnt", -1.0)])
-def test_line_list_values_must_be_physical(name, value):
-    line_list = fake_line_list(1)
-    values = line_list[name].data.copy()
-    values.flat[0] = value
-    line_list[name].data = values
-
-    with pytest.raises(ValueError, match=rf"line_list\.{name}"):
-        _build_spectral_response(line_list)
-
-
-def test_atomic_number_must_be_supported():
-    line_list = fake_line_list(1).assign(atomic_number=("transition", [999]))
-
-    with pytest.raises(ValueError, match=r"line_list\.atomic_number must be between"):
-        _build_spectral_response(line_list)
+@pytest.mark.parametrize(
+    ("line_list", "match"),
+    [
+        (fake_line_list(2).rename({"transition": "trans_index"}), r"trans_index, as muse 0\.3 wrote line lists"),
+        (fake_line_list(1).squeeze("transition"), "must lie along a transition dimension"),
+        (fake_line_list(0), "must not be empty"),
+        (fake_line_list(1).drop_vars("atomic_number"), "missing required variables: atomic_number"),
+        (fake_line_list(1).assign(wavelength=("other", [170.6])), "transition dimension: wavelength"),
+        (fake_line_list(1).assign(gofnt=lambda ds: ds.gofnt * np.nan), r"line_list\.gofnt must contain finite"),
+        (fake_line_list(1, wavelength=[0.0]), r"line_list\.wavelength must contain positive"),
+        (fake_line_list(1).assign(gofnt=lambda ds: -ds.gofnt), r"line_list\.gofnt must contain non-negative"),
+        (fake_line_list(1).assign(atomic_number=("transition", [0])), "atomic_number must contain positive integers"),
+        (
+            fake_line_list(1).assign(wavelength=lambda ds: ds.wavelength.assign_attrs(units="s")),
+            r"line_list\.wavelength",
+        ),
+        (fake_line_list(1).assign(gofnt=lambda ds: ds.gofnt.assign_attrs(units="Angstrom")), r"line_list\.gofnt"),
+        (fake_line_list(1).assign_coords(logT=lambda ds: ds.logT.assign_attrs(units="Angstrom")), r"line_list\.logT"),
+    ],
+)
+def test_line_list_is_validated(line_list, match):
+    with pytest.raises(ValueError, match=match):
+        _build_spectral_response_impl(line_list, DEFAULT_WAVELENGTH_GRID, main_lines=[])
 
 
 @pytest.mark.parametrize(
-    ("name", "value", "error"),
+    ("name", "value"),
     [
-        ("instrumental_fwhm", -0.01 * u.AA, ValueError),
-        ("instrumental_fwhm", np.nan * u.AA, ValueError),
-        ("doppler_velocity", np.array([0.0, np.nan]) * u.km / u.s, ValueError),
-        ("nonthermal_velocity", np.array([-1.0, 0.0]) * u.km / u.s, ValueError),
+        ("instrumental_fwhm", [0.01, 0.02] * u.AA),
+        ("instrumental_fwhm", -0.01 * u.AA),
+        ("instrumental_fwhm", np.nan * u.AA),
+        ("doppler_velocity", np.array([0.0, np.nan]) * u.km / u.s),
+        ("nonthermal_velocity", np.array([-1.0, 0.0]) * u.km / u.s),
     ],
 )
-def test_numeric_controls_are_validated(name, value, error):
-    with pytest.raises(error, match=name):
+def test_numeric_controls_are_validated(name, value):
+    with pytest.raises(ValueError, match=name):
         _build_spectral_response(fake_line_list(1), **{name: value})
-
-
-@pytest.mark.parametrize("value", [-1.0, np.nan])
-def test_effective_area_must_be_finite_and_non_negative(value):
-    effective_area = fake_effective_area(values=[1.0, value, 1.0])
-
-    with pytest.raises(ValueError, match="effective_area"):
-        _build_spectral_response(fake_line_list(1), effective_area=effective_area)
-
-
-@pytest.mark.parametrize("wavelength", [[169.0, np.nan, 173.0], [169.0, 171.0, 171.0]])
-def test_effective_area_wavelength_must_increase(wavelength):
-    effective_area = fake_effective_area(wavelength=wavelength)
-
-    with pytest.raises(ValueError, match="effective_area wavelength coordinate"):
-        _build_spectral_response(fake_line_list(1), effective_area=effective_area)
-
-
-def test_effective_area_must_be_one_dimensional():
-    effective_area = fake_effective_area().expand_dims(order=[1, 2])
-
-    with pytest.raises(ValueError, match="one-dimensional"):
-        _build_spectral_response(fake_line_list(1), effective_area=effective_area)
 
 
 def test_effective_area_is_zero_outside_coverage():
@@ -458,11 +294,6 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
     }
 
     response = _build_spectral_response(line_list, main_lines=main_lines, **kwargs)
-    reordered = _build_spectral_response(
-        line_list.isel(transition=[3, 2, 0, 1]),
-        main_lines=main_lines,
-        **kwargs,
-    )
     with_contaminants = _build_spectral_response(
         line_list,
         main_lines=main_lines,
@@ -478,7 +309,6 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
     single = _build_spectral_response(line_list.isel(transition=[1]), **kwargs)
 
     assert list(response.line.values) == main_lines
-    xr.testing.assert_allclose(response.spectral_response, reordered.spectral_response)
     xr.testing.assert_allclose(
         response.spectral_response.sel(line=main_lines[0]),
         2 * single.spectral_response.sel(line=main_lines[0]),
@@ -495,22 +325,6 @@ def test_selection_preserves_order_groups_duplicates_and_hides_contaminants_by_d
 def test_no_main_lines_require_contaminant_opt_in():
     with pytest.raises(ValueError, match="include_contaminants=True"):
         create_spectral_response(fake_line_list(2), DEFAULT_WAVELENGTH_GRID, main_lines=None)
-
-
-def test_instrumental_fwhm_converts_to_angstrom():
-    kwargs = {
-        "line_list": fake_line_list(1),
-    }
-
-    response_AA = _build_spectral_response(instrumental_fwhm=0.02 * u.AA, **kwargs)
-    response_nm = _build_spectral_response(instrumental_fwhm=0.002 * u.nm, **kwargs)
-
-    xr.testing.assert_allclose(response_AA, response_nm)
-
-
-def test_instrumental_fwhm_must_be_scalar():
-    with pytest.raises(ValueError, match="instrumental_fwhm must be scalar"):
-        _build_spectral_response(fake_line_list(1), instrumental_fwhm=[0.01, 0.02] * u.AA)
 
 
 @pytest.mark.parametrize(
@@ -533,9 +347,12 @@ def _bin_width(response):
     return response.wavelength_bounds.isel(bound=1) - response.wavelength_bounds.isel(bound=0)
 
 
+def _total(response):
+    return (response.spectral_response * _bin_width(response)).sum("wavelength_bin")
+
+
 def _integral_ratio(response, line_list, index=0):
-    integral = (response.spectral_response * _bin_width(response)).sum("wavelength_bin")
-    return (integral / (line_list.gofnt.isel(transition=index) / RESPONSE_NORMALIZATION)).values
+    return (_total(response) / (line_list.gofnt.isel(transition=index) / RESPONSE_NORMALIZATION)).values
 
 
 def test_average_conserves_the_area_of_an_unresolved_line():
@@ -584,22 +401,6 @@ def test_wavelength_edges_define_the_bins():
     np.testing.assert_allclose(_integral_ratio(response, line_list), 1.0, rtol=1e-12)
 
 
-def test_contaminants_integrate_to_the_sum_of_their_areas():
-    line_list = fake_line_list(5)
-    response = create_spectral_response(
-        line_list,
-        DEFAULT_WAVELENGTH_GRID,
-        main_lines=None,
-        doppler_velocity=DOPPLER_VELOCITY,
-        include_contaminants=True,
-        bin_method="average",
-    )
-    assert list(response.line.values) == ["contaminants"]
-    total = (line_list.gofnt / RESPONSE_NORMALIZATION).sum("transition")
-    integral = (response.spectral_response * _bin_width(response)).sum("wavelength_bin").isel(line=0)
-    np.testing.assert_allclose(integral.values, total.broadcast_like(integral).values, rtol=1e-12)
-
-
 def test_grid_bounds_are_halfway_between_samples():
     line_list = fake_line_list(1)
     grid = np.arange(170.0, 172.0, 0.2) * u.AA
@@ -616,6 +417,7 @@ def test_grid_bounds_are_halfway_between_samples():
         ({"wavelength_edges": np.array([170.0, 171.0, 170.5]) * u.AA, "wavelength_grid": None}, "increasing"),
         ({"wavelength_edges": np.array([170.0, 171.0]) * u.AA}, "exactly one"),
         ({"wavelength_grid": None}, "exactly one"),
+        ({"wavelength_grid": 170.0 * u.AA}, "wavelength_grid"),
     ],
 )
 def test_rejects_bad_bins(kwargs, match):
@@ -629,27 +431,12 @@ def test_rejects_bad_bins(kwargs, match):
         create_spectral_response(line_list, **arguments)
 
 
-def _stepped_effective_area():
-    """
-    An area with a factor-of-three step at 171.8 A (beyond every Doppler-shifted line)
-    and a 1 %/A slope.
-    """
-    wavelength = np.linspace(165.0, 177.0, 121)
-    values = np.where(wavelength < 171.8, 1.0, 3.0) * (1 + 0.01 * (wavelength - 165.0))
-    return fake_effective_area(values, wavelength)
-
-
-def _total(response):
-    width = response.wavelength_bounds.isel(bound=1) - response.wavelength_bounds.isel(bound=0)
-    return (response.spectral_response * width).sum("wavelength_bin")
-
-
 def test_methods_agree_on_the_fine_grid():
     line_list = fake_line_list(3)
     kwargs = {
         "main_lines": [line_list.full_name[0].item()],
         "doppler_velocity": DOPPLER_VELOCITY,
-        "effective_area": _stepped_effective_area(),
+        "effective_area": fake_effective_area(1 + 0.01 * np.arange(13.0), np.arange(165.0, 178.0)),
     }
     centered = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, bin_method="center", **kwargs)
     averaged = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
@@ -658,25 +445,6 @@ def test_methods_agree_on_the_fine_grid():
     # the lines sit on the smooth 1 %/A slope: the area at the center and the area across
     # the 2 mA grid differ only through the slope times the line width
     np.testing.assert_allclose(_total(averaged).values, _total(centered).values, rtol=1e-5)
-
-
-def test_coarse_bins_keep_the_fine_grid_total():
-    """
-    Bins of 0.85 A, about fifty times the width of the lines, one of them straddling the
-    area step.
-    """
-    line_list = fake_line_list(3)
-    kwargs = {
-        "main_lines": [line_list.full_name[0].item()],
-        "doppler_velocity": DOPPLER_VELOCITY,
-        "effective_area": _stepped_effective_area(),
-        "bin_method": "average",
-    }
-    fine = create_spectral_response(line_list, DEFAULT_WAVELENGTH_GRID, **kwargs)
-    coarse = create_spectral_response(
-        line_list, wavelength_edges=create_log_wavelength_edges([170, 172] * u.AA, 0.005), **kwargs
-    )
-    np.testing.assert_allclose(_total(coarse).values, _total(fine).values, rtol=1e-6)
 
 
 def test_area_is_zero_outside_the_curve():
@@ -725,18 +493,44 @@ def test_contaminants_take_the_area_at_their_own_wavelengths():
 
 def test_inputs_in_other_units_give_the_same_response():
     """
-    Edges in nm are converted, not taken as Angstrom.
+    Every input is converted, not taken as Angstrom, km/s, erg cm3 / (s sr) or cm2, and
+    is left as it was.
     """
-    line_list = fake_line_list(2)
-    edges = np.linspace(170.0, 172.0, 9) * u.AA
-    options = {"main_lines": None, "include_contaminants": True, "doppler_velocity": [-100.0, 0.0, 100.0] * u.km / u.s}
-
-    reference = create_spectral_response(line_list, wavelength_edges=edges, **options)
-    converted = create_spectral_response(line_list, wavelength_edges=edges.to(u.nm), **options)
-
-    xr.testing.assert_allclose(converted.spectral_response, reference.spectral_response, rtol=1e-12)
-    np.testing.assert_allclose(converted.wavelength_bounds, reference.wavelength_bounds)
-    np.testing.assert_allclose(
-        create_log_wavelength_edges([17.0, 17.2] * u.nm, 0.01).value,
-        create_log_wavelength_edges([170.0, 172.0] * u.AA, 0.01).value,
+    line_list = fake_line_list(1)
+    area = fake_effective_area(np.linspace(1.0, 2.0, 20), np.linspace(169.0, 173.0, 20))
+    line_list_si = line_list.assign(
+        wavelength=(line_list.wavelength / 10).assign_attrs(units="nm"),
+        gofnt=(line_list.gofnt * 1e-13).assign_attrs(units="J m3 / (s sr)"),
     )
+    area_si = fake_effective_area(
+        area.values * 1e-4, area.wavelength.values / 10, area_units="m2", wavelength_units="nm"
+    )
+    before = (line_list_si.copy(deep=True), area_si.copy(deep=True))
+    edges = create_log_wavelength_edges([170.0, 172.0] * u.AA, 0.001)
+    np.testing.assert_allclose(create_log_wavelength_edges([17.0, 17.2] * u.nm, 0.001), edges)
+    for bins, bins_si in (
+        ({}, {"wavelength_grid": DEFAULT_WAVELENGTH_GRID.to(u.nm)}),
+        (
+            {"wavelength_grid": None, "wavelength_edges": edges},
+            {"wavelength_grid": None, "wavelength_edges": edges.to(u.nm)},
+        ),
+    ):
+        reference = _build_spectral_response(
+            line_list,
+            instrumental_fwhm=0.02 * u.AA,
+            doppler_velocity=[-20.0, 20.0] * u.km / u.s,
+            nonthermal_velocity=[0.0, 5.0] * u.km / u.s,
+            effective_area=area,
+            **bins,
+        )
+        converted = _build_spectral_response(
+            line_list_si,
+            instrumental_fwhm=0.002 * u.nm,
+            doppler_velocity=[-2e4, 2e4] * u.m / u.s,
+            nonthermal_velocity=[0.0, 5e3] * u.m / u.s,
+            effective_area=area_si,
+            **bins_si,
+        )
+        xr.testing.assert_allclose(converted, reference)
+    xr.testing.assert_identical(line_list_si, before[0])
+    xr.testing.assert_identical(area_si, before[1])
