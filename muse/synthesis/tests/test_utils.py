@@ -101,7 +101,7 @@ def test_wavelength_to_doppler_requires_units() -> None:
 
 
 def test_calculate_moments_structure(response, raster) -> None:
-    spectrum = _spectrum(response, raster)
+    spectrum = _spectrum(response.assign_attrs(history=["read_response()"]), raster)
     moments = synthesis_utils.calculate_moments(spectrum)
 
     assert set(moments.data_vars) == {"0th", "1st", "2nd"}
@@ -113,8 +113,17 @@ def test_calculate_moments_structure(response, raster) -> None:
         "line": 7,
     }
     assert np.isfinite(moments.to_dataarray()).all()
+    assert u.Unit(moments["0th"].attrs["units"]) == u.ph / u.s
     assert u.Unit(moments["1st"].attrs["units"]) == u.km / u.s
     assert u.Unit(moments["2nd"].attrs["units"]) == u.km / u.s
+    # the lineage of the raster and of the response, then each call
+    assert [entry.split("(")[0] for entry in moments.attrs["history"]] == [
+        "reshape_x_to_slit_step",
+        "read_response",
+        "vdem_synthesis",
+        "wavelength_to_doppler",
+        "calculate_moments",
+    ]
 
 
 def test_moments_pipeline_keeps_dask_inputs_lazy(response, raster) -> None:

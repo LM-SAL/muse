@@ -81,7 +81,7 @@ def _line_list(plasma="pressure", *, pressure=(3e15,), scale=(1.0,)):
         ion_name=("transition", ["fe_10", "fe_8", "fe_9", "fe_10", "fe_11", "fe_12"]),
         lower_level_index=("transition", [1] * 6),
         upper_level_index=("transition", [2, 3, 13, 4, 5, 6]),
-    ).assign_attrs(fiasco_version="0.0.test", chianti_version="11.0.2")
+    ).assign_attrs(fiasco_version="0.0.test", chianti_version="11.0.2", history=["create_fiasco_line_list()"])
     if plasma == "pressure":
         factor = xr.DataArray(np.asarray(scale, dtype=float), dims="pressure", coords={"pressure": list(pressure)})
         gofnt = (factor * line_list.gofnt).transpose("pressure", "logT", "transition")
@@ -219,8 +219,9 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert "minimum_abundance" not in response.attrs
     # the database and the software of the line list, and the whole chain of calls up to this read
     assert (response.attrs["chianti_version"], response.attrs["fiasco_version"]) == ("11.0.2", "0.0.test")
-    # the effective area first: a product keeps how its area was made
+    # the line list and the effective area first: a product keeps how its inputs were made
     assert [entry.split("(")[0] for entry in response.attrs["history"]] == [
+        "create_fiasco_line_list",
         "create_effective_area",
         "create_spectral_response",
         "transform_response_units",
@@ -237,6 +238,7 @@ def test_products_record_what_made_them(sg_products, ci_products):
     assert cube.attrs["minimum_abundance"] == _MINIMUM_ABUNDANCE
     assert cube.attrs["continuum_fiasco_version"] == "0.0.test"
     assert [entry.split("(")[0] for entry in cube.attrs["history"]] == [
+        "create_fiasco_line_list",
         "create_effective_area",
         "create_spectral_response",
         "create_continuum_response",
