@@ -1,5 +1,5 @@
 {
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "252fd5dd807a4ae1a4605eab05dcfc1d37905f91e7321e09d5e6c60d54a237df",
-  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "2b58e9dbf4fecea77608f5bc495cfd1f1f3b8951c699bdb0150685a9ce04e075",
-  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "d5b83bcbd061b1c2d962dca7b239fcdd9f94cae238ba914ddbe02d98bd642d5b"
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_detector_spectrum": "22bf543a7a87bb2bb0ad82452fbd241d0f0c7df7d30aba6274fabbd4166dbab9",
+  "muse.synthesis.tests.test_figures.test_vdem_synthesis_fov": "656bdfc9498ce0a9901b7b45449c26b2da8b7359075994d561e96ef9ab96e721",
+  "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "fa5acfab3079cbb3161775abbf0d93b9742857b247bf0f8f7a8836fb8064aceb"
 }
