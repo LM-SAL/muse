@@ -11,6 +11,7 @@ import xarray as xr
 
 from muse.synthesis import _backends
 from muse.synthesis.synthesis import vdem_synthesis
+from muse.tests.helpers import fake_density_response
 from muse.transforms.transforms import reshape_x_to_slit_step
 from muse.variables import DEFAULTS_MUSE
 
@@ -373,3 +374,71 @@ def test_vdem_synthesis_requires_units(response, raster) -> None:
 
     with pytest.raises(ValueError, match=r"vdem\.vdem must define units"):
         vdem_synthesis(raster, response)
+
+
+@pytest.mark.parametrize(("lazy", "dtype"), [(True, float), (False, int)])
+def test_vdem_synthesis_interpolates_the_response_linearly_in_log_density(vdem, lazy, dtype) -> None:
+    # An integer VDEM still gets fractional plane weights.
+    vdem, response = vdem.astype(dtype), fake_density_response()
+    # Over logT, y and x only, from below the grid of 8-12 dex(1/cm3) to above it; in dex(1/cm3) when lazy, else m^-3.
+    log_density = xr.DataArray(
+        np.random.default_rng(0).uniform(7.5, 12.5, (vdem.sizes["logT"], vdem.sizes["y"], vdem.sizes["x"])),
+        dims=("logT", "y", "x"),
+        coords={"logT": vdem.logT, "y": vdem.y, "x": vdem.x},
+    )
+    density = (
+        log_density.assign_attrs(units="dex(1 / cm3)") if lazy else (1e6 * 10**log_density).assign_attrs(units="1 / m3")
+    )
+
+    with dask.config.set(scheduler=lambda *_, **__: pytest.fail("computed while building the flux")):
+        flux = vdem_synthesis(vdem.chunk({"x": 100}) if lazy else vdem, response, density=density).flux
+
+    # The response is the imager's times logD, so linear interpolation gives it times the clipped log density.
+    imager = response.detector_response.isel(logD=0, drop=True) / response.logD.values[0]
+    expected = xr.dot(vdem.vdem * log_density.clip(8, 12), imager, dim=["logT", "doppler_velocity"])
+    assert isinstance(flux.data, da.Array) == lazy
+    np.testing.assert_allclose(flux.transpose(*expected.dims).values, expected.values, rtol=1e-12)
+
+
+def test_vdem_synthesis_adds_nothing_from_bins_without_emission(vdem) -> None:
+    # In float32, which the flux keeps.
+    vdem, response = vdem.astype("float32"), fake_density_response().astype("float32")
+    # No density where there is no emission, as its emission-weighted density is 0/0, and 0 in one emitting bin.
+    density = xr.full_like(vdem.vdem, 1e10).where(vdem.vdem != 0)
+    density[{"logT": 4, "doppler_velocity": 4, "y": 3, "x": 100}] = 0
+
+    synthesis = vdem_synthesis(vdem, response, density=density.assign_attrs(units="cm-3", history=["make_density()"]))
+
+    # The response is the imager's times logD, so at 1e10 cm^-3 the flux is 10 times the imager's.
+    imager = response.detector_response.isel(logD=0, drop=True) / response.logD.values[0]
+    expected = 10 * xr.dot(vdem.vdem, imager, dim=["logT", "doppler_velocity"])
+    expected[{"y": 3, "x": 100}] = np.nan
+    assert synthesis.flux.dtype == np.float32
+    np.testing.assert_allclose(synthesis.flux.transpose(*expected.dims).values, expected.values, rtol=1e-5)
+    # The density's lineage, then this call.
+    assert [entry.split("(")[0] for entry in synthesis.attrs["history"]] == ["make_density", "vdem_synthesis"]
+
+
+def test_vdem_synthesis_rejects_a_density_that_does_not_fit(vdem) -> None:
+    response = fake_density_response()
+    density = xr.DataArray(np.full(vdem.sizes["x"], 1e10), dims="x", coords={"x": vdem.x}, attrs={"units": "cm-3"})
+    for case_vdem, case_density, case_response, match in (
+        (vdem, density.assign_attrs(units="K"), response, "density units must be convertible"),
+        (vdem, density.expand_dims(z=2), response, "must be among those of vdem.vdem"),
+        (vdem, density.assign_coords(x=density.x + 1), response, "^cannot align"),
+        (vdem, density.drop_vars("x"), response, "'x' has an index coordinate on only one input"),
+        (vdem, density, response.isel(logD=0, drop=True), "'logD' is not a response dimension"),
+        (vdem, density, response.isel(logD=[0, 1, 1, 2]), r"response\.logD repeats a density"),
+        # A density-resolved VDEM carries its density in logD.
+        (vdem.expand_dims(logD=response.logD), density, response, r"vdem\.vdem already has a logD axis"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            vdem_synthesis(case_vdem, case_response, density=case_density)
+
+
+def test_vdem_synthesis_gives_nan_for_an_invalid_density_on_a_single_plane() -> None:
+    vdem, response = _coordless_inputs()
+    grid = xr.DataArray([9.0], dims="logD", attrs={"units": "dex(1/cm3)"})
+    response = response.expand_dims(logD=grid).assign_coords(logD=grid)
+    density = xr.DataArray([np.nan, -1.0], dims="y", attrs={"units": "cm-3"})
+    assert vdem_synthesis(vdem, response, density=density).flux.isnull().all()
