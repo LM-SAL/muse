@@ -37,6 +37,51 @@ def _single_chunk_over(array: xr.DataArray, dims: Sequence[str]) -> xr.DataArray
     return array.chunk({dim: -1 for dim in dims if dim in array.dims})
 
 
+def _check_shared_indexes(vdem: xr.DataArray, other: xr.DataArray, name: str) -> None:
+    # join="exact" checks only indexed dims; one indexed on one side would contract by position.
+    for dim in sorted(set(vdem.dims) & set(other.dims)):
+        if (dim in vdem.xindexes) != (dim in other.xindexes):
+            unindexed = name if dim in vdem.xindexes else "vdem"
+            regrid = " or regrid with muse.instrument.align_response_and_vdem" if name == "response" else ""
+            msg = (
+                f"{dim!r} has an index coordinate on only one input ({unindexed} lacks it), so labels "
+                f"cannot be aligned; add the coordinate with assign_coords{regrid}"
+            )
+            raise ValueError(msg)
+
+
+def _density_index(vdem: xr.DataArray, density: xr.DataArray, response: xr.Dataset) -> xr.DataArray:
+    """
+    Each ``vdem`` bin's fractional position on the ``logD`` grid of ``response``, which
+    is sorted, at its ``density``, held at the ends beyond the grid.
+    """
+    if "logD" in vdem.dims:
+        msg = (
+            "vdem.vdem already has a logD axis, which carries its density; density is only for a VDEM without one, "
+            "so synthesize this one without density and with 'logD' in sum_over"
+        )
+        raise ValueError(msg)
+    unit = require_unit(density.to_dataset(name="density"), "density", "density", convertible_to=u.cm**-3)
+    if not set(density.dims) <= set(vdem.dims):
+        msg = f"density dimensions {density.dims} must be among those of vdem.vdem {vdem.dims}"
+        raise ValueError(msg)
+    _check_shared_indexes(vdem, density, "density")
+    grid = coord_as_unit(response, "logD", u.dex(u.cm**-3), "response.logD").values
+    if np.unique(grid).size < grid.size:
+        msg = "response.logD repeats a density, so the planes to interpolate between are ambiguous"
+        raise ValueError(msg)
+    density = unit.to(u.cm**-3, density)
+    # A bin without emission adds nothing, not NaN: its emission-weighted density is 0/0, stored as 0 or NaN.
+    # xr.where joins exactly, so labels that differ raise.
+    log_density = xr.where(vdem != 0, np.log10(density.where(density > 0)), grid[0])
+    index = xr.apply_ufunc(np.interp, log_density, kwargs={"xp": grid, "fp": np.arange(grid.size)}, dask="parallelized")
+    if grid.size == 1:
+        # np.interp returns the only plane even for a NaN query.
+        index = index.where(log_density.notnull())
+    # np.interp returns float64; cast so a float32 VDEM keeps float32 planes and flux.
+    return index.astype(np.result_type(vdem.dtype, 0.0))
+
+
 def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[str]) -> tuple[u.UnitBase, u.UnitBase]:
     """
     Check the slits, the legacy ``vdop`` axis, ``sum_over``, indexes and units.
@@ -64,16 +109,7 @@ def _validate_inputs(vdem: xr.Dataset, response: xr.Dataset, sum_over: Sequence[
             raise ValueError(msg)
     vdem_unit = require_unit(vdem, "vdem", "vdem.vdem")
     response_unit = require_unit(response, "detector_response", "response.detector_response")
-    # join="exact" checks only indexed dims; one indexed on one side would contract by position.
-    for dim in sorted(set(vdem.vdem.dims) & set(response.detector_response.dims)):
-        if (dim in vdem.xindexes) != (dim in response.xindexes):
-            unindexed = "response" if dim in vdem.xindexes else "vdem"
-            msg = (
-                f"{dim!r} has an index coordinate on only one input ({unindexed} lacks it), so labels "
-                "cannot be aligned; add the coordinate with assign_coords or regrid with "
-                "muse.instrument.align_response_and_vdem"
-            )
-            raise ValueError(msg)
+    _check_shared_indexes(vdem.vdem, response.detector_response, "response")
     require_unit(response, "line_wavelength", "response.line_wavelength", coord_only=True, convertible_to=u.AA)
     if "slit" not in response.detector_response.dims or "slit" not in sum_over:
         require_unit(
@@ -90,6 +126,7 @@ def vdem_synthesis(
     vdem: xr.Dataset,
     response: xr.Dataset,
     *,
+    density: xr.DataArray | None = None,
     sum_over: Sequence[str] = ("logT", "doppler_velocity", "slit"),
     device: "str | torch.device | None" = None,
     backend: str = "numpy",
@@ -116,6 +153,21 @@ def vdem_synthesis(
         response, from `muse.instrument.map_response_to_ci_detector`, has no slit
         dimension and no spectral axis; it images each slit of the VDEM on its own, and
         ``slit`` stays in the output.
+    density : `xarray.DataArray`, optional
+        Emission-weighted electron density of each ``vdem`` bin, the integral of n_e^3 dl
+        over that of n_e^2 dl for the plasma in the bin, with units convertible to cm^-3
+        in its attrs, over any of the dimensions of ``vdem.vdem`` and with its labels. The
+        response, which then needs the ``logD`` axis of a line list made with a
+        ``density``, is interpolated linearly in ``logD`` at each bin's density and held
+        at the end planes beyond the grid; ``logD`` joins ``sum_over``. Every plane enters
+        the sum, so a NaN on any of them makes the flux of its line NaN in every pixel. A
+        bin without emission adds nothing whatever its density; one with emission and a
+        NaN or nonpositive density makes the flux it adds to NaN. To resample the VDEM
+        with `muse.transforms.match_fov`, which resamples each variable on its own,
+        resample ``density * vdem.vdem`` with it, with ``density`` in cm^-3 and set to 0
+        where there is no emission (NaN would spread), and divide by the resampled
+        ``vdem.vdem``; this does not hold with a ``pad_mode`` of ``"maximum"``,
+        ``"minimum"`` or ``"median"``, which are not linear.
     sum_over : `tuple` of `str`
         Dimensions to sum over, by default ``("logT", "doppler_velocity", "slit")``.
         ``"slit"`` is dropped when the response has no slit dimension.
@@ -143,7 +195,10 @@ def vdem_synthesis(
         If an input fails validation (missing units, mismatched slit dimensions, the
         legacy ``vdop`` axis, a ``sum_over`` dimension missing from the response, or a
         shared dimension indexed on only one input), or shared indexed coordinates differ;
-        regrid with `muse.instrument.align_response_and_vdem`.
+        regrid with `muse.instrument.align_response_and_vdem`. Also if ``density`` lacks
+        units convertible to cm^-3, has a dimension ``vdem.vdem`` lacks or labels that
+        differ from the VDEM's, or the response has no ``logD`` axis or repeats a value on
+        it, or ``vdem.vdem`` already has one.
     MemoryError
         With ``backend="torch"`` on an accelerator, if one row of the product does not fit
         next to the response.
@@ -159,14 +214,32 @@ def vdem_synthesis(
     if "slit" in sum_over and "slit" not in response.dims:
         logger.info("The response has no slit dimension, dropping 'slit' from sum_over")
         sum_over = tuple(dim for dim in sum_over if dim != "slit")
+    if density is not None:
+        sum_over = (*sum_over, "logD")
     vdem_unit, response_unit = _validate_inputs(vdem, response, sum_over)
     vdem = vdem.assign(vdem=_single_chunk_over(vdem.vdem, sum_over))
     response = response.assign(detector_response=_single_chunk_over(response.detector_response, sum_over))
+    if density is None:
+        pairs = [(vdem.vdem, response.detector_response)]
+    else:
+        response = response.sortby("logD")
+        # The density's chunks carry over to each plane's share of the VDEM.
+        index = _density_index(vdem.vdem, _single_chunk_over(density, sum_over), response)
+        # One plane at a time: all at once would hold the VDEM once per plane.
+        pairs = (
+            (vdem.vdem * (1 - abs(index - plane)).clip(min=0), response.detector_response.isel(logD=plane, drop=True))
+            for plane in range(response.sizes["logD"])
+        )
     dim_indices = {
         dim: index for index, dim in enumerate(dict.fromkeys((*vdem.vdem.dims, *response.detector_response.dims)))
     }
+    # Shared dims in the VDEM's order, else np.einsum copies the VDEM to line them up.
+    response_dims = sorted(
+        (dim for dim in response.detector_response.dims if density is None or dim != "logD"),
+        key=dim_indices.__getitem__,
+    )
     vdem_indices = [dim_indices[dim] for dim in vdem.vdem.dims]
-    response_indices = [dim_indices[dim] for dim in response.detector_response.dims]
+    response_indices = [dim_indices[dim] for dim in response_dims]
     output_dims = [dim for dim in dim_indices if dim not in sum_over]
     output_indices = [dim_indices[dim] for dim in output_dims]
     backend = _resolve_backend(device, backend)
@@ -182,15 +255,18 @@ def vdem_synthesis(
         return np.einsum(vdem_values, vdem_indices, detector_response, response_indices, output_indices, optimize=True)
 
     try:
-        flux = xr.apply_ufunc(
-            contract,
-            vdem.vdem,
-            response.detector_response,
-            input_core_dims=[list(vdem.vdem.dims), list(response.detector_response.dims)],
-            output_core_dims=[output_dims],
-            join="exact",
-            dask="allowed",
-            keep_attrs=True,
+        flux = sum(
+            xr.apply_ufunc(
+                contract,
+                vdem_values,
+                detector_response,
+                input_core_dims=[list(vdem.vdem.dims), response_dims],
+                output_core_dims=[output_dims],
+                join="exact",
+                dask="allowed",
+                keep_attrs=True,
+            )
+            for vdem_values, detector_response in pairs
         )
     except xr.AlignmentError as err:
         msg = (
@@ -231,5 +307,7 @@ def vdem_synthesis(
         )
     update_attrs(ds, vdem)
     update_attrs(ds, response)
-    add_history(ds, locals(), vdem_synthesis, sources=(vdem, response))
+    add_history(
+        ds, locals(), vdem_synthesis, sources=(vdem, response) if density is None else (vdem, response, density)
+    )
     return ds

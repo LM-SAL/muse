@@ -14,6 +14,7 @@ from muse.variables import DEFAULTS_MUSE
 
 __all__ = [
     "fake_continuum",
+    "fake_density_response",
     "fake_effective_area",
     "fake_line_list",
     "fake_response",
@@ -303,6 +304,17 @@ def fake_response():
     response.detector_response.attrs["units"] = "1e-27 ph cm5 / s"
     response.detector_wavelength.attrs["units"] = "Angstrom"
     return response.assign_coords(channel=("line", LINE_CHANNELS))
+
+
+def fake_density_response():
+    """
+    `fake_response` as an imager's (no slit or spectral axis) times ``logD``, on the
+    unsorted, unevenly spaced ``logD`` axis 10.5, 8, 12 and 9.
+    """
+    imager = fake_response().isel(slit=0, detector_x_pixel=0, drop=True)
+    logD = xr.DataArray([10.5, 8.0, 12.0, 9.0], dims="logD", attrs={"units": "dex(1 / cm3)"})
+    detector_response = (imager.detector_response * logD).assign_attrs(imager.detector_response.attrs)
+    return imager.assign(detector_response=detector_response).assign_coords(logD=logD)
 
 
 def fake_response_file_contents():

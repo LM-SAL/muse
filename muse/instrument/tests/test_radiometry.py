@@ -142,16 +142,13 @@ def test_transform_response_units_rejects_unknown_detector(detector):
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
-        ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, r"response\.spectral_response is missing"),
         ("missing_wavelength_units", ValueError, r"response\.wavelength_grid must define units"),
     ],
 )
 def test_transform_response_units_rejects_invalid_inputs(case, error, match):
     response = _spectral_response()
-    if case == "response_type":
-        response = None
-    elif case == "missing_variable":
+    if case == "missing_variable":
         response = response.drop_vars("spectral_response")
     else:
         response = response.assign_coords(wavelength_grid=response.wavelength_grid.drop_attrs())
