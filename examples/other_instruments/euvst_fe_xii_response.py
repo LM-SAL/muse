@@ -3,13 +3,8 @@
 Create an EUVST Fe XII response
 ===============================
 
-Create a SOLAR-C/EUVST response for the Fe XII 195.119 Å window with the
-instrument-neutral :func:`muse.instrument.create_spectral_response`, taking the
-effective area, dispersion and instrumental width from
-`ECLIPSE <https://solarc-eclipse.readthedocs.io>`__, the EUVST instrument model.
-The line list is that of the
-:ref:`EIS response example <sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`,
-so the two instruments can be compared line for line.
+Here we will create a SOLAR-C/EUVST response for the Fe XII 195.119 Å
+using the EUVST instrument model from `ECLIPSE <https://solarc-eclipse.readthedocs.io>`__.
 
 .. warning::
 
@@ -23,23 +18,21 @@ from eclipse import Detector_SWC, Telescope_EUVST, spectral_psf_fwhm
 
 import astropy.units as u
 
-from muse.data import fetch_example_data
+from muse.data import fetch_example_data, open_example_dataset
 from muse.instrument import create_spectral_response
 
 ##############################################################################
-# Fe XII 195.119 Å is in EUVST's short-wave (SW) channel, which reaches the
-# detector from 170 to 212 Å.
+# First we will load the line list for Fe XII 195.119 Å, which is the same as used in the
+# :ref:`EIS response example <sphx_glr_generated_gallery_other_instruments_eis_fe_xii_response.py>`.
+#
+# Fe XII 195.119 Å is in EUVST's short-wave (SW) channel which ranges from 170 to 212 Å.
 
-line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
-line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
+line_list = open_example_dataset("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.zarr.zip")
 
 ##############################################################################
-# ECLIPSE gives the effective area as the collecting area times the mirror,
-# grating and filter throughput, times the CCD quantum efficiency, and the
-# width of a spectral pixel. The instrumental width depends on the slit: we
-# take the 0.4 arcsec slit, as wide as MUSE's slits. ECLIPSE updates the
-# instrument model as EUVST is built, so these numbers follow the installed
-# version.
+# ECLIPSE provides the EUVST instrument model but please be aware that ECLIPSE updates
+# the instrument model as EUVST is built, so these numbers follow the installed version of
+# ECLIPSE.
 
 telescope = Telescope_EUVST()
 detector = Detector_SWC()
@@ -56,26 +49,22 @@ effective_area = xr.DataArray(
 print(f"Dispersion {dispersion:.4f}, instrumental FWHM {instrumental_fwhm:.4f}")
 
 ##############################################################################
-# The EUVST effective area against that of EIS, the pre-flight SW-band area
-# the EIS examples use.
+# Now we will compare the EUVST effective area against EIS.
 
 eis_table = np.loadtxt(fetch_example_data("EIS_EffArea_B.005"))
 euvst_195 = effective_area.interp(wavelength=195.119).item()
 eis_195 = np.interp(195.119, eis_table[:, 0], eis_table[:, 1])
 print(f"At 195.119 Å: EUVST {euvst_195:.2f} cm2, EIS {eis_195:.2f} cm2, ratio {euvst_195 / eis_195:.1f}")
-plt.figure()
-plt.plot(effective_area.wavelength, effective_area, label="EUVST SW (ECLIPSE)")
-plt.plot(eis_table[:, 0], eis_table[:, 1], label="EIS SW, pre-flight")
-plt.axvline(195.119, color="gray", linestyle=":")
-plt.xlim(170, 212)
-plt.yscale("log")
-plt.xlabel("Wavelength [Å]")
-plt.ylabel("Effective area [cm$^2$]")
-plt.legend()
+
+fig, ax = plt.subplots()
+ax.plot(effective_area.wavelength, effective_area, label="EUVST SW (ECLIPSE)")
+ax.plot(eis_table[:, 0], eis_table[:, 1], label="EIS SW, pre-flight")
+ax.axvline(195.119, color="gray", linestyle=":")
+ax.set(xlim=(170, 212), yscale="log", xlabel="Wavelength [Å]", ylabel="Effective area [cm$^2$]")
+ax.legend()
 
 ##############################################################################
-# The response on the EUVST pixel grid, as for EIS: per Å times the
-# dispersion gives one value per spectral pixel.
+# Now we will create the response on the EUVST pixel grid.
 
 response = create_spectral_response(
     line_list,
@@ -93,33 +82,16 @@ response = response.assign(spectral_response=binned_response)
 print(response)
 
 ##############################################################################
-# The line profile, summed over temperature, shifts with the Doppler
-# velocity.
-
-profile = response.spectral_response.isel(pressure=0).sum(dim=["logT", "line"])
-plt.figure()
-for velocity in [-200, 0, 200]:
-    plt.plot(
-        response.wavelength_grid,
-        profile.sel(doppler_velocity=velocity, method="nearest"),
-        label=f"{velocity} km/s",
-    )
-plt.xlabel("Wavelength [Å]")
-plt.ylabel(f"Response [{response.spectral_response.attrs['units']}]")
-plt.title("EUVST Fe XII 195 response, summed over logT")
-plt.legend()
-
-##############################################################################
-# Summed over the detector pixels, the response gives the temperature
+# Now we will sum over the detector pixels to give the temperature
 # sensitivity of each line.
 
 temperature_sensitivity = (
     response.spectral_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="wavelength_bin", keep_attrs=True)
 )
-plt.figure(layout="constrained")
+fig, ax = plt.subplots(layout="constrained")
 for line in temperature_sensitivity.line.values:
-    temperature_sensitivity.sel(line=line).plot(label=str(line))
-plt.title("EUVST Fe XII temperature sensitivity")
-plt.legend()
+    temperature_sensitivity.sel(line=line).plot(ax=ax, label=str(line))
+ax.set_title("EUVST Fe XII temperature sensitivity")
+ax.legend()
 
 plt.show()

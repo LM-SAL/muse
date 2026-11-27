@@ -32,7 +32,7 @@ from muse.instrument.effective_area import (
     read_effective_area,
 )
 from muse.instrument.response.detector import map_response_to_ci_detector, map_response_to_sg_detector
-from muse.instrument.response.io import _open_dataset_file, save_response, save_spectral_response
+from muse.instrument.response.io import save_response, save_spectral_response
 from muse.instrument.response.radiometry import transform_response_units
 from muse.instrument.response.spectral import (
     _centers_to_edges,
@@ -41,7 +41,13 @@ from muse.instrument.response.spectral import (
     create_spectral_response,
 )
 from muse.log import logger
-from muse.utils.utils import _inherit_history, _instrument_defaults_label, _written_in_full, add_history
+from muse.utils.utils import (
+    _inherit_history,
+    _instrument_defaults_label,
+    _open_dataset_file,
+    _written_in_full,
+    add_history,
+)
 from muse.variables import DEFAULTS_MUSE
 from muse.variables_schema import InstrumentDefaults, _required
 

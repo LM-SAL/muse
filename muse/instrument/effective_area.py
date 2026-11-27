@@ -12,8 +12,9 @@ import astropy.constants as const
 import astropy.units as u
 from astropy.time import Time
 
-from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination, _open_dataset_file
+from muse.instrument.response.io import _ZARR_SUFFIXES, _check_destination
 from muse.utils.utils import (
+    _open_dataset_file,
     _replace_atomically,
     _require_increasing_axis,
     _to_zarr,

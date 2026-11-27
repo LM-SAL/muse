@@ -26,8 +26,8 @@ from muse.instrument import (
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE
 from muse.instrument.response import products as products_module
-from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
+from muse.utils.utils import _open_dataset_file
 from muse.variables import DEFAULTS_MUSE
 
 CHANNEL = 171

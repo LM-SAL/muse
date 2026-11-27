@@ -3,11 +3,8 @@
 Create EIS Fe XII and Fe X responses
 ====================================
 
-Create Hinode/EIS responses with the instrument-neutral
-:func:`muse.instrument.create_spectral_response`: the Fe XII 195.119 Å window,
-and the Fe X 174.531/175.263 Å pair as a density diagnostic. The line lists
-come from the
-:ref:`CHIANTI preparation example <sphx_glr_generated_gallery_other_instruments_skip_prepare_chianti_line_lists.py>`.
+Here we will create the spectral response of Hinode/EIS EUV lines
+using a CHIANTI line list and the instrument properties from SolarSoft.
 """
 
 import matplotlib.pyplot as plt
@@ -16,27 +13,24 @@ import xarray as xr
 
 import astropy.units as u
 
-from muse.data import fetch_example_data
+from muse.data import fetch_example_data, open_example_dataset
 from muse.instrument import create_spectral_response
 
 ##############################################################################
-# EIS observes two EUV bands (SW: 166-212, LW: 245-291 Å) and Fe XII 195.119 Å
-# is the strongest line in the SW band. The narrow window also holds the
-# density-sensitive Fe XII 195.179 Å blend.
+# Hinode/EIS observes two EUV bands (SW: 166-212 Å & LW: 245-291 Å).
+# Fe XII 195.119 Å is the strongest line in the SW band and there is also
+# the density-sensitive Fe XII 195.179 Å.
 
-line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
-line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
+line_list = open_example_dataset("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.zarr.zip")
 print(line_list)
 
 ##############################################################################
-# Representative EIS values: 22.3 mÅ spectral pixels and a 56 mÅ FWHM
-# instrumental width (Culhane et al. 2007; EIS Software Note #7 has the
-# calibrated, CCD-position-dependent values).
+# We will use several representative EIS values from
+# Culhane et al. 2007 and EIS Software Note #7.
 #
 # The effective area is the pre-flight SW-band curve ``EIS_EffArea_B.005`` from
-# SolarSoft, a two-column wavelength/area table (about 0.30 cm² near 195 Å). It
-# has no in-flight decay; EIS Software Note #2, Del Zanna 2013 and Warren et al.
-# 2014 give time-dependent calibrations.
+# SolarSoft and has no in-flight decay; EIS Software Note #2,
+# Del Zanna 2013 and Warren et al. 2014 provide time-dependent calibrations.
 
 dispersion = 0.0223 * u.AA
 instrumental_fwhm = 0.056 * u.AA
@@ -67,46 +61,42 @@ response = response.assign(spectral_response=binned_response)
 print(response)
 
 ##############################################################################
-# The line profile on the EIS pixel grid, summed over temperature, shifts
-# with the Doppler velocity.
+# Here we will plot the line profile summed over the temperature and
+# density grid, for three Doppler velocities.
 
 profile = response.spectral_response.isel(pressure=0).sum(dim=["logT", "line"])
-plt.figure()
+fig, ax = plt.subplots()
 for velocity in [-200, 0, 200]:
-    plt.plot(
+    ax.plot(
         response.wavelength_grid,
         profile.sel(doppler_velocity=velocity, method="nearest"),
         label=f"{velocity} km/s",
     )
-plt.xlabel("Wavelength [Å]")
-plt.ylabel(f"Response [{response.spectral_response.attrs['units']}]")
-plt.title("EIS Fe XII 195 response, summed over logT")
-plt.legend()
+ax.set(
+    xlabel="Wavelength [Å]",
+    ylabel=f"Response [{response.spectral_response.attrs['units']}]",
+    title="EIS Fe XII 195 response, summed over logT",
+)
+ax.legend()
 
 ##############################################################################
-# Summed over detector pixels instead, the response gives the temperature
+# We can also sum over the detector instead to get the temperature
 # sensitivity of each line.
 
 temperature_sensitivity = (
     response.spectral_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="wavelength_bin", keep_attrs=True)
 )
-plt.figure()
+fig, ax = plt.subplots()
 for line in temperature_sensitivity.line.values:
-    temperature_sensitivity.sel(line=line).plot(label=str(line))
-plt.title("EIS Fe XII temperature sensitivity")
-plt.legend()
+    temperature_sensitivity.sel(line=line).plot(ax=ax, label=str(line))
+ax.set_title("EIS Fe XII temperature sensitivity")
+ax.legend()
 
 ##############################################################################
-# The Fe X 174.531/175.263 Å line list is on an electron-density (``logD``)
-# grid, which flows through the response unchanged.
-#
-# Density curves in the literature are intensity ratios, so this response has
-# no effective area: the EIS throughput differs by about 25% between the two
-# lines and would bias the ratio. The lines stay at rest wavelength
-# (``doppler_velocity=None``), with the 195 Å dispersion and instrumental width.
+# For the Fe X 174.531/175.263 Å line list, an electron-density (``logD``)
+# grid was added. Right now, it is not used in the response.
 
-density_line_list_file = fetch_example_data("eis_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.nc")
-density_line_list = xr.load_dataset(density_line_list_file, engine="h5netcdf")
+density_line_list = open_example_dataset("eis_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.zarr.zip")
 density_response = create_spectral_response(
     density_line_list,
     np.arange(174.0, 175.6, dispersion.to_value(u.AA)) * u.AA,
@@ -115,9 +105,8 @@ density_response = create_spectral_response(
 )
 
 ##############################################################################
-# The per-Å response summed over the grid, times the spacing, is the total
-# intensity of each line. The ratio is at the peak-formation temperature of
-# Fe X, ``logT_peak`` in the line list.
+# If we take the per-Å response summed over the grid times the spacing.
+# It provides the total intensity of each line.
 
 line_total = (density_response.spectral_response.sum(dim="wavelength_bin") * dispersion.to_value(u.AA)).assign_attrs(
     units=str(u.Unit(density_response.spectral_response.attrs["units"]) * u.AA)
@@ -126,9 +115,8 @@ is_fe_x_174 = (density_line_list.full_name == "Fe X 174.531").values
 peak_logT = density_line_list.logT_peak.isel(transition=is_fe_x_174).median().item()
 ratio = line_total.sel(line="Fe X 175.263") / line_total.sel(line="Fe X 174.531")
 ratio = ratio.sel(logT=peak_logT, method="nearest").drop_attrs(deep=False)
-plt.figure()
-ratio.plot(marker="o")
-plt.ylabel("Fe X 175.263 / 174.531 intensity ratio")
-plt.title(f"EIS Fe X density diagnostic at logT = {peak_logT:.1f}")
+fig, ax = plt.subplots()
+ratio.plot(ax=ax, marker="o")
+ax.set(ylabel="Fe X 175.263 / 174.531 intensity ratio", title=f"EIS Fe X density diagnostic at logT = {peak_logT:.1f}")
 
 plt.show()

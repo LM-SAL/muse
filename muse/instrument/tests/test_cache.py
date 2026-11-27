@@ -17,9 +17,8 @@ import astropy.units as u
 from muse.instrument.atomic import cache
 from muse.instrument.atomic.backends import _MINIMUM_ABUNDANCE, _validate_plasma_inputs
 from muse.instrument.atomic.cache import load_or_create_continuum, load_or_create_line_list
-from muse.instrument.response.io import _open_dataset_file
 from muse.tests.helpers import fake_continuum, fake_line_list
-from muse.utils.utils import _to_zarr
+from muse.utils.utils import _open_dataset_file, _to_zarr
 
 TEMPERATURE = 10 ** np.array([5.5, 6.0, 6.5]) * u.K
 LINE_LIST = {"abundance": "a", "wavelength_range": [150, 192] * u.AA, "temperature": TEMPERATURE}

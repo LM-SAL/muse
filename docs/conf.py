@@ -43,6 +43,10 @@ project = "muse"
 author = "MUSE Instrument Team @ LMSAL"
 copyright = f"{dt.datetime.now(dt.UTC).year}, {author}"  # NOQA: A001
 
+from muse.log import change_logging_level
+
+change_logging_level("INFO")
+
 # -- General configuration ---------------------------------------------------
 
 # Wrap large function/method signatures
@@ -184,14 +188,14 @@ gallery_mode = os.environ.get("MUSE_GALLERY_MODE", "unskipped")
 gallery_parallel = int(os.environ.get("MUSE_GALLERY_PARALLEL", "1"))
 sphinx_gallery_conf = {
     "backreferences_dir": str(Path("generated") / "modules"),
-    "filename_pattern": ".*" if gallery_mode == "all" else "^((?!skip_).)*$",
+    "filename_pattern": ".*" if gallery_mode == "all" else r"(?<!_skip)\.py$",
     "examples_dirs": str(Path("..") / "examples"),
     "subsection_order": [
         "../examples/synthesis_tutorial",
         "../examples/other_instruments",
     ],
     # String FQN keeps sphinx_gallery_conf picklable so Sphinx can cache it
-    "within_subsection_order": "muse.utils.documentation._SkipAwareFileNameSortKey",
+    "within_subsection_order": "sphinx_gallery.sorting.FileNameSortKey",
     "gallery_dirs": str(Path("generated") / "gallery"),
     "abort_on_example_error": False,
     "plot_gallery": gallery_mode != "none",

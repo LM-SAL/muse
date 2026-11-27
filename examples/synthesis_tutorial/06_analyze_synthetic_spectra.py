@@ -3,48 +3,33 @@
 06 - Analyze synthetic MUSE spectra
 ===================================
 
-Plot the detector spectra of
+Here we will plot the detector spectra of
 :ref:`example 05 <sphx_glr_generated_gallery_synthesis_tutorial_05_synthesize_muse_observation.py>`
 and calculate their spectral moments.
 """
 
 import matplotlib.pyplot as plt
-import xarray as xr
 from matplotlib import colors
 
-from muse.data import fetch_example_data
+from muse.data import open_example_dataset
 from muse.synthesis import calculate_moments, wavelength_to_doppler
 from muse.transforms import reshape_slit_step_to_x
 
 ##############################################################################
-# :func:`muse.data.fetch_example_data` takes the spectrum example 05 saved, or
-# downloads the published copy.
+# First, we will load the synthetic spectra from the previous tutorial.
 
-spectrum_path = fetch_example_data("muse_synthetic_spectra.nc")
-
-spectrum = xr.open_dataset(spectrum_path, engine="h5netcdf", chunks="auto")
+spectrum = open_example_dataset("muse_synthetic_spectra.zarr.zip", chunked=True)
 
 ##############################################################################
 # **Spectrogram**
-#
-# Fe IX 171.073 along slit 15 at raster step 2. The wavelength coordinate
-# depends on the slit.
 
 spectrogram = spectrum.flux.sel(line="Fe IX 171.073").isel(step=2, slit=15, pressure=0)
-spectrogram_plot = spectrogram.plot.imshow(
-    x="detector_wavelength",
-    y="y",
-    norm=colors.LogNorm(vmin=0.3),
-    cmap="jet",
-    figsize=(12, 6),
-)
-spectrogram_plot.axes.set_xlim(170.2, 172)
-spectrogram_plot.axes.set_title("Fe IX 171.073: raster step 2, slit 15")
+fig, ax = plt.subplots(figsize=(12, 6))
+spectrogram.plot.imshow(x="detector_wavelength", y="y", ax=ax, norm=colors.LogNorm(vmin=0.3), cmap="jet")
+ax.set(xlim=(170.2, 172), title="Fe IX 171.073: raster step 2, slit 15")
 
 ##############################################################################
 # **Line profile**
-#
-# One y position of the spectrogram.
 
 profile = spectrogram.isel(y=spectrogram.sizes["y"] // 2)
 fig, ax = plt.subplots(figsize=(8, 4))
@@ -54,9 +39,6 @@ ax.set_title("Fe IX 171.073 at one spatial location")
 
 ##############################################################################
 # **Spatial map**
-#
-# The 171 Angstrom intensity summed over detector pixels, with slit and step
-# restacked onto x.
 
 intensity = (
     spectrum[["flux"]].where((spectrum.channel == 171).compute(), drop=True).sum(dim=["line", "detector_x_pixel"])
@@ -68,11 +50,6 @@ ax.set_title("Synthesized 171 Angstrom intensity")
 
 ##############################################################################
 # **Spectral moments**
-#
-# The 0th moment is the total intensity, the 1st the line-of-sight (Doppler)
-# velocity and the 2nd the line width, thermal and nonthermal.
-# :func:`muse.synthesis.wavelength_to_doppler` adds the velocity coordinate
-# that :func:`muse.synthesis.calculate_moments` needs.
 
 velocity_spectrum = wavelength_to_doppler(spectrum)
 moments = calculate_moments(velocity_spectrum)
@@ -83,7 +60,7 @@ fig, axes = plt.subplots(
     moment_maps.sizes["line"],
     3,
     figsize=(15, 15),
-    constrained_layout=True,
+    layout="constrained",
     squeeze=False,
 )
 for row, line in enumerate(moment_maps.line.values):

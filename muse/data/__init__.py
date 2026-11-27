@@ -1,13 +1,17 @@
 """
-Download the example data of the documentation gallery.
+Read and write the example data used by the documentation gallery.
 """
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
-from muse import __version__
+import xarray as xr
 
-__all__ = ["fetch_example_data"]
+from muse import __version__
+from muse.utils.utils import _open_dataset_file, _replace_atomically, _to_zarr
+
+__all__ = ["fetch_example_data", "open_example_dataset", "save_example_dataset"]
 
 # Development versions take main's data (dev), releases the latest release's (stable).
 _EXAMPLE_DATA_URL = (
@@ -89,32 +93,58 @@ _REGISTRY = {
 }
 
 
-def fetch_example_data(name: str):
+# Published ZIPs share a download location and cache directory.
+_ZARR_HASHES = {
+    "aia_chianti_line_list_94_Fe_sun_coronal_2021_chianti.zarr.zip": "5a04495ad1f04982460bfc2206967b4377a1728b2b1017a1fa93cfc4b8f2f5c4",
+    "eis_chianti_line_list_174_175_FeX_sun_coronal_2021_chianti_density.zarr.zip": "5bc9e262107269af7668135441fa430d90a4f1eac2d5da05eaaafaa58c5f8518",
+    "eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.zarr.zip": "98d6ba0116dfc6b321f235df0bc6155b0463c6895ddb4b706ff1949f233ddf73",
+    "muse_chianti_line_list_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti.zarr.zip": "08238e09c3c845a706749b1486b44198ecda1a56190c2dd167cdf06e8c15fe58",
+    "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti.zarr.zip": "4b2f89a886b1a08dba21f07b7d84485ab427573ad32fa41aab02634e6a9beff7",
+    "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti_density.zarr.zip": "9ea6ea97aad8ad53d373d900f201df37686613d0769c7640e7b30d41be427ba4",
+    "muse_chianti_line_list_284_FeXV284.163_sun_coronal_2021_chianti.zarr.zip": "09ef77b406d2517aea0af99815e688b29cb0c592a4c89109527b8f35e1537925",
+    "muse_example_vdem.zarr.zip": "7f6a403f957ac8c13cd08303a24b5bf746495aa0c267d80341fb028a45a5a754",
+    "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr.zip": "368d4c954a5c6c84e24a4175bc5c852c535fa715a6af24424a95df879f029917",
+    "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr.zip": "50acd1f3d88377901c4178754925c672cda20f98c8498d62052c5ecf5288e5bd",
+    "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.zip": "71e8a4c12183b726b3f90e0d75b05a6f38c971b08339fbd7063407c55f4f63b2",
+    "muse_synthetic_spectra.zarr.zip": "8702961b5b7a12082f9fc0da54cb20216614150097f49900df95b3eb44b5a778",
+}
+_REGISTRY.update({
+    name: (f"{_EXAMPLE_DATA_URL}{name}", f"sha256:{checksum}", "gallery")
+    for name, checksum in _ZARR_HASHES.items()
+})
+
+
+def _tutorial_directory() -> Path:
+    return Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
+
+
+def fetch_example_data(name: str) -> Path:
     """
     Download and cache an example data file of the documentation gallery.
 
-    The VDEM and synthetic spectra the synthesis tutorial wrote to
+    Gallery datasets written to
     ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR`` (by default
     ``examples/synthesis_tutorial/artifacts``) are used without downloading.
 
     Parameters
     ----------
     name : `str`
-        File name, e.g. ``"muse_example_vdem.zarr"``.
+        File name, e.g. ``"muse_example_vdem.zarr.zip"``.
 
     Returns
     -------
     `pathlib.Path`
         Path to the local copy.
     """
+    if Path(name).name == name and (
+        name.endswith(".zarr.zip") or name in {"muse_example_vdem.zarr", "muse_synthetic_spectra.nc"}
+    ):
+        local_path = _tutorial_directory() / name
+        if local_path.exists():
+            return local_path
     if name not in _REGISTRY:
         msg = f"{name!r} is not a known example data file, expected one of: {sorted(_REGISTRY)}"
         raise ValueError(msg)
-    if name in {"muse_example_vdem.zarr", "muse_synthetic_spectra.nc"}:
-        local_dir = Path(os.environ.get("MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR", "examples/synthesis_tutorial/artifacts"))
-        local_path = local_dir / name
-        if local_path.exists():
-            return local_path
     try:
         import pooch
     except ImportError:
@@ -133,3 +163,59 @@ def fetch_example_data(name: str):
         )
         return cache / subdirectory / name
     return Path(pooch.retrieve(url, known_hash=known_hash, fname=name, path=cache / subdirectory))
+
+
+def open_example_dataset(name: str, *, chunked: bool = False) -> xr.Dataset:
+    """
+    Open a locally generated or published gallery dataset.
+
+    Parameters
+    ----------
+    name : str
+        Dataset filename passed to `fetch_example_data`.
+    chunked : bool, optional
+        Read on demand with Dask using the stored chunks. By default, load the
+        dataset into memory and close the file.
+
+    Returns
+    -------
+    xarray.Dataset
+        The example dataset. Call its `~xarray.Dataset.close` method when
+        finished with a chunked dataset.
+    """
+    dataset = _open_dataset_file(fetch_example_data(name), chunked=chunked)
+    if chunked:
+        return dataset
+    with dataset:
+        return dataset.load()
+
+
+def save_example_dataset(
+    dataset: xr.Dataset, name: str, *, writer: Callable[[xr.Dataset, Path], None] = _to_zarr
+) -> Path:
+    """
+    Write a zipped Zarr dataset in the gallery output directory.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        Dataset to save.
+    name : str
+        Filename ending in ``.zarr.zip``. A successful write replaces any
+        previous copy in ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR`` (by default
+        ``examples/synthesis_tutorial/artifacts``).
+    writer : callable, optional
+        Function accepting a dataset and a new ZIP path. For detector responses,
+        pass `muse.instrument.save_response` to use its compression and chunk sizes.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the completed archive.
+    """
+    if Path(name).name != name or not name.endswith(".zarr.zip"):
+        msg = f"Expected a filename ending in .zarr.zip, got {name!r}"
+        raise ValueError(msg)
+    destination = _tutorial_directory() / name
+    _replace_atomically(destination, lambda staging: writer(dataset, staging))
+    return destination

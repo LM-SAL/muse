@@ -6,12 +6,12 @@ import dask
 import numpy as np
 import xarray as xr
 from zarr.codecs import BloscCodec
-from zarr.storage import ZipStore
 
 import astropy.units as u
 
 from muse.log import logger
 from muse.utils.utils import (
+    _open_dataset_file,
     _replace_atomically,
     _to_zarr,
     add_history,
@@ -158,22 +158,6 @@ def _validate_response(response: xr.Dataset, label: str) -> None:
         require_unit(
             response, "detector_wavelength", f"{label}.detector_wavelength", coord_only=True, convertible_to=u.AA
         )
-
-
-def _open_dataset_file(response_file: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
-    # chunks=None: lazily indexed arrays without dask, as open_dataset gives for netCDF.
-    kwargs = {"chunks": {} if chunked else None, "decode_coords": decode_coords}
-    if response_file.suffix == ".zip":
-        # xarray closes only the stores it opens itself; zarr reopens a closed archive on demand.
-        store = ZipStore(response_file, mode="r")
-        response = xr.open_zarr(store, consolidated=False, **kwargs)
-        response.set_close(store.close)
-    elif response_file.is_dir():
-        # consolidated=False reads zarr v2 and v3 alike, without the missing-metadata warning.
-        response = xr.open_zarr(response_file, consolidated=False, **kwargs)
-    else:
-        response = xr.open_dataset(response_file, **kwargs)
-    return response
 
 
 def read_response(
