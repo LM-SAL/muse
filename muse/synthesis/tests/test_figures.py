@@ -1,9 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import xarray as xr
 
 from muse.synthesis.synthesis import vdem_synthesis
 from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
-from muse.tests.helpers import LOOP_SLITS, fake_loop_response, fake_loop_vdem, figure_test
+from muse.tests.helpers import LOOP_SLITS, fake_loop_regions, fake_loop_response, fake_loop_vdem, figure_test
 from muse.transforms.transforms import reshape_slit_step_to_x, reshape_x_to_slit_step
 
 
@@ -99,4 +100,56 @@ def test_calculate_moments_maps():
         for ax, (name, label, kwargs) in zip(row, columns, strict=True):
             moments[name].sel(line=line).plot(ax=ax, cbar_kwargs={"label": label}, **kwargs)
             ax.set_title(line)
+    return fig
+
+
+@figure_test
+def test_vdem_synthesis_with_density():
+    """
+    The flux of both lines along a cut through the footpoints of a scene with three
+    densities, synthesized three ways.
+
+    Exact (black line): the background, the loop and the footpoints are synthesized
+    separately, each at its own density, and added. Tested (blue dots): the three are
+    added into one VDEM and synthesized with ``density``, the emission-weighted density
+    of each bin. For contrast (orange line): the same VDEM at the background's 1e9 cm^-3
+    everywhere.
+
+    The dots lie on the black line, within 2%. The orange line is up to 2.5 times too
+    high at the footpoints in Fe IX and 1.4 times in Fe XV.
+    """
+    regions, vdem = fake_loop_regions(), fake_loop_vdem()
+    spectrograph = fake_loop_response().isel(slit=0, drop=True)
+    logD = xr.DataArray(np.arange(8.0, 12.1, 0.5), dims="logD", attrs={"units": "dex(1 / cm3)"})
+    # An imager's response that falls as 1 / (1 + n / 1e10 cm^-3): the line integrated, at its wavelength.
+    imager = spectrograph.detector_response.sum("detector_x_pixel") / (1 + 10 ** (logD - 10))
+    response = (
+        imager.assign_attrs(spectrograph.detector_response.attrs)
+        .to_dataset(name="detector_response")
+        .assign_coords(logD=logD, detector_wavelength=spectrograph.line_wavelength)
+    )
+    density = sum(region.vdem * region.density for region in regions) / vdem.vdem
+    exact = sum(vdem_synthesis(region, response, density=region.density).flux for region in regions)
+    tested = vdem_synthesis(vdem, response, density=density.assign_attrs(units="cm-3")).flux
+    contrast = vdem_synthesis(vdem, response, density=regions[-1].density).flux
+    curves = (
+        (exact, "Exact: each region at its own density", {"color": "black", "zorder": 2}),
+        (
+            tested,
+            "Tested: density=, one density per VDEM bin",
+            {"color": "tab:blue", "marker": "o", "markersize": 3, "linestyle": "none", "zorder": 3},
+        ),
+        (contrast, "For contrast: 1e9 cm$^{-3}$ everywhere", {"color": "tab:orange", "zorder": 1}),
+    )
+    cut = 3.5
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), height_ratios=(1, 1.2), constrained_layout=True)
+    for (top, bottom), line in zip(axes.T, exact.line.values, strict=True):
+        exact.sel(line=line).plot(ax=top, cmap="inferno", cbar_kwargs={"label": "exact flux [ph / s]"})
+        top.axhline(cut, color="white", linestyle="--", linewidth=0.8)
+        top.set_title(line)
+        for flux, label, style in curves:
+            bottom.plot(flux.x, flux.sel(line=line).sel(y=cut, method="nearest"), label=label, **style)
+        bottom.set(xlabel="x [arcsec]", ylabel="flux [ph / s]", title="Flux along the dashed line", ylim=(0, None))
+    fig.legend(*axes[1, 0].get_legend_handles_labels(), loc="outside lower center", ncols=3, frameon=False)
+    fig.suptitle("Background 1e9, loop 5e9, footpoints 3e10 cm$^{-3}$")
     return fig

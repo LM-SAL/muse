@@ -18,6 +18,7 @@ __all__ = [
     "fake_density_response",
     "fake_effective_area",
     "fake_line_list",
+    "fake_loop_regions",
     "fake_loop_response",
     "fake_loop_vdem",
     "fake_response",
@@ -315,13 +316,10 @@ LOOP_VELOCITY = np.arange(-150.0, 151.0, 25.0)
 LOOP_LINES = [3, 5]  # Fe IX 171.073 and Fe XV 284.163 in LINE_NAMES
 
 
-def fake_loop_vdem():
+def fake_loop_regions():
     """
-    A small active region for the figure tests, on `LOOP_SLITS` slits of 11 MUSE steps
-    and MUSE pixels: a 2 MK loop, a half circle of 10" radius whose siphon flow rises at
-    40 km/s out of its left footpoint and falls at 80 km/s into its right one, with a
-    30 km/s nonthermal width; 0.6 MK footpoints, 35 km/s wide; and a 1.3 MK background at
-    rest, 10 km/s wide.
+    The loop, the footpoints and the background of `fake_loop_vdem`, in that order, each
+    a VDEM of its own with its electron ``density``: 5e9, 3e10 and 1e9 cm^-3.
     """
     width, height = (size.to_value(u.arcsec) for size in (DEFAULTS_MUSE.pixel_width_SG, DEFAULTS_MUSE.pixel_height_SG))
     axes = xr.Dataset(
@@ -335,19 +333,34 @@ def fake_loop_vdem():
     x, y, velocity = axes.x - 15.2, axes.y - 3.0, axes.doppler_velocity
     # cos(angle) runs from -1 at the left footpoint to 1 at the right one.
     radius, cos_angle = np.hypot(x, y), x / np.hypot(x, y)
-    # Emission measure, logT, velocity and nonthermal width; the loop's legs fade into the footpoints.
+    # Emission measure, logT, velocity, nonthermal width and density; the loop's legs fade into the footpoints.
     components = (
-        (4.0 * np.exp(-((radius - 10) ** 2)) * (1 + np.tanh(y)) / 2, 6.3, cos_angle * (60 + 20 * cos_angle), 30),
-        (3.0 * np.exp(-((np.hypot(abs(x) - 10, y) / 1.5) ** 2)), 5.8, 0, 35),
-        (0.5, 6.1, 0, 10),
+        (4.0 * np.exp(-((radius - 10) ** 2)) * (1 + np.tanh(y)) / 2, 6.3, cos_angle * (60 + 20 * cos_angle), 30, 5e9),
+        (3.0 * np.exp(-((np.hypot(abs(x) - 10, y) / 1.5) ** 2)), 5.8, 0, 35, 3e10),
+        (0.5, 6.1, 0, 10, 1e9),
     )
-    vdem = 0
-    for emission_measure, logT, doppler_velocity, nonthermal in components:
+    regions = []
+    for emission_measure, logT, doppler_velocity, nonthermal, density in components:
         profile = np.exp(-(((velocity - doppler_velocity) / nonthermal) ** 2))
         part = emission_measure * np.exp(-(((axes.logT - logT) / 0.1) ** 2)) * profile / profile.sum(velocity.name)
-        vdem = vdem + part
-    vdem = vdem.transpose("logT", "doppler_velocity", "y", "x").assign_attrs(units="1e27 / cm5")
-    return vdem.to_dataset(name="vdem")
+        # Over the whole scene, which the background's emission measure, one number, does not span.
+        vdem = (part + xr.zeros_like(axes.y * axes.x)).transpose("logT", "doppler_velocity", "y", "x")
+        regions.append(
+            xr.Dataset({"vdem": vdem.assign_attrs(units="1e27 / cm5"), "density": ((), density, {"units": "cm-3"})})
+        )
+    return regions
+
+
+def fake_loop_vdem():
+    """
+    A small active region for the figure tests, on `LOOP_SLITS` slits of 11 MUSE steps
+    and MUSE pixels: a 2 MK loop, a half circle of 10" radius whose siphon flow rises at
+    40 km/s out of its left footpoint and falls at 80 km/s into its right one, with a
+    30 km/s nonthermal width; 0.6 MK footpoints, 35 km/s wide; and a 1.3 MK background at
+    rest, 10 km/s wide.
+    """
+    vdem = sum(region.vdem for region in fake_loop_regions())
+    return vdem.assign_attrs(units="1e27 / cm5").to_dataset(name="vdem")
 
 
 def fake_loop_response():
