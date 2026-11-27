@@ -46,7 +46,7 @@ intensity = (
 image = reshape_slit_step_to_x(intensity).flux.isel(pressure=0)
 fig, ax = plt.subplots(figsize=(8, 5))
 image.plot(ax=ax, norm=colors.LogNorm())
-ax.set_title("Synthesized 171 Angstrom intensity")
+ax.set_title("Synthesized 171 Å intensity")
 
 ##############################################################################
 # **Spectral moments**

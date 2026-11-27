@@ -30,9 +30,9 @@ from muse.synthesis import calculate_moments, create_simple_vdem
 # First we will fetch the MURaM flare snapshot, which is a 3D cube of temperature, density and velocity.
 #
 # From here, we will need to load the correct parameters to create the VDEM.
-# `PlasmaCalcs <https://plasmacalcs.readthedocs.io/>`__ reads the plasma of a MURaM flare snapshot
-# (`stored at Stanford <https://purl.stanford.edu/dv883vb9686>`__, from
-# `Cheung et al. 2019 <https://www.nature.com/articles/s41550-018-0629-3#article-info>`__).
+# `PlasmaCalcs <https://plasmacalcs.readthedocs.io/>`__ :cite:p:`plasmacalcs` reads the plasma of a
+# MURaM :cite:p:`vogler_2005,rempel_2017` flare snapshot
+# (`stored at Stanford <https://purl.stanford.edu/dv883vb9686>`__, from :cite:t:`cheung_2019`).
 #
 # PlasmaCalcs can also one to add more options such as absorption, other interpolation methods,
 # TRAC, limb views.

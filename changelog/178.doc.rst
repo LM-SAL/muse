@@ -1,2 +1,1 @@
 Add SOLAR-C/EUVST Fe XII response and synthesis examples, which take the effective area, dispersion and instrumental width from ECLIPSE.
-The gallery saves and reuses datasets as single-file Zarr ZIP stores and can download published copies when a tutorial is run on its own.

@@ -4,7 +4,8 @@ Create an EUVST Fe XII response
 ===============================
 
 Here we will create a SOLAR-C/EUVST response for the Fe XII 195.119 Å
-using the EUVST instrument model from `ECLIPSE <https://solarc-eclipse.readthedocs.io>`__.
+using the EUVST instrument model from `ECLIPSE <https://solarc-eclipse.readthedocs.io>`__
+:cite:p:`mckevitt_2026`.
 
 .. warning::
 
@@ -54,7 +55,7 @@ print(f"Dispersion {dispersion:.4f}, instrumental FWHM {instrumental_fwhm:.4f}")
 eis_table = np.loadtxt(fetch_example_data("EIS_EffArea_B.005"))
 euvst_195 = effective_area.interp(wavelength=195.119).item()
 eis_195 = np.interp(195.119, eis_table[:, 0], eis_table[:, 1])
-print(f"At 195.119 Å: EUVST {euvst_195:.2f} cm2, EIS {eis_195:.2f} cm2, ratio {euvst_195 / eis_195:.1f}")
+print(f"At 195.119 Å: EUVST {euvst_195:.2f} cm², EIS {eis_195:.2f} cm², ratio {euvst_195 / eis_195:.1f}")
 
 fig, ax = plt.subplots()
 ax.plot(effective_area.wavelength, effective_area, label="EUVST SW (ECLIPSE)")

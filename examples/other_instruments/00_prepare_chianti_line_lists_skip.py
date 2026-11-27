@@ -3,8 +3,8 @@
 Prepare CHIANTI line lists
 ==========================
 
-Here we will compute the CHIANTI line lists of needed for the response
-examples in this section.
+Here we will compute the CHIANTI :cite:p:`dere_1997,dufresne_2024` line lists needed
+for the response examples in this section, with ChiantiPy :cite:p:`barnes_2017`.
 
 .. warning::
 

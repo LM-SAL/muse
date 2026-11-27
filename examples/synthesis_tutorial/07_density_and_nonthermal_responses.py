@@ -3,7 +3,7 @@
 07 - Density and non-thermal velocity responses
 ===============================================
 
-Here we will explore variants of the 171 Angstrom SG response using
+Here we will explore variants of the 171 Å SG response using
 a CHIANTI line list with an electron-density grid instead of a
 fixed pressure, and with non-thermal broadening (e.g., from
 unresolved Alfvén-wave turbulence).
@@ -19,7 +19,7 @@ from muse.instrument import create_spectral_response, map_response_to_sg_detecto
 from muse.variables import DEFAULTS_MUSE
 
 ##############################################################################
-# We fetch two 171 Angstrom line lists made as in
+# We fetch two 171 Å line lists made as in
 # :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_03_prepare_chianti_line_lists_skip.py>`:
 # one at a fixed pressure, and one with ``density`` instead of ``pressure``:
 #
@@ -74,14 +74,17 @@ print(response)
 
 fig, ax = plt.subplots()
 response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot(ax=ax)
-ax.set_title("171 Angstrom response with electron density")
+ax.set_title("171 Å response with electron density")
 
 ##############################################################################
 # **Non-thermal broadening**
 #
 # On the fixed-pressure line list, ``nonthermal_velocity`` adds an axis.
+# It is the 1/e (most probable) velocity ξ, which broadens a line at wavelength λ
+# by a Gaussian standard deviation of λξ / (c√2), added in quadrature to the
+# thermal and instrumental widths.
 # The goal is to mimic the effect of unresolved motions such as Alfvén-wave
-# turbulence in the Alfvén Wave Solar Model (AWSoM; e.g. `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__).
+# turbulence in the Alfvén Wave Solar Model (AWSoM; e.g. :cite:t:`shi_2022`).
 
 waveband_response = create_spectral_response(
     line_lists["pressure"],
@@ -98,6 +101,6 @@ print(response)
 
 fig, ax = plt.subplots()
 response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot(ax=ax)
-ax.set_title("171 Angstrom response with non-thermal velocity")
+ax.set_title("171 Å response with non-thermal velocity")
 
 plt.show()

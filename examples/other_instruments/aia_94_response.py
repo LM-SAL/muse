@@ -3,8 +3,8 @@
 Create an AIA 94 Å response
 ===========================
 
-Here we will create the spectral response of SDO/AIA 94 Å
-using a CHIANTI line list and the instrument properties from `aiapy`.
+Here we will create the spectral response of SDO/AIA 94 Å :cite:p:`lemen_2012`
+using a CHIANTI line list and the instrument properties from `aiapy` :cite:p:`barnes_2020`.
 
 .. warning::
 
@@ -107,7 +107,7 @@ units = temperature_response.attrs["units"] = by_ion[str(ions[0])][1].attrs["uni
 
 ##############################################################################
 # The outputted response shows two peaks. The hot peak, near logT 6.9, is
-# almost all Fe XVIII 93.932  whereas the cool peak, near logT 6.0, is
+# almost all Fe XVIII 93.932 Å, whereas the cool peak, near logT 6.0, is
 # the Fe VIII-Fe XII lines, here are the cool plasma response, not contaminants.
 
 # We want to name the ions above 2% of the peak, in order of peak temperature.
@@ -129,7 +129,7 @@ ax.set(
 ax.legend(fontsize=8)
 
 ##############################################################################
-# Before we integrate over the band, the response is a spectrum in DN per Angstrom.
+# Before we integrate over the band, the response is a spectrum in DN per Å.
 # At the hot peak is Fe XVIII 93.932 Å above a collection of weaker lines.
 
 spectrum = sum(waveband.spectral_response for waveband, _ in by_ion.values())

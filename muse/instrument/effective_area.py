@@ -175,8 +175,9 @@ def create_aia_effective_area(
 
     Notes
     -----
-    Needs aiapy, which downloads the AIA instrument file on first use, and the correction
-    table when a degradation or an EVE factor is applied.
+    Needs aiapy :cite:p:`barnes_2020`, which downloads the AIA instrument file on first use,
+    and the correction table when a degradation or an EVE factor is applied.
+    :cite:t:`lemen_2012` describe the instrument and :cite:t:`boerner_2012` its calibration.
     """
     call_inputs = dict(locals())
     try:

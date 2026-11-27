@@ -3,7 +3,7 @@
 08 - Create and synthesize a MUSE CI response
 =============================================
 
-Here we will create a main-line response for the 195 Angstrom channel
+Here we will create a main-line response for the 195 Å channel
 of the MUSE context imager (CI) and synthesize a CI image with it.
 """
 
@@ -29,7 +29,7 @@ from muse.variables import DEFAULTS_MUSE
 vdem = open_example_dataset("muse_example_vdem.zarr.zip", chunked=True)
 
 ##############################################################################
-# The same for the line list for the 195 Angstrom channel of the MUSE CI,
+# The same for the line list for the 195 Å channel of the MUSE CI,
 # using the one created for EIS.
 
 line_list = open_example_dataset("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.zarr.zip")
@@ -60,7 +60,7 @@ print(response)
 
 fig, ax = plt.subplots()
 response.detector_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="line").plot(ax=ax)
-ax.set_title("MUSE CI 195 main-line temperature response")
+ax.set_title("MUSE CI 195 Å main-line temperature response")
 
 ##############################################################################
 # Finally, we can synthesize a CI image with the response and the VDEM.
@@ -78,6 +78,6 @@ image.plot(
     norm=colors.LogNorm(vmin=image.quantile(0.5).item(), vmax=image.max().item()),
     cmap="inferno",
 )
-ax.set_title("Synthesized MUSE CI 195 image")
+ax.set_title("Synthesized MUSE CI 195 Å image")
 
 plt.show()

@@ -53,7 +53,7 @@ bands = {
 #   detector pixel center and multiplies by the wavelength width of a pixel:
 #   ``1e-27 cm5 ph / s``.
 #
-# At the end we will plot the integrated response of the 171 Angstrom band at zero Doppler velocity.
+# At the end we will plot the integrated response of the 171 Å band at zero Doppler velocity.
 
 for band, config in bands.items():
     line_list = open_example_dataset(f"muse_chianti_line_list_{band}_{config['output_label']}_{abundance}.zarr.zip")
@@ -83,7 +83,7 @@ for band, config in bands.items():
         integrated_response = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze()
         fig, ax = plt.subplots()
         integrated_response.plot(x="detector_x_pixel", ax=ax)
-        ax.set_title("Integrated 171 Angstrom response at zero Doppler velocity")
+        ax.set_title("Integrated 171 Å response at zero Doppler velocity")
 
     response = response.assign(detector_response=response.detector_response.astype(np.float32))
     output = save_example_dataset(

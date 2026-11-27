@@ -48,6 +48,9 @@ def create_chianti_line_list(
     """
     Generate a line list with contribution functions using ChiantiPy.
 
+    ChiantiPy :cite:p:`barnes_2017` reads the CHIANTI atomic database
+    :cite:p:`dere_1997,dufresne_2024`.
+
     Parameters
     ----------
     temperature : `astropy.units.Quantity`
@@ -310,7 +313,8 @@ def create_fiasco_line_list(
     Generate a line list with contribution functions using fiasco.
 
     Built on ``fiasco.IonCollection.build_line_list``, with the layout of
-    `create_chianti_line_list`.
+    `create_chianti_line_list`. fiasco :cite:p:`fiasco` reads the CHIANTI atomic database
+    :cite:p:`dere_1997,dufresne_2024`.
 
     Parameters
     ----------

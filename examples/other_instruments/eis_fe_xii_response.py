@@ -26,11 +26,11 @@ print(line_list)
 
 ##############################################################################
 # We will use several representative EIS values from
-# Culhane et al. 2007 and EIS Software Note #7.
+# :cite:t:`culhane_2007` and EIS Software Note #7 :cite:p:`young_2011`.
 #
 # The effective area is the pre-flight SW-band curve ``EIS_EffArea_B.005`` from
-# SolarSoft and has no in-flight decay; EIS Software Note #2,
-# Del Zanna 2013 and Warren et al. 2014 provide time-dependent calibrations.
+# SolarSoft and has no in-flight decay; EIS Software Note #2 :cite:p:`mariska_2010`,
+# :cite:t:`del_zanna_2013` and :cite:t:`warren_2014` provide time-dependent calibrations.
 
 dispersion = 0.0223 * u.AA
 instrumental_fwhm = 0.056 * u.AA
@@ -75,7 +75,7 @@ for velocity in [-200, 0, 200]:
 ax.set(
     xlabel="Wavelength [Å]",
     ylabel=f"Response [{response.spectral_response.attrs['units']}]",
-    title="EIS Fe XII 195 response, summed over logT",
+    title="EIS Fe XII 195 Å response, summed over logT",
 )
 ax.legend()
 

@@ -70,6 +70,7 @@ extensions = [
     "sphinx.ext.todo",
     "sphinxext.opengraph",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.bibtex",
 ]
 
 # Register the template for the robots.txt
@@ -120,6 +121,12 @@ intersphinx_mapping = {
     "attrs": ("https://www.attrs.org/en/stable/", None),
     "aiapy": ("https://aiapy.readthedocs.io/en/stable/", None),
 }
+
+# -- Options for sphinxcontrib-bibtex ------------------------------------------
+
+bibtex_bibfiles = ["references.bib"]
+# "Cheung et al. [2019]" in the text instead of a label such as [CRC+19]
+bibtex_reference_style = "author_year"
 
 # -- Options for sphinxext-opengraph ------------------------------------------
 

@@ -3,7 +3,8 @@
 03 - Prepare CHIANTI line lists
 ===============================
 
-Compute the CHIANTI line lists that the MUSE responses need.
+Compute the CHIANTI :cite:p:`dere_1997,dufresne_2024` line lists that the MUSE responses need,
+with ChiantiPy :cite:p:`barnes_2017`.
 
 .. warning::
 

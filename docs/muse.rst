@@ -4,9 +4,9 @@
 What is MUSE?
 *************
 
-The `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ is a NASA `Medium-Class Explorers (MIDEX) <https://explorers.gsfc.nasa.gov/midex.html>`__ satellite, managed by the `Lockheed Martin Corporation Advanced Technology Center (LM ATC) <https://www.lockheedmartin.com/en-us/capabilities/space/atc.html>`__ and led by Principal Investigator (PI) Dr. Bart De Pontieu of the `Lockheed Martin Solar & Astrophysics Laboratory (LMSAL) <https://lmsal.com/>`__.
+The `Multi-slit Solar Explorer (MUSE) <https://muse.lmsal.com/>`__ :cite:p:`de_pontieu_2020` is a NASA `Medium-Class Explorers (MIDEX) <https://explorers.gsfc.nasa.gov/midex.html>`__ satellite, managed by the `Lockheed Martin Corporation Advanced Technology Center (LM ATC) <https://www.lockheedmartin.com/en-us/capabilities/space/atc.html>`__ and led by Principal Investigator (PI) Dr. Bart De Pontieu of the `Lockheed Martin Solar & Astrophysics Laboratory (LMSAL) <https://lmsal.com/>`__.
 
-Building on IRIS, MUSE studies the Sun's corona instead of the chromosphere: with its instruments and numerical modeling, it targets the processes that heat the multi-million degree corona, accelerate the solar wind and drive the solar activity (flares and CMEs) that impacts Earth.
+Building on IRIS, MUSE studies the Sun's corona instead of the chromosphere: with its instruments and numerical modeling, it targets the processes that heat the multi-million degree corona, accelerate the solar wind and drive the solar activity (flares and CMEs) that impacts Earth :cite:p:`de_pontieu_2022,cheung_2022`.
 
 MUSE combines simultaneous sub-arcsecond coronal spectroscopy (0.4") along 35 slits with imaging (0.33"), and has 30 to 100 times the coverage and cadence of previous spectrographs, thanks to a telemetry rate over 30 times higher.
 
