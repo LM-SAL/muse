@@ -479,9 +479,6 @@ def _create_contaminant_response(
 
 
 def _validate_line_list(line_list: xr.Dataset) -> xr.Dataset:
-    if not isinstance(line_list, xr.Dataset):
-        msg = "line_list must be an xarray.Dataset"
-        raise TypeError(msg)
     if "trans_index" in line_list.dims:
         msg = "line_list lies along trans_index, as muse 0.3 wrote line lists: rename that dimension to transition"
         raise ValueError(msg)

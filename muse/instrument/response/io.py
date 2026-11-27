@@ -62,9 +62,6 @@ def save_response(
     Zarr uses Blosc/Zstd level 3 with bit-shuffle, netCDF zlib level 1 with shuffle, each
     chosen by benchmark on the full 171 response.
     """
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
     _validate_response(response, "response")
     response_file = _check_destination(response_file)
     chunked = response.drop_encoding().chunk(_response_chunks(response, chunks))
@@ -360,15 +357,9 @@ def align_response_and_vdem(
 
     Raises
     ------
-    TypeError
-        If either input is not an `xarray.Dataset`.
     ValueError
         If a required variable or coordinate is missing, malformed, or has no overlap.
     """
-    for name, dataset in (("response", response), ("vdem", vdem)):
-        if not isinstance(dataset, xr.Dataset):
-            msg = f"{name} must be an xarray.Dataset"
-            raise TypeError(msg)
     if "detector_response" not in response:
         msg = "response must contain detector_response"
         raise ValueError(msg)
@@ -502,15 +493,10 @@ def save_spectral_response(response: xr.Dataset, response_file: str | Path) -> N
 
     Raises
     ------
-    TypeError
-        If ``response`` is not an `xarray.Dataset`.
     ValueError
         If one of those variables is missing, or the destination exists or has an unknown
         suffix.
     """
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
     missing = [
         name for name in ("spectral_response", "wavelength_grid", "line_wavelength") if name not in response.variables
     ]

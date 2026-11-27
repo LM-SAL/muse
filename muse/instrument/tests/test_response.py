@@ -119,7 +119,6 @@ def test_map_response_to_sg_detector_requires_effective_area():
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
-        ("response_type", TypeError, "xarray.Dataset"),
         ("channel", ValueError, "unsupported MUSE SG channel"),
         ("channel_shape", ValueError, "scalar wavelength"),
         ("channel_nonfinite", ValueError, "finite, positive wavelength"),
@@ -135,9 +134,7 @@ def test_map_response_to_sg_detector_rejects_invalid_inputs(case, error, match):
     response = _spectral_response()
     channel = 171 * u.AA
     kwargs = {}
-    if case == "response_type":
-        response = None
-    elif case == "channel":
+    if case == "channel":
         channel = 195 * u.AA
     elif case == "channel_shape":
         channel = [171] * u.AA

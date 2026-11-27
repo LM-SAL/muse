@@ -140,7 +140,6 @@ def test_save_response_accepts_chunk_overrides(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
-        ("response_type", TypeError, "xarray.Dataset"),
         ("missing_variable", ValueError, "must contain detector_response"),
         ("bad_suffix", ValueError, "must end in"),
     ],
@@ -148,9 +147,7 @@ def test_save_response_accepts_chunk_overrides(tmp_path) -> None:
 def test_save_response_validates_the_response(tmp_path, case, error, match) -> None:
     response = fake_response()
     path = tmp_path / "response.nc"
-    if case == "response_type":
-        response = None
-    elif case == "missing_variable":
+    if case == "missing_variable":
         response = response.drop_vars("detector_response")
     else:
         path = tmp_path / "response.txt"

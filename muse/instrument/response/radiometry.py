@@ -138,9 +138,6 @@ def transform_response_units(
         Copy of ``response`` whose ``spectral_response`` is scaled to
         ``new_units``.
     """
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
     if not isinstance(detector, str) or detector.lower() not in ("sg", "ci"):
         msg = "detector must be 'SG' or 'CI' (case-insensitive)"
         raise ValueError(msg)

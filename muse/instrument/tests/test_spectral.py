@@ -219,11 +219,6 @@ def test_effective_area_is_validated(effective_area, match):
         _build_spectral_response(fake_line_list(1), effective_area=effective_area)
 
 
-def test_line_list_must_be_dataset():
-    with pytest.raises(TypeError, match=r"xarray\.Dataset"):
-        _build_spectral_response("not-a-dataset")
-
-
 @pytest.mark.parametrize(
     ("line_list", "match"),
     [

@@ -44,9 +44,6 @@ def _channel_as_angstrom(channel: u.Quantity, allowed_channels: xr.DataArray | N
 def _validate_spectral_response(
     response: xr.Dataset, *, accepted_units: tuple[u.UnitBase, ...] = _ACCEPTED_SG_RESPONSE_UNITS
 ) -> tuple[u.UnitBase, xr.DataArray, xr.DataArray]:
-    if not isinstance(response, xr.Dataset):
-        msg = "response must be an xarray.Dataset"
-        raise TypeError(msg)
     required = {"spectral_response", "wavelength_grid", "line_wavelength"}
     missing = sorted(required - set(response.variables))
     if missing:
