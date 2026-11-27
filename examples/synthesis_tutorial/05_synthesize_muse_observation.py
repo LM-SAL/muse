@@ -82,8 +82,7 @@ print(f"Saved {output}")
 # Finally, we will plot the Fe IX 171.073 intensity over the full FOV,
 # summing over the detector pixels and reshaping to the x dimension.
 
-saved_spectrum = open_example_dataset(output.name, chunked=True)
-intensity = reshape_slit_step_to_x(saved_spectrum.sum(dim="detector_x_pixel"))
+intensity = reshape_slit_step_to_x(spectrum.sum(dim="detector_x_pixel"))
 fig, ax = plt.subplots(figsize=(10, 4))
 intensity.flux.sel(line="Fe IX 171.073").isel(pressure=0).plot(
     x="x",

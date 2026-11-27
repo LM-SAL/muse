@@ -3,12 +3,13 @@ Read and write the example data used by the documentation gallery.
 """
 
 import os
-from collections.abc import Callable
 from pathlib import Path
+from collections.abc import Callable
 
 import xarray as xr
 
 from muse import __version__
+from muse.log import logger
 from muse.utils.utils import _open_dataset_file, _replace_atomically, _to_zarr
 
 __all__ = ["fetch_example_data", "open_example_dataset", "save_example_dataset"]
@@ -108,10 +109,9 @@ _ZARR_HASHES = {
     "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.zip": "71e8a4c12183b726b3f90e0d75b05a6f38c971b08339fbd7063407c55f4f63b2",
     "muse_synthetic_spectra.zarr.zip": "8702961b5b7a12082f9fc0da54cb20216614150097f49900df95b3eb44b5a778",
 }
-_REGISTRY.update({
-    name: (f"{_EXAMPLE_DATA_URL}{name}", f"sha256:{checksum}", "gallery")
-    for name, checksum in _ZARR_HASHES.items()
-})
+_REGISTRY.update(
+    {name: (f"{_EXAMPLE_DATA_URL}{name}", f"sha256:{checksum}", "gallery") for name, checksum in _ZARR_HASHES.items()}
+)
 
 
 def _tutorial_directory() -> Path:
@@ -141,12 +141,13 @@ def fetch_example_data(name: str) -> Path:
     ):
         local_path = _tutorial_directory() / name
         if local_path.exists():
+            logger.info(f"Using the local copy of {name}: {local_path.resolve()}")
             return local_path
     if name not in _REGISTRY:
         msg = f"{name!r} is not a known example data file, expected one of: {sorted(_REGISTRY)}"
         raise ValueError(msg)
     try:
-        import pooch
+        import pooch  # noqa: PLC0415
     except ImportError:
         msg = "pooch is required to download the example data, install it with `pip install pooch`"
         raise ImportError(msg) from None
