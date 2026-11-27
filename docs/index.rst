@@ -41,6 +41,7 @@ Use it to build instrument responses, synthesize spectra from solar simulations,
     reference/index
     contributing
     design
+    bibliography
     changelog
 
 What ``muse`` can do today

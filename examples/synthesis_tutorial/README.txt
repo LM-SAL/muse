@@ -9,7 +9,10 @@ The forward-modeling (synthesis) workflow for MUSE spectroscopic observations:
 3. **Synthesis**: the VDEM combined with the responses gives synthetic spectra.
 4. **Analysis**: the spectral moments of the synthetic spectra.
 
-Each tutorial downloads what it needs from the hosted example data, so you can start at any of them.
+The tutorials save each dataset as a single ``.zarr.zip`` file in
+``examples/synthesis_tutorial/artifacts``. Set ``MUSE_SYNTHESIS_TUTORIAL_OUTPUT_DIR``
+to share a different output directory across runs. Each tutorial uses the local
+dataset if available and otherwise downloads the published copy, so you can start at any step.
 
 .. list-table::
    :header-rows: 1
@@ -32,7 +35,7 @@ Each tutorial downloads what it needs from the hosted example data, so you can s
      - 04, 07
    * - 04 SG responses
      - the line lists; about 18.5 GB of memory at its peak
-     - the 108, 171 and 284 Angstrom SG responses
+     - the 108, 171 and 284 Å SG responses
      - 05
    * - 05 Synthesize an observation
      - the example VDEM and the SG responses; about 13.7 GB of memory at its peak
@@ -43,10 +46,10 @@ Each tutorial downloads what it needs from the hosted example data, so you can s
      - their spectral moments
      -
    * - 07 Density and nonthermal responses
-     - the 171 Angstrom line lists
-     - 171 Angstrom response variants
+     - the 171 Å line lists
+     - 171 Å response variants
      -
    * - 08 CI response
-     - the example VDEM and a 195 Angstrom line list
+     - the example VDEM and a 195 Å line list
      - a CI response and a CI image
      -

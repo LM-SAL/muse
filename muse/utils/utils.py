@@ -20,6 +20,7 @@ import dask.array as da
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
+from zarr.storage import ZipStore
 
 import astropy.units as u
 
@@ -468,3 +469,19 @@ def _to_zarr(dataset: xr.Dataset, destination: Path, **kwargs) -> None:
         shutil.rmtree(staging)
     finally:
         _remove(staging)
+
+
+def _open_dataset_file(path: Path, *, chunked: bool = False, decode_coords: bool | str = True) -> xr.Dataset:
+    # chunks=None: lazily indexed arrays without dask, as open_dataset gives for netCDF.
+    kwargs = {"chunks": {} if chunked else None, "decode_coords": decode_coords}
+    if path.suffix == ".zip":
+        # xarray closes only the stores it opens itself; zarr reopens a closed archive on demand.
+        store = ZipStore(path, mode="r")
+        dataset = xr.open_zarr(store, consolidated=False, **kwargs)
+        dataset.set_close(store.close)
+    elif path.is_dir():
+        # consolidated=False reads zarr v2 and v3 alike, without the missing-metadata warning.
+        dataset = xr.open_zarr(path, consolidated=False, **kwargs)
+    else:
+        dataset = xr.open_dataset(path, **kwargs)
+    return dataset

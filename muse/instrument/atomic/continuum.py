@@ -47,6 +47,8 @@ def create_chianti_continuum(
     The result is a rest-frame response like that of
     `muse.instrument.create_spectral_response`, one ``line`` per component and without an
     effective area; `muse.instrument.create_continuum_response` folds it onto bins.
+    ChiantiPy :cite:p:`barnes_2017` reads the CHIANTI atomic database
+    :cite:p:`dere_1997,dufresne_2024`.
 
     Parameters
     ----------
@@ -182,6 +184,8 @@ def create_fiasco_continuum(
 
     Built on ``fiasco.IonCollection``, with the output of `create_chianti_continuum`.
     fiasco's continuum is not per steradian, so every component is divided by 4 pi.
+    fiasco :cite:p:`fiasco` reads the CHIANTI atomic database
+    :cite:p:`dere_1997,dufresne_2024`.
 
     Parameters
     ----------

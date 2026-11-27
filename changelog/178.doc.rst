@@ -1,0 +1,1 @@
+Add SOLAR-C/EUVST Fe XII response and synthesis examples, which take the effective area, dispersion and instrumental width from ECLIPSE.

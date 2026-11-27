@@ -3,20 +3,17 @@
 08 - Create and synthesize a MUSE CI response
 =============================================
 
-Create a main-line response for the 195 Angstrom channel of the MUSE context
-imager (CI) and synthesize a CI image with it. CI is an imager, so
-:func:`muse.instrument.map_response_to_ci_detector` integrates the
-wavelength-space response over the band.
+Here we will create a main-line response for the 195 Å channel
+of the MUSE context imager (CI) and synthesize a CI image with it.
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 from matplotlib import colors
 
 import astropy.units as u
 
-from muse.data import fetch_example_data
+from muse.data import open_example_dataset
 from muse.instrument import (
     align_response_and_vdem,
     create_spectral_response,
@@ -26,17 +23,19 @@ from muse.instrument import (
 from muse.synthesis import vdem_synthesis
 from muse.variables import DEFAULTS_MUSE
 
-vdem = xr.open_zarr(fetch_example_data("muse_example_vdem.zarr"))
+##############################################################################
+# First we will load a VDEM example dataset.
+
+vdem = open_example_dataset("muse_example_vdem.zarr.zip", chunked=True)
 
 ##############################################################################
-# A line list describes the plasma, not the instrument, so the Fe XII 195
-# Angstrom list of the EIS example serves here too.
+# The same for the line list for the 195 Å channel of the MUSE CI,
+# using the one created for EIS.
 
-line_list_file = fetch_example_data("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.nc")
-line_list = xr.load_dataset(line_list_file, engine="h5netcdf")
+line_list = open_example_dataset("eis_chianti_line_list_195_FeXII_sun_coronal_2021_chianti.zarr.zip")
 
 ##############################################################################
-# The wavelength-space response, with the scalar CI effective area.
+# Now we can compute the CI response.
 
 channel = 195 * u.AA
 waveband_response = create_spectral_response(
@@ -48,8 +47,7 @@ waveband_response = create_spectral_response(
 )
 
 ##############################################################################
-# Convert to DN per CI pixel, from the CI pixel size, gain and pair-creation
-# energy, then integrate over wavelength.
+# Next, we need to convert to DN and map the response to the CI detector.
 
 waveband_response = transform_response_units(
     waveband_response,
@@ -60,26 +58,26 @@ waveband_response = transform_response_units(
 response = map_response_to_ci_detector(waveband_response, channel=channel)
 print(response)
 
-plt.figure()
-response.detector_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="line").plot()
-plt.title("MUSE CI 195 main-line temperature response")
+fig, ax = plt.subplots()
+response.detector_response.isel(pressure=0).sel(doppler_velocity=0).sum(dim="line").plot(ax=ax)
+ax.set_title("MUSE CI 195 Å main-line temperature response")
 
 ##############################################################################
-# Once :func:`muse.instrument.align_response_and_vdem` puts it on the
-# temperature and velocity grids of the VDEM, the response synthesizes like any other.
+# Finally, we can synthesize a CI image with the response and the VDEM.
 
 response, vdem = align_response_and_vdem(response, vdem)
 spectrum = vdem_synthesis(vdem, response)
 image = spectrum.flux.isel(pressure=0).sum(dim="line", keep_attrs=True).compute()
 print(spectrum)
 
-plt.figure()
+fig, ax = plt.subplots()
 image.plot(
     x="x",
     y="y",
+    ax=ax,
     norm=colors.LogNorm(vmin=image.quantile(0.5).item(), vmax=image.max().item()),
     cmap="inferno",
 )
-plt.title("Synthesized MUSE CI 195 image")
+ax.set_title("Synthesized MUSE CI 195 Å image")
 
 plt.show()

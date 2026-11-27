@@ -1,30 +1,26 @@
 """
-======================================================
-07 - Density and nonthermal-velocity response variants
-======================================================
+===============================================
+07 - Density and non-thermal velocity responses
+===============================================
 
-The 171 Angstrom SG response from a CHIANTI line list on an electron-density
-grid instead of a fixed pressure, and with nonthermal broadening (e.g., from
+Here we will explore variants of the 171 Å SG response using
+a CHIANTI line list with an electron-density grid instead of a
+fixed pressure, and with non-thermal broadening (e.g., from
 unresolved Alfvén-wave turbulence).
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 
 import astropy.units as u
 
-from muse.data import fetch_example_data
+from muse.data import open_example_dataset
 from muse.instrument import create_spectral_response, map_response_to_sg_detector, transform_response_units
-from muse.log import change_logging_level
 from muse.variables import DEFAULTS_MUSE
 
-# muse logs at DEBUG by default; INFO is quieter.
-change_logging_level("INFO")
-
 ##############################################################################
-# We fetch two 171 Angstrom line lists made as in
-# :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_skip_03_prepare_chianti_line_lists.py>`:
+# We fetch two 171 Å line lists made as in
+# :ref:`tutorial 03 <sphx_glr_generated_gallery_synthesis_tutorial_03_prepare_chianti_line_lists_skip.py>`:
 # one at a fixed pressure, and one with ``density`` instead of ``pressure``:
 #
 # .. code-block:: python
@@ -43,10 +39,7 @@ change_logging_level("INFO")
 # dimension whose coordinate is ``log10(density)``.
 
 line_lists = {
-    variant: xr.load_dataset(
-        fetch_example_data(f"muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti{suffix}.nc"),
-        engine="h5netcdf",
-    )
+    variant: open_example_dataset(f"muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti{suffix}.zarr.zip")
     for variant, suffix in (("pressure", ""), ("density", "_density"))
 }
 
@@ -66,9 +59,6 @@ doppler_velocity = [0] * u.km / u.s
 
 ##############################################################################
 # **Density-dependent response**
-#
-# The ``logD`` dimension of the line list
-# flows through the spectral response and the detector mapping unchanged.
 
 waveband_response = create_spectral_response(
     line_lists["density"],
@@ -82,18 +72,19 @@ waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / 
 response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 
-plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot()
-plt.title("171 Angstrom response with electron density")
+fig, ax = plt.subplots()
+response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot(ax=ax)
+ax.set_title("171 Å response with electron density")
 
 ##############################################################################
-# **Nonthermal broadening**
+# **Non-thermal broadening**
 #
-# On the fixed-pressure line list, ``nonthermal_velocity`` adds an axis. Each
-# value is the 1/e nonthermal velocity xi of the EIS and IRIS literature and
-# adds lambda xi / (c sqrt 2) in quadrature to the thermal width, mimicking
-# unresolved motions such as Alfvén-wave turbulence in the Alfvén Wave Solar
-# Model (AWSoM; e.g. `Shi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022ApJ...928...34S/abstract>`__).
+# On the fixed-pressure line list, ``nonthermal_velocity`` adds an axis.
+# It is the 1/e (most probable) velocity ξ, which broadens a line at wavelength λ
+# by a Gaussian standard deviation of λξ / (c√2), added in quadrature to the
+# thermal and instrumental widths.
+# The goal is to mimic the effect of unresolved motions such as Alfvén-wave
+# turbulence in the Alfvén Wave Solar Model (AWSoM; e.g. :cite:t:`shi_2022`).
 
 waveband_response = create_spectral_response(
     line_lists["pressure"],
@@ -108,8 +99,8 @@ waveband_response = transform_response_units(waveband_response, "1e-27 cm5 ph / 
 response = map_response_to_sg_detector(waveband_response, channel=band * u.AA)
 print(response)
 
-plt.figure()
-integrated = response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot()
-plt.title("171 Angstrom response per nonthermal velocity")
+fig, ax = plt.subplots()
+response.detector_response.sum(dim=["logT", "slit"]).sel(doppler_velocity=0).squeeze().plot(ax=ax)
+ax.set_title("171 Å response with non-thermal velocity")
 
 plt.show()
