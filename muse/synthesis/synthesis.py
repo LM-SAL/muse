@@ -165,8 +165,10 @@ def vdem_synthesis(
     dim_indices = {
         dim: index for index, dim in enumerate(dict.fromkeys((*vdem.vdem.dims, *response.detector_response.dims)))
     }
+    # Shared dims in the VDEM's order, else np.einsum copies the VDEM to line them up.
+    response_dims = sorted(response.detector_response.dims, key=dim_indices.__getitem__)
     vdem_indices = [dim_indices[dim] for dim in vdem.vdem.dims]
-    response_indices = [dim_indices[dim] for dim in response.detector_response.dims]
+    response_indices = [dim_indices[dim] for dim in response_dims]
     output_dims = [dim for dim in dim_indices if dim not in sum_over]
     output_indices = [dim_indices[dim] for dim in output_dims]
     backend = _resolve_backend(device, backend)
@@ -186,7 +188,7 @@ def vdem_synthesis(
             contract,
             vdem.vdem,
             response.detector_response,
-            input_core_dims=[list(vdem.vdem.dims), list(response.detector_response.dims)],
+            input_core_dims=[list(vdem.vdem.dims), response_dims],
             output_core_dims=[output_dims],
             join="exact",
             dask="allowed",
