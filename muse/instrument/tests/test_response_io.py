@@ -349,6 +349,20 @@ def test_read_response_clips_an_end_point_it_interpolates_to(tmp_path) -> None:
     np.testing.assert_allclose(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
 
 
+def test_read_response_selects_a_grid_rounded_to_float32(tmp_path) -> None:
+    stated = fake_response_file_contents()
+    velocity = stated.doppler_velocity.values + 0.1  # no label exact in float32
+    stated = stated.assign_coords(doppler_velocity=stated.doppler_velocity.copy(data=velocity))
+    path = _write(stated, tmp_path / "resp.zarr", "zarr")
+    rounded = velocity.astype(np.float32).astype(float)
+
+    response = read_response(path, doppler_velocity=rounded * u.km / u.s)
+
+    np.testing.assert_array_equal(response.doppler_velocity.values, rounded)
+    # Interpolation would move each value off its sample.
+    np.testing.assert_array_equal(response.detector_response, stated.detector_response)
+
+
 def test_read_response_names_the_legacy_layout(tmp_path) -> None:
     legacy = fake_response_file_contents().rename({"detector_response": "SG_resp"})
     path = _write(legacy, tmp_path / "resp.nc", "nc")

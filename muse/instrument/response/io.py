@@ -300,8 +300,8 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
         response = response.sel({name: axis}, drop=True, method="nearest")
     else:
         nearest = response[name].sel({name: axis}, method="nearest").values
-        if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=1e-12, atol=0.0):
-            # On the grid, selection equals interpolation and reads only the needed dask slabs.
+        if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=0.0, atol=tolerance):
+            # On the grid to within roundoff, selection equals interpolation and reads only the needed dask slabs.
             response = response.sel({name: axis}, drop=True, method="nearest")
         else:
             # Clipped to the grid, as interpolating a rounding step past its end gives NaN, which becomes zero below.
