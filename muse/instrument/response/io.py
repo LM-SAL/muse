@@ -11,6 +11,7 @@ import astropy.units as u
 
 from muse.log import logger
 from muse.utils.utils import (
+    _axis_roundoff,
     _open_dataset_file,
     _replace_atomically,
     _to_zarr,
@@ -285,15 +286,9 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
     except (TypeError, ValueError, u.UnitConversionError) as exc:
         msg = f"{name} axis units {axis.attrs['units']!r} are not convertible to the response's {response_unit}"
         raise ValueError(msg) from exc
-    # An end a few rounding steps from the one asked for still counts: a grid made with arange ends at
-    # 7.8999999999999995 for 7.9, and float32 stores 7.1 as 7.0999999, so the steps are those of the coarser dtype.
-    eps = max(
-        np.finfo(d).eps if np.issubdtype(d, np.floating) else np.finfo(float).eps
-        for d in (axis.dtype, response[name].dtype)
-    )
     axis = axis.copy(data=converted)
     low, high = float(response[name].min()), float(response[name].max())
-    tolerance = 16 * eps * max(abs(low), abs(high), 1.0)
+    tolerance = _axis_roundoff(low, high)
     in_range = (axis >= low - tolerance) & (axis <= high + tolerance)
     if not bool(in_range.all()):
         logger.info(f"Requested {name} extends beyond the response range; trimming to the response grid")
@@ -305,8 +300,8 @@ def _resample_axis(response: xr.Dataset, name: str, axis: xr.DataArray | None, m
         response = response.sel({name: axis}, drop=True, method="nearest")
     else:
         nearest = response[name].sel({name: axis}, method="nearest").values
-        if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=1e-12, atol=0.0):
-            # On the grid, selection equals interpolation and reads only the needed dask slabs.
+        if np.allclose(nearest, np.asarray(axis.values, dtype=float), rtol=0.0, atol=tolerance):
+            # On the grid to within roundoff, selection equals interpolation and reads only the needed dask slabs.
             response = response.sel({name: axis}, drop=True, method="nearest")
         else:
             # Clipped to the grid, as interpolating a rounding step past its end gives NaN, which becomes zero below.

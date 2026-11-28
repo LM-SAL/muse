@@ -7,7 +7,14 @@ import astropy.units as u
 from astropy.constants import c as speed_of_light
 
 from muse.log import logger
-from muse.utils.utils import _require_increasing_axis, add_history, coord_as_unit, require_unit, update_attrs
+from muse.utils.utils import (
+    _axis_roundoff,
+    _require_increasing_axis,
+    add_history,
+    coord_as_unit,
+    require_unit,
+    update_attrs,
+)
 
 __all__ = [
     "apply_exposure_time",
@@ -22,6 +29,17 @@ __all__ = [
 # Fixed, not os.cpu_count(): bounds peak memory and does not oversubscribe nested CI runs.
 _VDEM_MAX_WORKERS = 4
 _TEMPERATURE_BIN_METHODS = ("span", "linear")
+
+
+def _grid_spacing(grid: np.ndarray, name: str) -> float:
+    _require_increasing_axis(grid, name)
+    low, high = float(grid[0]), float(grid[-1])
+    # The end points' spacing, not the first pair's: on rounded labels, that pair's error would repeat in every bin.
+    centers, spacing = np.linspace(low, high, grid.size, retstep=True)
+    if grid.size < 2 or np.abs(grid - centers).max() > _axis_roundoff(low, high):
+        msg = f"{name} must hold at least two evenly spaced values"
+        raise ValueError(msg)
+    return spacing
 
 
 def _lower_bin_and_upper_share(values: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -186,20 +204,12 @@ def create_simple_vdem(
             msg = f"{name} contains non-finite values (NaN or inf), this will cause issues during synthesis"
             logger.warning(msg)
 
-    for name, grid in (("velocity_grid", velocity_grid), ("logT_grid", logT_grid)):
-        _require_increasing_axis(grid, name)
-        # The bins take the first spacing for the whole grid. Allow the rounding of arange or float32, as in _resample_axis.
-        eps = np.finfo(grid.dtype if np.issubdtype(grid.dtype, np.floating) else float).eps
-        tolerance = 16 * eps * max(np.abs(grid).max(), 1.0)
-        if grid.size < 2 or np.abs(grid - np.linspace(grid[0], grid[-1], grid.size)).max() > tolerance:
-            msg = f"{name} must hold at least two evenly spaced values"
-            raise ValueError(msg)
+    velocity_bin_width = _grid_spacing(velocity_grid, "velocity_grid")
+    log_temperature_bin_width = _grid_spacing(logT_grid, "logT_grid")
     n_velocity_bins = len(velocity_grid)
     n_temperature_bins = len(logT_grid)
     n_x = len(x)
     n_y = len(y)
-    log_temperature_bin_width = logT_grid[1] - logT_grid[0]
-    velocity_bin_width = velocity_grid[1] - velocity_grid[0]
     velocity_lower_edge = velocity_grid[0] - velocity_bin_width / 2.0
     velocity_upper_edge = velocity_grid[-1] + velocity_bin_width / 2.0
     log_temperature_lower_edge = logT_grid[0] - log_temperature_bin_width / 2.0

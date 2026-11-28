@@ -282,6 +282,7 @@ def test_create_simple_vdem_flow_towards_observer_is_blueshifted() -> None:
         # Binned with its first spacing, this grid put a 30 km/s flow towards the observer at -10 km/s.
         ("velocity_grid", np.array([0.0, 10.0, 40.0]) * u.km / u.s),
         ("logT_grid", np.array([4.5, 5.0, 6.0]) * u.dex(u.K)),
+        ("logT_grid", np.array([5.0, 5.1, 5.2001]) * u.dex(u.K)),  # uneven by more than a few float32 rounding steps
         ("logT_grid", np.array([5.0]) * u.dex(u.K)),
     ],
 )
@@ -296,9 +297,15 @@ def test_create_simple_vdem_refuses_a_grid_it_cannot_bin(name, grid) -> None:
 def test_create_simple_vdem_accepts_an_even_grid_rounded_to_float32() -> None:
     inputs = _tiny_vdem_inputs()
     inputs["velocity_grid"] = np.linspace(-1.0, 1.0, 21, dtype=np.float32) * u.km / u.s
-    inputs["logT_grid"] = np.arange(4.3, 5.75, 0.1, dtype=np.float32) * u.dex(u.K)
+    # In float64, each label rounded to float32 on its own, as a VDEM's logT read back from a store.
+    grid = np.arange(4.6, 7.5, 0.0005).astype(np.float32).astype(float)
+    inputs["logT_grid"] = grid * u.dex(u.K)
+    # Repeating the rounded first spacing moves plasma near the far end by two bins.
+    inputs["temperature"] = np.full((2, 3, 2), 10 ** grid[-55]) * u.K
 
-    assert synthesis_utils.create_simple_vdem(**inputs).vdem.sum() > 0
+    emission = synthesis_utils.create_simple_vdem(**inputs).vdem.sum(dim=("doppler_velocity", "x", "y"))
+    assert emission.sel(logT=grid[-55]).item() > 0
+    assert emission.sel(logT=grid[-55]).item() == emission.sum().item()
 
 
 def test_create_simple_vdem_internal_x_slices_are_exact() -> None:
