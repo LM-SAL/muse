@@ -1,1 +1,2 @@
 `muse.instrument.align_response_and_vdem` and `muse.instrument.read_response` keep an end of the requested ``logT`` or ``doppler_velocity`` axis within 16 float32 rounding steps of the response grid whatever its dtype, so a float64 VDEM ``logT`` of 4.5999999 no longer loses its bin against a response starting at 4.6.
+`muse.synthesis.create_simple_vdem` accepts a float64 grid of labels rounded to float32 as evenly spaced.
