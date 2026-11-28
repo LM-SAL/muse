@@ -136,9 +136,9 @@ def test_vdem_synthesis_with_density():
 
     Exact (black line): the background, the loop and the footpoints are synthesized
     separately, each at its own density, and added. Tested (blue dots): the three are
-    added into one VDEM and synthesized with ``density``, the emission-weighted density
-    of each bin. For contrast (orange line): the same VDEM at the background's 1e9 cm^-3
-    everywhere.
+    added into one VDEM and synthesized with ``density``, the emission-measure-weighted
+    mean electron density of each bin. For contrast (orange line): the same VDEM at the
+    background's 1e9 cm^-3 everywhere.
 
     The dots lie on the black line, within 2%. The orange line is up to 2.5 times too
     high at the footpoints in Fe IX and 1.4 times in Fe XV.

@@ -71,7 +71,7 @@ def _density_index(vdem: xr.DataArray, density: xr.DataArray, response: xr.Datas
         msg = "response.logD repeats a density, so the planes to interpolate between are ambiguous"
         raise ValueError(msg)
     density = unit.to(u.cm**-3, density)
-    # A bin without emission adds nothing, not NaN: its emission-weighted density is 0/0, stored as 0 or NaN.
+    # A bin without emission adds nothing, not NaN: its weighted mean density is 0/0, stored as 0 or NaN.
     # xr.where joins exactly, so labels that differ raise.
     log_density = xr.where(vdem != 0, np.log10(density.where(density > 0)), grid[0])
     index = xr.apply_ufunc(np.interp, log_density, kwargs={"xp": grid, "fp": np.arange(grid.size)}, dask="parallelized")
@@ -154,18 +154,20 @@ def vdem_synthesis(
         dimension and no spectral axis; it images each slit of the VDEM on its own, and
         ``slit`` stays in the output.
     density : `xarray.DataArray`, optional
-        Emission-weighted electron density of each ``vdem`` bin, the integral of n_e^3 dl
-        over that of n_e^2 dl for the plasma in the bin, with units convertible to cm^-3
-        in its attrs, over any of the dimensions of ``vdem.vdem`` and with its labels. The
-        response, which then needs the ``logD`` axis of a line list made with a
-        ``density``, is interpolated linearly in ``logD`` at each bin's density and held
-        at the end planes beyond the grid; ``logD`` joins ``sum_over``. Every plane enters
-        the sum, so a NaN on any of them makes the flux of its line NaN in every pixel. A
-        bin without emission adds nothing whatever its density; one with emission and a
-        NaN or nonpositive density makes the flux it adds to NaN. To resample the VDEM
-        with `muse.transforms.match_fov`, which resamples each variable on its own,
-        resample ``density * vdem.vdem`` with it, with ``density`` in cm^-3 and set to 0
-        where there is no emission (NaN would spread), and divide by the resampled
+        Emission-measure-weighted mean electron density of each ``vdem`` bin, the
+        integral of n_e^2 n_H dl over that of n_e n_H dl for the plasma in the bin.
+        :cite:t:`mckevitt_2026` evaluate the contribution function at such a density for
+        each temperature bin. It needs units convertible to cm^-3 in its attrs, and lies
+        over any of the dimensions of ``vdem.vdem``, with its labels. The response, which
+        then needs the ``logD`` axis of a line list made with a ``density``, is
+        interpolated linearly in ``logD`` at each bin's density and held at the end planes
+        beyond the grid; ``logD`` joins ``sum_over``. Every plane enters the sum, so a NaN
+        on any of them makes the flux of its line NaN in every pixel. A bin without
+        emission adds nothing whatever its density; one with emission and a NaN or
+        nonpositive density makes the flux it adds to NaN. To resample the VDEM with
+        `muse.transforms.match_fov`, which resamples each variable on its own, resample
+        ``density * vdem.vdem`` with it, with ``density`` in cm^-3 and set to 0 where
+        there is no emission (NaN would spread), and divide by the resampled
         ``vdem.vdem``; this does not hold with a ``pad_mode`` of ``"maximum"``,
         ``"minimum"`` or ``"median"``, which are not linear.
     sum_over : `tuple` of `str`

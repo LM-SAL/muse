@@ -403,7 +403,7 @@ def test_vdem_synthesis_interpolates_the_response_linearly_in_log_density(vdem, 
 def test_vdem_synthesis_adds_nothing_from_bins_without_emission(vdem) -> None:
     # In float32, which the flux keeps.
     vdem, response = vdem.astype("float32"), fake_density_response().astype("float32")
-    # No density where there is no emission, as its emission-weighted density is 0/0, and 0 in one emitting bin.
+    # No density where there is no emission, as its weighted mean density is 0/0, and 0 in one emitting bin.
     density = xr.full_like(vdem.vdem, 1e10).where(vdem.vdem != 0)
     density[{"logT": 4, "doppler_velocity": 4, "y": 3, "x": 100}] = 0
 
