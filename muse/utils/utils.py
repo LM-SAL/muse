@@ -120,6 +120,12 @@ def coord_as_unit(ds: xr.Dataset, name: str, target_unit: u.UnitBase | str, labe
     )
 
 
+def _axis_roundoff(low: float, high: float) -> float:
+    # A few float32 rounding steps whatever the dtype: float32 stores 7.1 as 7.0999999, and labels often pass
+    # through float32 even when stored as float64.
+    return 16 * float(np.finfo(np.float32).eps) * max(abs(low), abs(high), 1.0)
+
+
 def _require_increasing_axis(values: npt.ArrayLike, label: str, *, positive: bool = False) -> None:
     """
     Raise `ValueError` unless ``values`` are one-dimensional, non-empty, finite,

@@ -300,6 +300,7 @@ def test_read_response_takes_the_gain_and_pair_energy_of_the_file(tmp_path) -> N
         ([], "must not be empty"),
         ([5.0, np.nan], "finite"),
         ([8.0, 8.5], "no overlap"),
+        ([7.0001], "no overlap"),  # past the end by more than a few float32 rounding steps
     ],
 )
 def test_read_response_validates_the_logT_axis(response_path, logT, match) -> None:
@@ -308,23 +309,29 @@ def test_read_response_validates_the_logT_axis(response_path, logT, match) -> No
 
 
 @pytest.mark.parametrize(
-    ("stored", "requested", "end"),
+    ("stored", "requested"),
     [
-        (np.float32, np.float64, 7.1),  # stored as 7.0999999, short of the 7.1 asked for
-        (np.float64, np.float32, 6.9),  # asked for as 6.9000001, past the 6.9 stored
+        (np.float32([5.0, 7.1]), np.float64([5.0, 7.1])),  # stored as 7.0999999, short of the 7.1 asked for
+        # Asked for as 4.5999999 and 6.9000001, past both ends, in float64 as a VDEM holds labels rounded to float32.
+        (np.float64([4.6, 6.9]), np.float32([4.6, 6.9]).astype(np.float64)),
     ],
 )
-def test_read_response_keeps_an_end_point_rounded_to_float32(tmp_path, stored, requested, end) -> None:
+def test_read_response_keeps_an_end_point_rounded_to_float32(tmp_path, stored, requested) -> None:
     stated = fake_response_file_contents()
-    axis = stated.logT.values.copy()
-    axis[-1] = end
-    path = _write(stated.assign_coords(logT=stated.logT.copy(data=axis.astype(stored))), tmp_path / "resp.zarr", "zarr")
 
-    response = read_response(path, logT=axis.astype(requested) * u.dex(u.K))
+    def with_ends(ends):
+        axis = stated.logT.values.astype(ends.dtype)
+        axis[[0, -1]] = ends
+        return axis
+
+    path = _write(stated.assign_coords(logT=stated.logT.copy(data=with_ends(stored))), tmp_path / "resp.zarr", "zarr")
+
+    response = read_response(path, logT=with_ends(requested) * u.dex(u.K))
 
     # The axis asked for, not the stored one a response left as it is would keep.
-    np.testing.assert_array_equal(response.logT.values, axis.astype(requested).astype(float))
-    np.testing.assert_array_equal(response.detector_response.isel(logT=-1), stated.detector_response.isel(logT=-1))
+    np.testing.assert_array_equal(response.logT.values, with_ends(requested).astype(float))
+    ends = {"logT": [0, -1]}
+    np.testing.assert_array_equal(response.detector_response.isel(ends), stated.detector_response.isel(ends))
 
 
 def test_read_response_clips_an_end_point_it_interpolates_to(tmp_path) -> None:
