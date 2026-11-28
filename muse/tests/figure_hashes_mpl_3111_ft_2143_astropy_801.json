@@ -4,7 +4,7 @@
   "muse.synthesis.tests.test_figures.test_calculate_moments_maps": "39acc4978bb69425bc9c2d8186534017ec0f6df04dbfb280aed1021c5e2e6dc1",
   "muse.synthesis.tests.test_figures.test_vdem_synthesis_with_density": "88052dc66db3080c95a62f33bf73b732e27c8ce4af3f2f240e4708168929276f",
   "muse.instrument.tests.test_figures.test_align_response_and_vdem_velocities": "d9b72e83c30db5fa186f6b46eff4d4ccd72676da86651a5b3e6bde1afe19235b",
-  "muse.instrument.tests.test_figures.test_create_spectral_response_profiles": "6acdea7c01e624e6d9d21d5507c2c2ed4981a0bfea84dfcc0004db4bedfcb886",
+  "muse.instrument.tests.test_figures.test_create_spectral_response_profiles": "31a38e98b0bf90580a94228ebec1201597179d631e2e0c6f60dae80abb64449d",
   "muse.instrument.tests.test_figures.test_map_response_to_sg_detector_slits": "e3b568378cc053e6d81a4eef2b0cb8c3fc5e360fa0de629eef273776bcc0b11c",
   "muse.synthesis.tests.test_figures.test_create_simple_vdem": "7e6b843d02d8ce29e21c4d3dc2f85b9d207b7e70defc6d5cdb3ca16eeaa7dc50",
   "muse.transforms.tests.test_figures.test_match_fov_letter": "639fc36481c10cbdcf245d066e878c26d6dafc3f5295d5258cbddc24b06d7ac3"
