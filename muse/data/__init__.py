@@ -104,6 +104,7 @@ _ZARR_HASHES = {
     "muse_chianti_line_list_171_FeIX171.073_sun_coronal_2021_chianti_density.zarr.zip": "9ea6ea97aad8ad53d373d900f201df37686613d0769c7640e7b30d41be427ba4",
     "muse_chianti_line_list_284_FeXV284.163_sun_coronal_2021_chianti.zarr.zip": "09ef77b406d2517aea0af99815e688b29cb0c592a4c89109527b8f35e1537925",
     "muse_example_vdem.zarr.zip": "7f6a403f957ac8c13cd08303a24b5bf746495aa0c267d80341fb028a45a5a754",
+    "muse_example_vdem_density.zarr.zip": "6e3f46e2ee737a2bd9d229f3b15ab0cd8d61e4e1a003033f2e9a4287a9e38508",
     "muse_sg_response_108_FeXIX108.355_FeXXI108.117_sun_coronal_2021_chianti_effarea.zarr.zip": "368d4c954a5c6c84e24a4175bc5c852c535fa715a6af24424a95df879f029917",
     "muse_sg_response_171_FeIX171.073_sun_coronal_2021_chianti_effarea.zarr.zip": "50acd1f3d88377901c4178754925c672cda20f98c8498d62052c5ecf5288e5bd",
     "muse_sg_response_284_FeXV284.163_sun_coronal_2021_chianti_effarea.zarr.zip": "71e8a4c12183b726b3f90e0d75b05a6f38c971b08339fbd7063407c55f4f63b2",
