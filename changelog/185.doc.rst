@@ -1,0 +1,1 @@
+Add a gallery tutorial that synthesizes Fe IX 171.073 at the emission-measure-weighted mean electron density of each VDEM bin, which tutorial 01 now makes and saves as example data; tutorial 07 now covers non-thermal broadening only.

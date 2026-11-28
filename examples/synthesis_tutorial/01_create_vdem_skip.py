@@ -49,7 +49,8 @@ n_H = muram_calc("r") / r_per_nH_tot
 # The contribution functions are per n_e n_H, and the snapshot has no electron density.
 # Where the MUSE lines form, Hydrogen and Helium are fully ionized:
 # n_e = (1 + 2 A_He) n_H, with A_He of the responses' sun_coronal_2021_chianti abundances.
-ne_nh = (1 + 2 * 10 ** (10.914 - 12)) * n_H**2
+electrons_per_hydrogen = 1 + 2 * 10 ** (10.914 - 12)
+ne_nh = electrons_per_hydrogen * n_H**2
 # Zero out non-finite voxels so they cannot poison the VDEM.
 ne_nh = ne_nh.where(np.isfinite(ne_nh), 0.0).values * u.cm**-6
 velocity = muram_calc("u", component="z").values * u.cm / u.s  # LOS velocity
@@ -60,20 +61,37 @@ y_coord = muram_calc("maindims_y_coord").values * u.cm
 ##############################################################################
 # Now we can create a VDEM using :func:`muse.synthesis.create_simple_vdem`.
 
-vdem = create_simple_vdem(
-    temperature=temperature,
-    velocity=velocity,
-    ne_nh=ne_nh,
-    cell_length=cell_length,
-    x=x_coord,
-    y=y_coord,
-    velocity_grid=np.arange(-500, 510, 10) * u.km / u.s,
-    logT_grid=np.arange(5.5, 7.6, 0.1) * u.dex(u.K),
+grids = {
+    "temperature": temperature,
+    "velocity": velocity,
+    "cell_length": cell_length,
+    "x": x_coord,
+    "y": y_coord,
+    "velocity_grid": np.arange(-500, 510, 10) * u.km / u.s,
+    "logT_grid": np.arange(5.5, 7.6, 0.1) * u.dex(u.K),
     # The line of sight, the z axis.
-    integration_axis=2,
-)
+    "integration_axis": 2,
+}
+vdem = create_simple_vdem(ne_nh=ne_nh, **grids)
 
 print(vdem)
+
+##############################################################################
+# Here we will compute the emission-measure-weighted mean electron density,
+# the integral of :math:`n_e^2 n_H\,dl` over :math:`n_e n_H\,dl`, which
+# :ref:`tutorial 09 <sphx_glr_generated_gallery_synthesis_tutorial_09_synthesize_with_density.py>`
+# uses.
+
+n_e = (electrons_per_hydrogen * n_H).where(np.isfinite(n_H), 0.0).values
+# In float64 as the product overflows float32 in the dense plasma below the corona.
+weighted = create_simple_vdem(ne_nh=ne_nh.astype("float64") * n_e, **grids)
+density = (weighted.vdem / vdem.vdem.where(vdem.vdem > 0)).fillna(0).astype("float32")
+# Its own attrs, in place of the VDEM's that the division carried over.
+density.attrs = {"units": "1 / cm3", "long_name": "emission-measure-weighted mean electron density"}
+# With the attrs of the weighted VDEM, whose history records how it was made.
+density = density.to_dataset(name="density").assign_attrs(weighted.attrs)
+
+print(density)
 
 ##############################################################################
 # Next, we can calculate the VDEM moments using :func:`muse.synthesis.calculate_moments`.
@@ -95,8 +113,9 @@ axes[1].set_title("VDEM 1st moment")
 axes[2].set_title("VDEM 2nd moment")
 
 ##############################################################################
-# Finally, we will save the VDEM for the later tutorials.
+# Finally, we will save the VDEM and the density for the later tutorials.
 
 save_example_dataset(vdem, "muse_example_vdem.zarr.zip")
+save_example_dataset(density, "muse_example_vdem_density.zarr.zip")
 
 plt.show()
