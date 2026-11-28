@@ -55,9 +55,9 @@ def test_create_spectral_response_profiles():
     def profile(**extra):
         return create_spectral_response(**kwargs, **extra).spectral_response.sel(logT=6.0).squeeze(drop=True)
 
-    def gaussian(center, sigma, like):
-        # With the area of the response it is compared with.
-        area = float(like.sum()) * (grid[1] - grid[0])
+    def gaussian(center, sigma):
+        # With the area the line list gives the line, its contribution function, in the response's units of 1e-27.
+        area = line_list.gofnt.sel(logT=6.0).item() / 1e-27
         return area * np.exp(-0.5 * ((grid - center) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
 
     widths = (
@@ -72,7 +72,7 @@ def test_create_spectral_response_profiles():
     fig, (ax_width, ax_shift) = plt.subplots(1, 2, figsize=(13, 4.6), constrained_layout=True)
     for (label, sigma, extra), color in zip(widths, COLORS, strict=True):
         tested = profile(**extra)
-        exact = gaussian(rest, sigma, tested)
+        exact = gaussian(rest, sigma)
         # Each over the peak of its exact Gaussian, as the narrow line is seven times the height of the others.
         ax_width.plot(grid, exact / exact.max(), **EXACT_STYLE)
         style = {**TESTED_STYLE, "color": color, "markersize": 3}
@@ -86,7 +86,7 @@ def test_create_spectral_response_profiles():
         tested = shifted.sel(doppler_velocity=velocity)
         center = rest * (1 + velocity / SPEED_OF_LIGHT)
         ax_shift.axvline(center, color=color, linestyle="--", linewidth=0.8)
-        ax_shift.plot(grid, gaussian(center, np.hypot(thermal, instrumental), tested), **EXACT_STYLE)
+        ax_shift.plot(grid, gaussian(center, np.hypot(thermal, instrumental)), **EXACT_STYLE)
         ax_shift.plot(
             grid[::8],
             tested[::8],
@@ -141,7 +141,9 @@ def test_map_response_to_sg_detector_slits():
     )
     sigma = np.hypot(_thermal_sigma(rest), instrumental_fwhm.to_value(u.AA) / np.sqrt(8 * np.log(2))) / dispersion
     offset = np.linspace(-12, 12, 481)
-    exact = float(detector.sel(slit=0).sum()) * np.exp(-0.5 * (offset / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+    # With the area the line list and the effective area, 1 cm2, give the line, in the response's units of 1e-27.
+    area = line_list.gofnt.sel(logT=6.0).item() / 1e-27
+    exact = area * np.exp(-0.5 * (offset / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
     ax_cut.plot(offset, exact, label="Exact: the line at the expected pixel", **EXACT_STYLE)
     for slit, color, marker in zip((0, 17, 34), COLORS, ("o", "s", "^"), strict=True):
         row = detector.sel(slit=slit)
