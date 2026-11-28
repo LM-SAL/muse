@@ -11,12 +11,12 @@ from muse.transforms.transforms import reshape_slit_step_to_x, reshape_x_to_slit
 @figure_test
 def test_vdem_synthesis_fov():
     """
-    The flux of both lines with the slits kept and restacked onto x (left): slit k
-    images the 11 pixels between its dashed lines.
+    The flux of both lines with each slit's image side by side (left): slit k images the
+    11 pixels between its dashed lines.
 
-    The default sum over slits folds these strips onto the 11 steps (middle), the apex
-    in slit 3 onto step 5 and the legs in slits 1 and 5 onto steps 2 and 8, and equals
-    the kept slits summed (right, a ratio of 1).
+    The default sum over slits folds these images onto the 11 raster steps (middle), the
+    footpoints in slits 1 and 5 onto steps 2 and 8. Along the dashed row through the
+    footpoints (right), its dots lie on the line of the kept slits added afterwards.
     """
     raster = reshape_x_to_slit_step(fake_loop_vdem(), number_of_slits=LOOP_SLITS)
     summed = vdem_synthesis(raster, fake_loop_response()).flux.sum(["line", "detector_x_pixel"])
@@ -24,19 +24,24 @@ def test_vdem_synthesis_fov():
     full = reshape_slit_step_to_x(kept).flux.sum(["line", "detector_x_pixel"])
     # One row of x per slit, as reshape_x_to_slit_step cuts them.
     strips = full.x.values.reshape(LOOP_SLITS, -1)
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4), width_ratios=(3, 1, 1), constrained_layout=True)
+    cut = 3.5
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4), width_ratios=(3, 1, 1.5), constrained_layout=True)
     full.plot(ax=axes[0], cmap="inferno", cbar_kwargs={"label": "flux [ph / s]"})
     for edge in (strips[1:, 0] + strips[:-1, -1]) / 2:
         axes[0].axvline(edge, color="white", linestyle="--", linewidth=0.8)
     axes[0].secondary_xaxis("top").set_xticks(strips.mean(axis=1), labels=[f"slit {k}" for k in range(LOOP_SLITS)])
-    axes[0].set_title("Fe IX 171.073 + Fe XV 284.163, slits kept, restacked onto x")
+    axes[0].set_title("Both lines, each slit's image side by side")
     summed.plot(ax=axes[1], cmap="inferno", cbar_kwargs={"label": "flux [ph / s]"})
-    axes[1].set_title("slits summed (default)")
-    # Rounded, so float noise cannot flip pixels between the two middle colors; a tight
-    # range, so a slit left out of the sum, 1/7 of the background, turns it blue.
-    ratio = (summed / kept.flux.sum(["slit", "line", "detector_x_pixel"])).round(3)
-    ratio.plot(ax=axes[2], cmap="RdBu_r", vmin=0.9, vmax=1.1, cbar_kwargs={"label": "ratio"})
-    axes[2].set_title("summed / kept slits summed")
+    axes[1].axhline(cut, color="white", linestyle="--", linewidth=0.8)
+    axes[1].set_title("All slits summed onto the steps")
+    reference = kept.flux.sum(["slit", "line", "detector_x_pixel"])
+    for flux, label, style in (
+        (reference, "Reference: slits kept, then added", {"color": "black"}),
+        (summed, "Tested: slits summed by default", {"color": "tab:blue", "marker": "o", "linestyle": "none"}),
+    ):
+        axes[2].plot(flux.step, flux.sel(y=cut, method="nearest"), label=label, **style)
+    axes[2].set(xlabel="step", ylabel="flux [ph / s]", title="Flux along the dashed line", ylim=(0, None))
+    axes[2].legend(loc="lower center", fontsize=8)
     return fig
 
 
@@ -47,8 +52,9 @@ def test_vdem_synthesis_detector_spectrum():
     scene 4.4" further along x, its copy of the line next to the dashed pixel of its
     rest wavelength.
 
-    Below, slits 1, 3 and 5 in their own Doppler velocity: the loop crosses slit 1 at
-    about -35 km/s, slit 3 at rest at its apex and slit 5 at about +70 km/s.
+    Below, slits 1, 3 and 5 in their own Doppler velocity: the loop's emission lies on
+    the dotted line of its own flow, -37 km/s where slit 1 crosses its left leg, at rest
+    at its apex in slit 3 and +68 km/s in its right leg in slit 5.
     """
     raster = reshape_x_to_slit_step(fake_loop_vdem(), number_of_slits=LOOP_SLITS)
     response = fake_loop_response().sel(line="Fe XV 284.163")
@@ -63,16 +69,23 @@ def test_vdem_synthesis_detector_spectrum():
     for pixel in rest:
         axes["detector"].axvline(pixel, color="white", linestyle="--", linewidth=0.8)
     axes["detector"].secondary_xaxis("top").set_xticks(rest, labels=[f"slit {slit}" for slit in range(LOOP_SLITS)])
-    axes["detector"].set(title="Fe XV 284.163 at raster step 5, all slits summed", xlabel="detector pixel")
-    for slit in (1, 3, 5):
+    axes["detector"].set(
+        title="Fe XV 284.163 on the detector at raster step 5 (dashed: each slit's rest wavelength)",
+        xlabel="detector pixel",
+    )
+    # The loop's flow where each slit crosses it at step 5, cos(angle) * (60 + 20 cos(angle)) km/s.
+    crossings = {1: ("left leg, blueshifted", -37), 3: ("apex, at rest", 0), 5: ("right leg, redshifted", 68)}
+    for slit, (part, flow) in crossings.items():
         view = wavelength_to_doppler(
             spectrum.assign_coords(detector_wavelength=response.detector_wavelength.sel(slit=slit))
         )
         view.flux.plot(
             ax=axes[slit], x="detector_doppler_velocity", y="y", xlim=(-150, 150), cmap="inferno", add_colorbar=False
         )
-        axes[slit].axvline(0, color="white", linestyle="--")
-        axes[slit].set(title=f"slit {slit}", xlabel="Doppler velocity [km / s]")
+        axes[slit].axvline(0, color="white", linestyle="--", label="at rest")
+        axes[slit].axvline(flow, color="cyan", linestyle=":", label="the loop's flow")
+        axes[slit].set(title=f"Slit {slit}: {part}", xlabel="Doppler velocity [km / s]")
+    axes[1].legend(loc="lower right", fontsize=8)
     return fig
 
 
@@ -91,15 +104,17 @@ def test_calculate_moments_maps():
     moments = reshape_slit_step_to_x(calculate_moments(wavelength_to_doppler(spectrum)))
     # Fixed ranges, so a wrong scale changes the colors and not only the colorbar ticks.
     columns = (
-        ("0th", "intensity [ph / s]", {}),
-        ("1st", "velocity [km / s]", {"cmap": "RdBu_r", "vmin": -80, "vmax": 80}),
-        ("2nd", "width $\\sigma$ [km / s]", {"vmin": 30, "vmax": 60}),
+        ("0th", "intensity", "[ph / s]", {"cmap": "viridis"}),
+        ("1st", "Doppler velocity", "[km / s]", {"cmap": "RdBu_r", "vmin": -80, "vmax": 80}),
+        ("2nd", "line width", "$\\sigma$ [km / s]", {"cmap": "viridis", "vmin": 30, "vmax": 60}),
     )
     fig, axes = plt.subplots(2, 3, figsize=(14, 6), constrained_layout=True)
     for row, line in zip(axes, moments.line.values, strict=True):
-        for ax, (name, label, kwargs) in zip(row, columns, strict=True):
-            moments[name].sel(line=line).plot(ax=ax, cbar_kwargs={"label": label}, **kwargs)
-            ax.set_title(line)
+        for ax, (name, heading, unit, kwargs) in zip(row, columns, strict=True):
+            # NaN in grey: drawn blank, it would pass for the white of 0 km/s.
+            cmap = plt.get_cmap(kwargs["cmap"]).with_extremes(bad="0.6")
+            moments[name].sel(line=line).plot(ax=ax, cbar_kwargs={"label": unit}, **{**kwargs, "cmap": cmap})
+            ax.set_title(f"{line}: {heading}")
     return fig
 
 
