@@ -2,9 +2,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
+import astropy.units as u
+
 from muse.synthesis.synthesis import vdem_synthesis
-from muse.synthesis.utils import calculate_moments, wavelength_to_doppler
-from muse.tests.helpers import LOOP_SLITS, fake_loop_regions, fake_loop_response, fake_loop_vdem, figure_test
+from muse.synthesis.utils import calculate_moments, create_simple_vdem, wavelength_to_doppler
+from muse.tests.helpers import (
+    EXACT_STYLE,
+    LOOP_SLITS,
+    TESTED_STYLE,
+    fake_loop_regions,
+    fake_loop_response,
+    fake_loop_vdem,
+    figure_test,
+)
 from muse.transforms.transforms import reshape_slit_step_to_x, reshape_x_to_slit_step
 
 
@@ -167,4 +177,68 @@ def test_vdem_synthesis_with_density():
         bottom.set(xlabel="x [arcsec]", ylabel="flux [ph / s]", title="Flux along the dashed line", ylim=(0, None))
     fig.legend(*axes[1, 0].get_legend_handles_labels(), loc="outside lower center", ncols=3, frameon=False)
     fig.suptitle("Background 1e9, loop 5e9, footpoints 3e10 cm$^{-3}$")
+    return fig
+
+
+@figure_test
+def test_create_simple_vdem():
+    """
+    Left: three cells; each cross, at a cell's true log T and Doppler velocity, lies in
+    a bright patch.
+
+    Middle and right: one cell at a time; the mean Doppler velocity and the mean log T of
+    its VDEM (dots) lie on the cell's own speed, its sign flipped as it is positive
+    towards the observer, and on its own log T (lines).
+    """
+    velocity_grid = np.arange(-100.0, 101.0, 25.0) * u.km / u.s
+    logT_grid = np.arange(5.5, 6.85, 0.1) * u.dex(u.K)
+
+    def vdem_of(logT, velocity):
+        # One cell per line of sight, the lines of sight along x.
+        shape = (np.size(logT), 1, 1)
+        return create_simple_vdem(
+            temperature=np.reshape(10.0 ** np.asarray(logT), shape) * u.K,
+            velocity=np.reshape(velocity, shape) * u.km / u.s,
+            ne_nh=np.full(shape, 1e18) * u.cm**-6,
+            cell_length=[1e9] * u.cm,
+            x=np.arange(shape[0]) * 1e8 * u.cm,
+            y=[0.0] * u.cm,
+            velocity_grid=velocity_grid,
+            logT_grid=logT_grid,
+            temperature_bin_method="linear",
+        ).vdem.isel(y=0)
+
+    def mean(vdem, coordinate):
+        return (vdem * vdem[coordinate]).sum(["logT", "doppler_velocity"]) / vdem.sum(["logT", "doppler_velocity"])
+
+    cells = np.array([(5.8, 40.0), (6.2, -10.0), (6.5, -75.0)])  # log T, velocity towards the observer
+    speeds, temperatures = np.arange(-95.0, 96.0, 10.0), np.arange(5.55, 6.76, 0.05)
+    fig, (ax_map, ax_velocity, ax_logT) = plt.subplots(1, 3, figsize=(15, 4.4), constrained_layout=True)
+    vdem_of(cells[:, 0], cells[:, 1]).sum("x").plot(
+        ax=ax_map, x="doppler_velocity", y="logT", cmap="inferno", cbar_kwargs={"label": "VDEM [1e27 cm$^{-5}$]"}
+    )
+    ax_map.plot(-cells[:, 1], cells[:, 0], "+", color="cyan", markersize=14, markeredgewidth=1.5)
+    ax_map.set(title="Three cells (crosses: their true values)", xlabel="Doppler velocity [km / s]", ylabel="log T")
+    ax_velocity.plot(speeds, -speeds, label="Exact: the same speed, sign flipped", **EXACT_STYLE)
+    ax_velocity.plot(
+        speeds,
+        mean(vdem_of(np.full(speeds.size, 6.0), speeds), "doppler_velocity"),
+        label="Tested: create_simple_vdem",
+        **TESTED_STYLE,
+    )
+    ax_velocity.set(
+        title="One cell: velocity",
+        xlabel="velocity towards the observer [km / s]",
+        ylabel="mean Doppler velocity of its VDEM [km / s]",
+    )
+    ax_logT.plot(temperatures, temperatures, label="Exact: the cell's log T", **EXACT_STYLE)
+    ax_logT.plot(
+        temperatures,
+        mean(vdem_of(temperatures, np.zeros(temperatures.size)), "logT"),
+        label="Tested: create_simple_vdem",
+        **TESTED_STYLE,
+    )
+    ax_logT.set(title="One cell: temperature", xlabel="log T of the cell", ylabel="mean log T of its VDEM")
+    for ax in (ax_velocity, ax_logT):
+        ax.legend(fontsize=8)
     return fig

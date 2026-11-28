@@ -116,6 +116,11 @@ def get_hash_library_name():
     return f"figure_hashes_mpl_{mpl_version}_ft_{ft2_version}_astropy_{astropy_version}.json"
 
 
+# How the figure tests draw an exact reference and the result under test.
+EXACT_STYLE = {"color": "black", "zorder": 2}
+TESTED_STYLE = {"color": "tab:blue", "marker": "o", "markersize": 4, "linestyle": "none", "zorder": 3}
+
+
 def figure_test(test_function):
     """
     A decorator for a test that verifies the hash of the current figure or the returned
